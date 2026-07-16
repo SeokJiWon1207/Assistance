@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.common import compact_text, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, STATUS_ALIASES, STATUS_MATCH_ALIASES
 from backend.query_planning import build_query_plan
+from backend.query_filters import filter_clause_label, normalize_filter_clauses
 from backend.retrieval import (
     build_snapshot_note,
     collect_retrieved_issues,
@@ -460,12 +461,20 @@ def format_issue_list_criteria(
         criteria.append(f"고객사={customer}")
     if constraints.get("platform_key"):
         criteria.append(f"플랫폼={constraints['platform_key'].upper()}")
+    if constraints.get("excluded_platform_keys"):
+        criteria.append(
+            "플랫폼 제외=" + ", ".join(value.upper() for value in constraints["excluded_platform_keys"])
+        )
+    if constraints.get("excluded_customer_keys"):
+        criteria.append("고객사 제외=" + ", ".join(constraints["excluded_customer_keys"]))
     if constraints.get("people", {}).get("names"):
         role = constraints.get("people", {}).get("role") or "any"
         role_label = "담당자" if role == "handler" else "요청자/본문" if role == "reporter" else "인물"
         criteria.append(f"{role_label}={', '.join(constraints['people']['names'])}")
     if constraints.get("statuses"):
         criteria.append(f"상태={', '.join(constraints['statuses'])}")
+    if constraints.get("excluded_statuses"):
+        criteria.append(f"상태 제외={', '.join(constraints['excluded_statuses'])}")
     if constraints.get("screen_numbers"):
         criteria.append(f"화면번호={', '.join(constraints['screen_numbers'])}")
     if constraints.get("issue_ids"):
@@ -475,6 +484,9 @@ def format_issue_list_criteria(
     created_at = constraints.get("created_at") or {}
     if created_at.get("from") and created_at.get("to"):
         criteria.append(f"등록일={created_at['from']}~{created_at['to']}")
+    for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
+        if clause["field"] in {"title", "keyword"}:
+            criteria.append(filter_clause_label(clause))
     return ", ".join(criteria) or "요청 조건"
 
 
@@ -559,6 +571,18 @@ def build_status_excluded_note(
     )
 
 
+def build_unapplied_filters_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
+    unapplied: List[Dict[str, Any]] = []
+    for stage in retrieval_result.get("stages", []):
+        for clause in stage.get("meta", {}).get("filter_audit", {}).get("unapplied_filters", []):
+            if clause not in unapplied:
+                unapplied.append(clause)
+    if not unapplied:
+        return None
+    labels = ", ".join(filter_clause_label(clause) for clause in unapplied)
+    return f"주의: 현재 검색 소스에서 적용하지 못한 조건이 있습니다: {labels}."
+
+
 def wants_issue_history_detail(text: str) -> bool:
     normalized = normalize_for_match(text)
     return any(
@@ -620,6 +644,7 @@ def format_deterministic_issue_answer(
         }
     criteria = format_issue_list_criteria(display_constraints, issues)
     status_note = build_status_excluded_note(display_constraints, retrieval_result)
+    unapplied_note = build_unapplied_filters_note(retrieval_result)
     snapshot_note = build_snapshot_note(retrieval_result)
     if not issues:
         intro = build_issue_intro_line(display_constraints, issues, 0)
@@ -627,6 +652,8 @@ def format_deterministic_issue_answer(
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
         if status_note:
             parts.extend(["", status_note])
+        if unapplied_note:
+            parts.extend(["", unapplied_note])
         if snapshot_note:
             parts.extend(["", snapshot_note])
         return "\n".join(parts)
@@ -695,6 +722,8 @@ def format_deterministic_issue_answer(
         lines.extend(["", f"요청한 {requested_limit}건 중 현재 조회 가능한 결과는 {len(issues)}건입니다."])
     if status_note:
         lines.extend(["", status_note])
+    if unapplied_note:
+        lines.extend(["", unapplied_note])
     if snapshot_note:
         lines.extend(["", snapshot_note])
     return "\n".join(lines)
@@ -771,6 +800,26 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "values": list(dict.fromkeys([constraints["platform_key"], *constraints.get("platform_aliases", [])])),
             }
         )
+    if constraints.get("excluded_platform_keys"):
+        values = [str(value).upper() for value in constraints["excluded_platform_keys"]]
+        items.append(
+            {
+                "id": "platform_exclude",
+                "label": "플랫폼 제외",
+                "value": ", ".join(values),
+                "values": values,
+            }
+        )
+    if constraints.get("excluded_customer_keys"):
+        values = list(constraints["excluded_customer_keys"])
+        items.append(
+            {
+                "id": "customer_exclude",
+                "label": "고객사 제외",
+                "value": ", ".join(values),
+                "values": values,
+            }
+        )
     people = constraints.get("people", {}).get("names", [])
     if people:
         items.append({"id": "people", "label": "담당자/인물", "value": ", ".join(people), "values": people})
@@ -783,6 +832,16 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
                     for value in [status, *STATUS_ALIASES.get(status, []), *STATUS_MATCH_ALIASES.get(status, [])]
                 ]
             )
+        )
+    if constraints.get("excluded_statuses"):
+        values = list(constraints["excluded_statuses"])
+        items.append(
+            {
+                "id": "status_exclude",
+                "label": "상태 제외",
+                "value": ", ".join(values),
+                "values": values,
+            }
         )
         items.append(
             {

@@ -780,9 +780,12 @@ function questionWithoutCondition(question, condition) {
   });
   const cleanupPatterns = {
     customer: /고객사\s*[:=]?/gi,
+    customer_exclude: /(?:고객사\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
     platform: /플랫폼\s*[:=]?/gi,
+    platform_exclude: /(?:플랫폼\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
     people: /(?:담당자|담당|에게|한테)\s*[:=]?/gi,
     status: /상태(?:가|는|은|이)?\s*[:=]?/gi,
+    status_exclude: /(?:상태\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
     issue: /이슈\s*(?:ID)?\s*[:=#]?/gi,
     screen: /화면(?:번호)?\s*[:=#]?/gi,
     date: /(?:날짜|일자)\s*[:=]?/gi,

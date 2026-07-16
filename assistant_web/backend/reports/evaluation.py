@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from fastapi import HTTPException
 
 from backend.answers import (
     answer_style_instruction,
@@ -55,7 +56,11 @@ from backend.retrieval import (
     similar_base_issue_ids_from_retrieval,
 )
 from backend.schemas import ChatRequest
-from backend.sources.notion import extract_notion_constraints, notion_page_matches_constraints
+from backend.sources.notion import (
+    extract_notion_constraints,
+    merge_common_notion_constraints,
+    notion_page_matches_constraints,
+)
 from backend.understanding import (
     extract_query_constraints,
     extract_requested_limit,
@@ -75,6 +80,12 @@ DEFAULT_EVALUATION_CASES = [
         "category": "고객사·플랫폼",
         "question": "KB증권 HTS 최근 이슈 5개 보여줘",
         "expected": {"customer": "KB증권", "platform": "HTS", "minResults": 1},
+    },
+    {
+        "id": "mantis-eugene-exclude-mts",
+        "category": "플랫폼 제외",
+        "question": "유진증권 이슈에서 MTS는 빼고 최근 10개 보여줘",
+        "expected": {"customer": "유진증권", "platformExclude": "MTS", "minResults": 1},
     },
     {
         "id": "mantis-eugene-screen",
@@ -573,6 +584,71 @@ def generate_basic_grounded_baseline(
         }
 
 
+def generate_candidate_model_answer(
+    request: ChatRequest,
+    question: str,
+    retrieval_result: Dict[str, Any],
+    candidate_model_id: str,
+) -> Dict[str, Any]:
+    """동일한 검증·검색 결과로 후보 모델 답변을 생성한다."""
+    try:
+        model = get_private_model(candidate_model_id)
+    except HTTPException:
+        return {"status": "error", "content": f"비교 모델을 찾을 수 없습니다: {candidate_model_id}"}
+    api_key = get_model_api_key(model)
+    if not api_key:
+        return {"status": "error", "content": "비교 모델의 API 키가 설정되지 않았습니다."}
+
+    limit = clamp_int(request.searchLimit, 1, 20) or 5
+    grounding = build_model_retrieval_context(retrieval_result, limit)
+    candidate_sources = build_sources(retrieval_result, max_sources=max(1, limit * 2))
+    payload = {
+        "model": model.get("model", model["id"]),
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "너는 컨텐츠서비스 AI 비서다. 아래 [검증된 검색 결과]만 회사 사실의 근거로 사용해라. "
+                    "질문의 포함·제외 조건을 그대로 지키고, 근거에 없는 사실은 추측하지 마라. "
+                    "결과가 부족하거나 적용되지 않은 조건이 있으면 명확히 밝혀라. "
+                    f"{answer_style_instruction(request.answerStyle)}\n\n"
+                    f"[검증된 검색 결과]\n{json.dumps(grounding, ensure_ascii=False, indent=2)}"
+                ),
+            },
+            {"role": "user", "content": question},
+        ],
+        "temperature": request.temperature,
+        "stream": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    generation_options = build_generation_options(request)
+    generation_options.pop("response_format", None)
+    payload.update(generation_options)
+    payload["max_tokens"] = min(clamp_int(request.maxTokens, 1, 1200) or 800, 1200)
+    try:
+        response = post_model_chat(
+            model,
+            api_key,
+            payload,
+            timeout=clamp_int(os.getenv("AB_CANDIDATE_TIMEOUT_SECONDS", "60"), 10, 120) or 60,
+            think=False,
+        )
+        if response.status_code >= 400:
+            return {"status": "error", "content": f"비교 모델 응답 실패 (HTTP {response.status_code})"}
+        content = extract_model_content(response.json())
+        return {
+            "status": "ok" if content else "error",
+            "content": content or "비교 모델 응답 본문을 찾지 못했습니다.",
+            "modelId": model["id"],
+            "sources": candidate_sources,
+            "sourceCount": len(candidate_sources),
+        }
+    except requests.ReadTimeout:
+        return {"status": "error", "content": "비교 모델 응답 시간이 초과되었습니다."}
+    except (requests.RequestException, ValueError) as exc:
+        return {"status": "error", "content": f"비교 모델 연결 실패: {type(exc).__name__}"}
+
+
 def should_attach_ab_test(request: ChatRequest, retrieval_result: Any, mode: str) -> bool:
     if not request.abTest or retrieval_result is None:
         return False
@@ -614,7 +690,10 @@ def evaluate_ab_variant(
     status: str = "ok",
 ) -> Dict[str, Any]:
     constraints = extract_query_constraints(question)
-    notion_constraints = extract_notion_constraints(question)
+    notion_constraints = merge_common_notion_constraints(
+        extract_notion_constraints(question),
+        constraints,
+    )
     requested_limit = extract_requested_limit(question)
     failures: List[str] = []
 
@@ -788,8 +867,30 @@ def finalize_chat_response(
         mode,
     )
     if should_attach_ab_test(request, retrieval_result, mode):
-        emit_chat_status("기본 Mantis·Notion 연동 답변을 생성하고 있습니다", "comparison")
-        baseline = generate_basic_grounded_baseline(request, question, retrieval_result)
+        candidate_model_id = str(
+            request.abModelId or os.getenv("AB_COMPARISON_MODEL_ID", "")
+        ).strip()
+        comparing_models = bool(
+            candidate_model_id
+            and candidate_model_id != request.modelId
+            and mode == "model"
+        )
+        emit_chat_status(
+            "후보 모델로 동일한 검색 근거를 비교하고 있습니다"
+            if comparing_models
+            else "기본 Mantis·Notion 연동 답변을 생성하고 있습니다",
+            "comparison",
+        )
+        baseline = (
+            generate_candidate_model_answer(
+                request,
+                question,
+                retrieval_result,
+                candidate_model_id,
+            )
+            if comparing_models
+            else generate_basic_grounded_baseline(request, question, retrieval_result)
+        )
         variant_a_evaluation_input = {
             "status": "ok",
             "content": response.get("content", ""),
@@ -798,12 +899,20 @@ def finalize_chat_response(
         response["abTest"] = {
             "enabled": True,
             "variantA": {
-                "label": "전처리 적용",
-                "description": "Mantis·Notion 검색, 조건 필터링, 근거 검증을 적용한 답변",
+                "label": f"현재 모델 · {request.modelId}" if comparing_models else "전처리 적용",
+                "description": (
+                    "현재 모델이 검증된 동일 검색 근거로 생성한 답변"
+                    if comparing_models
+                    else "Mantis·Notion 검색, 조건 필터링, 근거 검증을 적용한 답변"
+                ),
             },
             "variantB": {
-                "label": "기본 검색 연동",
-                "description": "Mantis·Notion 기본 검색 결과만 전달하고 별칭 보정·재정렬·검증은 적용하지 않은 답변",
+                "label": f"후보 모델 · {candidate_model_id}" if comparing_models else "기본 검색 연동",
+                "description": (
+                    "후보 모델이 현재 모델과 같은 검증·검색 결과로 생성한 답변"
+                    if comparing_models
+                    else "Mantis·Notion 기본 검색 결과만 전달하고 별칭 보정·재정렬·검증은 적용하지 않은 답변"
+                ),
                 **baseline,
             },
         }
@@ -827,6 +936,17 @@ def finalize_chat_response(
             "responseFormat": request.responseFormat,
         },
         "sources": sources,
+        "queryPlan": (retrieval_result or {}).get("query_plan") if retrieval_result else None,
+        "filterAudit": (retrieval_result or {}).get("filter_audit") if retrieval_result else None,
+        "retrievalStages": [
+            {
+                "source": stage.get("source"),
+                "status": stage.get("status"),
+                "reason": stage.get("reason"),
+                "meta": stage.get("meta", {}),
+            }
+            for stage in (retrieval_result or {}).get("stages", [])
+        ],
         "followUps": followups,
         "verification": verification,
         "abTest": response.get("abTest"),
@@ -901,6 +1021,27 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
             "플랫폼 인식",
             normalize_for_match(actual_platform) == normalize_for_match(expected["platform"]),
             actual_platform or "미인식",
+        )
+    if expected.get("platformExclude"):
+        excluded = constraints.get("excluded_platform_keys", [])
+        expected_platform = normalize_for_match(expected["platformExclude"])
+        add_check(
+            "플랫폼 제외 인식",
+            expected_platform in {normalize_for_match(value) for value in excluded},
+            ", ".join(excluded) or "미인식",
+        )
+        mismatched_ids = []
+        for source in sources:
+            if source.get("type") not in {"mantis", "chroma"}:
+                continue
+            detail = source.get("detail") or {}
+            media_type = str(detail.get("media_type") or "")
+            if media_type and normalize_for_match(media_type) == expected_platform:
+                mismatched_ids.append(str(source.get("issue_id") or "?"))
+        add_check(
+            "제외 플랫폼 결과 일치",
+            not mismatched_ids,
+            "모두 제외됨" if not mismatched_ids else f"포함된 ID: {', '.join(mismatched_ids)}",
         )
     if expected.get("screenNumber"):
         actual = constraints.get("screen_numbers", [])
