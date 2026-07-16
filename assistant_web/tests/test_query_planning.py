@@ -1,9 +1,10 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import requests
 from datetime import date
 
 from backend.app import (
+    build_contextual_retrieval_text,
     build_similar_issue_search_text,
     build_mantis_count_report,
     build_verification_report,
@@ -11,11 +12,15 @@ from backend.app import (
     extract_effort_query,
     extract_query_constraints,
     format_deterministic_issue_answer,
+    display_constraints,
     generate_follow_up_questions,
     issue_matches_constraints,
     notion_post_json,
     run_retrieval_pipeline,
 )
+from backend.schemas import ChatMessage, ChatRequest
+from backend.reports.evaluation import generate_candidate_model_answer
+from backend.sources.notion import notion_page_matches_constraints
 from backend.query_planning import (
     build_query_plan,
     extract_created_at_range,
@@ -27,6 +32,138 @@ from backend.query_planning import (
 
 
 class QueryPlanningTests(unittest.TestCase):
+    @patch("backend.reports.evaluation.post_model_chat")
+    @patch("backend.reports.evaluation.get_private_model")
+    def test_candidate_model_ab_uses_same_grounded_retrieval(self, get_model, post_chat):
+        get_model.return_value = {
+            "id": "candidate-model",
+            "model": "candidate-model",
+            "provider": "ollama",
+        }
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "choices": [{"message": {"content": "동일 근거 기반 후보 답변"}}]
+        }
+        post_chat.return_value = response
+        request = ChatRequest(
+            modelId="current-model",
+            messages=[ChatMessage(role="user", content="질문")],
+        )
+        retrieval = {
+            "query": "질문",
+            "constraints": {"filter_clauses": []},
+            "stages": [],
+        }
+
+        result = generate_candidate_model_answer(
+            request,
+            "질문",
+            retrieval,
+            "candidate-model",
+        )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["modelId"], "candidate-model")
+        payload = post_chat.call_args.args[2]
+        self.assertIn("검증된 검색 결과", payload["messages"][0]["content"])
+
+    def test_platform_exclusion_is_not_reversed_to_inclusion(self):
+        question = "유진증권 이슈에서 MTS는 빼고 최근 10개 보여줘"
+        constraints = extract_query_constraints(question)
+
+        self.assertIsNone(constraints["platform_key"])
+        self.assertEqual(constraints["excluded_platform_keys"], ["mts"])
+        self.assertIn(
+            {"field": "platform", "operator": "not_equals", "value": "mts"},
+            constraints["filter_clauses"],
+        )
+
+        plan = build_query_plan(question, {"source": "mantis"}, constraints)
+        self.assertTrue(validate_query_plan(question, plan)["valid"])
+
+    def test_model_filter_clauses_are_merged_into_plan(self):
+        question = "유진증권 이슈에서 MTS는 빼고 최근 10개 보여줘"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis"},
+            extract_query_constraints(question),
+            {
+                "planned": True,
+                "source": "mantis",
+                "filters": [
+                    {"field": "platform", "operator": "not_equals", "value": "MTS"},
+                    {"field": "customer", "operator": "equals", "value": "유진증권"},
+                ],
+            },
+        )
+
+        self.assertEqual(plan["version"], 2)
+        self.assertTrue(any(clause["operator"] == "not_equals" for clause in plan["filter_clauses"]))
+
+    def test_mantis_adapter_applies_platform_and_keyword_exclusions(self):
+        issue = {
+            "id": 26206,
+            "project": {"name": "104EuGene(유진증권)"},
+            "summary": "로그인 비밀번호 오류",
+            "description": "로그인 시 비밀번호 검증 오류",
+            "status": {"name": "closed"},
+            "handler": {"real_name": "이영희"},
+            "reporter": {"real_name": "홍길동"},
+            "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}],
+        }
+        constraints = extract_query_constraints(
+            "유진증권 이슈 중 MTS는 빼고 제목에 로그인은 있지만 비밀번호는 없는 건"
+        )
+        self.assertFalse(issue_matches_constraints(issue, constraints))
+
+        issue["custom_fields"][0]["value"] = "HTS"
+        self.assertFalse(issue_matches_constraints(issue, constraints))
+        issue["summary"] = "로그인 오류"
+        issue["description"] = "로그인 실패"
+        self.assertTrue(issue_matches_constraints(issue, constraints))
+
+    def test_notion_adapter_applies_negative_status_filter(self):
+        page = {
+            "title": "주요 이슈",
+            "status": "보관됨",
+            "owner": "석지원",
+            "database_label": "주요이슈현황",
+            "created_time": "2026-07-01",
+            "search_text": "상태: 보관됨",
+            "content": "",
+        }
+        constraints = {
+            "excluded_statuses": ["보관됨"],
+            "common_filter_clauses": [
+                {"field": "status", "operator": "not_equals", "value": "보관됨"}
+            ],
+        }
+        self.assertFalse(notion_page_matches_constraints(page, constraints))
+        page["status"] = "진행중"
+        page["search_text"] = "상태: 진행중"
+        self.assertTrue(notion_page_matches_constraints(page, constraints))
+
+    def test_follow_up_inherits_excluded_platform_as_structured_intent(self):
+        messages = [
+            ChatMessage(role="user", content="유진증권 이슈 보여줘"),
+            ChatMessage(role="assistant", content="결과입니다"),
+            ChatMessage(role="user", content="MTS는 빼줘"),
+            ChatMessage(role="assistant", content="제외했습니다"),
+            ChatMessage(role="user", content="최근 5개만"),
+        ]
+        retrieval_text, needs_rewrite = build_contextual_retrieval_text(messages)
+        inherited = extract_query_constraints(retrieval_text)
+
+        self.assertFalse(needs_rewrite)
+        self.assertIn("유진증권", inherited["customer_aliases"])
+        self.assertEqual(inherited["excluded_platform_keys"], ["mts"])
+
+    def test_excluded_constraints_are_visible_in_verification_chips(self):
+        constraints = extract_query_constraints("유진증권 이슈에서 MTS는 빼고 보여줘")
+        chips = display_constraints(constraints)
+        platform_chip = next(chip for chip in chips if chip["id"] == "platform_exclude")
+        self.assertEqual(platform_chip["value"], "MTS")
+
     def test_model_created_at_is_dropped_without_temporal_expression(self):
         # "최근"만 있는 질문에서 플래너가 지어낸 날짜 필터는 버려야 한다.
         # (2026-07-09 정확도 점검: "담당자 OO의 최근 이슈 2개"가 최근 7일로 오해석돼 빈 결과)

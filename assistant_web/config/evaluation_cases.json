@@ -6,6 +6,12 @@
     "expected": { "customer": "KB증권", "platform": "HTS", "minResults": 1 }
   },
   {
+    "id": "mantis-eugene-exclude-mts",
+    "category": "플랫폼 제외",
+    "question": "유진증권 이슈에서 MTS는 빼고 최근 10개 보여줘",
+    "expected": { "customer": "유진증권", "platformExclude": "MTS", "minResults": 1 }
+  },
+  {
     "id": "mantis-eugene-screen",
     "category": "화면번호",
     "question": "유진증권 화면번호 5031 관련 이슈 찾아줘",

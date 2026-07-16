@@ -52,6 +52,18 @@ Assistance/
 }
 ```
 
+새 모델을 바로 기본값으로 바꾸기 전에는 해당 모델을 `models.json`에 추가한 뒤
+`AB_COMPARISON_MODEL_ID`에 후보 모델 ID를 설정할 수 있습니다. A/B 비교가 켜진 일반 분석 답변에서는
+현재 모델과 후보 모델에 동일한 검증·검색 근거를 전달하고 근거 연결·조건 일치·환각 여부를 비교합니다.
+
+```bash
+AB_COMPARISON_MODEL_ID=qwen3.5-9b-local
+AB_CANDIDATE_TIMEOUT_SECONDS=60
+```
+
+후보 모델의 정확도 리포트가 기준 모델보다 안정적으로 높을 때 `models.json`의 기본 활성 순서와
+프론트엔드 기본 모델을 변경합니다. API 키나 엔드포인트가 없는 모델은 비교 대상으로 실행되지 않습니다.
+
 ## Search Pipeline
 
 대화 요청은 LLM이 먼저 구조화된 실행 계획으로 변환하고, 백엔드가 계획을 검증한 뒤 읽기 전용 도구를 실행합니다.
@@ -60,8 +72,22 @@ Assistance/
 자연어 질문 -> LLM QueryPlan -> 코드 검증/보정 -> Mantis·Notion 도구 -> 근거 기반 답변 -> 감사 검증
 ```
 
-`QueryPlan`은 `operation(search/count/get/aggregate)`, 검색 소스, 고객사·플랫폼·상태·등록일 범위,
-정렬 및 표시 개수를 포함합니다. 연도와 `몇 개/몇 건`처럼 규칙으로 명확히 검증할 수 있는 조건은
+`QueryPlan` v2는 `operation(search/count/get/aggregate)`, 검색 소스, 정렬, 표시 개수와 함께
+데이터 소스 독립적인 `field/operator/value` 필터 배열을 포함합니다.
+
+```json
+{
+  "filters": [
+    {"field": "customer", "operator": "equals", "value": "유진증권"},
+    {"field": "platform", "operator": "not_equals", "value": "MTS"}
+  ]
+}
+```
+
+지원 연산자는 `equals`, `not_equals`, `in`, `not_in`, `contains`, `not_contains`,
+`exists`, `not_exists`, `gte`, `lte`, `between`입니다. Mantis·Notion 어댑터는 공통 조건을
+각 API 필터와 로컬 후처리로 변환합니다. 적용할 수 없는 조건은 조용히 버리지 않고 답변과
+감사 로그의 `unapplied_filters`에 남깁니다. 연도와 `몇 개/몇 건`처럼 규칙으로 명확히 검증할 수 있는 조건은
 모델 출력과 독립적으로 재검사해 누락되거나 잘못 해석된 계획을 보정합니다.
 
 Mantis 읽기 도구는 다음 원칙으로 선택합니다.
@@ -85,7 +111,8 @@ Mantis 읽기 도구는 다음 원칙으로 선택합니다.
    - 정확한 목록 조회보다는 유사 사례/과거 맥락 보조 용도입니다.
    - 질문에 고객사, HTS, MTS 같은 조건이 있으면 해당 조건을 만족하는 문서만 후보로 사용합니다.
 
-감사 로그는 질문 의도, 도구에 적용된 필터, 조회 근거, 계산 결과와 최종 답변을 각각 검사합니다.
+감사 로그는 원문 질문, QueryPlan, 소스별 적용·미적용 필터, 조회 단계와 결과 수,
+조회 근거, 계산 결과와 최종 답변을 각각 기록·검사합니다.
 질문에 연도가 있는데 실행 계획에 등록일 범위가 없거나, 건수 질문이 목록 검색으로 처리되면 통과할 수 없습니다.
 
 선택 설정:
