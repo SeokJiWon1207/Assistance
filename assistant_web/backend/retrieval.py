@@ -19,6 +19,7 @@ from backend.common import (
     extract_title_from_chroma_text,
     normalize_for_match,
 )
+from backend.query_filters import filter_audit_for_source
 from backend.sources.chroma import execute_chroma_search
 from backend.sources.mantis import (
     execute_mantis_filter_search,
@@ -132,7 +133,7 @@ def run_retrieval_pipeline(
             execute_notion_search(
                 query_text,
                 limit,
-                effective_constraints,
+                constraints,
                 planned_terms=notion_terms,
             )
         )
@@ -251,14 +252,26 @@ def run_retrieval_pipeline(
     ):
         stages.append(execute_chroma_search(query_text, limit, constraints))
 
+    for stage in stages:
+        stage_meta = dict(stage.get("meta") or {})
+        stage_meta["filter_audit"] = filter_audit_for_source(
+            str(stage.get("source") or ""),
+            constraints.get("filter_clauses") or [],
+        )
+        stage["meta"] = stage_meta
+
     return {
         "query": query_text,
         "keyword": keyword,
-        "constraints": effective_constraints,
+        "constraints": constraints,
         "intent_plan": intent_plan,
         "query_plan": intent_plan,
         "limit": limit,
         "stages": stages,
+        "filter_audit": {
+            "planned_filters": constraints.get("filter_clauses") or [],
+            "sources": [stage.get("meta", {}).get("filter_audit", {}) for stage in stages],
+        },
     }
 
 

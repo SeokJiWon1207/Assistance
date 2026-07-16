@@ -34,6 +34,7 @@ from backend.config import (
     get_mantis_settings,
 )
 from backend.query_planning import plan_created_at_matches
+from backend.query_filters import normalize_filter_clauses, values_for_clause
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.understanding import (
     chroma_text_matches_constraints,
@@ -363,15 +364,32 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         constraints["customer_aliases"],
     ):
         return False
+    project_name = str(issue.get("project", {}).get("name", ""))
+    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+        project_name,
+        constraints["excluded_customer_aliases"],
+    ):
+        return False
     if constraints.get("platform_aliases") and not issue_matches_platform(
         issue,
         constraints["platform_aliases"],
     ):
         return False
+    if constraints.get("excluded_platform_aliases") and issue_matches_platform(
+        issue,
+        constraints["excluded_platform_aliases"],
+    ):
+        return False
     combined_text = issue_to_search_text(issue)
+    status_text = str(issue.get("status", {}).get("name") or issue.get("status", {}).get("label", ""))
     if not text_matches_status(
-        str(issue.get("status", {}).get("name") or issue.get("status", {}).get("label", "")),
+        status_text,
         constraints.get("statuses", []),
+    ):
+        return False
+    if constraints.get("excluded_statuses") and text_matches_status(
+        status_text,
+        constraints["excluded_statuses"],
     ):
         return False
     if constraints.get("issue_ids") and issue.get("id") not in constraints["issue_ids"]:
@@ -385,6 +403,31 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     handler_text = str(issue.get("handler", {}).get("real_name", ""))
     if not text_matches_people(combined_text, constraints.get("people", {}), handler_text):
         return False
+    reporter_text = str(issue.get("reporter", {}).get("real_name", ""))
+    field_text = {
+        "title": str(issue.get("summary", "")),
+        "keyword": combined_text,
+        "owner": handler_text,
+        "reporter": reporter_text,
+    }
+    for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
+        if clause["field"] not in field_text:
+            continue
+        candidate = normalize_for_match(field_text[clause["field"]])
+        values = [normalize_for_match(value) for value in values_for_clause(clause.get("value"))]
+        operator = clause["operator"]
+        if operator in {"equals", "in"} and not any(value == candidate for value in values):
+            return False
+        if operator in {"not_equals", "not_in"} and any(value == candidate for value in values):
+            return False
+        if operator == "contains" and not any(value in candidate for value in values):
+            return False
+        if operator == "not_contains" and any(value in candidate for value in values):
+            return False
+        if operator == "exists" and not candidate:
+            return False
+        if operator == "not_exists" and candidate:
+            return False
     return True
 
 

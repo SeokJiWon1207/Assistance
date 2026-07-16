@@ -29,6 +29,7 @@ from backend.config import (
     notion_post_json,
 )
 from backend.query_planning import extract_group_by
+from backend.query_filters import filter_clause_label, normalize_filter_clauses, values_for_clause
 from backend.schemas import ChatMessage, NotionPageUpdateRequest, NotionPageWriteRequest
 from backend.understanding import (
     ISSUE_LIST_INTENT_KEYWORDS,
@@ -760,6 +761,8 @@ def normalize_notion_page(
     owner = notion_owner(properties)
     due_date = notion_due_date(properties)
     page_type = notion_type(properties)
+    customer = notion_prop_by_keywords(properties, ["고객사", "customer"]) or ""
+    platform = notion_prop_by_keywords(properties, ["매체", "플랫폼", "media", "platform"]) or ""
     return {
         "id": page.get("id", ""),
         "title": title,
@@ -770,6 +773,8 @@ def normalize_notion_page(
         "owner_user_name_hints": notion_user_name_hints(properties),
         "due_date": due_date,
         "type": page_type,
+        "customer": customer,
+        "platform": platform,
         "database_id": database_id,
         "database_label": database_label or (database_id[-8:] if database_id else "Notion DB"),
         "url": page.get("url", ""),
@@ -811,10 +816,17 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
     normalized = normalize_for_match(text)
     status = ""
+    excluded_statuses: List[str] = []
     for candidate in sorted(NOTION_STATUS_QUERY_TERMS, key=len, reverse=True):
         if normalize_for_match(candidate) in normalized:
-            status = candidate
-            break
+            candidate_text = normalize_for_match(candidate)
+            if re.search(
+                re.escape(candidate_text) + r"(?:은|는|이|가)?(?:아닌|말고|제외|빼고)",
+                normalized,
+            ):
+                excluded_statuses.append(candidate)
+            elif not status:
+                status = candidate
 
     group_by = extract_group_by(text)
     owner_text = re.sub(
@@ -838,9 +850,93 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         "database_label": extract_notion_database_label_from_text(text) or "",
         "exact_title": extract_quoted_value(text) or "",
         "status": status,
+        "excluded_statuses": excluded_statuses,
         "owner": owner,
         "group_by": group_by,
     }
+
+
+def merge_common_notion_constraints(
+    notion_constraints: Dict[str, Any],
+    constraints: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """공통 필터 계획을 Notion 검색/후처리 조건으로 연결한다."""
+    merged = {
+        **notion_constraints,
+        "common_filter_clauses": normalize_filter_clauses((constraints or {}).get("filter_clauses") or []),
+        "excluded_statuses": list(
+            dict.fromkeys(
+                [
+                    *(notion_constraints.get("excluded_statuses") or []),
+                    *((constraints or {}).get("excluded_statuses") or []),
+                ]
+            )
+        ),
+    }
+    for clause in merged["common_filter_clauses"]:
+        values = values_for_clause(clause.get("value"))
+        if clause["field"] == "status":
+            if clause["operator"] in {"not_equals", "not_in"}:
+                merged["excluded_statuses"].extend(values)
+            elif clause["operator"] in {"equals", "in"} and values and not merged.get("status"):
+                merged["status"] = values[0]
+        elif clause["field"] == "owner" and clause["operator"] in {"equals", "in"} and values and not merged.get("owner"):
+            merged["owner"] = values[0]
+        elif clause["field"] == "database" and clause["operator"] in {"equals", "contains"} and values and not merged.get("database_label"):
+            merged["database_label"] = values[0]
+        elif clause["field"] == "title" and clause["operator"] == "equals" and values and not merged.get("exact_title"):
+            merged["exact_title"] = values[0]
+    merged["excluded_statuses"] = list(dict.fromkeys(merged["excluded_statuses"]))
+    return merged
+
+
+def notion_page_matches_common_filters(page: Dict[str, Any], clauses: List[Dict[str, Any]]) -> bool:
+    field_values = {
+        "customer": page.get("customer") or page.get("search_text", ""),
+        "platform": page.get("platform") or page.get("search_text", ""),
+        "status": page.get("status", ""),
+        "owner": page.get("owner", ""),
+        "created_at": page.get("created_time", ""),
+        "title": page.get("title", ""),
+        "keyword": "\n".join([page.get("search_text", ""), page.get("content", "")]),
+        "database": page.get("database_label", ""),
+    }
+    for clause in normalize_filter_clauses(clauses):
+        if clause["field"] not in field_values:
+            continue
+        candidate_raw = str(field_values[clause["field"]] or "")
+        candidate = normalize_for_match(candidate_raw)
+        values = [normalize_for_match(value) for value in values_for_clause(clause.get("value"))]
+        operator = clause["operator"]
+        # customer/platform/keyword are represented inside a property search
+        # document, so equality is intentionally compiled as membership.
+        document_field = clause["field"] in {"customer", "platform", "keyword"}
+        if operator in {"equals", "in"}:
+            matched = any(value in candidate if document_field else value == candidate for value in values)
+            if not matched:
+                return False
+        elif operator in {"not_equals", "not_in"}:
+            matched = any(value in candidate if document_field else value == candidate for value in values)
+            if matched:
+                return False
+        elif operator == "contains" and not any(value in candidate for value in values):
+            return False
+        elif operator == "not_contains" and any(value in candidate for value in values):
+            return False
+        elif operator == "exists" and not candidate:
+            return False
+        elif operator == "not_exists" and candidate:
+            return False
+        elif operator == "gte" and values and candidate_raw[:10] < str(clause.get("value"))[:10]:
+            return False
+        elif operator == "lte" and values and candidate_raw[:10] > str(clause.get("value"))[:10]:
+            return False
+        elif operator == "between" and len(values) == 2:
+            date_value = candidate_raw[:10]
+            raw_values = values_for_clause(clause.get("value"))
+            if not date_value or not (raw_values[0] <= date_value <= raw_values[1]):
+                return False
+    return True
 
 
 def notion_page_matches_constraints(page: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
@@ -859,6 +955,13 @@ def notion_page_matches_constraints(page: Dict[str, Any], constraints: Dict[str,
     if constraints.get("owner") and normalize_for_match(constraints["owner"]) not in normalize_for_match(
         page.get("owner", "")
     ):
+        return False
+    if any(
+        normalize_for_match(status) == normalize_for_match(page.get("status", ""))
+        for status in constraints.get("excluded_statuses", [])
+    ):
+        return False
+    if not notion_page_matches_common_filters(page, constraints.get("common_filter_clauses", [])):
         return False
     return True
 
@@ -925,7 +1028,12 @@ def notion_search_max_pages(constraints: Dict[str, Any]) -> int:
     # Structured filters and grouped summaries must scan the complete configured
     # databases; otherwise an arbitrary recent-300 window produces incomplete
     # counts and groups. Keep ordinary fuzzy searches bounded for latency.
-    if constraints.get("status") or constraints.get("owner") or constraints.get("group_by"):
+    if (
+        constraints.get("status")
+        or constraints.get("owner")
+        or constraints.get("group_by")
+        or constraints.get("common_filter_clauses")
+    ):
         return 30
     return 3
 
@@ -987,7 +1095,10 @@ def execute_notion_search(
             "meta": {"displayed_count": 0},
         }
 
-    notion_constraints = extract_notion_constraints(query_text)
+    notion_constraints = merge_common_notion_constraints(
+        extract_notion_constraints(query_text),
+        constraints,
+    )
     exact_title = notion_constraints.get("exact_title", "")
     terms = list(dict.fromkeys(planned_terms or build_notion_terms(query_text, constraints)))[:8]
     # Status/owner are structured filters. Leaving them in free-text terms makes
@@ -997,6 +1108,12 @@ def execute_notion_search(
         for value in (notion_constraints.get("status"), notion_constraints.get("owner"))
         if value
     }
+    structured_values.update(
+        normalize_for_match(value)
+        for clause in notion_constraints.get("common_filter_clauses", [])
+        for value in values_for_clause(clause.get("value"))
+        if clause.get("field") not in {"title", "keyword"}
+    )
     terms = [
         term
         for term in terms
@@ -1756,6 +1873,13 @@ def format_deterministic_notion_answer(
         criteria += f"({', '.join(database_labels)})"
     if terms:
         criteria += f", 키워드={', '.join(terms)}"
+    structured_labels = [
+        filter_clause_label(clause)
+        for clause in notion_constraints.get("common_filter_clauses", [])
+        if clause.get("field") not in {"keyword"}
+    ]
+    if structured_labels:
+        criteria += f", 조건={'; '.join(structured_labels)}"
     criteria += ", 정렬: 최근 수정순"
 
     count_intent = any(
