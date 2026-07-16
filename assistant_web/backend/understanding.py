@@ -54,6 +54,7 @@ from backend.query_planning import (
     infer_operation,
     plan_created_at_matches,
 )
+from backend.query_filters import add_filter_clause, normalize_filter_clauses
 
 
 # 검색 의도/도메인 라우팅에 쓰는 키워드·마커 테이블(질의 이해 계층 전용).
@@ -462,6 +463,39 @@ def infer_person_role(text: str) -> str:
     return "any"
 
 
+def expression_is_excluded(text: str, value: str) -> bool:
+    """값 주변의 일반적인 한국어 제외 표현을 판별한다.
+
+    필드마다 ``MTS는 빼고`` 같은 예외 정규식을 복제하지 않도록 고객사,
+    플랫폼, 상태, 키워드가 함께 사용하는 최소 공통 판별기다.
+    """
+    normalized_text = normalize_for_match(text)
+    normalized_value = normalize_for_match(value)
+    if not normalized_value:
+        return False
+    particle = r"(?:은|는|을|를|이|가)?"
+    bridge = r"(?:된|인)?(?:것|건|것도|건도|것은|건은)?"
+    negative = r"(?:제외|빼고|빼줘|빼주세요|말고|아닌|아니고|없이|제외한|제외하고|미포함)"
+    return bool(
+        re.search(re.escape(normalized_value) + particle + bridge + negative, normalized_text)
+        or re.search(r"(?:제외|미포함)" + particle + re.escape(normalized_value), normalized_text)
+    )
+
+
+def extract_explicit_keyword_filter_clauses(text: str) -> List[Dict[str, Any]]:
+    """제목/본문/키워드 문맥에서 명시한 포함·제외 단어만 구조화한다."""
+    if not re.search(r"제목|본문|내용|키워드", text, re.IGNORECASE):
+        return []
+    clauses: List[Dict[str, Any]] = []
+    token = r"([가-힣A-Za-z0-9_.-]{2,40}?)"
+    for match in re.finditer(token + r"(?:은|는|이|가)?\s*(?:없(?:는|고)?|제외|빼고|미포함)", text):
+        add_filter_clause(clauses, "keyword", "not_contains", match.group(1))
+    for match in re.finditer(token + r"(?:은|는|이|가)?\s*(?:있(?:는|고)?|포함)", text):
+        if not expression_is_excluded(text, match.group(1)):
+            add_filter_clause(clauses, "keyword", "contains", match.group(1))
+    return clauses
+
+
 def extract_people_constraints(text: str) -> Dict[str, Any]:
     # ``담당자별로`` and similar phrases specify result presentation, not a
     # person named "별로" nor the preceding object (for example ``항목을``).
@@ -527,11 +561,13 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     customer_aliases: List[str] = []
     customer_exact = None
     customer_matches: List[tuple[int, str, List[str]]] = []
+    excluded_customer_matches: List[tuple[int, str, List[str]]] = []
     for aliases in get_customer_alias_groups():
         for alias in aliases:
             normalized_alias = normalize_for_match(alias)
             if normalized_alias and normalized_alias in normalized_text:
-                customer_matches.append((len(normalized_alias), alias, aliases))
+                target = excluded_customer_matches if expression_is_excluded(text, alias) else customer_matches
+                target.append((len(normalized_alias), alias, aliases))
     if customer_matches:
         _, matched_alias, matched_group = max(customer_matches, key=lambda item: item[0])
         customer_key = matched_alias
@@ -561,11 +597,21 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
 
     platform_key = None
     platform_aliases: List[str] = []
+    excluded_platform_keys: List[str] = []
+    excluded_platform_aliases: List[str] = []
     for key, aliases in PLATFORM_ALIASES.items():
         if any(normalize_for_match(alias) in normalized_text for alias in [key, *aliases]):
-            platform_key = key
-            platform_aliases = aliases
-            break
+            matched_alias = next(
+                alias
+                for alias in [key, *aliases]
+                if normalize_for_match(alias) in normalized_text
+            )
+            if expression_is_excluded(text, matched_alias):
+                excluded_platform_keys.append(key)
+                excluded_platform_aliases.extend(aliases)
+            elif not platform_key:
+                platform_key = key
+                platform_aliases = aliases
 
     people = extract_people_constraints(remove_date_field_phrases(text))
     if people.get("names") and customer_aliases:
@@ -585,11 +631,50 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
                 people["role"] = None
 
     statuses = extract_status_constraints(text)
+    excluded_statuses: List[str] = []
+    for status_key, aliases in STATUS_ALIASES.items():
+        if any(
+            normalize_for_match(alias) in normalized_text and expression_is_excluded(text, alias)
+            for alias in [status_key, *aliases]
+        ):
+            excluded_statuses.append(status_key)
+    if excluded_statuses:
+        statuses = [status for status in statuses if status not in excluded_statuses]
     if people.get("names") and people.get("role") == "handler":
         statuses = [status for status in statuses if status != "assigned"]
 
     excluded_issue_ids = extract_excluded_issue_ids(text)
     issue_ids = [issue_id for issue_id in extract_issue_ids(text) if issue_id not in excluded_issue_ids]
+
+    filter_clauses: List[Dict[str, Any]] = []
+    if customer_key:
+        add_filter_clause(filter_clauses, "customer", "equals", customer_key)
+    for _, excluded_customer, _ in sorted(excluded_customer_matches, reverse=True):
+        add_filter_clause(filter_clauses, "customer", "not_equals", excluded_customer)
+    if platform_key:
+        add_filter_clause(filter_clauses, "platform", "equals", platform_key)
+    for excluded_platform in excluded_platform_keys:
+        add_filter_clause(filter_clauses, "platform", "not_equals", excluded_platform)
+    if statuses:
+        add_filter_clause(filter_clauses, "status", "in", statuses)
+    if excluded_statuses:
+        add_filter_clause(filter_clauses, "status", "not_in", excluded_statuses)
+    if issue_ids:
+        add_filter_clause(filter_clauses, "issue_id", "in", issue_ids)
+    if excluded_issue_ids:
+        add_filter_clause(filter_clauses, "issue_id", "not_in", excluded_issue_ids)
+    screen_numbers = extract_screen_numbers(text)
+    if screen_numbers:
+        add_filter_clause(filter_clauses, "screen_number", "in", screen_numbers)
+    created_at = extract_created_at_range(text)
+    if created_at:
+        add_filter_clause(
+            filter_clauses,
+            "created_at",
+            "between",
+            [created_at["from"], created_at["to"]],
+        )
+    filter_clauses.extend(extract_explicit_keyword_filter_clauses(text))
 
     return {
         "customer_key": customer_key,
@@ -597,13 +682,23 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         "customer_exact": customer_exact,
         "platform_key": platform_key,
         "platform_aliases": platform_aliases,
+        "excluded_platform_keys": list(dict.fromkeys(excluded_platform_keys)),
+        "excluded_platform_aliases": list(dict.fromkeys(excluded_platform_aliases)),
+        "excluded_customer_keys": list(
+            dict.fromkeys(match[1] for match in excluded_customer_matches)
+        ),
+        "excluded_customer_aliases": list(
+            dict.fromkeys(alias for _, _, aliases in excluded_customer_matches for alias in aliases)
+        ),
         "people": people,
         "statuses": statuses,
+        "excluded_statuses": excluded_statuses,
         "issue_ids": issue_ids,
         "exclude_issue_ids": excluded_issue_ids,
-        "screen_numbers": extract_screen_numbers(text),
+        "screen_numbers": screen_numbers,
         "date_fields": extract_date_field_constraints(text),
-        "created_at": extract_created_at_range(text),
+        "created_at": created_at,
+        "filter_clauses": filter_clauses,
     }
 
 
@@ -611,13 +706,54 @@ def has_constraint(constraints: Dict[str, Any]) -> bool:
     return bool(
         constraints.get("customer_key")
         or constraints.get("platform_key")
+        or constraints.get("excluded_customer_keys")
+        or constraints.get("excluded_platform_keys")
         or constraints.get("statuses")
         or constraints.get("issue_ids")
         or constraints.get("screen_numbers")
         or constraints.get("date_fields")
         or constraints.get("created_at")
         or constraints.get("people", {}).get("names")
+        or constraints.get("filter_clauses")
     )
+
+
+def legacy_filters_to_clauses(filters: Any) -> List[Dict[str, Any]]:
+    """기존 ``filters`` 객체를 공통 조건식으로 변환한다."""
+    if isinstance(filters, list):
+        return normalize_filter_clauses(filters)
+    if not isinstance(filters, dict):
+        return []
+    clauses: List[Dict[str, Any]] = []
+    for field, legacy_key in (
+        ("customer", "customer"),
+        ("platform", "platform"),
+        ("owner", "people"),
+        ("issue_id", "issue_ids"),
+        ("screen_number", "screen_numbers"),
+    ):
+        value = filters.get(legacy_key)
+        if not value:
+            continue
+        if legacy_key == "people" and isinstance(value, dict):
+            value = value.get("names") or []
+        add_filter_clause(
+            clauses,
+            field,
+            "in" if isinstance(value, list) else "equals",
+            value,
+        )
+    if filters.get("statuses"):
+        add_filter_clause(clauses, "status", "in", filters["statuses"])
+    created_at = filters.get("created_at")
+    if isinstance(created_at, dict) and created_at.get("from") and created_at.get("to"):
+        add_filter_clause(
+            clauses,
+            "created_at",
+            "between",
+            [created_at["from"], created_at["to"]],
+        )
+    return clauses
 
 
 def merge_query_plan_constraints(
@@ -629,28 +765,98 @@ def merge_query_plan_constraints(
         **constraints,
         "customer_aliases": list(constraints.get("customer_aliases") or []),
         "platform_aliases": list(constraints.get("platform_aliases") or []),
+        "excluded_platform_keys": list(constraints.get("excluded_platform_keys") or []),
+        "excluded_platform_aliases": list(constraints.get("excluded_platform_aliases") or []),
+        "excluded_customer_keys": list(constraints.get("excluded_customer_keys") or []),
+        "excluded_customer_aliases": list(constraints.get("excluded_customer_aliases") or []),
+        "excluded_statuses": list(constraints.get("excluded_statuses") or []),
         "people": dict(constraints.get("people") or {"names": [], "role": None}),
         "statuses": list(constraints.get("statuses") or []),
         "issue_ids": list(constraints.get("issue_ids") or []),
         "exclude_issue_ids": list(constraints.get("exclude_issue_ids") or []),
         "screen_numbers": list(constraints.get("screen_numbers") or []),
         "date_fields": dict(constraints.get("date_fields") or {}),
+        "filter_clauses": normalize_filter_clauses(constraints.get("filter_clauses") or []),
     }
     filters = (query_plan or {}).get("filters") or {}
 
-    if not merged.get("customer_key") and filters.get("customer"):
+    planned_clauses = normalize_filter_clauses((query_plan or {}).get("filter_clauses") or [])
+    planned_clauses.extend(
+        clause for clause in legacy_filters_to_clauses(filters) if clause not in planned_clauses
+    )
+    for clause in planned_clauses:
+        if clause not in merged["filter_clauses"]:
+            merged["filter_clauses"].append(clause)
+        field, operator, value = clause["field"], clause["operator"], clause.get("value")
+        values = value if isinstance(value, list) else [value]
+        if field == "platform":
+            for planned_value in values:
+                key = normalize_for_match(str(planned_value))
+                matched = next(
+                    (
+                        (platform_key, aliases)
+                        for platform_key, aliases in PLATFORM_ALIASES.items()
+                        if key in {normalize_for_match(platform_key), *(normalize_for_match(alias) for alias in aliases)}
+                    ),
+                    None,
+                )
+                if not matched:
+                    continue
+                platform_key, aliases = matched
+                if operator in {"not_equals", "not_in"}:
+                    merged["excluded_platform_keys"].append(platform_key)
+                    merged["excluded_platform_aliases"].extend(aliases)
+                    if merged.get("platform_key") == platform_key:
+                        merged["platform_key"], merged["platform_aliases"] = None, []
+                elif operator in {"equals", "in"} and not merged.get("platform_key"):
+                    merged["platform_key"], merged["platform_aliases"] = platform_key, list(aliases)
+        elif field == "customer":
+            for planned_value in values:
+                planned_customer = extract_query_constraints(str(planned_value))
+                if operator in {"not_equals", "not_in"}:
+                    merged["excluded_customer_keys"].append(str(planned_value))
+                    merged["excluded_customer_aliases"].extend(planned_customer.get("customer_aliases") or [str(planned_value)])
+                elif operator in {"equals", "in"} and not merged.get("customer_key"):
+                    if planned_customer.get("customer_key"):
+                        for key_name in ("customer_key", "customer_aliases", "customer_exact"):
+                            merged[key_name] = planned_customer.get(key_name)
+        elif field == "status" and operator in {"not_equals", "not_in"}:
+            merged["excluded_statuses"].extend(str(item) for item in values)
+        elif field == "status" and operator in {"equals", "in"} and not merged.get("statuses"):
+            merged["statuses"] = [str(item) for item in values]
+        elif field in {"owner", "reporter"} and operator in {"equals", "in"}:
+            merged["people"] = {
+                "names": list(dict.fromkeys(str(item) for item in values)),
+                "role": "handler" if field == "owner" else "reporter",
+            }
+        elif field == "issue_id":
+            numeric_values = [int(item) for item in values if str(item).isdigit()]
+            if operator in {"not_equals", "not_in"}:
+                merged["exclude_issue_ids"].extend(numeric_values)
+            elif operator in {"equals", "in"}:
+                merged["issue_ids"] = list(dict.fromkeys([*merged.get("issue_ids", []), *numeric_values]))
+        elif field == "screen_number" and operator in {"equals", "in"}:
+            merged["screen_numbers"] = list(
+                dict.fromkeys([*merged.get("screen_numbers", []), *(str(item) for item in values)])
+            )
+        elif field == "created_at" and operator == "between" and len(values) == 2:
+            start, end = str(values[0]), str(values[1])
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) and start <= end:
+                merged["created_at"] = {"from": start, "to": end, "precision": "range"}
+
+    if isinstance(filters, dict) and not merged.get("customer_key") and filters.get("customer"):
         planned_customer = extract_query_constraints(str(filters["customer"]))
         if planned_customer.get("customer_key"):
             for key in ("customer_key", "customer_aliases", "customer_exact"):
                 merged[key] = planned_customer.get(key)
 
-    if not merged.get("platform_key") and filters.get("platform"):
+    if isinstance(filters, dict) and not merged.get("platform_key") and filters.get("platform"):
         planned_platform = extract_query_constraints(str(filters["platform"]))
         if planned_platform.get("platform_key"):
             merged["platform_key"] = planned_platform["platform_key"]
             merged["platform_aliases"] = planned_platform["platform_aliases"]
 
-    created_at = filters.get("created_at")
+    created_at = filters.get("created_at") if isinstance(filters, dict) else None
     if isinstance(created_at, dict):
         start, end = str(created_at.get("from", "")), str(created_at.get("to", ""))
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) and start <= end:
@@ -659,6 +865,14 @@ def merge_query_plan_constraints(
                 "to": end,
                 "precision": str(created_at.get("precision") or "range"),
             }
+    for key in (
+        "excluded_platform_keys",
+        "excluded_platform_aliases",
+        "excluded_customer_keys",
+        "excluded_customer_aliases",
+        "excluded_statuses",
+    ):
+        merged[key] = list(dict.fromkeys(merged.get(key) or []))
     return merged
 
 
@@ -810,8 +1024,13 @@ def plan_search_intent_with_model(
         "KRX 제도개선, HTS, MTS, 차트, 조건검색 관련 요청은 별도 언급이 없어도 mantis다. "
         "both는 사용자가 두 데이터 소스를 함께 요구할 때만 사용한다. "
         "general은 사내 데이터 검색이 필요 없는 일반 대화다. "
-        "filters에는 customer, platform, statuses, people, issue_ids, screen_numbers, created_at을 넣을 수 있다. "
-        "'종료 안 된/종료되지 않은/미종료'는 closed가 아니라 open 상태다. "
+        "filters는 [{\"field\":필드,\"operator\":연산자,\"value\":값}] 배열이다. "
+        "field는 customer, platform, status, owner, reporter, issue_id, screen_number, created_at, "
+        "title, keyword, database 중 하나다. operator는 equals, not_equals, in, not_in, contains, "
+        "not_contains, exists, not_exists, gte, lte, between 중 하나다. "
+        "'빼고/제외/아닌/말고/없는'은 반드시 not_equals, not_in, not_contains, not_exists 중 하나로 표현해라. "
+        "예: 'MTS는 빼고'는 {\"field\":\"platform\",\"operator\":\"not_equals\",\"value\":\"mts\"}다. "
+        "'종료 안 된/종료되지 않은/미종료'는 {\"field\":\"status\",\"operator\":\"not_equals\",\"value\":\"closed\"}다. "
         "'담당자별로/상태별로/유형별로'처럼 결과를 묶어 달라는 요청은 사람 필터로 만들지 말고 "
         "각각 group_by를 owner/status/type으로 출력해라. "
         "created_at은 등록일 기준이며 from/to를 YYYY-MM-DD로 출력한다. 예를 들어 2025년은 "
@@ -824,8 +1043,10 @@ def plan_search_intent_with_model(
         "특정 인물의 공수 합산이면 {\"type\":\"person\",\"person\":\"이름\"}이고, "
         "누가 많이/적게 했는지 순위·비교를 물으면 {\"type\":\"ranking\"}이다. "
         "공수와 무관한 질문에는 effort를 넣지 마라. "
-        "형식: {\"source\":\"mantis\",\"operation\":\"count\",\"filters\":{\"customer\":\"신한\","
-        "\"created_at\":{\"from\":\"2025-01-01\",\"to\":\"2025-12-31\"}},\"terms\":[],\"limit\":null,"
+        "형식: {\"source\":\"mantis\",\"operation\":\"count\",\"filters\":["
+        "{\"field\":\"customer\",\"operator\":\"equals\",\"value\":\"신한\"},"
+        "{\"field\":\"created_at\",\"operator\":\"between\",\"value\":[\"2025-01-01\",\"2025-12-31\"]}],"
+        "\"terms\":[],\"limit\":null,"
         "\"sort\":{\"field\":\"created_at\",\"direction\":\"desc\"},\"reason\":\"연도별 고객사 이슈 집계\"}"
     )
     payload = {
@@ -908,7 +1129,10 @@ def plan_search_intent_with_model(
     return {
         "source": source,
         "operation": str(parsed.get("operation") or parsed.get("intent") or infer_operation(question)).lower(),
-        "filters": parsed.get("filters") if isinstance(parsed.get("filters"), dict) else {},
+        "filters": parsed.get("filters") if isinstance(parsed.get("filters"), (dict, list)) else {},
+        "filter_clauses": normalize_filter_clauses(
+            parsed.get("filters") if isinstance(parsed.get("filters"), list) else parsed.get("filter_clauses")
+        ),
         "sort": parsed.get("sort") if isinstance(parsed.get("sort"), dict) else {},
         "group_by": str(parsed.get("group_by") or "").strip().lower() or None,
         "limit": parsed.get("limit") if isinstance(parsed.get("limit"), int) else None,
@@ -933,6 +1157,26 @@ def text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
         constraints["platform_aliases"],
     ):
         return False
+    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+        text,
+        constraints["excluded_customer_aliases"],
+    ):
+        return False
+    if constraints.get("excluded_platform_aliases") and text_matches_any_alias(
+        text,
+        constraints["excluded_platform_aliases"],
+    ):
+        return False
+    normalized_text = normalize_for_match(text)
+    for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
+        if clause["field"] not in {"title", "keyword"}:
+            continue
+        values = clause.get("value") if isinstance(clause.get("value"), list) else [clause.get("value")]
+        normalized_values = [normalize_for_match(value) for value in values]
+        if clause["operator"] == "contains" and not any(value in normalized_text for value in normalized_values):
+            return False
+        if clause["operator"] == "not_contains" and any(value in normalized_text for value in normalized_values):
+            return False
     return True
 
 
@@ -1032,6 +1276,11 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         constraints["customer_aliases"],
     ):
         return False
+    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+        extract_project_from_chroma_text(text),
+        constraints["excluded_customer_aliases"],
+    ):
+        return False
     if constraints.get("platform_aliases"):
         # 재구축된 스냅샷 문서에는 '매체구분' 헤더가 있다. 있으면 그 값으로만 판정해
         # 본문의 "MTS에서는 됩니다" 같은 비교 언급 오탐을 막는다(라이브 검색의
@@ -1041,9 +1290,19 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         platform_source = media_type if media_type and media_type != "기타/미상" else text
         if not text_matches_any_alias(platform_source, constraints["platform_aliases"]):
             return False
+    if constraints.get("excluded_platform_aliases"):
+        media_type = extract_chroma_field(text, "매체구분")
+        platform_source = media_type if media_type and media_type != "기타/미상" else text
+        if text_matches_any_alias(platform_source, constraints["excluded_platform_aliases"]):
+            return False
     if not text_matches_status(
         extract_chroma_field(text, "현재 상태"),
         constraints.get("statuses", []),
+    ):
+        return False
+    if constraints.get("excluded_statuses") and text_matches_status(
+        extract_chroma_field(text, "현재 상태"),
+        constraints["excluded_statuses"],
     ):
         return False
     if not text_matches_issue_ids(text, constraints.get("issue_ids", [])):
@@ -1060,6 +1319,8 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         extract_chroma_field(text, "담당자"),
     ):
         return False
+    if not text_matches_constraints(text, {"filter_clauses": constraints.get("filter_clauses", [])}):
+        return False
     return True
 
 
@@ -1070,8 +1331,11 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
         constraints.get("platform_key") or "",
         *constraints.get("customer_aliases", []),
         *constraints.get("platform_aliases", []),
+        *constraints.get("excluded_customer_aliases", []),
+        *constraints.get("excluded_platform_aliases", []),
         *constraints.get("people", {}).get("names", []),
         *constraints.get("statuses", []),
+        *constraints.get("excluded_statuses", []),
         *[
             alias
             for status in constraints.get("statuses", [])
@@ -1114,10 +1378,18 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
+    filter_control_terms = {
+        "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
+        "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
+    }
     terms = [
         term
         for term in terms
-        if term and term.lower() not in STOPWORDS and term not in STOPWORDS and not is_control_search_term(term)
+        if term
+        and term.lower() not in STOPWORDS
+        and term not in STOPWORDS
+        and term not in filter_control_terms
+        and not is_control_search_term(term)
     ]
     if constraints:
         terms = [term for term in terms if not term_is_covered_by_constraints(term, constraints)]
@@ -1245,6 +1517,7 @@ FOLLOW_UP_STRONG_MARKERS = (
 FOLLOW_UP_WEAK_MARKERS = (
     "자세히", "자세하게", "추가로", "담당자", "상태",
     "진행", "언제", "왜", "어떻게", "무슨", "몇건", "몇 건",
+    "빼줘", "빼고", "제외", "말고", "바꿔", "변경", "개만", "건만", "최근",
 )
 
 
@@ -1351,20 +1624,22 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
         return "", False
     latest = recent[0]
     latest_constraints = extract_query_constraints(latest)
+    follow_up = is_follow_up_question(latest)
     if (
         latest_constraints.get("customer_key")
         or latest_constraints.get("platform_key")
         or latest_constraints.get("issue_ids")
         or latest_constraints.get("screen_numbers")
         or latest_constraints.get("people", {}).get("names")
-    ):
+    ) and not follow_up:
         return latest, False
-    if not is_follow_up_question(latest):
+    if not follow_up:
         return latest, False
 
     inherited: List[str] = []
-    seen_customer = False
-    seen_platform = False
+    seen_customer = bool(latest_constraints.get("customer_key") or latest_constraints.get("excluded_customer_keys"))
+    seen_platform = bool(latest_constraints.get("platform_key") or latest_constraints.get("excluded_platform_keys"))
+    seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses"))
     seen_issue_ids = False
     seen_screen_numbers = False
     for prior in recent[1:]:
@@ -1383,13 +1658,25 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
         if not seen_customer and prior_constraints.get("customer_aliases"):
             inherited.append(prior_constraints["customer_aliases"][0])
             seen_customer = True
+        if not seen_customer and prior_constraints.get("excluded_customer_keys"):
+            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_customer_keys"])
+            seen_customer = True
         if not seen_platform and prior_constraints.get("platform_key"):
             inherited.append(prior_constraints["platform_key"])
             seen_platform = True
+        if not seen_platform and prior_constraints.get("excluded_platform_keys"):
+            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_platform_keys"])
+            seen_platform = True
+        if not seen_status and prior_constraints.get("statuses"):
+            inherited.extend(prior_constraints["statuses"])
+            seen_status = True
+        if not seen_status and prior_constraints.get("excluded_statuses"):
+            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_statuses"])
+            seen_status = True
         for name in prior_constraints.get("people", {}).get("names") or []:
             if name not in inherited:
                 inherited.append(name)
-        if seen_customer and seen_platform and seen_issue_ids and seen_screen_numbers:
+        if seen_customer and seen_platform and seen_status and seen_issue_ids and seen_screen_numbers:
             break
 
     if not inherited:

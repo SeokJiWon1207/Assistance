@@ -12,6 +12,8 @@ import re
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.query_filters import add_filter_clause, normalize_filter_clauses
+
 
 COUNT_MARKERS = ("몇개", "몇건", "건수", "총몇", "개수")
 SUM_MARKERS = ("합계", "총합", "합이", "합은", "더하면", "공수합")
@@ -196,8 +198,19 @@ def build_query_plan(
     constraints = constraints or {}
     model_plan = model_plan or {}
     model_filters = model_plan.get("filters") if isinstance(model_plan.get("filters"), dict) else {}
+    model_filter_clauses = normalize_filter_clauses(
+        model_plan.get("filter_clauses")
+        or (model_plan.get("filters") if isinstance(model_plan.get("filters"), list) else [])
+    )
     detected_created_at = extract_created_at_range(question)
     model_created_at = model_filters.get("created_at") or model_plan.get("created_at")
+    if not model_created_at:
+        for clause in model_filter_clauses:
+            if clause["field"] == "created_at" and clause["operator"] == "between":
+                values = clause.get("value") or []
+                if len(values) == 2:
+                    model_created_at = {"from": str(values[0]), "to": str(values[1]), "precision": "range"}
+                    break
     if model_created_at and not detected_created_at and not question_has_temporal_expression(question):
         # 질문에 시점 표현이 없는데 모델만 날짜 범위를 내놓은 경우 → 환각으로 간주하고 버린다.
         model_created_at = None
@@ -235,12 +248,26 @@ def build_query_plan(
         "date_fields": dict(constraints.get("date_fields") or {}),
         "created_at": created_at,
     }
+    filter_clauses = normalize_filter_clauses(constraints.get("filter_clauses") or [])
+    for clause in model_filter_clauses:
+        if clause["field"] == "created_at" and not question_has_temporal_expression(question):
+            continue
+        if clause not in filter_clauses:
+            filter_clauses.append(clause)
+    if created_at:
+        add_filter_clause(
+            filter_clauses,
+            "created_at",
+            "between",
+            [created_at["from"], created_at["to"]],
+        )
     terms = model_plan.get("terms") or source_plan.get("terms") or []
     return {
-        "version": 1,
+        "version": 2,
         "operation": operation,
         "source": source,
         "filters": filters,
+        "filter_clauses": filter_clauses,
         "sort": model_plan.get("sort") or {"field": "created_at", "direction": "desc"},
         "group_by": group_by,
         "limit": requested_limit,
@@ -291,6 +318,27 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         "status": "pass" if source_passed else "fail",
         "detail": f"소스={source or '미상'}",
     })
+    clauses = normalize_filter_clauses(plan.get("filter_clauses") or [])
+    raw_clauses = plan.get("filter_clauses") or []
+    schema_passed = len(clauses) == len(raw_clauses) if isinstance(raw_clauses, list) else False
+    checks.append({
+        "id": "filter_schema",
+        "label": "필터 스키마 검증",
+        "status": "pass" if schema_passed else "fail",
+        "detail": f"검증된 조건={len(clauses)}개",
+    })
+    has_negative_phrase = bool(re.search(r"빼고|제외|아닌|말고|없이|미포함|없는", question))
+    if has_negative_phrase:
+        negative_passed = any(
+            clause["operator"] in {"not_equals", "not_in", "not_contains", "not_exists"}
+            for clause in clauses
+        )
+        checks.append({
+            "id": "negative_intent",
+            "label": "제외 조건 해석",
+            "status": "pass" if negative_passed else "fail",
+            "detail": "제외 연산자 반영" if negative_passed else "제외 표현이 포함 조건으로 뒤집힘",
+        })
     return {
         "valid": all(check["status"] == "pass" for check in checks),
         "checks": checks,
