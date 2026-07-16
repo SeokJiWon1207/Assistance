@@ -1,0 +1,579 @@
+import unittest
+from unittest.mock import patch
+import requests
+from datetime import date
+
+from backend.app import (
+    build_similar_issue_search_text,
+    build_mantis_count_report,
+    build_verification_report,
+    chroma_text_matches_constraints,
+    extract_effort_query,
+    extract_query_constraints,
+    format_deterministic_issue_answer,
+    generate_follow_up_questions,
+    issue_matches_constraints,
+    notion_post_json,
+    run_retrieval_pipeline,
+)
+from backend.query_planning import (
+    build_query_plan,
+    extract_created_at_range,
+    infer_operation,
+    plan_created_at_matches,
+    question_has_temporal_expression,
+    validate_query_plan,
+)
+
+
+class QueryPlanningTests(unittest.TestCase):
+    def test_model_created_at_is_dropped_without_temporal_expression(self):
+        # "최근"만 있는 질문에서 플래너가 지어낸 날짜 필터는 버려야 한다.
+        # (2026-07-09 정확도 점검: "담당자 OO의 최근 이슈 2개"가 최근 7일로 오해석돼 빈 결과)
+        question = "담당자 권한별의 최근 이슈 2개 보여줘"
+        self.assertFalse(question_has_temporal_expression(question))
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "confidence": 0.98},
+            {},
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "search",
+                "filters": {"created_at": {"from": "2026-07-02", "to": "2026-07-09"}},
+            },
+        )
+        self.assertIsNone(plan["filters"]["created_at"])
+
+    def test_model_created_at_is_kept_with_temporal_expression(self):
+        # 시점 표현이 실제로 있으면 규칙이 못 잡아도 모델 날짜를 수용한다.
+        question = "최근 30일 신한 이슈 보여줘"
+        self.assertTrue(question_has_temporal_expression(question))
+        self.assertTrue(question_has_temporal_expression("작년 하나증권 이슈"))
+        self.assertTrue(question_has_temporal_expression("2025년 12월 이슈 몇 개야"))
+        self.assertFalse(question_has_temporal_expression("최근 이슈 보여줘"))
+        self.assertFalse(question_has_temporal_expression("최신 이슈 5개"))
+    def test_year_and_count_are_structured(self):
+        question = "2025년 신한 이슈 몇개야?"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "confidence": 0.98},
+            {"customer_key": "신한"},
+        )
+        self.assertEqual(plan["operation"], "count")
+        self.assertEqual(
+            plan["filters"]["created_at"],
+            {"from": "2025-01-01", "to": "2025-12-31", "precision": "year"},
+        )
+        self.assertTrue(validate_query_plan(question, plan)["valid"])
+
+    def test_month_range_uses_last_calendar_day(self):
+        self.assertEqual(
+            extract_created_at_range("2024년 2월 신한 이슈"),
+            {"from": "2024-02-01", "to": "2024-02-29", "precision": "month"},
+        )
+
+    def test_count_and_requested_list_are_distinct(self):
+        self.assertEqual(infer_operation("신한 이슈 몇 개야?"), "count")
+        self.assertEqual(infer_operation("신한 이슈 5개만 보여줘"), "search")
+        self.assertEqual(infer_operation("2026년 2월 석지원의 공수를 알고 싶어"), "aggregate")
+        self.assertEqual(infer_operation("#30967과 비슷한 과거 이슈 찾아줘"), "search")
+        self.assertEqual(infer_operation("#30967 이슈 내용을 알려줘"), "get")
+
+    def test_grouping_is_preserved_in_query_plan(self):
+        question = "노션에서 결재요청 상태인 항목을 담당자별로 정리해줘"
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(question, {"source": "notion"}, constraints)
+        self.assertEqual(plan["group_by"], "owner")
+        self.assertEqual(plan["filters"]["people"], {"names": [], "role": None})
+
+    def test_effort_query_uses_detected_person_when_date_separates_words(self):
+        self.assertEqual(
+            extract_effort_query("석지원의 2025년 7월 공수 합 알려줘"),
+            {"person": "석지원", "year": 2025, "month": 7},
+        )
+
+    def test_effort_query_accepts_year_without_month(self):
+        self.assertEqual(
+            extract_effort_query("석지원의 올해 공수 합 알려줘"),
+            {"person": "석지원", "year": date.today().year, "period": "year"},
+        )
+
+    def test_invalid_model_operation_and_year_are_repaired(self):
+        plan = build_query_plan(
+            "2025년 신한 이슈 5개 보여줘",
+            {"source": "mantis"},
+            {"customer_key": "신한"},
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "count",
+                "filters": {"created_at": {"from": "2026-01-01", "to": "2026-12-31"}},
+            },
+        )
+        self.assertEqual(plan["operation"], "search")
+        self.assertEqual(plan["filters"]["created_at"]["from"], "2025-01-01")
+
+    def test_validation_rejects_missing_year(self):
+        plan = build_query_plan("신한 이슈 보여줘", {"source": "mantis"}, {"customer_key": "신한"})
+        result = validate_query_plan("2025년 신한 이슈 보여줘", plan)
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["checks"][0]["id"], "date_intent")
+
+    def test_created_at_range_matching(self):
+        date_range = {"from": "2025-01-01", "to": "2025-12-31"}
+        self.assertTrue(plan_created_at_matches("2025-10-23", date_range))
+        self.assertFalse(plan_created_at_matches("2026-01-21", date_range))
+
+    def test_issue_constraint_applies_registration_year(self):
+        constraints = extract_query_constraints("2025년에 등록된 신한 이슈")
+        self.assertTrue(issue_matches_constraints(self.issue(1, "2025-10-23"), constraints))
+        self.assertFalse(issue_matches_constraints(self.issue(2, "2026-01-21"), constraints))
+
+    @patch("backend.answers.collect_mantis_live_ids_in_range", return_value={})
+    @patch("backend.answers.scan_mantis_documents")
+    def test_count_report_counts_all_matches_not_top_five(self, scan_documents, _live):
+        # 날짜 조건이 있으면 스냅샷 matched_ids와 라이브 결과를 합집합한다.
+        # 라이브는 빈 결과로 목킹해 스냅샷 2건이 그대로 유지되는지 검증한다.
+        scan_documents.return_value = {
+            "available": True,
+            "scanned_count": 4,
+            "matched_count": 2,
+            "matched_ids": {3, 2},
+            "issues": [
+                self.normalized_issue(3, "2025-12-22"),
+                self.normalized_issue(2, "2025-10-23"),
+            ],
+            "reason": "",
+        }
+        question = "2025년 신한 이슈 몇개야?"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "confidence": 0.98},
+            extract_query_constraints(question),
+        )
+        report = build_mantis_count_report(question, plan)
+        self.assertIsNotNone(report)
+        self.assertIn("총 2건입니다.", report["content"])
+        self.assertEqual(report["retrieval"]["stages"][0]["meta"]["total_count"], 2)
+        self.assertEqual([source["issue_id"] for source in report["sources"]], [3, 2])
+
+        verification = build_verification_report(
+            question,
+            report["content"],
+            report["sources"],
+            report["retrieval"],
+            "deterministic_mantis_count",
+        )
+        self.assertEqual(verification["score"], 100)
+        self.assertEqual(verification["status"], "pass")
+
+    @patch("backend.answers.scan_mantis_documents")
+    def test_month_count_merges_live_when_snapshot_misses_dates(self, scan_documents):
+        # 옛 포맷 스냅샷은 등록일이 없어 월 필터에서 0으로 샌다(matched_ids 비어 있음).
+        # 라이브에서 실제 등록일로 매칭된 2건이 합집합돼 총 2건으로 보완돼야 한다.
+        scan_documents.return_value = {
+            "available": True,
+            "scanned_count": 30000,
+            "matched_count": 0,
+            "matched_ids": set(),
+            "issues": [],
+            "reason": "",
+        }
+        live = {
+            "30411": {"id": 30411, "summary": "CAPE 2025.12 서버정기점검",
+                      "project": {"name": "146케이프증권(CAPE증권)"},
+                      "status": {"name": "종료된 이슈"}, "created_at": "2025-12-29"},
+            "30392": {"id": 30392, "summary": "CAPE 2025.12 정기점검",
+                      "project": {"name": "146케이프증권(CAPE증권)"},
+                      "status": {"name": "종료된 이슈"}, "created_at": "2025-12-22"},
+        }
+        question = "최신 800건 기준으로 2025년 12월에 CAPE증권에서 들어온 이슈는 몇 개야?"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "planner": "rule", "confidence": 1.0},
+            extract_query_constraints(question),
+            {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
+        )
+        with patch("backend.answers.collect_mantis_live_ids_in_range", return_value=live):
+            report = build_mantis_count_report(question, plan)
+        self.assertIsNotNone(report)
+        self.assertIn("총 2건입니다.", report["content"])
+        self.assertIn("실시간 최신 800건 기준", report["content"])
+        self.assertEqual(report["retrieval"]["stages"][0]["meta"]["total_count"], 2)
+
+    @patch("backend.answers.scan_mantis_documents")
+    def test_month_count_uses_only_live_window_when_latest_snapshot_is_explicit(self, scan_documents):
+        # "최신 800건 기준"에서는 로컬 스냅샷의 과거 이슈를 합치면 안 된다.
+        # 스냅샷 {3,2}, 라이브 최신 창 {2,9}라면 답은 라이브 창의 2건이다.
+        scan_documents.return_value = {
+            "available": True,
+            "scanned_count": 30000,
+            "matched_count": 2,
+            "matched_ids": {3, 2},
+            "issues": [self.normalized_issue(3, "2025-12-22"), self.normalized_issue(2, "2025-12-10")],
+            "reason": "",
+        }
+        live = {
+            "2": {"id": 2, "summary": "dup", "project": {"name": "132SHGM(신한)"},
+                  "status": {"name": "종료된 이슈"}, "created_at": "2025-12-10"},
+            "9": {"id": 9, "summary": "live-only", "project": {"name": "132SHGM(신한)"},
+                  "status": {"name": "종료된 이슈"}, "created_at": "2025-12-28"},
+        }
+        question = "최신 800건 기준으로 2025년 12월 신한 이슈 몇개야?"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "planner": "rule", "confidence": 1.0},
+            extract_query_constraints(question),
+            {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
+        )
+        with patch("backend.answers.collect_mantis_live_ids_in_range", return_value=live):
+            report = build_mantis_count_report(question, plan)
+        self.assertIn("총 2건입니다.", report["content"])
+        self.assertIn("실시간 최신 800건 기준", report["content"])
+
+    def test_audit_rejects_legacy_plan_that_omits_year_and_count(self):
+        question = "2025년 신한 이슈 몇개야?"
+        source = {
+            "type": "mantis",
+            "issue_id": 30943,
+            "title": "테스트",
+            "project": "132SHGM(신한굿모닝증권)",
+            "created_at": "2026-04-27",
+        }
+        retrieval = {
+            "constraints": extract_query_constraints("신한 이슈"),
+            "intent_plan": {"source": "mantis", "terms": []},
+            "stages": [{"source": "chroma_db", "status": "ok"}],
+        }
+        verification = build_verification_report(
+            question,
+            "신한 관련 최신 이슈 5건입니다. #30943",
+            [source],
+            retrieval,
+            "deterministic_issue_list",
+        )
+        self.assertLess(verification["score"], 100)
+        self.assertEqual(verification["status"], "fail")
+        intent = next(item for item in verification["dimensions"] if item["id"] == "intent")
+        self.assertEqual(intent["status"], "fail")
+
+    @patch("backend.retrieval.execute_chroma_search")
+    @patch("backend.retrieval.execute_mantis_page_scan")
+    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    def test_retrieval_pipeline_executes_structured_date_filter(self, snapshot_search, page_scan, chroma_search):
+        snapshot_search.return_value = {"source": "mantis_snapshot", "status": "ok", "issues_list": []}
+        question = "2025년에 등록된 신한 MTS 이슈 5개 보여줘"
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(question, {"source": "mantis"}, constraints)
+        result = run_retrieval_pipeline(
+            question,
+            5,
+            {"mantis": True, "notion": False, "vectorDb": True},
+            intent_plan=plan,
+        )
+        self.assertEqual(result["constraints"]["created_at"]["from"], "2025-01-01")
+        self.assertEqual(result["query_plan"]["operation"], "search")
+        passed_constraints = snapshot_search.call_args.args[1]
+        self.assertEqual(passed_constraints["created_at"]["to"], "2025-12-31")
+        page_scan.assert_not_called()
+        chroma_search.assert_not_called()
+
+    @patch("backend.retrieval.execute_mantis_filter_search")
+    @patch("backend.retrieval.execute_mantis_page_scan")
+    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    def test_structured_customer_query_uses_snapshot_tool(
+        self, snapshot_search, page_scan, filter_search
+    ):
+        snapshot_search.return_value = {"source": "mantis_snapshot", "status": "ok", "issues_list": []}
+        page_scan.return_value = {"source": "mantis_page_scan", "status": "ok", "issues_list": []}
+        filter_search.return_value = {"source": "mantis_filter", "status": "ok", "issues_list": []}
+        question = "신한 MTS 최근 이슈 5개 보여줘"
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(question, {"source": "mantis"}, constraints)
+        run_retrieval_pipeline(
+            question,
+            5,
+            {"mantis": True, "notion": False, "vectorDb": False},
+            intent_plan=plan,
+        )
+        snapshot_search.assert_called_once()
+
+    @patch("backend.retrieval.execute_mantis_filter_search")
+    @patch("backend.retrieval.execute_mantis_page_scan")
+    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    @patch("backend.retrieval.execute_chroma_search")
+    @patch("backend.sources.mantis.fetch_mantis_issue_by_id")
+    def test_similar_issue_query_uses_reference_issue_for_chroma(
+        self,
+        fetch_issue,
+        chroma_search,
+        snapshot_search,
+        page_scan,
+        filter_search,
+    ):
+        fetch_issue.return_value = {
+            "id": 30967,
+            "project": {"name": "146케이프증권(CAPE증권)"},
+            "summary": "[7600] 차트 지표 실시간 미갱신 현상",
+            "status": {"name": "assigned"},
+            "handler": {"real_name": "석지원"},
+            "created_at": "2026-04-01T00:00:00+09:00",
+            "description": "차트 지표가 실시간으로 갱신되지 않는 현상",
+            "custom_fields": [
+                {"field": {"name": "화면번호"}, "value": "7600"},
+                {"field": {"name": "매체구분"}, "value": "HTS"},
+            ],
+        }
+        chroma_search.return_value = {
+            "source": "chroma_db",
+            "status": "ok",
+            "documents": [{"issue_id": 30812, "content": "이슈 ID: #30812\n[제목] 차트 지표 미갱신"}],
+            "meta": {"displayed_count": 1},
+        }
+
+        question = "#30967과 비슷한 과거 이슈 찾아줘"
+        plan = build_query_plan(question, {"source": "mantis"}, extract_query_constraints(question))
+        result = run_retrieval_pipeline(
+            question,
+            5,
+            {"mantis": True, "notion": False, "vectorDb": True},
+            intent_plan=plan,
+        )
+
+        self.assertEqual([stage["source"] for stage in result["stages"]], ["mantis_id_lookup_reference", "chroma_similar"])
+        self.assertEqual(result["stages"][0]["issues_list"], [])
+        similar_constraints = chroma_search.call_args.args[2]
+        self.assertEqual(similar_constraints["issue_ids"], [])
+        self.assertEqual(similar_constraints["exclude_issue_ids"], [30967])
+        self.assertEqual(similar_constraints["max_issue_id_exclusive"], 30967)
+        self.assertIn("차트 지표", chroma_search.call_args.args[0])
+        self.assertTrue(chroma_search.call_args.kwargs["semantic"])
+        snapshot_search.assert_not_called()
+        page_scan.assert_not_called()
+        filter_search.assert_not_called()
+
+    def test_similar_issue_search_text_prioritizes_reusable_terms(self):
+        issue = {
+            "id": 30288,
+            "project": "120NH(NH증권)",
+            "summary": "NH조건검색 서버 자원사용률이 100%임박 상황",
+            "media_type": "HTS",
+            "screen_number": "미상",
+            "description": "NH조건검색 서버 자원사용률이 100%임박 상황",
+        }
+
+        search_text = build_similar_issue_search_text(issue)
+
+        self.assertEqual(search_text, "NH조건검색 서버 자원사용률이 100%임박 상황")
+        self.assertNotIn("120NH", search_text)
+        self.assertNotIn("NH증권", search_text)
+
+    def test_follow_up_questions_exclude_current_issue_from_more_search(self):
+        source = {
+            "type": "mantis",
+            "issue_id": 30964,
+            "project": "117Hantu(한투증권)",
+            "title": "[0301] 메모리 관련 검토 및 개선",
+            "detail": {"screen_number": "0301"},
+        }
+        followups = generate_follow_up_questions("한투 최근 이슈", [source], None, "deterministic_issue_list")
+
+        self.assertEqual(followups[0], "#30964 변경 이력이나 참고할 만한 내용을 더 자세히 알려줘")
+        self.assertEqual(followups[1], "#30964과 비슷한 과거 이슈 찾아줘")
+        self.assertEqual(
+            followups[2],
+            "117Hantu(한투증권)에서 #30964와 비슷한 과거 메모리 개선 이슈 찾아줘",
+        )
+        constraints = extract_query_constraints(followups[2])
+        self.assertEqual(constraints["issue_ids"], [30964])
+        self.assertEqual(constraints["customer_exact"], "117Hantu(한투증권)")
+
+    def test_issue_history_follow_up_includes_history_and_notes(self):
+        issue = self.normalized_issue(30964, "2026-04-30")
+        issue.update(
+            {
+                "summary": "[0301] 메모리 관련 검토 및 개선",
+                "updated_at": "2026-05-06",
+                "history": [
+                    {
+                        "created_at": "2026-05-06T14:34:41",
+                        "user": "우동헌",
+                        "field": "상태",
+                        "message": "상태",
+                        "change": "확인된 이슈 => 개발완료",
+                    }
+                ],
+                "notes": [
+                    {
+                        "created_at": "2026-04-30T09:43:55",
+                        "reporter": "우동헌",
+                        "text": "이전 이슈 #30883 참고. TimeMeterPDLL 해제 처리 확인",
+                    }
+                ],
+            }
+        )
+        retrieval = {
+            "stages": [{"source": "mantis_id_lookup", "status": "ok", "issues_list": [issue], "meta": {}}]
+        }
+        question = "#30964 변경 이력이나 참고할 만한 내용을 더 자세히 알려줘"
+        answer = format_deterministic_issue_answer(
+            question,
+            extract_query_constraints(question),
+            retrieval,
+            5,
+        )
+
+        self.assertIn("**변경 이력**", answer)
+        self.assertIn("확인된 이슈 => 개발완료", answer)
+        self.assertIn("**참고 노트**", answer)
+        self.assertIn("#30883", answer)
+
+    def test_similar_issue_answer_uses_base_issue_as_criteria_not_filter(self):
+        retrieval = {
+            "stages": [
+                {
+                    "source": "mantis_id_lookup_reference",
+                    "status": "ok",
+                    "issues_list": [],
+                    "meta": {"reference_only": True, "reference_issues": [{"id": 30288}]},
+                },
+                {
+                    "source": "chroma_similar",
+                    "status": "ok",
+                    "documents": [
+                        {
+                            "issue_id": 30848,
+                            "content": (
+                                "[Mantis 이슈 정보]\n"
+                                "- 이슈 ID: #30848\n"
+                                "- 프로젝트(고객사): 120NH(NH증권)\n"
+                                "- 현재 상태: 종료된 이슈\n"
+                                "- 담당자: 정희진\n\n"
+                                "[제목]\n조건검색 서버 관련 확인 요청\n\n"
+                                "[고객사 본문 요청 내용]\n확인 요청"
+                            ),
+                        }
+                    ],
+                    "meta": {"base_issue_ids": [30288]},
+                },
+            ]
+        }
+
+        answer = format_deterministic_issue_answer(
+            "#30288과 비슷한 과거 이슈 찾아줘",
+            extract_query_constraints("#30288과 비슷한 과거 이슈 찾아줘"),
+            retrieval,
+            5,
+        )
+
+        self.assertIn("기준 이슈=#30288", answer)
+        self.assertNotIn("이슈 ID=30288", answer)
+        self.assertIn("**ID**: 30848", answer)
+
+        report = build_verification_report(
+            "#30288과 비슷한 과거 이슈 찾아줘",
+            answer,
+            [{"type": "chroma", "issue_id": 30848, "title": "조건검색 서버 관련 확인 요청"}],
+            retrieval,
+            "deterministic_issue_list",
+        )
+        retrieval_dimension = next(item for item in report["dimensions"] if item["id"] == "retrieval")
+        issue_id_check = next(item for item in retrieval_dimension["checks"] if item["id"] == "issue_ids")
+        constraints_check = next(item for item in retrieval_dimension["checks"] if item["id"] == "constraints")
+        self.assertEqual(issue_id_check["status"], "pass")
+        self.assertEqual(constraints_check["status"], "pass")
+
+    def test_similar_issue_answer_preserves_similarity_order(self):
+        def document(issue_id, title):
+            return {
+                "issue_id": issue_id,
+                "content": (
+                    f"[Mantis 이슈 정보]\n- 이슈 ID: #{issue_id}\n"
+                    "- 프로젝트(고객사): 테스트\n- 현재 상태: 종료된 이슈\n\n"
+                    f"[제목]\n{title}\n\n[고객사 본문 요청 내용]\n내용"
+                ),
+            }
+
+        retrieval = {
+            "stages": [
+                {
+                    "source": "mantis_id_lookup_reference",
+                    "status": "ok",
+                    "issues_list": [],
+                    "meta": {"reference_only": True, "displayed_count": 1},
+                },
+                {
+                    "source": "chroma_similar",
+                    "status": "ok",
+                    "documents": [document(100, "가장 유사"), document(300, "두 번째 유사")],
+                    "meta": {"base_issue_ids": [400], "displayed_count": 2},
+                }
+            ]
+        }
+        answer = format_deterministic_issue_answer(
+            "#400과 비슷한 과거 이슈 찾아줘",
+            extract_query_constraints("#400과 비슷한 과거 이슈 찾아줘"),
+            retrieval,
+            5,
+        )
+
+        self.assertLess(answer.index("**ID**: 100"), answer.index("**ID**: 300"))
+        self.assertIn("정렬: 의미 유사도 기준", answer)
+        self.assertNotIn("총 3건", answer)
+
+    @patch("backend.app.requests.post")
+    def test_notion_tool_timeout_budget_caps_retries(self, post):
+        post.side_effect = requests.Timeout("timeout")
+        with patch.dict("os.environ", {"NOTION_TOOL_TIMEOUT_SECONDS": "7", "NOTION_TOOL_MAX_RETRIES": "0"}):
+            with self.assertRaises(requests.Timeout):
+                notion_post_json("https://example.invalid", {}, timeout=45, retries=2)
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.kwargs["timeout"], 7)
+
+    def test_chroma_status_uses_status_field_not_body_words(self):
+        document = """[Mantis 이슈 정보]
+- 이슈 ID: #30985
+- 프로젝트(고객사): 113HMC(HMC증권)
+- 현재 상태: 정보 부족
+
+[제목]
+확인 요청
+
+[고객사 본문 요청 내용]
+원인을 확인해 주세요.
+"""
+        self.assertFalse(chroma_text_matches_constraints(document, {"statuses": ["confirmed"]}))
+
+    @staticmethod
+    def issue(issue_id, created_at, project="132SHGM(신한굿모닝증권)"):
+        return {
+            "id": issue_id,
+            "project": {"name": project},
+            "summary": f"테스트 이슈 {issue_id}",
+            "status": {"name": "closed"},
+            "handler": {"real_name": "석지원"},
+            "reporter": {"real_name": "테스터"},
+            "created_at": created_at,
+            "updated_at": created_at,
+            "description": "테스트",
+            "custom_fields": [],
+        }
+
+    @staticmethod
+    def normalized_issue(issue_id, created_at, project="132SHGM(신한굿모닝증권)"):
+        return {
+            "id": issue_id,
+            "project": project,
+            "summary": f"테스트 이슈 {issue_id}",
+            "status": "closed",
+            "handler": "석지원",
+            "created_at": created_at,
+            "description": "테스트",
+            "date_fields": {},
+            "effort_fields": {},
+        }
+
+
+if __name__ == "__main__":
+    unittest.main()

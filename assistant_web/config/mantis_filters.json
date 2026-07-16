@@ -1,0 +1,16 @@
+{
+  "filters": [
+    {
+      "name": "신한투자증권 최근 이슈",
+      "filter_id": null,
+      "aliases": ["신한투자증권", "신한투자", "신한"],
+      "enabled": false
+    },
+    {
+      "name": "유안타증권 최근 이슈",
+      "filter_id": null,
+      "aliases": ["유안타증권", "유안타"],
+      "enabled": false
+    }
+  ]
+}

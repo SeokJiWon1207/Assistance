@@ -1,0 +1,289 @@
+"""순수 헬퍼 함수 모음(Layer 1).
+
+외부 I/O 없이 문자열·숫자·날짜를 다루거나, config의 상수 테이블만 참조하는
+함수들이다. backend.config 외의 backend 모듈은 참조하지 않는다(순환 방지).
+app.py는 `from backend.common import *`로 이 이름들을 그대로 재노출한다.
+"""
+
+import re
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+
+from backend.config import (
+    AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES,
+    CUSTOMER_ALIASES,
+    PERSON_BLOCKLIST,
+    PERSON_ROLE_ALIASES,
+    PLATFORM_ALIASES,
+    STATUS_ALIASES,
+    STOPWORDS,
+)
+
+
+def parse_date(value: str) -> Optional[date]:
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def clamp_float(value: Optional[float], minimum: float, maximum: float) -> Optional[float]:
+    if value is None:
+        return None
+    return max(minimum, min(float(value), maximum))
+
+
+def clamp_int(value: Optional[int], minimum: int, maximum: int) -> Optional[int]:
+    if value is None:
+        return None
+    return max(minimum, min(int(value), maximum))
+
+
+def compact_text(value: str, max_chars: int = 520) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "..."
+
+
+def extract_quoted_value(text: str) -> str:
+    match = re.search(r"[\"'“”‘’](.+?)[\"'“”‘’]", text)
+    return match.group(1).strip() if match else ""
+
+
+def normalize_for_match(value: str) -> str:
+    return re.sub(r"\s+", "", value).casefold()
+
+
+def normalize_search_token(token: str) -> str:
+    normalized = token.strip()
+    for suffix in (
+        "으로부터",
+        "로부터",
+        "한테서",
+        "에게서",
+        "한테",
+        "에게",
+        "에서",
+        "으로",
+        "로",
+        "에는",
+        "에",
+        "은",
+        "는",
+        "인",
+        "을",
+        "를",
+        "이",
+        "가",
+        "의",
+        "들",
+        "와",
+        "과",
+    ):
+        if len(normalized) > len(suffix) + 1 and normalized.endswith(suffix):
+            return normalized[: -len(suffix)]
+    return normalized
+
+
+def is_control_search_term(term: str) -> bool:
+    normalized = normalize_for_match(term)
+    if not normalized:
+        return True
+    if normalized in {normalize_for_match(word) for word in STOPWORDS}:
+        return True
+    return bool(
+        re.fullmatch(r"\d+(?:개|건|명|페이지)?", normalized)
+        or re.fullmatch(r"\d{4}년?", normalized)
+        or re.fullmatch(r"\d{1,2}월", normalized)
+        or re.fullmatch(r"\d{1,2}일", normalized)
+        or re.fullmatch(r"\d+건기준", normalized)
+    )
+
+
+def text_matches_any_alias(text: str, aliases: List[str]) -> bool:
+    normalized_text = normalize_for_match(text)
+    return any(normalize_for_match(alias) in normalized_text for alias in aliases)
+
+
+def add_customer_alias(aliases: set[str], value: str) -> None:
+    normalized = value.strip()
+    if not normalized:
+        return
+    aliases.add(normalized)
+    for part in re.split(r"[,/·]", normalized) if "(" not in normalized and ")" not in normalized else []:
+        part = part.strip()
+        if part and part != normalized:
+            add_customer_alias(aliases, part)
+    without_project_suffix = re.sub(r"_Project$", "", normalized)
+    aliases.add(without_project_suffix)
+    without_number = re.sub(r"^\d+", "", without_project_suffix)
+    if without_number:
+        aliases.add(without_number)
+
+    parenthetical_parts = re.findall(r"\(([^)]+)\)", without_project_suffix)
+    for part in parenthetical_parts:
+        add_customer_alias(aliases, part)
+
+    outside_parentheses = re.sub(r"\([^)]*\)", "", without_project_suffix).strip()
+    if outside_parentheses:
+        aliases.add(outside_parentheses)
+        aliases.add(re.sub(r"^\d+", "", outside_parentheses))
+
+    for suffix in ("투자증권", "증권", "선물", "금융투자"):
+        if normalized.endswith(suffix) and len(normalized) > len(suffix) + 1:
+            aliases.add(normalized[: -len(suffix)])
+
+
+def derive_customer_aliases_from_project(project_name: str) -> List[str]:
+    aliases: set[str] = set()
+    add_customer_alias(aliases, project_name)
+    blocked = {normalize_for_match(alias) for alias in AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES}
+    return sorted(
+        alias
+        for alias in aliases
+        if alias and normalize_for_match(alias) not in blocked
+    )
+
+
+def extract_chroma_field(text: str, field_name: str) -> str:
+    match = re.search(rf"{re.escape(field_name)}:\s*([^\n\r]+)", text)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def extract_chroma_date(text: str) -> str:
+    match = re.search(r"등록일:\s*(\d{4}-\d{2}-\d{2}|미상)", text)
+    if match:
+        return match.group(1)
+    match = re.search(r"(\d{4}-\d{2}-\d{2})\s+메일\s+수신", text)
+    if match:
+        return match.group(1)
+    return ""
+
+
+def format_mantis_custom_date(value: Any) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value or raw_value in {"0", "-"}:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_value):
+        return raw_value
+    if re.fullmatch(r"\d{8}", raw_value):
+        return f"{raw_value[:4]}-{raw_value[4:6]}-{raw_value[6:8]}"
+    if re.fullmatch(r"\d{10,13}", raw_value):
+        timestamp = int(raw_value)
+        if timestamp > 10_000_000_000:
+            timestamp //= 1000
+        try:
+            # Mantis date-only custom fields are stored as UTC timestamps whose
+            # UTC calendar date is the value shown in the Mantis UI. Applying
+            # the server's KST offset here shifts the displayed date by one day.
+            return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+        except (OSError, OverflowError, ValueError):
+            return raw_value
+    return raw_value
+
+
+def extract_issue_id_from_text(text: str) -> int:
+    match = re.search(r"이슈 ID:\s*#?(\d+)", text)
+    if match:
+        return int(match.group(1))
+    return 0
+
+
+def extract_title_from_chroma_text(text: str) -> str:
+    match = re.search(r"\[제목\]\s*([\s\S]*?)(\n\n|\[고객사 본문 요청 내용\])", text)
+    if match:
+        return match.group(1).strip()
+    return "제목 없음"
+
+
+def extract_project_from_chroma_text(text: str) -> str:
+    match = re.search(r"프로젝트\(고객사\):\s*(.*)", text)
+    if match:
+        return match.group(1).strip()
+    return "프로젝트 미상"
+
+
+def extract_from_names(text: str) -> List[str]:
+    names = set()
+    for match in re.finditer(r"From\.\s*([가-힣A-Za-z]{2,6})", text, re.IGNORECASE):
+        name = match.group(1).strip()
+        if is_valid_person_name(name):
+            names.add(name)
+    for match in re.finditer(r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원)", text):
+        name = match.group(1).strip()
+        if is_valid_person_name(name):
+            names.add(name)
+    return sorted(names)
+
+
+def is_valid_person_name(name: str) -> bool:
+    normalized = name.strip()
+    if not re.fullmatch(r"[가-힣]{2,4}|[A-Za-z]{2,20}", normalized):
+        return False
+    lowered = normalized.lower()
+    if normalized in STOPWORDS or lowered in STOPWORDS or normalized in PERSON_BLOCKLIST:
+        return False
+    for aliases in ([key, *values] for key, values in CUSTOMER_ALIASES.items()):
+        if any(normalize_for_match(normalized) == normalize_for_match(alias) for alias in aliases):
+            return False
+    for aliases in PLATFORM_ALIASES.values():
+        if any(normalize_for_match(normalized) == normalize_for_match(alias) for alias in aliases):
+            return False
+    for aliases in STATUS_ALIASES.values():
+        if any(normalize_for_match(normalized) == normalize_for_match(alias) for alias in aliases):
+            return False
+    for aliases in PERSON_ROLE_ALIASES.values():
+        if any(normalize_for_match(normalized) == normalize_for_match(alias) for alias in aliases):
+            return False
+    return True
+
+
+def is_valid_handler_name(name: str) -> bool:
+    normalized = name.strip()
+    if not re.fullmatch(r"[가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31}", normalized):
+        return False
+    return normalized not in STOPWORDS and normalized not in PERSON_BLOCKLIST
+
+
+# known_people(과거 이슈에서 추출한 실제 담당자/보고자 이름) 캐시엔 "파트너매니저"
+# 같은 화면/시스템 이름이 "파트너"+"매니저(직함)"로 잘못 쪼개져 섞여 들어갈 수 있다.
+# 단순 substring 포함 매칭(normalize_for_match 방식)을 쓰면 "파트너사업팀"처럼
+# 이름이 더 큰 복합어의 일부로 들어있을 때도 인물로 오인한다. 뒤에 한글 조사나
+# 비한글 문자/문자열 끝이 올 때만 "독립된 단어"로 인정해 이런 오탐을 막는다.
+KOREAN_PARTICLE_PATTERN = "가|이|는|은|을|를|와|과|도|만|의|에게|한테|랑|이랑|께|에서|으로|로"
+
+
+def text_contains_person_name(text: str, name: str) -> bool:
+    pattern = re.compile(
+        rf"{re.escape(name)}(?:{KOREAN_PARTICLE_PATTERN})?(?=[^가-힣]|$)",
+        re.IGNORECASE,
+    )
+    return bool(pattern.search(text))
+
+
+def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
+    issue_id = extract_issue_id_from_text(text)
+    if not issue_id:
+        return None
+    created_at = extract_chroma_date(text)
+    return {
+        "id": issue_id,
+        "project": extract_project_from_chroma_text(text),
+        "summary": extract_title_from_chroma_text(text),
+        "status": extract_chroma_field(text, "현재 상태") or "상태 미상",
+        "media_type": extract_chroma_field(text, "매체구분") or "기타/미상",
+        "screen_number": extract_chroma_field(text, "화면번호") or "미상",
+        "work_subject": extract_chroma_field(text, "작업주체") or "미상",
+        "effort_fields": {},
+        "date_fields": {},
+        "reporter": "미상",
+        "handler": extract_chroma_field(text, "담당자") or "담당자 미지정",
+        "created_at": created_at,
+        "updated_at": "",
+        "description": text[:800],
+    }

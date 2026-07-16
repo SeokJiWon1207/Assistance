@@ -1,0 +1,25 @@
+[
+  {
+    "id": "company-qwen3.6-35b-a3b",
+    "label": "회사 Qwen 3.6 35B",
+    "model": "qwen3.6-35b-a3b",
+    "provider": "openai-compatible",
+    "endpointEnv": "COMPANY_MODEL_46_ENDPOINT",
+    "endpoint": "http://59.6.135.38:13025/v1/chat/completions",
+    "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
+    "think": false,
+    "expiresAt": "2026-12-31",
+    "enabled": true
+  },
+  {
+    "id": "qwen3.5-9b-local",
+    "label": "Qwen 3.5 9B (로컬)",
+    "model": "qwen3.5:9b",
+    "provider": "ollama",
+    "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+    "nativeEndpoint": "http://127.0.0.1:11434/api/chat",
+    "think": false,
+    "expiresAt": "",
+    "enabled": true
+  }
+]

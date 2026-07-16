@@ -1,0 +1,117 @@
+[
+  {
+    "id": "mantis-kb-hts",
+    "category": "고객사·플랫폼",
+    "question": "KB증권 HTS 최근 이슈 5개 보여줘",
+    "expected": { "customer": "KB증권", "platform": "HTS", "minResults": 1 }
+  },
+  {
+    "id": "mantis-eugene-screen",
+    "category": "화면번호",
+    "question": "유진증권 화면번호 5031 관련 이슈 찾아줘",
+    "expected": { "customer": "유진증권", "screenNumber": "5031", "minResults": 1 }
+  },
+  {
+    "id": "mantis-screen-7600",
+    "category": "화면번호",
+    "question": "화면번호 7600 관련 이슈 3개 보여줘",
+    "expected": {
+      "screenNumber": "7600",
+      "sourceIds": [30812, 30472, 29275],
+      "minResults": 3
+    }
+  },
+  {
+    "id": "mantis-screen-9413",
+    "category": "화면번호",
+    "question": "화면번호 9413 관련 이슈 3개 보여줘",
+    "expected": {
+      "screenNumber": "9413",
+      "sourceIds": [29945, 29247, 29246],
+      "minResults": 3
+    }
+  },
+  {
+    "id": "mantis-db-alias",
+    "category": "고객사 별칭",
+    "question": "DB증권 최근 이슈 보여줘",
+    "expected": { "customer": "동부증권", "minResults": 1 }
+  },
+  {
+    "id": "mantis-db-legacy-alias",
+    "category": "고객사 별칭",
+    "question": "동부증권 최근 이슈 보여줘",
+    "expected": { "customer": "동부증권", "minResults": 1 }
+  },
+  {
+    "id": "mantis-hantu-alias",
+    "category": "고객사 별칭",
+    "question": "한투증권 최근 이슈 보여줘",
+    "expected": { "customer": "한투증권", "minResults": 1 }
+  },
+  {
+    "id": "mantis-handler-permission",
+    "category": "담당자",
+    "question": "담당자 권한별의 최근 이슈 2개 보여줘",
+    "expected": { "person": "권한별", "sourceIds": [30996, 30995], "minResults": 2 }
+  },
+  {
+    "id": "mantis-handler-seokjiwon",
+    "category": "담당자",
+    "question": "담당자 석지원의 최근 이슈 2개 보여줘",
+    "expected": { "person": "석지원", "minResults": 2 }
+  },
+  {
+    "id": "mantis-handler-kangwooseok",
+    "category": "담당자",
+    "question": "담당자 강우석의 최근 이슈 2개 보여줘",
+    "expected": { "person": "강우석", "minResults": 2 }
+  },
+  {
+    "id": "mantis-month-count-cape-2025-12",
+    "category": "월별 건수",
+    "question": "최신 800건 기준으로 2025년 12월에 CAPE증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "totalCount": 2, "minResults": 1 }
+  },
+  {
+    "id": "mantis-month-count-eugene-2025-12",
+    "category": "월별 건수",
+    "question": "최신 800건 기준으로 2025년 12월에 유진증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "totalCount": 5, "minResults": 1 }
+  },
+  {
+    "id": "mantis-month-count-hanwha-2026-02",
+    "category": "월별 건수",
+    "question": "최신 800건 기준으로 2026년 2월에 한화증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "totalCount": 12, "minResults": 1 }
+  },
+  {
+    "id": "mantis-exact-id",
+    "category": "정확 ID",
+    "question": "0028508 이슈 내용 알려줘",
+    "expected": { "issueId": 28508, "minResults": 1 }
+  },
+  {
+    "id": "notion-incident",
+    "category": "Notion 키워드",
+    "question": "노션에서 장애보고 관련 이슈 찾아줘",
+    "expected": { "source": "notion", "keyword": "장애보고", "minResults": 1 }
+  },
+  {
+    "id": "notion-major-hanwha-order",
+    "category": "Notion 복합 키워드",
+    "question": "노션에서 한화 서버 자동주문 장애에 관한 건 알려줘",
+    "expected": {
+      "source": "notion",
+      "titleContains": "한화 서버 자동주문 장애",
+      "databaseLabel": "주요이슈현황",
+      "minResults": 1
+    }
+  },
+  {
+    "id": "mantis-effort-person-month",
+    "category": "Mantis 공수 집계",
+    "question": "2026년 2월 석지원의 공수를 알고 싶어",
+    "expected": { "effortTotal": 5.25, "issueCount": 18, "minResults": 1 }
+  }
+]

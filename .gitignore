@@ -1,0 +1,20 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local editor / agent state
+.claude/
+/$CODEX_HOME/
+ObsidianNotes/.obsidian/workspace.json
+
+# Local secrets and runtime data
+*.pem
+assistant_web/.env
+assistant_web/runtime/assistant_audit.sqlite3
+assistant_web/runtime/accuracy_reports/
+
+# Local generated vector database
+data/mantis_chroma_db/
+data/backups/
