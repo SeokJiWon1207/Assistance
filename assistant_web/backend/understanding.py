@@ -32,6 +32,7 @@ from backend.common import (
     is_valid_person_name,
     normalize_for_match,
     normalize_search_token,
+    strip_korean_particle,
     text_contains_person_name,
     text_matches_any_alias,
     text_matches_customer_aliases,
@@ -527,8 +528,13 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
     if not people:
         for match in re.finditer(r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원|한테|에게|담당|할당|할당된|배정|배정된)", person_text):
             name = match.group(1).strip()
-            if is_valid_person_name(name):
-                people.append(name)
+            # "그 이슈의 담당자", "제목과 담당자로 정리해줘"처럼 조사가 붙은 일반
+            # 명사가 이름으로 잡히지 않도록 조사를 뗀 어간까지 함께 검증한다.
+            if not is_valid_person_name(name):
+                continue
+            if not is_valid_person_name(strip_korean_particle(name)):
+                continue
+            people.append(name)
 
     people = list(dict.fromkeys(people))
     return {

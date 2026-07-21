@@ -309,6 +309,17 @@ def is_valid_handler_name(name: str) -> bool:
 KOREAN_PARTICLE_PATTERN = "가|이|는|은|을|를|와|과|도|만|의|에게|한테|랑|이랑|께|에서|으로|로"
 
 
+def strip_korean_particle(name: str) -> str:
+    """조사가 붙어 있으면 떼어낸 어간을, 없으면 원래 값을 돌려준다.
+
+    "이슈의 담당자", "제목과 담당자로"처럼 일반 명사에 조사가 붙은 말이
+    이름 후보로 잡혔는지 판별할 때 쓴다.
+    """
+    normalized = str(name or "").strip()
+    match = re.fullmatch(rf"([가-힣]{{2,}})(?:{KOREAN_PARTICLE_PATTERN})", normalized)
+    return match.group(1) if match else normalized
+
+
 def text_contains_person_name(text: str, name: str) -> bool:
     pattern = re.compile(
         rf"{re.escape(name)}(?:{KOREAN_PARTICLE_PATTERN})?(?=[^가-힣]|$)",

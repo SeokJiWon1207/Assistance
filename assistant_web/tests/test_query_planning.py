@@ -247,6 +247,28 @@ class QueryPlanningTests(unittest.TestCase):
         platform_chip = next(chip for chip in chips if chip["id"] == "platform_exclude")
         self.assertEqual(platform_chip["value"], "MTS")
 
+    def test_particle_suffixed_nouns_are_not_treated_as_people(self):
+        # 후속 질문의 "그 이슈의 담당자", "제목과 담당자로"에서 앞 명사가
+        # 담당자 이름으로 잡혀 검색이 0건이 되던 회귀를 막는다.
+        self.assertEqual(
+            extract_query_constraints("그 이슈의 담당자와 상태만 다시 알려줘")["people"]["names"],
+            [],
+        )
+        self.assertEqual(
+            extract_query_constraints("최근 3개만 제목과 담당자로 정리해줘")["people"]["names"],
+            [],
+        )
+
+    def test_real_handler_names_are_still_extracted(self):
+        self.assertEqual(
+            extract_query_constraints("담당자가 DRFN_NEXT 인 이슈 보여줘")["people"]["names"],
+            ["DRFN_NEXT"],
+        )
+        self.assertIn(
+            "권한별",
+            extract_query_constraints("권한별 담당 이슈 보여줘")["people"]["names"],
+        )
+
     def test_status_chips_are_built_without_positive_status_filter(self):
         # 제외 상태만 있는 질문("종료된 건은 빼줘")에서 상태 칩을 만들다
         # status_values가 정의되지 않아 500이 나던 회귀를 막는다.
