@@ -4,7 +4,11 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import backend.app as backend_app
-from backend.answers import count_group_key, format_count_group_lines
+from backend.answers import (
+    build_issue_intro_line,
+    count_group_key,
+    format_count_group_lines,
+)
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.app import (
     build_effort_report,
@@ -421,6 +425,18 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertEqual(result["winner"], "A")
         self.assertGreater(result["variantA"]["score"], result["variantB"]["score"])
         self.assertTrue(result["variantB"]["failureReasons"])
+
+
+class MissingIssueAnswerTests(unittest.TestCase):
+    def test_missing_issue_id_is_reported_as_not_found(self):
+        # 존재하지 않는 번호인데 "정리했어요"로 답해 찾은 것처럼 보이던 회귀.
+        line = build_issue_intro_line({"issue_ids": [0]}, [], 0)
+        self.assertIn("찾지 못했어요", line)
+        self.assertIn("#0", line)
+
+    def test_existing_issue_id_keeps_summary_intro(self):
+        line = build_issue_intro_line({"issue_ids": [30918]}, [{"id": 30918}], 1)
+        self.assertIn("정리했어요", line)
 
 
 class CountGroupingTests(unittest.TestCase):

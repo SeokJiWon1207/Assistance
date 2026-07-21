@@ -575,6 +575,11 @@ def build_issue_intro_line(
             return f"🔍 {base_ids}과 비슷한 과거 이슈를 지금 조건으로는 찾지 못했어요."
         return f"🔍 {base_ids}과 비슷한 과거 이슈 {count}건을 찾았어요."
     if constraints.get("issue_ids"):
+        if count == 0:
+            # 존재하지 않는 번호를 조회했을 때 비슷한 ID로 대신 답하지 않고
+            # 찾지 못했다는 사실을 그대로 알린다.
+            issue_labels = ", ".join(f"#{issue_id}" for issue_id in constraints["issue_ids"])
+            return f"🔍 {issue_labels} 이슈를 찾지 못했어요. 이슈 번호를 다시 확인해 주세요."
         return "📄 요청하신 이슈 내용을 정리했어요."
     subject = build_issue_subject_phrase(constraints, issues)
     prefix = f"{subject} 관련 " if subject else ""
