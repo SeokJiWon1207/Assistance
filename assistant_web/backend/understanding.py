@@ -130,6 +130,13 @@ NOTION_INTENT_KEYWORDS = {
     "기한",
 }
 
+# 조회할 데이터 소스를 가리키는 말. 실제 프로젝트 목록에 999Mantis가 있어
+# 고객사 별칭으로도 잡히므로, 고객사 후보에서 걸러낼 때 쓴다.
+SOURCE_NAME_ALIASES = {
+    normalize_for_match(name)
+    for name in ("mantis", "맨티스", "맨티스에서", "notion", "노션")
+}
+
 NOTION_QUERY_STOPWORDS = {
     "notion",
     "노션",
@@ -576,6 +583,21 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
             if normalized_alias and text_matches_customer_aliases(text, [alias]):
                 target = excluded_customer_matches if expression_is_excluded(text, alias) else customer_matches
                 target.append((len(normalized_alias), alias, aliases))
+
+    # "Mantis와 Notion에서 찾아줘"의 Mantis/Notion은 조회할 데이터 소스 이름이지
+    # 고객사가 아니다. 다만 실제 프로젝트 목록에 999Mantis가 있어 고객사 별칭으로
+    # 잡히고, 별칭이 길어 진짜 고객사(KB증권 등)까지 밀어내 버린다.
+    # 프로젝트를 명시적으로 가리킬 때만 고객사 후보로 남긴다.
+    if not any(
+        normalize_for_match(marker) in normalized_text
+        for marker in ("999Mantis", "고객사", "프로젝트")
+    ):
+        customer_matches = [
+            item
+            for item in customer_matches
+            if normalize_for_match(item[1]) not in SOURCE_NAME_ALIASES
+        ]
+
     if customer_matches:
         _, matched_alias, matched_group = max(customer_matches, key=lambda item: item[0])
         customer_key = matched_alias

@@ -247,6 +247,23 @@ class QueryPlanningTests(unittest.TestCase):
         platform_chip = next(chip for chip in chips if chip["id"] == "platform_exclude")
         self.assertEqual(platform_chip["value"], "MTS")
 
+    def test_source_names_are_not_treated_as_customer(self):
+        # 프로젝트 목록의 999Mantis 때문에 "Mantis에서 찾아줘"의 소스 이름이
+        # 고객사로 잡히고, 별칭이 길어 진짜 고객사까지 밀어내던 회귀를 막는다.
+        self.assertIsNone(
+            extract_query_constraints("Mantis와 Notion에서 로그인 장애 관련 내용을 함께 찾아줘")["customer_key"]
+        )
+        self.assertEqual(
+            extract_query_constraints("KB증권 관련 내용을 Mantis와 Notion에서 각각 3개씩 보여줘")["customer_key"],
+            "KB증권",
+        )
+
+    def test_explicit_mantis_project_is_still_a_customer(self):
+        self.assertEqual(
+            extract_query_constraints("999Mantis 프로젝트 이슈 보여줘")["customer_key"],
+            "999Mantis",
+        )
+
     def test_particle_suffixed_nouns_are_not_treated_as_people(self):
         # 후속 질문의 "그 이슈의 담당자", "제목과 담당자로"에서 앞 명사가
         # 담당자 이름으로 잡혀 검색이 0건이 되던 회귀를 막는다.
