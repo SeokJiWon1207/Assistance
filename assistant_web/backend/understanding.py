@@ -1563,6 +1563,9 @@ def get_latest_user_text(messages: List[ChatMessage]) -> str:
 FOLLOW_UP_STRONG_MARKERS = (
     "그중", "그 중", "이중", "이 중", "그거", "그것", "그건", "그때", "그 이슈", "그 건",
     "해당", "위에", "위 이슈", "아까", "방금",
+    # 직전에 보던 대상을 가리키는 지시 표현. 없으면 "이 이슈의 처리 이력"처럼
+    # 대상이 분명한 후속 질문이 독립 질문으로 취급돼 대상을 잃는다.
+    "이 이슈", "이 건", "이 항목", "본 이슈", "이번 이슈", "이 페이지", "이 문서",
     "첫번째", "첫 번째", "두번째", "두 번째", "세번째", "세 번째", "마지막",
 )
 
@@ -1623,6 +1626,17 @@ def parse_ordinal_reference(text: str) -> Optional[int]:
     return None
 
 
+DEMONSTRATIVE_ISSUE_PATTERN = re.compile(
+    r"(?:이|그|해당|위|본|동)\s*(?:이슈|건|항목|페이지|문서)"
+    r"|이번\s*이슈|방금\s*(?:이슈|건|본)|아까\s*(?:이슈|건|본)"
+)
+
+
+def has_demonstrative_issue_reference(text: str) -> bool:
+    """'이 이슈의', '그 건은'처럼 직전에 보던 대상을 가리키는 표현인지 판별한다."""
+    return bool(DEMONSTRATIVE_ISSUE_PATTERN.search(str(text or "")))
+
+
 def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Optional[str]:
     """서수 참조 후속 질문을 직전 답변의 실제 결과 목록으로 해석한 라우팅 텍스트.
 
@@ -1633,7 +1647,8 @@ def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Option
     if not audit_id:
         return None
     ordinal = parse_ordinal_reference(text)
-    if ordinal is None:
+    demonstrative = ordinal is None and has_demonstrative_issue_reference(text)
+    if ordinal is None and not demonstrative:
         return None
     latest_constraints = extract_query_constraints(text)
     if (
@@ -1647,6 +1662,14 @@ def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Option
     sources = load_audit_sources(audit_id)
     if not sources:
         return None
+    if demonstrative:
+        # 서수 없이 "이 이슈"라고만 하면 직전 답변이 가리키던 대상 하나로 본다.
+        # 여러 건을 보여준 뒤라면 어느 것인지 알 수 없으므로 추측하지 않는다.
+        issue_sources = [source for source in sources if source.get("issue_id")]
+        unique_ids = {int(source["issue_id"]) for source in issue_sources}
+        if len(unique_ids) != 1:
+            return None
+        return f"{unique_ids.pop():07d} {text}"
     index = len(sources) - 1 if ordinal == -1 else ordinal - 1
     if index < 0 or index >= len(sources):
         return None

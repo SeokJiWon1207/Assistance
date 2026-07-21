@@ -18,6 +18,7 @@ from backend.app import (
     extract_effort_query,
     extract_notion_constraints,
     extract_query_constraints,
+    is_follow_up_question,
     merge_combined_sources,
     notion_page_matches_constraints,
     notion_search_max_pages,
@@ -425,6 +426,46 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertEqual(result["winner"], "A")
         self.assertGreater(result["variantA"]["score"], result["variantB"]["score"])
         self.assertTrue(result["variantB"]["failureReasons"])
+
+
+class DemonstrativeReferenceTests(unittest.TestCase):
+    def test_demonstrative_issue_questions_are_follow_ups(self):
+        # "이 이슈의 처리 이력"이 독립 질문으로 취급돼 대상을 잃던 회귀.
+        self.assertTrue(is_follow_up_question("이 이슈의 처리 이력을 시간순으로 정리해줘"))
+        self.assertTrue(is_follow_up_question("그 이슈의 담당자와 상태만 다시 알려줘"))
+        self.assertFalse(is_follow_up_question("KB증권 HTS 최근 이슈 5개 보여줘"))
+
+    @patch("backend.understanding.load_audit_sources")
+    def test_demonstrative_reference_resolves_to_focused_issue(self, load_sources):
+        # 상세 조회 뒤 후속 질문이 같은 이슈를 계속 가리켜야 한다.
+        load_sources.return_value = [{"type": "mantis", "issue_id": 30892}]
+        resolved = backend_app.resolve_reference_from_context(
+            "그 이슈의 담당자와 상태만 다시 알려줘", "audit-1"
+        )
+        self.assertIsNotNone(resolved)
+        self.assertEqual(extract_query_constraints(resolved)["issue_ids"], [30892])
+
+    @patch("backend.understanding.load_audit_sources")
+    def test_demonstrative_reference_does_not_guess_among_many(self, load_sources):
+        # 여러 건을 보여준 직후라면 어느 것인지 알 수 없으므로 추측하지 않는다.
+        load_sources.return_value = [
+            {"type": "mantis", "issue_id": 30953},
+            {"type": "mantis", "issue_id": 30892},
+        ]
+        self.assertIsNone(
+            backend_app.resolve_reference_from_context("그 이슈의 담당자 알려줘", "audit-1")
+        )
+
+    @patch("backend.understanding.load_audit_sources")
+    def test_ordinal_reference_still_resolves(self, load_sources):
+        load_sources.return_value = [
+            {"type": "mantis", "issue_id": 30953},
+            {"type": "mantis", "issue_id": 30892},
+        ]
+        resolved = backend_app.resolve_reference_from_context(
+            "그중 두 번째 이슈를 자세히 설명해줘", "audit-1"
+        )
+        self.assertEqual(extract_query_constraints(resolved)["issue_ids"], [30892])
 
 
 class UnassignedHandlerTests(unittest.TestCase):
