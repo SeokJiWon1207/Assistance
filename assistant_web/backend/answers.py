@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from backend.common import compact_text, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, STATUS_ALIASES, STATUS_MATCH_ALIASES
-from backend.query_planning import build_query_plan
+from backend.query_planning import build_query_plan, extract_group_by
 from backend.query_filters import filter_clause_label, normalize_filter_clauses
 from backend.retrieval import (
     build_snapshot_note,
@@ -314,7 +314,8 @@ def build_mantis_month_count_report(text: str) -> Optional[Dict[str, Any]]:
 
 
 def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any]) -> bool:
-    if not has_constraint(constraints):
+    group_by = extract_group_by(text)
+    if not has_constraint(constraints) and not group_by:
         return False
     normalized_text = normalize_for_match(text)
     if any(
@@ -633,7 +634,15 @@ def format_deterministic_issue_answer(
     limit: int,
     answer_style: str = "normal",
 ) -> str:
-    issues = collect_retrieved_issues(retrieval_result, limit)
+    group_by = str(
+        (retrieval_result.get("intent_plan") or {}).get("group_by")
+        or extract_group_by(query_text)
+        or ""
+    )
+    issues = select_grouped_issue_rows(
+        collect_retrieved_issues(retrieval_result, limit),
+        group_by,
+    )
     display_constraints = constraints
     similar_base_issue_ids = similar_base_issue_ids_from_retrieval(retrieval_result)
     if similar_base_issue_ids:
@@ -643,6 +652,8 @@ def format_deterministic_issue_answer(
             "similar_base_issue_ids": similar_base_issue_ids,
         }
     criteria = format_issue_list_criteria(display_constraints, issues)
+    if group_by == "customer":
+        criteria = f"{criteria}, 고객사별 최신 이슈 1건" if criteria != "요청 조건" else "고객사별 최신 이슈 1건"
     status_note = build_status_excluded_note(display_constraints, retrieval_result)
     unapplied_note = build_unapplied_filters_note(retrieval_result)
     snapshot_note = build_snapshot_note(retrieval_result)
@@ -658,7 +669,11 @@ def format_deterministic_issue_answer(
             parts.extend(["", snapshot_note])
         return "\n".join(parts)
 
-    intro = build_issue_intro_line(display_constraints, issues, len(issues))
+    intro = (
+        f"🔍 고객사 {len(issues)}곳의 최신 이슈를 하나씩 정리했어요."
+        if group_by == "customer"
+        else build_issue_intro_line(display_constraints, issues, len(issues))
+    )
 
     if display_constraints.get("issue_ids"):
         lines = [intro, "", f"검색 기준: {criteria}, 정렬: 최신 이슈 ID 기준", ""]
@@ -716,7 +731,9 @@ def format_deterministic_issue_answer(
         if stage.get("status") == "ok" and not stage.get("meta", {}).get("reference_only")
     )
     requested_limit = extract_requested_limit(query_text)
-    if found_count and found_count > len(issues):
+    if group_by == "customer":
+        lines.extend(["", f"총 {len(issues)}개 고객사의 최신 이슈를 확인했습니다."])
+    elif found_count and found_count > len(issues):
         lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건까지 표시했습니다. 더 보려면 표시 개수를 늘리거나 기간을 좁혀 다시 요청해 주세요."])
     elif requested_limit and found_count and found_count < requested_limit:
         lines.extend(["", f"요청한 {requested_limit}건 중 현재 조회 가능한 결과는 {len(issues)}건입니다."])
@@ -727,6 +744,30 @@ def format_deterministic_issue_answer(
     if snapshot_note:
         lines.extend(["", snapshot_note])
     return "\n".join(lines)
+
+
+def select_grouped_issue_rows(
+    issues: List[Dict[str, Any]],
+    group_by: Optional[str],
+) -> List[Dict[str, Any]]:
+    """For customer grouping, retain the newest issue for each project."""
+    if group_by != "customer":
+        return issues
+
+    selected: List[Dict[str, Any]] = []
+    seen_projects = set()
+    for issue in sorted(issues, key=lambda item: int(item.get("id") or 0), reverse=True):
+        project_key = re.sub(
+            r"_project$",
+            "",
+            normalize_for_match(str(issue.get("project") or "")),
+            flags=re.IGNORECASE,
+        )
+        if not project_key or project_key in seen_projects:
+            continue
+        seen_projects.add(project_key)
+        selected.append(issue)
+    return selected
 
 
 def format_model_timeout_fallback(

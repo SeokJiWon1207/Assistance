@@ -96,7 +96,13 @@ def run_retrieval_pipeline(
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)
     stages = []
     plan_source = str((intent_plan or {}).get("source", ""))
-    planned_terms = (intent_plan or {}).get("terms") or []
+    # 고객사별 최신 목록은 특정 검색어가 아니라 전체 이슈 집합이 대상이다.
+    # 플래너가 "최근"·"하나씩" 같은 표현을 검색어로 되돌려도 적용하지 않는다.
+    planned_terms = (
+        []
+        if (intent_plan or {}).get("group_by") == "customer"
+        else (intent_plan or {}).get("terms") or []
+    )
     notion_intent = plan_source in {"notion", "both"} or should_run_notion_search(query_text)
     normalized_query = normalize_for_match(query_text)
     explicit_notion = any(

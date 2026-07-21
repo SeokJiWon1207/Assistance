@@ -626,9 +626,14 @@ def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
         requested_limit = (intent_plan or {}).get("limit")
         sidebar_limit = clamp_int(request.searchLimit, 1, 20)
         group_by = (intent_plan or {}).get("group_by") or extract_group_by(retrieval_text)
-        # Grouped summaries need the complete matching set rather than the
-        # sidebar's ordinary top-N display window. Explicit user limits still win.
-        limit = requested_limit or (200 if group_by else resolve_result_limit(latest_user_text, sidebar_limit))
+        # 고객사별 최신 1건은 "하나씩"을 전체 1건 제한으로 해석하지 않고,
+        # 충분한 최근 이슈를 조회한 뒤 고객사마다 한 건씩 선택한다.
+        if group_by == "customer":
+            limit = 800
+        elif group_by:
+            limit = requested_limit or 200
+        else:
+            limit = requested_limit or resolve_result_limit(latest_user_text, sidebar_limit)
         active_limit = limit
         retrieval_result = run_retrieval_pipeline(
             retrieval_text,
@@ -664,7 +669,10 @@ def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
                 "raw": {"mode": "deterministic_notion_list"},
             })
         if should_return_deterministic_issue_list(retrieval_text, query_constraints):
-            deterministic_issues = collect_retrieved_issues(retrieval_result, limit)
+            deterministic_issues = select_grouped_issue_rows(
+                collect_retrieved_issues(retrieval_result, limit),
+                group_by,
+            )
             issue_sources = build_sources_from_issue_rows(deterministic_issues)
             return finalize_chat_response(request, latest_user_text, {
                 "modelId": request.modelId,

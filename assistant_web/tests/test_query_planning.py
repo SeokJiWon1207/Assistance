@@ -5,6 +5,7 @@ from datetime import date
 
 from backend.app import (
     build_contextual_retrieval_text,
+    build_keyword_terms,
     build_similar_issue_search_text,
     build_mantis_count_report,
     build_verification_report,
@@ -17,6 +18,8 @@ from backend.app import (
     issue_matches_constraints,
     notion_post_json,
     run_retrieval_pipeline,
+    select_grouped_issue_rows,
+    should_return_deterministic_issue_list,
 )
 from backend.schemas import ChatMessage, ChatRequest
 from backend.reports.evaluation import generate_candidate_model_answer
@@ -32,6 +35,86 @@ from backend.query_planning import (
 
 
 class QueryPlanningTests(unittest.TestCase):
+    def test_customer_grouping_is_not_hana_customer_filter(self):
+        question = "고객사별 최근 이슈를 하나씩 보여줘"
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(
+            question,
+            {"source": "mantis"},
+            constraints,
+            {
+                "planned": True,
+                "source": "mantis",
+                "limit": 1,
+                "filters": [
+                    {"field": "customer", "operator": "equals", "value": "하나"}
+                ],
+            },
+        )
+
+        self.assertIsNone(constraints["customer_key"])
+        self.assertEqual(constraints["customer_aliases"], [])
+        self.assertEqual(constraints["filter_clauses"], [])
+        self.assertEqual(plan["group_by"], "customer")
+        self.assertFalse(any(clause["field"] == "customer" for clause in plan["filter_clauses"]))
+        self.assertEqual(build_keyword_terms(question, constraints), [])
+        self.assertTrue(should_return_deterministic_issue_list(question, constraints))
+
+    def test_customer_grouping_keeps_latest_issue_per_project(self):
+        issues = [
+            {"id": 100, "project": "고객사A"},
+            {"id": 300, "project": "고객사A"},
+            {"id": 275, "project": "고객사A_Project"},
+            {"id": 250, "project": "고객사B"},
+            {"id": 200, "project": "고객사B"},
+            {"id": 150, "project": "고객사C"},
+        ]
+
+        grouped = select_grouped_issue_rows(issues, "customer")
+
+        self.assertEqual([issue["id"] for issue in grouped], [300, 250, 150])
+
+    def test_customer_grouping_answer_lists_one_issue_per_customer(self):
+        def issue(issue_id, project):
+            return {
+                "id": issue_id,
+                "project": project,
+                "summary": f"테스트 이슈 {issue_id}",
+                "status": "open",
+                "handler": "담당자",
+                "created_at": "2026-07-21",
+            }
+
+        retrieval = {
+            "intent_plan": {"source": "mantis", "group_by": "customer"},
+            "stages": [
+                {
+                    "source": "mantis_page_scan",
+                    "status": "ok",
+                    "issues_list": [
+                        issue(300, "고객사A"),
+                        issue(200, "고객사A"),
+                        issue(250, "고객사B"),
+                    ],
+                    "meta": {"found_count": 3},
+                }
+            ],
+        }
+        question = "고객사별 최근 이슈를 하나씩 보여줘"
+
+        answer = format_deterministic_issue_answer(
+            question,
+            extract_query_constraints(question),
+            retrieval,
+            800,
+        )
+
+        self.assertIn("고객사 2곳의 최신 이슈", answer)
+        self.assertIn("고객사별 최신 이슈 1건", answer)
+        self.assertIn("**ID**: 300", answer)
+        self.assertIn("**ID**: 250", answer)
+        self.assertNotIn("**ID**: 200", answer)
+
     @patch("backend.reports.evaluation.post_model_chat")
     @patch("backend.reports.evaluation.get_private_model")
     def test_candidate_model_ab_uses_same_grounded_retrieval(self, get_model, post_chat):

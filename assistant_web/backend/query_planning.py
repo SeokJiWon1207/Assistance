@@ -21,6 +21,7 @@ SIMILAR_MARKERS = ("비슷", "유사", "같은", "동일", "관련")
 
 
 GROUP_BY_PATTERNS = {
+    "customer": re.compile(r"(?:고객사|프로젝트)\s*(?:별(?:로)?|기준(?:으)?로|마다)"),
     "owner": re.compile(r"(?:담당자|담당)\s*(?:별(?:로)?|기준(?:으)?로|마다)"),
     "status": re.compile(r"상태\s*(?:별(?:로)?|기준(?:으)?로|마다)"),
     "type": re.compile(r"(?:타입|유형|분류)\s*(?:별(?:로)?|기준(?:으)?로|마다)"),
@@ -249,6 +250,10 @@ def build_query_plan(
         "created_at": created_at,
     }
     filter_clauses = normalize_filter_clauses(constraints.get("filter_clauses") or [])
+    if group_by == "customer":
+        model_filter_clauses = [
+            clause for clause in model_filter_clauses if clause["field"] != "customer"
+        ]
     for clause in model_filter_clauses:
         if clause["field"] == "created_at" and not question_has_temporal_expression(question):
             continue

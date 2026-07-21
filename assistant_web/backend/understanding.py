@@ -51,6 +51,7 @@ from backend.llm import extract_model_content, post_model_chat
 from backend.schemas import ChatMessage
 from backend.query_planning import (
     extract_created_at_range,
+    extract_group_by,
     infer_operation,
     plan_created_at_matches,
 )
@@ -575,6 +576,13 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         if re.match(r"^\d+", matched_alias) and "(" in matched_alias and ")" in matched_alias:
             customer_exact = matched_alias
 
+    # "고객사별 ... 하나씩"에서 "하나"는 고객사명이 아니라 그룹별 개수를
+    # 나타내는 말이다. 고객사별/프로젝트별 요청은 단일 고객사 필터로 좁히지 않는다.
+    if extract_group_by(text) == "customer":
+        customer_key = None
+        customer_aliases = []
+        customer_exact = None
+
     # KRX is both a legacy project/customer alias and a market-domain keyword.
     # In questions such as "KRX 제도개선" it describes the subject, not 119KRX.
     # Keep the customer constraint only when the user explicitly points to a
@@ -1031,8 +1039,8 @@ def plan_search_intent_with_model(
         "'빼고/제외/아닌/말고/없는'은 반드시 not_equals, not_in, not_contains, not_exists 중 하나로 표현해라. "
         "예: 'MTS는 빼고'는 {\"field\":\"platform\",\"operator\":\"not_equals\",\"value\":\"mts\"}다. "
         "'종료 안 된/종료되지 않은/미종료'는 {\"field\":\"status\",\"operator\":\"not_equals\",\"value\":\"closed\"}다. "
-        "'담당자별로/상태별로/유형별로'처럼 결과를 묶어 달라는 요청은 사람 필터로 만들지 말고 "
-        "각각 group_by를 owner/status/type으로 출력해라. "
+        "'고객사별로/담당자별로/상태별로/유형별로'처럼 결과를 묶어 달라는 요청은 필터로 만들지 말고 "
+        "각각 group_by를 customer/owner/status/type으로 출력해라. "
         "created_at은 등록일 기준이며 from/to를 YYYY-MM-DD로 출력한다. 예를 들어 2025년은 "
         "{\"from\":\"2025-01-01\",\"to\":\"2025-12-31\"}이다. "
         "'오늘/어제/이번 주/지난주/최근 N일'처럼 상대적인 시점도 위 오늘 날짜를 기준으로 "
@@ -1381,6 +1389,8 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     filter_control_terms = {
         "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
+        "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
+        "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
     }
     terms = [
         term
