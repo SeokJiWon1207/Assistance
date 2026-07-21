@@ -247,6 +247,20 @@ class QueryPlanningTests(unittest.TestCase):
         platform_chip = next(chip for chip in chips if chip["id"] == "platform_exclude")
         self.assertEqual(platform_chip["value"], "MTS")
 
+    def test_status_chips_are_built_without_positive_status_filter(self):
+        # 제외 상태만 있는 질문("종료된 건은 빼줘")에서 상태 칩을 만들다
+        # status_values가 정의되지 않아 500이 나던 회귀를 막는다.
+        chips = display_constraints({"excluded_statuses": ["closed"]})
+        exclude_chip = next(chip for chip in chips if chip["id"] == "status_exclude")
+        self.assertEqual(exclude_chip["value"], "closed")
+        self.assertEqual([chip for chip in chips if chip["id"] == "status"], [])
+
+    def test_status_chip_is_built_without_exclusion(self):
+        # 긍정 상태만 있을 때도 상태 칩이 노출돼야 한다(기존에는 누락됐다).
+        chips = display_constraints({"statuses": ["open"]})
+        status_chip = next(chip for chip in chips if chip["id"] == "status")
+        self.assertEqual(status_chip["value"], "open")
+
     def test_model_created_at_is_dropped_without_temporal_expression(self):
         # "최근"만 있는 질문에서 플래너가 지어낸 날짜 필터는 버려야 한다.
         # (2026-07-09 정확도 점검: "담당자 OO의 최근 이슈 2개"가 최근 7일로 오해석돼 빈 결과)

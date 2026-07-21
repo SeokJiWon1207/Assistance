@@ -874,6 +874,14 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
                 ]
             )
         )
+        items.append(
+            {
+                "id": "status",
+                "label": "상태",
+                "value": ", ".join(constraints["statuses"]),
+                "values": status_values,
+            }
+        )
     if constraints.get("excluded_statuses"):
         values = list(constraints["excluded_statuses"])
         items.append(
@@ -882,14 +890,6 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "label": "상태 제외",
                 "value": ", ".join(values),
                 "values": values,
-            }
-        )
-        items.append(
-            {
-                "id": "status",
-                "label": "상태",
-                "value": ", ".join(constraints["statuses"]),
-                "values": status_values,
             }
         )
     if constraints.get("issue_ids"):
