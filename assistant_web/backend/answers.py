@@ -509,6 +509,8 @@ def format_issue_list_criteria(
         role = constraints.get("people", {}).get("role") or "any"
         role_label = "담당자" if role == "handler" else "요청자/본문" if role == "reporter" else "인물"
         criteria.append(f"{role_label}={', '.join(constraints['people']['names'])}")
+    elif constraints.get("unassigned_people"):
+        criteria.append("담당자=미지정")
     if constraints.get("statuses"):
         criteria.append(f"상태={', '.join(constraints['statuses'])}")
     if constraints.get("excluded_statuses"):
@@ -558,6 +560,8 @@ def build_issue_subject_phrase(
         role = constraints.get("people", {}).get("role") or "any"
         prefix = "담당자 " if role == "handler" else ""
         parts.append(f"{prefix}{', '.join(names)}")
+    elif constraints.get("unassigned_people"):
+        parts.append("담당자 미지정")
     if constraints.get("screen_numbers"):
         parts.append(f"화면번호 {', '.join(constraints['screen_numbers'])}")
     return " ".join(part for part in parts if part).strip()
@@ -906,6 +910,15 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
     people = constraints.get("people", {}).get("names", [])
     if people:
         items.append({"id": "people", "label": "담당자/인물", "value": ", ".join(people), "values": people})
+    elif constraints.get("unassigned_people"):
+        items.append(
+            {
+                "id": "people_unassigned",
+                "label": "담당자",
+                "value": "미지정",
+                "values": ["담당자 미지정"],
+            }
+        )
     if constraints.get("statuses"):
         status_values = list(
             dict.fromkeys(
