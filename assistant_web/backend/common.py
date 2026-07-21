@@ -139,6 +139,26 @@ def text_matches_any_alias(text: str, aliases: List[str]) -> bool:
     return any(normalize_for_match(alias) in normalized_text for alias in aliases)
 
 
+def text_matches_customer_aliases(text: str, aliases: List[str]) -> bool:
+    """Match customer aliases without short ASCII aliases leaking into words."""
+    normalized_text = normalize_for_match(text)
+    boundary_text = str(text or "").casefold()
+    for alias in aliases:
+        normalized_alias = normalize_for_match(alias)
+        if not normalized_alias:
+            continue
+        if re.fullmatch(r"[a-z0-9]+", normalized_alias) and len(normalized_alias) <= 3:
+            if re.search(
+                rf"(?<![a-z]){re.escape(normalized_alias)}(?![a-z])",
+                boundary_text,
+            ):
+                return True
+            continue
+        if normalized_alias in normalized_text:
+            return True
+    return False
+
+
 def add_customer_alias(aliases: set[str], value: str) -> None:
     normalized = value.strip()
     if not normalized:

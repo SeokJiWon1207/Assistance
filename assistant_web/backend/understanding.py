@@ -34,6 +34,7 @@ from backend.common import (
     normalize_search_token,
     text_contains_person_name,
     text_matches_any_alias,
+    text_matches_customer_aliases,
 )
 from backend.config import (
     CHROMA_DB_PATH,
@@ -566,7 +567,7 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     for aliases in get_customer_alias_groups():
         for alias in aliases:
             normalized_alias = normalize_for_match(alias)
-            if normalized_alias and normalized_alias in normalized_text:
+            if normalized_alias and text_matches_customer_aliases(text, [alias]):
                 target = excluded_customer_matches if expression_is_excluded(text, alias) else customer_matches
                 target.append((len(normalized_alias), alias, aliases))
     if customer_matches:
@@ -1155,7 +1156,7 @@ def plan_search_intent_with_model(
 def text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
     if constraints.get("customer_exact") and normalize_for_match(constraints["customer_exact"]) not in normalize_for_match(text):
         return False
-    if constraints.get("customer_aliases") and not text_matches_any_alias(
+    if constraints.get("customer_aliases") and not text_matches_customer_aliases(
         text,
         constraints["customer_aliases"],
     ):
@@ -1165,7 +1166,7 @@ def text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
         constraints["platform_aliases"],
     ):
         return False
-    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+    if constraints.get("excluded_customer_aliases") and text_matches_customer_aliases(
         text,
         constraints["excluded_customer_aliases"],
     ):
@@ -1279,12 +1280,12 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         extract_project_from_chroma_text(text)
     ) != normalize_for_match(constraints["customer_exact"]):
         return False
-    if constraints.get("customer_aliases") and not text_matches_any_alias(
+    if constraints.get("customer_aliases") and not text_matches_customer_aliases(
         extract_project_from_chroma_text(text),
         constraints["customer_aliases"],
     ):
         return False
-    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+    if constraints.get("excluded_customer_aliases") and text_matches_customer_aliases(
         extract_project_from_chroma_text(text),
         constraints["excluded_customer_aliases"],
     ):

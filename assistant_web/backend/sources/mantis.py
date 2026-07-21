@@ -25,6 +25,7 @@ from backend.common import (
     normalize_chroma_issue_document,
     normalize_for_match,
     text_matches_any_alias,
+    text_matches_customer_aliases,
 )
 from backend.config import (
     CHROMA_DB_PATH,
@@ -359,13 +360,13 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         str(issue.get("project", {}).get("name", ""))
     ) != normalize_for_match(constraints["customer_exact"]):
         return False
-    if constraints.get("customer_aliases") and not text_matches_any_alias(
+    if constraints.get("customer_aliases") and not text_matches_customer_aliases(
         str(issue.get("project", {}).get("name", "")),
         constraints["customer_aliases"],
     ):
         return False
     project_name = str(issue.get("project", {}).get("name", ""))
-    if constraints.get("excluded_customer_aliases") and text_matches_any_alias(
+    if constraints.get("excluded_customer_aliases") and text_matches_customer_aliases(
         project_name,
         constraints["excluded_customer_aliases"],
     ):

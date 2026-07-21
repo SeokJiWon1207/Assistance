@@ -268,6 +268,20 @@ class ExactConstraintTests(unittest.TestCase):
 
 
 class EffortIntentTests(unittest.TestCase):
+    @staticmethod
+    def effort_issue(issue_id, project, media, created_at, effort_value):
+        return {
+            "id": issue_id,
+            "project": {"name": project},
+            "summary": f"공수 테스트 {issue_id}",
+            "status": {"name": "closed"},
+            "created_at": created_at,
+            "custom_fields": [
+                {"field": {"name": "매체구분"}, "value": media},
+                {"field": {"name": "1문의공수"}, "value": effort_value},
+            ],
+        }
+
     def test_ranking_regex_catches_common_phrasings(self):
         self.assertTrue(wants_effort_ranking("작년 기준으로 공수가 제일 많은 사람은 누구야"))
         self.assertTrue(wants_effort_ranking("공수 순위 보여줘"))
@@ -289,6 +303,43 @@ class EffortIntentTests(unittest.TestCase):
         report = build_effort_report("작년 공수 현황 궁금해")
         self.assertIsNotNone(report)
         self.assertTrue(report.get("needsPerson"))
+
+    def test_customer_platform_effort_query_sums_all_people_without_person_prompt(self):
+        matching = self.effort_issue(
+            101,
+            "120NH(NH증권)",
+            "MTS",
+            "2025-07-01T09:00:00",
+            "석지원(1.5) 정희진(2)",
+        )
+        wrong_platform = self.effort_issue(
+            102,
+            "120NH(NH증권)",
+            "HTS",
+            "2025-07-02T09:00:00",
+            "석지원(10)",
+        )
+        wrong_customer = self.effort_issue(
+            103,
+            "123Hanhwa(한화증권)",
+            "MTS",
+            "2025-07-03T09:00:00",
+            "석지원(20)",
+        )
+
+        with patch(
+            "backend.reports.effort.fetch_mantis_issues",
+            side_effect=[[matching, wrong_platform, wrong_customer], []],
+        ):
+            report = build_effort_report("2025년 NH MTS 공수총합 알려줘")
+
+        self.assertNotIn("needsPerson", report)
+        self.assertIn("120NH(NH증권) · MTS 공수 집계", report["content"])
+        self.assertIn("총 공수: **3.50**", report["content"])
+        self.assertEqual(report["effortChart"]["totalEffort"], 3.5)
+        self.assertEqual(report["effortChart"]["issueCount"], 1)
+        self.assertEqual([source["issue_id"] for source in report["sources"]], [101])
+        self.assertEqual(report["raw"]["mode"], "deterministic_filtered_effort_report")
 
     def test_non_effort_question_returns_none(self):
         self.assertIsNone(build_effort_report("신한 MTS 최근 이슈 보여줘"))

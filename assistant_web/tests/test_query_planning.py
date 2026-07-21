@@ -319,6 +319,15 @@ class QueryPlanningTests(unittest.TestCase):
             {"person": "석지원", "year": date.today().year, "period": "year"},
         )
 
+    def test_effort_query_accepts_customer_and_platform_without_person(self):
+        query = extract_effort_query("작년 NH MTS 공수총합 알려줘")
+
+        self.assertEqual(query["scope"], "filters")
+        self.assertEqual(query["year"], date.today().year - 1)
+        self.assertEqual(query["period"], "year")
+        self.assertEqual(query["constraints"]["customer_key"], "NH")
+        self.assertEqual(query["constraints"]["platform_key"], "mts")
+
     def test_invalid_model_operation_and_year_are_repaired(self):
         plan = build_query_plan(
             "2025년 신한 이슈 5개 보여줘",

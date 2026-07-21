@@ -33,7 +33,12 @@ from backend.audit import (
     emit_chat_status,
     init_audit_db,
 )
-from backend.common import clamp_int, normalize_for_match, text_matches_any_alias
+from backend.common import (
+    clamp_int,
+    normalize_for_match,
+    text_matches_any_alias,
+    text_matches_customer_aliases,
+)
 from backend.config import AUDIT_DB_PATH, CONFIG_DIR
 from backend.llm import (
     build_generation_options,
@@ -1008,7 +1013,7 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
             mismatches = [
                 source.get("project", "미상")
                 for source in mantis_sources
-                if not text_matches_any_alias(str(source.get("project", "")), result_aliases)
+                if not text_matches_customer_aliases(str(source.get("project", "")), result_aliases)
             ]
             add_check(
                 "고객사 결과 일치",
