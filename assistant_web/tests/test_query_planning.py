@@ -27,6 +27,7 @@ from backend.sources.notion import notion_page_matches_constraints
 from backend.query_planning import (
     build_query_plan,
     extract_created_at_range,
+    extract_relative_created_at_range,
     infer_operation,
     plan_created_at_matches,
     question_has_temporal_expression,
@@ -365,6 +366,30 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(
             extract_created_at_range("2026년 12월 이슈"),
             {"from": "2026-12-01", "to": "2026-12-31", "precision": "month"},
+        )
+
+    def test_relative_month_ranges(self):
+        base = date(2026, 7, 21)
+        self.assertEqual(
+            extract_relative_created_at_range("이번 달 유진증권 이슈를 등록일 순으로 보여줘", base),
+            {"from": "2026-07-01", "to": "2026-07-31", "precision": "this_month"},
+        )
+        self.assertEqual(
+            extract_relative_created_at_range("지난달 KB증권 이슈는 몇 건이었어?", base),
+            {"from": "2026-06-01", "to": "2026-06-30", "precision": "last_month"},
+        )
+
+    def test_last_month_crosses_year_boundary(self):
+        # 연초에도 이전 달을 전년 12월로 계산해야 한다.
+        self.assertEqual(
+            extract_relative_created_at_range("지난달 이슈", date(2026, 1, 15)),
+            {"from": "2025-12-01", "to": "2025-12-31", "precision": "last_month"},
+        )
+
+    def test_recent_months_range(self):
+        self.assertEqual(
+            extract_relative_created_at_range("최근 3개월 이슈", date(2026, 1, 15)),
+            {"from": "2025-11-01", "to": "2026-01-15", "precision": "recent_months"},
         )
 
     def test_invalid_month_also_rejects_model_supplied_range(self):

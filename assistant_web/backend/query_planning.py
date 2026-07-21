@@ -194,6 +194,35 @@ def extract_relative_created_at_range(question: str, today: Optional[date] = Non
         start = base - timedelta(days=max(days - 1, 0))
         return {"from": start.isoformat(), "to": base.isoformat(), "precision": "recent_days"}
 
+    if re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question):
+        match = re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question)
+        months = max(int(match.group(1)), 1)
+        start_year, start_month = base.year, base.month - (months - 1)
+        while start_month <= 0:
+            start_month += 12
+            start_year -= 1
+        return {
+            "from": date(start_year, start_month, 1).isoformat(),
+            "to": base.isoformat(),
+            "precision": "recent_months",
+        }
+
+    if re.search(r"지난\s*달|저번\s*달|전\s*달(?!력)|전월", question):
+        last_month_end = base.replace(day=1) - timedelta(days=1)
+        return {
+            "from": last_month_end.replace(day=1).isoformat(),
+            "to": last_month_end.isoformat(),
+            "precision": "last_month",
+        }
+
+    if re.search(r"이번\s*달|이달|금월|당월", question):
+        last_day = calendar.monthrange(base.year, base.month)[1]
+        return {
+            "from": base.replace(day=1).isoformat(),
+            "to": base.replace(day=last_day).isoformat(),
+            "precision": "this_month",
+        }
+
     if re.search(r"지난\s*주|저번\s*주|전\s*주(?!차)", question):
         monday, sunday = _week_bounds(base - timedelta(days=7))
         return {"from": monday.isoformat(), "to": sunday.isoformat(), "precision": "last_week"}
@@ -231,6 +260,7 @@ _TEMPORAL_EXPRESSION_PATTERN = re.compile(
     r"|\d{1,2}\s*월"
     r"|오늘|금일|어제|전일|그제|그저께|엊그제"
     r"|이번\s*주|금주|지난\s*주|저번\s*주"
+    r"|이번\s*달|이달|금월|당월|지난\s*달|저번\s*달|전\s*달|전월"
     r"|최근\s*\d{1,3}\s*(?:일|개월|달|주)"
     r"|올해|금년|작년|전년|지난\s*해|이번\s*해|이번\s*년도|지난\s*년도"
 )
