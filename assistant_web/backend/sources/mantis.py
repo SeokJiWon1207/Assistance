@@ -402,6 +402,13 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     if not issue_matches_created_at(issue, constraints.get("created_at")):
         return False
     handler_text = str(issue.get("handler", {}).get("real_name", ""))
+    if constraints.get("unassigned_people") and handler_text.strip() not in {
+        "",
+        "담당자 미지정",
+        "미지정",
+        "미상",
+    }:
+        return False
     if not text_matches_people(combined_text, constraints.get("people", {}), handler_text):
         return False
     reporter_text = str(issue.get("reporter", {}).get("real_name", ""))

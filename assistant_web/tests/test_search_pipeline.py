@@ -427,6 +427,38 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertTrue(result["variantB"]["failureReasons"])
 
 
+class UnassignedHandlerTests(unittest.TestCase):
+    def test_unassigned_request_is_detected(self):
+        # "담당자가 없는 건만"이 조건으로 잡히지 않아 담당자가 있는 이슈까지
+        # 그대로 나오던 회귀를 막는다.
+        self.assertTrue(
+            extract_query_constraints("신한 HTS 이슈 중 담당자가 없는 건만 보여줘")["unassigned_people"]
+        )
+        self.assertTrue(extract_query_constraints("담당자 미지정 이슈 보여줘")["unassigned_people"])
+
+    def test_normal_questions_are_unaffected(self):
+        self.assertFalse(extract_query_constraints("신한 HTS 이슈 보여줘")["unassigned_people"])
+        self.assertFalse(extract_query_constraints("담당자가 석지원인 이슈")["unassigned_people"])
+
+    def test_snapshot_matcher_keeps_only_unassigned_issues(self):
+        constraints = extract_query_constraints("담당자가 없는 건만 보여줘")
+        self.assertFalse(
+            backend_app.chroma_text_matches_constraints("이슈 ID: 1\n담당자: 정희진\n", constraints)
+        )
+        self.assertTrue(
+            backend_app.chroma_text_matches_constraints(
+                "이슈 ID: 2\n담당자: 담당자 미지정\n", constraints
+            )
+        )
+
+    def test_live_matcher_keeps_only_unassigned_issues(self):
+        constraints = extract_query_constraints("담당자가 없는 건만 보여줘")
+        assigned = {"id": 1, "handler": {"real_name": "정희진"}, "status": {"name": "closed"}}
+        unassigned = {"id": 2, "handler": {}, "status": {"name": "closed"}}
+        self.assertFalse(backend_app.issue_matches_constraints(assigned, constraints))
+        self.assertTrue(backend_app.issue_matches_constraints(unassigned, constraints))
+
+
 class MissingIssueAnswerTests(unittest.TestCase):
     def test_missing_issue_id_is_reported_as_not_found(self):
         # 존재하지 않는 번호인데 "정리했어요"로 답해 찾은 것처럼 보이던 회귀.

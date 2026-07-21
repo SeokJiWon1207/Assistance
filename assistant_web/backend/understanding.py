@@ -651,6 +651,14 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
                 platform_aliases = aliases
 
     people = extract_people_constraints(remove_date_field_phrases(text))
+    # "담당자가 없는 건만", "담당자 미지정"처럼 담당자가 비어 있는 이슈만 찾는 요청.
+    unassigned_people = bool(
+        re.search(
+            r"담당자?\s*(?:가|는|를|도)?\s*"
+            r"(?:없는|없이|없음|미지정|미배정|안\s*정해진|지정\s*안\s*된|할당\s*안\s*된|배정\s*안\s*된)",
+            text,
+        )
+    )
     if people.get("names") and customer_aliases:
         explicit_handler_context = bool(re.search(r"(?:담당자|담당)\s*[:=]?\s*", text, re.IGNORECASE))
         if explicit_handler_context and people.get("role") == "handler":
@@ -735,6 +743,7 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         "screen_numbers": screen_numbers,
         "date_fields": extract_date_field_constraints(text),
         "created_at": created_at,
+        "unassigned_people": unassigned_people,
         "filter_clauses": filter_clauses,
     }
 
@@ -751,6 +760,7 @@ def has_constraint(constraints: Dict[str, Any]) -> bool:
         or constraints.get("date_fields")
         or constraints.get("created_at")
         or constraints.get("people", {}).get("names")
+        or constraints.get("unassigned_people")
         or constraints.get("filter_clauses")
     )
 
@@ -1342,6 +1352,10 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         constraints["excluded_statuses"],
     ):
         return False
+    if constraints.get("unassigned_people"):
+        handler = extract_chroma_field(text, "담당자").strip()
+        if handler and handler not in {"담당자 미지정", "미지정", "미상"}:
+            return False
     if not text_matches_issue_ids(text, constraints.get("issue_ids", [])):
         return False
     if not chroma_text_matches_screen_numbers(text, constraints.get("screen_numbers", [])):
