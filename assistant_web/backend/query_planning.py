@@ -323,7 +323,12 @@ def build_query_plan(
             clause for clause in model_filter_clauses if clause["field"] != "customer"
         ]
     for clause in model_filter_clauses:
-        if clause["field"] == "created_at" and not question_has_temporal_expression(question):
+        if clause["field"] == "created_at" and (
+            not question_has_temporal_expression(question)
+            or has_invalid_month_expression(question)
+        ):
+            # filters.created_at을 버려도 이 절이 남으면 검색 제약을 만들 때
+            # 다시 날짜 범위로 살아나므로 같은 조건으로 함께 막는다.
             continue
         if _clause_contradicts_filters(clause, filters):
             # 규칙이 이미 조건으로 잡은 값을 모델이 다시 제외하면(예: 플랫폼=MTS인데
