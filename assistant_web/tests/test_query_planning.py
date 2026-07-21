@@ -346,6 +346,27 @@ class QueryPlanningTests(unittest.TestCase):
             {"from": "2024-02-01", "to": "2024-02-29", "precision": "month"},
         )
 
+    def test_day_level_range_spans_year_boundary(self):
+        # 일 단위 구간이 월 규칙에 걸려 12월 한 달로 뭉개지던 회귀를 막는다.
+        self.assertEqual(
+            extract_created_at_range("2025년 12월 31일부터 2026년 1월 2일까지 등록된 이슈 보여줘"),
+            {"from": "2025-12-31", "to": "2026-01-02", "precision": "day_range"},
+        )
+
+    def test_day_level_range_reuses_start_month_when_omitted(self):
+        self.assertEqual(
+            extract_created_at_range("2026년 2월 1일부터 10일까지 이슈"),
+            {"from": "2026-02-01", "to": "2026-02-10", "precision": "day_range"},
+        )
+
+    def test_invalid_month_is_not_silently_widened_to_the_year(self):
+        # "2026년 13월"이 조용히 2026년 전체로 바뀌면 사용자가 결과를 오해한다.
+        self.assertIsNone(extract_created_at_range("2026년 13월 이슈 보여줘"))
+        self.assertEqual(
+            extract_created_at_range("2026년 12월 이슈"),
+            {"from": "2026-12-01", "to": "2026-12-31", "precision": "month"},
+        )
+
     def test_count_and_requested_list_are_distinct(self):
         self.assertEqual(infer_operation("신한 이슈 몇 개야?"), "count")
         self.assertEqual(infer_operation("신한 이슈 5개만 보여줘"), "search")

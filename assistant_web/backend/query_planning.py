@@ -65,8 +65,51 @@ def has_count_intent(question: str) -> bool:
     return infer_operation(question) == "count"
 
 
+def _safe_date(year: int, month: int, day: int) -> Optional[date]:
+    """존재하지 않는 날짜(2월 30일 등)면 None을 돌려준다."""
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
 def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
     """Extract a registration-date range from common Korean date expressions."""
+    # "2026년 13월"처럼 존재하지 않는 월은 어떤 규칙으로도 해석하지 않는다.
+    # 예전에는 월 규칙이 빗나간 뒤 연도 규칙에 걸려 2026년 전체로 조용히
+    # 바뀌었는데, 잘못된 조건을 그럴듯한 다른 범위로 대체하면 사용자가
+    # 결과를 오해하게 된다.
+    if re.search(r"(?<!\d)(1[3-9]|[2-9]\d)\s*월", question):
+        return None
+
+    # 일 단위까지 명시한 구간은 월 단위 규칙보다 먼저 처리한다. 그렇지 않으면
+    # "2025년 12월 31일부터 2026년 1월 2일까지"가 아래 월 규칙에 걸려
+    # 12월 한 달로 뭉개진다.
+    day_range_match = re.search(
+        r"(20\d{2})\s*년\s*(1[0-2]|0?[1-9])\s*월\s*(3[01]|[12]\d|0?[1-9])\s*일\s*"
+        r"(?:부터|~|～|-)\s*"
+        r"(?:(20\d{2})\s*년\s*)?(?:(1[0-2]|0?[1-9])\s*월\s*)?"
+        r"(3[01]|[12]\d|0?[1-9])\s*일\s*(?:까지)?",
+        question,
+    )
+    if day_range_match:
+        start = _safe_date(
+            int(day_range_match.group(1)),
+            int(day_range_match.group(2)),
+            int(day_range_match.group(3)),
+        )
+        end = _safe_date(
+            int(day_range_match.group(4) or day_range_match.group(1)),
+            int(day_range_match.group(5) or day_range_match.group(2)),
+            int(day_range_match.group(6)),
+        )
+        if start and end and start <= end:
+            return {
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                "precision": "day_range",
+            }
+
     range_match = re.search(
         r"(20\d{2})\s*년?\s*(1[0-2]|0?[1-9])\s*월?\s*"
         r"(?:부터|~|～|-)\s*(?:(20\d{2})\s*년?\s*)?"
