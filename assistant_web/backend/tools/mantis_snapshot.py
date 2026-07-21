@@ -14,20 +14,36 @@ def scan_mantis_documents(
     normalize: Callable[[str], Optional[Dict[str, Any]]],
     example_limit: int = 10,
     scan_limit: Optional[int] = None,
+    group_key: Optional[Callable[[Dict[str, Any]], str]] = None,
 ) -> Dict[str, Any]:
+    """조건에 맞는 이슈를 세고 대표 예시를 모은다.
+
+    group_key를 주면 매칭된 전체 이슈를 대상으로 그룹별 건수도 함께 센다.
+    예시는 example_limit개만 남으므로, 그룹 집계는 반드시 스캔 도중에 해야
+    일부 표시분이 아닌 전체 기준 건수가 나온다.
+    """
     if not database_path.exists():
         return {
             "available": False,
             "scanned_count": 0,
             "matched_count": 0,
             "issues": [],
+            "group_counts": {},
             "reason": "Mantis 로컬 인덱스가 없습니다.",
         }
 
     scanned_ids = set()
     matched_ids: set[int] = set()
     matched_count = 0
+    group_counts: Dict[str, int] = {}
     examples = []
+
+    def record_group(issue: Dict[str, Any]) -> None:
+        if not group_key:
+            return
+        label = str(group_key(issue) or "").strip() or "미지정"
+        group_counts[label] = group_counts.get(label, 0) + 1
+
     newest_documents = []
     try:
         with sqlite3.connect(database_path) as connection:
@@ -53,6 +69,7 @@ def scan_mantis_documents(
                     continue
                 matched_count += 1
                 matched_ids.add(issue_id)
+                record_group(issue)
                 if len(examples) < example_limit:
                     examples.append(issue)
                 elif issue_id > min(int(item.get("id") or 0) for item in examples):
@@ -65,6 +82,7 @@ def scan_mantis_documents(
             "matched_count": 0,
             "matched_ids": set(),
             "issues": [],
+            "group_counts": {},
             "reason": f"Mantis 로컬 인덱스 조회 실패: {exc}",
         }
 
@@ -76,6 +94,7 @@ def scan_mantis_documents(
                 continue
             matched_count += 1
             matched_ids.add(int(issue["id"]))
+            record_group(issue)
             if len(examples) < example_limit:
                 examples.append(issue)
     else:
@@ -87,5 +106,6 @@ def scan_mantis_documents(
         "matched_count": matched_count,
         "matched_ids": matched_ids,
         "issues": examples,
+        "group_counts": group_counts,
         "reason": "",
     }

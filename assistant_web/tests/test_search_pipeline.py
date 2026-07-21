@@ -1,7 +1,11 @@
+import re
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import backend.app as backend_app
+from backend.answers import count_group_key, format_count_group_lines
+from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.app import (
     build_effort_report,
     build_effort_report_from_plan,
@@ -417,6 +421,46 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertEqual(result["winner"], "A")
         self.assertGreater(result["variantA"]["score"], result["variantB"]["score"])
         self.assertTrue(result["variantB"]["failureReasons"])
+
+
+class CountGroupingTests(unittest.TestCase):
+    def test_group_counts_cover_every_match_not_just_examples(self):
+        # 그룹 집계는 표시용 예시(example_limit)가 아니라 매칭 전체를 세야 한다.
+        documents = [
+            f"이슈 ID: {30000 + index}\n프로젝트: {'A증권' if index % 2 else 'B증권'}\n"
+            for index in range(6)
+        ]
+
+        def normalize(content):
+            match = re.search(r"이슈 ID: (\d+)", content)
+            project = re.search(r"프로젝트: (\S+)", content)
+            if not match:
+                return None
+            return {"id": int(match.group(1)), "project": project.group(1) if project else ""}
+
+        with patch("backend.tools.mantis_snapshot.sqlite3.connect") as connect:
+            connection = connect.return_value.__enter__.return_value
+            connection.execute.return_value = [(content,) for content in documents]
+            result = scan_mantis_documents(
+                Path(__file__),
+                lambda content: True,
+                normalize,
+                example_limit=2,
+                group_key=count_group_key("customer"),
+            )
+
+        self.assertEqual(result["matched_count"], 6)
+        self.assertEqual(len(result["issues"]), 2)
+        self.assertEqual(result["group_counts"], {"A증권": 3, "B증권": 3})
+
+    def test_group_lines_are_sorted_by_count_desc(self):
+        lines = format_count_group_lines({"A증권": 2, "B증권": 5, "C증권": 5}, "customer")
+        self.assertIn("고객사별 건수", lines[1])
+        self.assertEqual(lines[2:], ["- B증권 — 5건", "- C증권 — 5건", "- A증권 — 2건"])
+
+    def test_unsupported_group_has_no_key(self):
+        self.assertIsNone(count_group_key("type"))
+        self.assertIsNone(count_group_key(""))
 
 
 if __name__ == "__main__":

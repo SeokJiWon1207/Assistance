@@ -111,6 +111,35 @@ def extract_month_count_query(text: str) -> Optional[Dict[str, int]]:
     }
 
 
+COUNT_GROUP_LABELS = {
+    "customer": "고객사",
+    "status": "상태",
+    "owner": "담당자",
+}
+
+
+def count_group_key(group_by: str):
+    """건수 집계에 쓸 그룹 값을 이슈에서 뽑는 함수를 돌려준다."""
+    if group_by == "customer":
+        return lambda issue: str(issue.get("project") or "")
+    if group_by == "status":
+        return lambda issue: display_status_label(issue.get("status"))
+    if group_by == "owner":
+        return lambda issue: str(issue.get("handler") or "")
+    return None
+
+
+def format_count_group_lines(group_counts: Dict[str, int], group_by: str) -> List[str]:
+    """그룹별 건수를 많은 순으로 정리한다."""
+    if not group_counts:
+        return []
+    label = COUNT_GROUP_LABELS.get(group_by, "그룹")
+    ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
+    lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
+    lines.extend(f"- {name} — {count}건" for name, count in ordered)
+    return lines
+
+
 def build_mantis_count_report(
     text: str,
     query_plan: Dict[str, Any],
@@ -120,7 +149,10 @@ def build_mantis_count_report(
         return None
 
     constraints = merge_query_plan_constraints(extract_query_constraints(text), query_plan)
-    if not has_constraint(constraints):
+    group_by = str(query_plan.get("group_by") or "")
+    # "상태별 이슈 개수"처럼 다른 조건이 없어도 그룹 집계 자체가 요청이다.
+    # 예전에는 여기서 빠져나가 Notion 검색으로 흘러갔다.
+    if not has_constraint(constraints) and not count_group_key(group_by):
         return None
 
     # "최신 N건 기준"은 반드시 집계 범위를 제한한다. 등록일 조건이 함께 있어도
@@ -136,6 +168,7 @@ def build_mantis_count_report(
         normalize_chroma_issue_document,
         example_limit=10,
         scan_limit=snapshot_limit,
+        group_key=count_group_key(group_by),
     )
     if not snapshot["available"]:
         return {
@@ -204,6 +237,10 @@ def build_mantis_count_report(
         "",
         f"총 {total_count}건입니다.",
     ]
+    group_lines = format_count_group_lines(snapshot.get("group_counts") or {}, group_by)
+    if group_lines:
+        # 그룹 집계를 요청했으면 총계보다 그룹별 건수가 답의 본문이다.
+        lines.extend(group_lines)
     if total_count:
         lines.extend(["", "대표 이슈"])
         for issue in normalized_issues[:5]:
