@@ -12,7 +12,11 @@ import re
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.query_filters import add_filter_clause, normalize_filter_clauses
+from backend.query_filters import (
+    NEGATIVE_OPERATORS,
+    add_filter_clause,
+    normalize_filter_clauses,
+)
 
 
 COUNT_MARKERS = ("몇개", "몇건", "건수", "총몇", "개수")
@@ -73,13 +77,17 @@ def _safe_date(year: int, month: int, day: int) -> Optional[date]:
         return None
 
 
+def has_invalid_month_expression(question: str) -> bool:
+    """"2026년 13월"처럼 존재하지 않는 월을 가리키는 표현인지 판별한다."""
+    return bool(re.search(r"(?<!\d)(1[3-9]|[2-9]\d)\s*월", str(question or "")))
+
+
 def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
     """Extract a registration-date range from common Korean date expressions."""
-    # "2026년 13월"처럼 존재하지 않는 월은 어떤 규칙으로도 해석하지 않는다.
-    # 예전에는 월 규칙이 빗나간 뒤 연도 규칙에 걸려 2026년 전체로 조용히
-    # 바뀌었는데, 잘못된 조건을 그럴듯한 다른 범위로 대체하면 사용자가
-    # 결과를 오해하게 된다.
-    if re.search(r"(?<!\d)(1[3-9]|[2-9]\d)\s*월", question):
+    # 존재하지 않는 월은 어떤 규칙으로도 해석하지 않는다. 예전에는 월 규칙이
+    # 빗나간 뒤 연도 규칙에 걸려 2026년 전체로 조용히 바뀌었는데, 잘못된
+    # 조건을 그럴듯한 다른 범위로 대체하면 사용자가 결과를 오해하게 된다.
+    if has_invalid_month_expression(question):
         return None
 
     # 일 단위까지 명시한 구간은 월 단위 규칙보다 먼저 처리한다. 그렇지 않으면
@@ -232,6 +240,19 @@ def question_has_temporal_expression(question: str) -> bool:
     return bool(_TEMPORAL_EXPRESSION_PATTERN.search(str(question or "")))
 
 
+def _clause_contradicts_filters(clause: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+    """규칙이 잡은 긍정 조건을 그대로 다시 제외하는 절인지 판별한다."""
+    if clause.get("operator") not in NEGATIVE_OPERATORS:
+        return False
+    positive = filters.get({"platform": "platform", "customer": "customer"}.get(clause.get("field"), ""))
+    if not positive:
+        return False
+    values = clause.get("value")
+    values = values if isinstance(values, list) else [values]
+    normalized_positive = str(positive).strip().casefold()
+    return any(str(value).strip().casefold() == normalized_positive for value in values)
+
+
 def build_query_plan(
     question: str,
     source_plan: Optional[Dict[str, Any]] = None,
@@ -257,6 +278,10 @@ def build_query_plan(
                     break
     if model_created_at and not detected_created_at and not question_has_temporal_expression(question):
         # 질문에 시점 표현이 없는데 모델만 날짜 범위를 내놓은 경우 → 환각으로 간주하고 버린다.
+        model_created_at = None
+    if has_invalid_month_expression(question):
+        # "2026년 13월"은 연도가 있어 시점 표현으로는 잡히므로 위 규칙을 통과한다.
+        # 규칙이 해석을 거부한 잘못된 월을 모델이 지어낸 범위로 메우지 않도록 막는다.
         model_created_at = None
     created_at = detected_created_at or model_created_at
     if not isinstance(created_at, dict) or not created_at.get("from") or not created_at.get("to"):
@@ -299,6 +324,11 @@ def build_query_plan(
         ]
     for clause in model_filter_clauses:
         if clause["field"] == "created_at" and not question_has_temporal_expression(question):
+            continue
+        if _clause_contradicts_filters(clause, filters):
+            # 규칙이 이미 조건으로 잡은 값을 모델이 다시 제외하면(예: 플랫폼=MTS인데
+            # 플랫폼 제외=MTS) 결과가 항상 0건이 된다. 사용자가 직접 말한 조건이
+            # 우선이므로 모순되는 모델 절은 버린다.
             continue
         if clause not in filter_clauses:
             filter_clauses.append(clause)

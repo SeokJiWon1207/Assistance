@@ -367,6 +367,50 @@ class QueryPlanningTests(unittest.TestCase):
             {"from": "2026-12-01", "to": "2026-12-31", "precision": "month"},
         )
 
+    def test_invalid_month_also_rejects_model_supplied_range(self):
+        # "2026년 13월"은 연도 때문에 시점 표현으로 잡혀서, 규칙이 해석을
+        # 거부해도 모델이 지어낸 범위가 그대로 통과하던 구멍을 막는다.
+        plan = build_query_plan(
+            "2026년 13월 이슈 보여줘",
+            {"source": "mantis", "confidence": 0.9},
+            {},
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "search",
+                "filters": {"created_at": {"from": "2025-12-01", "to": "2027-01-31"}},
+            },
+        )
+        self.assertIsNone(plan["filters"]["created_at"])
+
+    def test_model_clause_cannot_exclude_the_requested_platform(self):
+        # 플랫폼=MTS인데 모델이 플랫폼 제외=MTS를 덧붙이면 결과가 항상 0건이 된다.
+        constraints = extract_query_constraints("신한 mts 종료된 건은 빼줘")
+        plan = build_query_plan(
+            "신한 mts 종료된 건은 빼줘",
+            {"source": "mantis", "confidence": 0.9},
+            constraints,
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "search",
+                "filter_clauses": [
+                    {"field": "platform", "operator": "not_equals", "value": "mts"},
+                    {"field": "status", "operator": "not_equals", "value": "closed"},
+                ],
+            },
+        )
+        self.assertEqual(plan["filters"]["platform"], "mts")
+        self.assertNotIn(
+            {"field": "platform", "operator": "not_equals", "value": "mts"},
+            plan["filter_clauses"],
+        )
+        # 사용자가 실제로 요청한 상태 제외는 그대로 남아야 한다.
+        self.assertIn(
+            {"field": "status", "operator": "not_equals", "value": "closed"},
+            plan["filter_clauses"],
+        )
+
     def test_count_and_requested_list_are_distinct(self):
         self.assertEqual(infer_operation("신한 이슈 몇 개야?"), "count")
         self.assertEqual(infer_operation("신한 이슈 5개만 보여줘"), "search")
