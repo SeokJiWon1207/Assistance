@@ -2437,7 +2437,12 @@ function renderAccuracyInsights() {
         <span>정확도 추세</span>
         <strong>${escapeHtml(deltaText)}</strong>
         <div class="accuracy-trend-bars" aria-label="최근 정확도 추세">
-          ${trend.map((item) => `<i style="--score:${Math.max(4, Number(item.score) || 0)}%" title="${escapeHtml(String(item.runAt || ""))}: ${Number(item.score) || 0}점"><b>${Number(item.score) || 0}</b></i>`).join("")}
+          ${trend.map((item) => {
+            const available = item.score !== null && item.score !== undefined;
+            const score = available ? Number(item.score) || 0 : 0;
+            const label = available ? `${score}점` : "불완전";
+            return `<i style="--score:${Math.max(4, score)}%" title="${escapeHtml(String(item.runAt || ""))}: ${escapeHtml(label)}"><b>${available ? score : "N/A"}</b></i>`;
+          }).join("")}
         </div>
       </article>`
     : "";
@@ -2465,7 +2470,8 @@ function renderAccuracyTab() {
           total: state.accuracyLive.filter((result) => !result.pending).length,
         }
       : state.accuracyReport.summary || {};
-    els.evaluationSummary.innerHTML = `<strong>${summary.passed ?? 0}/${summary.total ?? 0}</strong> 통과 · 실제 답변까지 채점한 결과`;
+    const incomplete = summary.status === "incomplete";
+    els.evaluationSummary.innerHTML = `<strong>${summary.passed ?? 0}/${summary.total ?? 0}</strong> 통과 · ${incomplete ? "연동 오류로 일부 문항은 정확도에서 제외됨" : "실제 답변까지 채점한 결과"}`;
   } else {
     els.evaluationSummary.innerHTML = "실시간 데이터로 질문을 만들어 실제 답변까지 채점합니다.";
   }
@@ -2497,10 +2503,12 @@ function renderAccuracyTab() {
     state.accuracyReports.forEach((report) => {
       const summary = report.summary || {};
       const chip = document.createElement("span");
-      chip.className = `evaluation-history-chip ${summary.failed || (report.errors || []).length ? "history-fail" : "history-pass"}`;
+      const incomplete = summary.status === "incomplete" || (summary.dependency_errors ?? 0) > 0;
+      chip.className = `evaluation-history-chip ${summary.failed || incomplete || (report.errors || []).length ? "history-fail" : "history-pass"}`;
       const when = String(report.runAt || "").replace("T", " ").slice(5, 16);
-      chip.title = `${when} · ${summary.passed ?? 0}/${summary.total ?? 0} 통과${(report.errors || []).length ? " · 오류 있음" : ""}`;
-      chip.textContent = `${summary.score ?? 0}점 (${summary.passed ?? 0}/${summary.total ?? 0})`;
+      const scoreLabel = summary.score === null || summary.score === undefined ? "N/A" : `${summary.score}점`;
+      chip.title = `${when} · ${summary.passed ?? 0}/${summary.total ?? 0} 통과${incomplete || (report.errors || []).length ? " · 실행 불완전" : ""}`;
+      chip.textContent = `${scoreLabel} (${summary.passed ?? 0}/${summary.total ?? 0})`;
       history.appendChild(chip);
     });
     els.evaluationContent.appendChild(history);
@@ -2517,7 +2525,13 @@ function renderAccuracyTab() {
   results.forEach((result) => {
     const card = document.createElement("article");
     card.className = `evaluation-case ${result.pending ? "case-running" : result.passed ? "case-pass" : "case-fail"}`;
-    const statusText = result.pending ? "실행 중" : result.passed ? "통과" : "실패";
+    const statusText = result.pending
+      ? "실행 중"
+      : result.passed
+        ? "통과"
+        : ["dependency_error", "execution_error"].includes(result.outcome)
+          ? "연동 오류"
+          : "실패";
     const meta = [result.source, result.category].filter(Boolean).join(" · ");
     const detail = result.pending
       ? ""

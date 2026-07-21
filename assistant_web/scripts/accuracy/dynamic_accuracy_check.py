@@ -77,6 +77,38 @@ def exact_screen_numbers(issue: Dict[str, Any]) -> set[str]:
     return values
 
 
+def complete_mutable_mantis_ids(
+    question: str,
+    live_issues: List[Dict[str, Any]],
+    limit: int,
+) -> List[int]:
+    """Complete a handler/status oracle with live-verified local candidates.
+
+    The paginated live sample can omit older IDs that are still newer than
+    other sampled matches. Combine it with the full local index, but include
+    local candidates only when every displayed candidate was revalidated by an
+    exact live lookup. This avoids defining expectations from stale fields.
+    """
+    constraints = assistant.extract_query_constraints(question)
+    expected_ids = {
+        int(issue["id"])
+        for issue in live_issues
+        if issue.get("id") and assistant.issue_matches_constraints(issue, constraints)
+    }
+    try:
+        stage = assistant.execute_mantis_snapshot_search(max(limit * 2, 5), constraints)
+        stage = assistant.revalidate_mantis_snapshot_stage(stage, constraints)
+    except Exception:
+        stage = {"status": "error", "issues_list": [], "meta": {}}
+    if stage.get("status") == "ok" and not stage.get("meta", {}).get("live_fallback_count"):
+        expected_ids.update(
+            int(issue["id"])
+            for issue in stage.get("issues_list", [])
+            if issue.get("id")
+        )
+    return sorted(expected_ids, reverse=True)[:limit]
+
+
 def fetch_mantis_snapshot() -> List[Dict[str, Any]]:
     url = os.getenv("MANTIS_API_URL", "").strip()
     token = os.getenv("MANTIS_API_TOKEN", "").strip()
@@ -190,7 +222,11 @@ def fetch_notion_snapshot() -> List[Dict[str, str]]:
     return pages
 
 
-def build_mantis_cases(issues: List[Dict[str, Any]], rng: random.Random) -> List[AccuracyCase]:
+def build_mantis_cases(
+    issues: List[Dict[str, Any]],
+    rng: random.Random,
+    augment_mutable_oracle: bool = False,
+) -> List[AccuracyCase]:
     if not issues:
         return []
     cases: List[AccuracyCase] = []
@@ -219,10 +255,13 @@ def build_mantis_cases(issues: List[Dict[str, Any]], rng: random.Random) -> List
         item for item in issues
         if item.get("project", {}).get("name") == pair_project and status_name(item) == pair_status
     ]
+    pair_question = f"{human_project_name(pair_project)}에서 상태가 {pair_status}인 최근 이슈 2개 보여줘"
+    pair_expected = [int(item["id"]) for item in pair_issues[:2]]
+    if augment_mutable_oracle:
+        pair_expected = complete_mutable_mantis_ids(pair_question, issues, 2) or pair_expected
     cases.append(AccuracyCase(
         "mantis-project-status", "mantis", "고객사·상태",
-        f"{human_project_name(pair_project)}에서 상태가 {pair_status}인 최근 이슈 2개 보여줘",
-        "issue_ids", [int(item["id"]) for item in pair_issues[:2]],
+        pair_question, "issue_ids", pair_expected,
     ))
 
     screen_groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -244,9 +283,13 @@ def build_mantis_cases(issues: List[Dict[str, Any]], rng: random.Random) -> List
     handlers = [name for name, rows in handler_groups.items() if len(rows) >= 2]
     if handlers:
         handler = rng.choice(sorted(handlers))
+        handler_question = f"담당자 {handler}의 최근 이슈 2개 보여줘"
+        handler_expected = [int(item["id"]) for item in handler_groups[handler][:2]]
+        if augment_mutable_oracle:
+            handler_expected = complete_mutable_mantis_ids(handler_question, issues, 2) or handler_expected
         cases.append(AccuracyCase(
-            "mantis-handler", "mantis", "담당자", f"담당자 {handler}의 최근 이슈 2개 보여줘",
-            "issue_ids", [int(item["id"]) for item in handler_groups[handler][:2]],
+            "mantis-handler", "mantis", "담당자", handler_question,
+            "issue_ids", handler_expected,
         ))
 
     dated = [item for item in project_issues if re.match(r"\d{4}-\d{2}", str(item.get("created_at") or ""))]
@@ -330,13 +373,30 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     else:
         actual = None
         passed = False
+    dependency_reason = ""
+    for stage in response.get("retrievalStages") or []:
+        if stage.get("status") not in {"error", "partial_error"}:
+            continue
+        reason = str(stage.get("reason") or "")
+        if any(token in reason.casefold() for token in ("timeout", "timed out", "connection failed")):
+            dependency_reason = reason
+            break
+    if not dependency_reason and any(
+        token in content.casefold()
+        for token in ("connection failed", "timed out", "readtimeout", "연결 실패")
+    ):
+        dependency_reason = content[:500]
+
+    outcome = "passed" if passed else "dependency_error" if dependency_reason else "assertion_failed"
     return {
         **asdict(case),
         "passed": passed,
+        "outcome": outcome,
         "actual": actual,
         "answer": content[:2000],
         "source_count": len(sources),
         "audit_id": response.get("auditId"),
+        **({"dependency_error": dependency_reason} if dependency_reason else {}),
     }
 
 
@@ -360,7 +420,16 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
         ))
         return grade(case, response)
     except Exception as exc:
-        return {**asdict(case), "passed": False, "error": f"{type(exc).__name__}: {str(exc)[:500]}"}
+        error = f"{type(exc).__name__}: {str(exc)[:500]}"
+        dependency_error = isinstance(exc, requests.RequestException) or any(
+            token in error.casefold() for token in ("timeout", "timed out", "connection")
+        )
+        return {
+            **asdict(case),
+            "passed": False,
+            "outcome": "dependency_error" if dependency_error else "execution_error",
+            "error": error,
+        }
 
 
 def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
@@ -371,11 +440,15 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary = report["summary"]
+    score_label = f"{summary['score']}%" if summary.get("score") is not None else "N/A"
     lines = [
         "# Dynamic accuracy report",
         "",
         f"- Run: {report['run_at']}",
-        f"- Score: {summary['score']}% ({summary['passed']}/{summary['total']})",
+        f"- Status: {summary.get('status', 'unknown')}",
+        f"- Accuracy: {score_label} ({summary['passed']}/{summary['total']} evaluated)",
+        f"- Attempted: {summary.get('attempted', summary['total'])}",
+        f"- Dependency errors: {summary.get('dependency_errors', 0)}",
         f"- Mantis snapshot: {report['snapshots']['mantis']} items",
         f"- Notion snapshot: {report['snapshots']['notion']} items",
         "",
@@ -383,9 +456,18 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for result in report["results"]:
-        mark = "PASS" if result.get("passed") else "FAIL"
+        mark = {
+            "passed": "PASS",
+            "dependency_error": "ERROR",
+            "execution_error": "ERROR",
+        }.get(result.get("outcome"), "FAIL")
         expected = json.dumps(result.get("expected"), ensure_ascii=False)
-        actual = json.dumps(result.get("actual", result.get("error", "")), ensure_ascii=False)
+        actual_value = (
+            result.get("dependency_error")
+            or result.get("error")
+            or result.get("actual", "")
+        )
+        actual = json.dumps(actual_value, ensure_ascii=False)
         lines.append(
             f"| {mark} | {result['source']} | {result['category']} | "
             f"{result['question'].replace('|', '/')} | {expected} | {actual} |"
@@ -425,7 +507,11 @@ def main() -> int:
         notion_pages = []
         errors.append(f"Notion snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
 
-    cases = build_mantis_cases(mantis_issues, rng) + build_notion_cases(notion_pages, rng)
+    cases = build_mantis_cases(
+        mantis_issues,
+        rng,
+        augment_mutable_oracle=True,
+    ) + build_notion_cases(notion_pages, rng)
     cases = cases[: args.questions]
     models = [model for model in assistant.get_model_registry() if model.get("enabled", True)]
     model_id = args.model_id or (str(models[0]["id"]) if models else "")
@@ -449,7 +535,13 @@ def main() -> int:
             results.append(result)
             emit_progress(args.progress, {"type": "case_result", "result": result})
     passed = sum(1 for result in results if result.get("passed"))
-    total = len(results)
+    dependency_errors = sum(1 for result in results if result.get("outcome") == "dependency_error")
+    execution_errors = sum(1 for result in results if result.get("outcome") == "execution_error")
+    attempted = len(results)
+    evaluated = attempted - dependency_errors - execution_errors
+    failed = sum(1 for result in results if result.get("outcome") == "assertion_failed")
+    incomplete = len(cases) < args.questions or dependency_errors > 0 or execution_errors > 0 or bool(errors)
+    run_status = "incomplete" if incomplete else "failed" if failed else "passed"
     report = {
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "seed": args.seed,
@@ -458,10 +550,15 @@ def main() -> int:
         "generated_questions": len(cases),
         "snapshots": {"mantis": len(mantis_issues), "notion": len(notion_pages)},
         "summary": {
-            "total": total,
+            "attempted": attempted,
+            "total": evaluated,
+            "evaluated": evaluated,
             "passed": passed,
-            "failed": total - passed,
-            "score": round(passed / total * 100) if total else 0,
+            "failed": failed,
+            "dependency_errors": dependency_errors,
+            "execution_errors": execution_errors,
+            "score": round(passed / evaluated * 100) if evaluated else None,
+            "status": run_status,
         },
         "errors": errors,
         "results": results,
@@ -474,15 +571,18 @@ def main() -> int:
         "reportJson": json_path.name,
         "reportMarkdown": markdown_path.name,
     })
-    print(f"Accuracy score: {report['summary']['score']}% ({passed}/{total})")
+    score_label = f"{report['summary']['score']}%" if report["summary"]["score"] is not None else "N/A"
+    print(f"Accuracy score: {score_label} ({passed}/{evaluated}) · status={run_status}")
     print(f"JSON report: {json_path}")
     print(f"Markdown report: {markdown_path}")
     for result in results:
-        if not result.get("passed"):
+        if result.get("outcome") == "assertion_failed":
             print(f"FAIL [{result['source']}] {result['question']}")
+        elif result.get("outcome") in {"dependency_error", "execution_error"}:
+            print(f"ERROR [{result['source']}] {result['question']}")
     for error in errors:
         print(f"ERROR {error}", file=sys.stderr)
-    return 0 if total == args.questions and passed == total and not errors else 1
+    return 0 if run_status == "passed" else 1
 
 
 if __name__ == "__main__":

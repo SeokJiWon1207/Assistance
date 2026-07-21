@@ -20,6 +20,7 @@ from backend.common import (
     is_valid_person_name,
     normalize_for_match,
     normalize_search_token,
+    remove_quoted_value,
 )
 from backend.config import (
     NOTION_API_BASE,
@@ -814,7 +815,9 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
 
 
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
-    normalized = normalize_for_match(text)
+    exact_title = extract_quoted_value(text) or ""
+    constraint_text = remove_quoted_value(text) if exact_title else text
+    normalized = normalize_for_match(constraint_text)
     status = ""
     excluded_statuses: List[str] = []
     for candidate in sorted(NOTION_STATUS_QUERY_TERMS, key=len, reverse=True):
@@ -828,11 +831,11 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
             elif not status:
                 status = candidate
 
-    group_by = extract_group_by(text)
+    group_by = extract_group_by(constraint_text)
     owner_text = re.sub(
         r"(?:담당자|담당)\s*(?:별(?:로)?|기준(?:으)?로|마다)",
         " ",
-        text,
+        constraint_text,
     )
     owner = ""
     owner_match = re.search(
@@ -847,8 +850,8 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         owner = owner_match.group(1)
 
     return {
-        "database_label": extract_notion_database_label_from_text(text) or "",
-        "exact_title": extract_quoted_value(text) or "",
+        "database_label": extract_notion_database_label_from_text(constraint_text) or "",
+        "exact_title": exact_title,
         "status": status,
         "excluded_statuses": excluded_statuses,
         "owner": owner,
@@ -1161,18 +1164,51 @@ def execute_notion_search(
                 title_property = notion_title_property(notion_property_schema(database_id))
             except HTTPException:
                 title_property = ""
+            if exact_title and not title_property:
+                errors.append(
+                    {
+                        "database_id": database_id,
+                        "database_label": database_label,
+                        "reason": "Notion title property could not be resolved",
+                    }
+                )
+                database_meta.append(
+                    {
+                        "database_id": database_id,
+                        "database_label": database_label,
+                        "found_count": 0,
+                    }
+                )
+                continue
             if exact_title and title_property:
                 exact_payload = {
                     "page_size": min(page_size, max(limit, 5)),
                     "filter": {"property": title_property, "title": {"contains": exact_title}},
                     "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
                 }
-                exact_response = notion_post_json(
-                    f"{NOTION_API_BASE}/databases/{database_id}/query",
-                    exact_payload,
-                    timeout=45,
-                    retries=2,
-                )
+                try:
+                    exact_response = notion_post_json(
+                        f"{NOTION_API_BASE}/databases/{database_id}/query",
+                        exact_payload,
+                        timeout=45,
+                        retries=2,
+                    )
+                except requests.RequestException as exc:
+                    errors.append(
+                        {
+                            "database_id": database_id,
+                            "database_label": database_label,
+                            "reason": f"Notion exact-title query failed: {exc}",
+                        }
+                    )
+                    database_meta.append(
+                        {
+                            "database_id": database_id,
+                            "database_label": database_label,
+                            "found_count": 0,
+                        }
+                    )
+                    continue
                 if exact_response.status_code < 400:
                     exact_results = exact_response.json().get("results", [])
                     scanned_count += len(exact_results)
@@ -1198,6 +1234,25 @@ def execute_notion_search(
                         page["match_method"] = "notion_exact_title_filter"
                         pages.append(page)
                         database_found_count += 1
+                else:
+                    errors.append(
+                        {
+                            "database_id": database_id,
+                            "database_label": database_label,
+                            "reason": f"{exact_response.status_code} {exact_response.text[:300]}",
+                        }
+                    )
+                # Exact-title requests are backed by Notion's server-side title
+                # filter. Do not fall through to a multi-thousand-row database
+                # scan when a literal title is absent or one database is slow.
+                database_meta.append(
+                    {
+                        "database_id": database_id,
+                        "database_label": database_label,
+                        "found_count": database_found_count,
+                    }
+                )
+                continue
             if title_terms and title_property:
                 try:
                     title_filter = {
@@ -1241,8 +1296,14 @@ def execute_notion_search(
                             page["match_method"] = "notion_title_filter"
                             pages.append(page)
                             database_found_count += 1
-                except HTTPException:
-                    pass
+                except (HTTPException, requests.RequestException) as exc:
+                    errors.append(
+                        {
+                            "database_id": database_id,
+                            "database_label": database_label,
+                            "reason": f"Notion targeted-title query failed: {exc}",
+                        }
+                    )
             cursor = None
             for _ in range(max_pages):
                 payload: Dict[str, Any] = {
@@ -1254,12 +1315,22 @@ def execute_notion_search(
                 if cursor:
                     payload["start_cursor"] = cursor
 
-                response = notion_post_json(
-                    f"{NOTION_API_BASE}/databases/{database_id}/query",
-                    payload,
-                    timeout=45,
-                    retries=2,
-                )
+                try:
+                    response = notion_post_json(
+                        f"{NOTION_API_BASE}/databases/{database_id}/query",
+                        payload,
+                        timeout=45,
+                        retries=2,
+                    )
+                except requests.RequestException as exc:
+                    errors.append(
+                        {
+                            "database_id": database_id,
+                            "database_label": database_label,
+                            "reason": f"Notion database scan failed: {exc}",
+                        }
+                    )
+                    break
                 if response.status_code >= 400:
                     errors.append(
                         {

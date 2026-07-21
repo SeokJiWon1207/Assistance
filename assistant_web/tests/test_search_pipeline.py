@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import backend.app as backend_app
 from backend.app import (
@@ -73,6 +73,83 @@ class ExactConstraintTests(unittest.TestCase):
             extract_query_constraints("종료 안 된 할당 이슈 보여줘")["statuses"],
             ["assigned"],
         )
+
+    def test_developed_status_maps_to_dev_done(self):
+        self.assertEqual(
+            extract_query_constraints("NH증권에서 상태가 developed인 최근 이슈 2개 보여줘")["statuses"],
+            ["dev_done"],
+        )
+
+    def test_quoted_notion_title_keeps_inner_apostrophes_and_no_inner_filters(self):
+        question = "노션에서 '[1892]  '일중 등락폭 비교' 신규조건' 항목을 찾아서 알려줘"
+        constraints = extract_notion_constraints(question)
+        self.assertEqual(constraints["exact_title"], "[1892]  '일중 등락폭 비교' 신규조건")
+        self.assertEqual(constraints["status"], "")
+        self.assertEqual(constraints["owner"], "")
+
+    @patch("backend.retrieval.execute_notion_search")
+    def test_quoted_notion_title_drops_filters_inferred_from_title(self, notion_search):
+        notion_search.return_value = {
+            "source": "notion",
+            "status": "ok",
+            "notion_pages": [],
+            "meta": {"displayed_count": 0},
+        }
+        question = "노션에서 '[MTS] 김호길 확인요청' 항목을 찾아서 알려줘"
+        result = backend_app.run_retrieval_pipeline(
+            question,
+            5,
+            {"mantis": False, "notion": True, "vectorDb": False},
+            {"source": "notion", "terms": ["MTS", "김호길", "확인요청"]},
+        )
+
+        passed_constraints = notion_search.call_args.args[2]
+        self.assertIsNone(passed_constraints["platform_key"])
+        self.assertEqual(passed_constraints["statuses"], [])
+        self.assertEqual(passed_constraints["people"], {"names": [], "role": None})
+        self.assertEqual(result["constraints"], passed_constraints)
+
+    @patch("backend.sources.notion.notion_property_schema")
+    @patch("backend.sources.notion.fetch_notion_database_title", return_value="이슈리스트_테스트")
+    @patch("backend.sources.notion.get_notion_settings")
+    @patch("backend.sources.notion.notion_post_json")
+    def test_exact_notion_title_stops_after_server_side_title_query(
+        self, notion_post, notion_settings, _database_title, property_schema
+    ):
+        title = "[MTS] 저장한 차트 적용 및 확인요청"
+        notion_settings.return_value = {"token": "token", "database_ids": ["db-id"]}
+        property_schema.return_value = {"제목": {"type": "title"}}
+        notion_post.return_value = Mock(
+            status_code=200,
+            text="",
+            json=lambda: {
+                "results": [
+                    {
+                        "id": "page-id",
+                        "url": "https://notion.so/page-id",
+                        "created_time": "2026-07-01T00:00:00Z",
+                        "last_edited_time": "2026-07-01T00:00:00Z",
+                        "properties": {
+                            "제목": {
+                                "type": "title",
+                                "title": [{"plain_text": title}],
+                            }
+                        },
+                    }
+                ]
+            },
+        )
+
+        with patch.dict("os.environ", {"NOTION_FETCH_PAGE_BLOCKS": "false"}):
+            result = backend_app.execute_notion_search(
+                f"노션에서 '{title}' 항목을 찾아서 알려줘",
+                limit=5,
+                constraints={},
+            )
+
+        self.assertEqual(notion_post.call_count, 1)
+        self.assertEqual([page["title"] for page in result["notion_pages"]], [title])
+        self.assertEqual(result["meta"]["scanned_count"], 1)
 
     def test_krx_domain_term_is_not_legacy_customer(self):
         constraints = extract_query_constraints("KRX 제도개선 관련 이슈 찾아줘")

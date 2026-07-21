@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -213,7 +214,7 @@ STATUS_ALIASES = {
     "resolved": ["해결", "해결된", "resolved", "resolve"],
     "review": ["검토", "이슈 검토"],
     "need_info": ["정보 부족", "정보부족"],
-    "dev_done": ["개발완료", "개발 완료"],
+    "dev_done": ["개발완료", "개발 완료", "developed"],
 }
 
 STATUS_MATCH_ALIASES = {
@@ -224,7 +225,7 @@ STATUS_MATCH_ALIASES = {
     "resolved": ["해결된 이슈", "해결", "resolved"],
     "review": ["이슈 검토", "검토"],
     "need_info": ["정보 부족", "정보부족"],
-    "dev_done": ["개발완료", "개발 완료"],
+    "dev_done": ["개발완료", "개발 완료", "developed"],
 }
 
 # 상태 별칭은 부분 문자열로 찾기 때문에 "종료 안 된"에서도 먼저 "종료"가
@@ -371,13 +372,14 @@ def get_notion_headers() -> Dict[str, str]:
 def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retries: int = 2) -> requests.Response:
     # A single Notion tool call must not monopolize the whole chat request.
     # Callers may request a larger timeout/retry count, but the orchestration
-    # budget caps each network attempt and defaults to no automatic retry.
+    # budget caps each network attempt and defaults to one short retry for
+    # transient read/connect failures.
     max_timeout = max(3, min(int(os.getenv("NOTION_TOOL_TIMEOUT_SECONDS", "12")), 45))
-    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "0")), 2))
+    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "1")), 2))
     timeout = min(timeout, max_timeout)
     retries = min(retries, max_retries)
     last_error: Optional[requests.RequestException] = None
-    for _ in range(max(1, retries + 1)):
+    for attempt in range(max(1, retries + 1)):
         try:
             return requests.post(
                 url,
@@ -387,6 +389,8 @@ def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retri
             )
         except requests.RequestException as exc:
             last_error = exc
+            if attempt < retries:
+                time.sleep(min(0.25 * (2**attempt), 1.0))
     if last_error:
         raise last_error
     raise requests.RequestException("Notion request failed")

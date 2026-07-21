@@ -48,9 +48,40 @@ def compact_text(value: str, max_chars: int = 520) -> str:
     return text[:max_chars].rstrip() + "..."
 
 
+def quoted_value_span(text: str) -> Optional[tuple[int, int]]:
+    """Return the outermost quoted span that starts earliest in ``text``.
+
+    Straight quotes use the last matching delimiter so titles that themselves
+    contain apostrophes (for example ``'[1892] '일중' 신규조건'``) keep the
+    complete outer title instead of being truncated at the inner quote.
+    """
+    candidates: List[tuple[int, int]] = []
+    for opening, closing in (("“", "”"), ("‘", "’"), ('"', '"'), ("'", "'")):
+        start = text.find(opening)
+        if start < 0:
+            continue
+        end = text.rfind(closing)
+        if end <= start:
+            continue
+        candidates.append((start, end + len(closing)))
+    return min(candidates, key=lambda span: span[0]) if candidates else None
+
+
 def extract_quoted_value(text: str) -> str:
-    match = re.search(r"[\"'“”‘’](.+?)[\"'“”‘’]", text)
-    return match.group(1).strip() if match else ""
+    span = quoted_value_span(text)
+    if not span:
+        return ""
+    start, end = span
+    return text[start + 1 : end - 1].strip()
+
+
+def remove_quoted_value(text: str) -> str:
+    """Remove the outer quoted value while preserving surrounding intent text."""
+    span = quoted_value_span(text)
+    if not span:
+        return text
+    start, end = span
+    return f"{text[:start]} {text[end:]}"
 
 
 def normalize_for_match(value: str) -> str:

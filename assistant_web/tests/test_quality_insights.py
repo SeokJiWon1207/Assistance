@@ -3,7 +3,12 @@ from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
 import backend.app as app
-from scripts.accuracy.dynamic_accuracy_check import exact_screen_numbers
+from scripts.accuracy.dynamic_accuracy_check import (
+    AccuracyCase,
+    complete_mutable_mantis_ids,
+    exact_screen_numbers,
+    grade,
+)
 
 
 class ScreenNumberAccuracyTests(unittest.TestCase):
@@ -83,8 +88,117 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         )
         filter_search.assert_not_called()
 
+    @patch("backend.sources.mantis.fetch_mantis_issue_by_id")
+    def test_mutable_snapshot_fields_are_revalidated_against_live_mantis(self, fetch_issue):
+        def live_issue(issue_id):
+            handler = "다른 담당자" if issue_id == 30072 else "이준옥"
+            return {
+                "id": issue_id,
+                "project": {"name": "테스트"},
+                "summary": f"이슈 {issue_id}",
+                "status": {"name": "closed"},
+                "handler": {"real_name": handler},
+                "created_at": "2025-01-01",
+            }
+
+        fetch_issue.side_effect = live_issue
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "meta": {"displayed_count": 2},
+            "issues_list": [
+                {"id": 30072, "handler": "이준옥"},
+                {"id": 29730, "handler": "이준옥"},
+            ],
+        }
+        constraints = app.extract_query_constraints("담당자 이준옥의 최근 이슈 2개 보여줘")
+
+        result = app.revalidate_mantis_snapshot_stage(stage, constraints)
+
+        self.assertEqual([issue["id"] for issue in result["issues_list"]], [29730])
+        self.assertEqual(result["meta"]["stale_removed_count"], 1)
+        self.assertEqual(result["meta"]["live_revalidated_count"], 2)
+
 
 class AccuracyInsightTests(unittest.TestCase):
+    @patch("scripts.accuracy.dynamic_accuracy_check.assistant.revalidate_mantis_snapshot_stage")
+    @patch("scripts.accuracy.dynamic_accuracy_check.assistant.execute_mantis_snapshot_search")
+    def test_mutable_oracle_combines_live_sample_with_verified_full_snapshot(
+        self, snapshot_search, revalidate
+    ):
+        snapshot_search.return_value = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 30072}, {"id": 29730}],
+            "meta": {},
+        }
+        revalidate.return_value = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 30072}, {"id": 29730}],
+            "meta": {"live_fallback_count": 0},
+        }
+        live_sample = [
+            {
+                "id": 29730,
+                "project": {"name": "테스트"},
+                "handler": {"real_name": "이준옥"},
+                "status": {"name": "closed"},
+            },
+            {
+                "id": 29115,
+                "project": {"name": "테스트"},
+                "handler": {"real_name": "이준옥"},
+                "status": {"name": "closed"},
+            },
+        ]
+
+        expected = complete_mutable_mantis_ids(
+            "담당자 이준옥의 최근 이슈 2개 보여줘",
+            live_sample,
+            2,
+        )
+
+        self.assertEqual(expected, [30072, 29730])
+
+    def test_dependency_timeout_is_not_counted_as_accuracy_failure(self):
+        case = AccuracyCase(
+            "notion-title-1",
+            "notion",
+            "제목 검색",
+            "노션에서 '테스트' 항목을 찾아서 알려줘",
+            "titles",
+            ["테스트"],
+        )
+        result = grade(
+            case,
+            {
+                "content": "Notion connection failed: Read timed out. (read timeout=12)",
+                "sources": [],
+                "retrievalStages": [
+                    {
+                        "source": "notion",
+                        "status": "error",
+                        "reason": "Notion connection failed: Read timed out.",
+                    }
+                ],
+            },
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["outcome"], "dependency_error")
+
+        analytics = app.build_accuracy_analytics(
+            [
+                {
+                    "run_at": "2026-07-21T08:00:00+09:00",
+                    "summary": {"score": None, "passed": 0, "total": 0, "status": "incomplete"},
+                    "results": [result],
+                }
+            ]
+        )
+        self.assertIsNone(analytics["trend"][0]["score"])
+        self.assertEqual(analytics["failureCounts"], [])
+
     def test_analytics_reports_delta_trend_and_failure_frequency(self):
         reports = [
             {

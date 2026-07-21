@@ -246,9 +246,12 @@ python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10
 ```
 
 The daily seed changes the sampled records while keeping a run reproducible.
-JSON and Markdown results are written to `runtime/accuracy_reports/`. A non-zero exit
-means at least one question failed, an integration was unavailable, or fewer
-than the requested number of questions could be generated.
+JSON and Markdown results are written to `runtime/accuracy_reports/`. Accuracy
+assertion failures are counted separately from dependency/execution errors. A
+run is `incomplete` when an integration is unavailable or fewer than the
+requested number of questions can be evaluated; unavailable cases are excluded
+from the accuracy denominator. A non-zero exit means the run is `failed` or
+`incomplete`.
 
 팀 검증용 기본 질문은 [`tests/test_questions.md`](./tests/test_questions.md), 복합 조건과 연속 대화 질문은
 [`tests/test_scenario_questions.md`](./tests/test_scenario_questions.md)에 정리되어 있습니다.

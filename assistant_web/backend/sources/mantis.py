@@ -677,6 +677,59 @@ def execute_mantis_snapshot_search(
     }
 
 
+def revalidate_mantis_snapshot_stage(
+    stage: Dict[str, Any],
+    constraints: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Refresh snapshot candidates whose mutable fields may have changed.
+
+    Handler and status values in the local index become stale between rebuilds.
+    Re-fetch only the small displayed candidate set, drop rows that no longer
+    satisfy the live constraints, and retain the snapshot row solely when the
+    live API is unavailable so existing offline fallback behavior is preserved.
+    """
+    mutable_filter = bool(
+        (constraints.get("people") or {}).get("names")
+        or constraints.get("statuses")
+        or constraints.get("excluded_statuses")
+        or any(
+            clause.get("field") in {"owner", "status"}
+            for clause in constraints.get("filter_clauses", [])
+        )
+    )
+    if stage.get("status") != "ok" or not mutable_filter:
+        return stage
+
+    refreshed: List[Dict[str, Any]] = []
+    revalidated_count = 0
+    removed_count = 0
+    fallback_count = 0
+    for snapshot_issue in stage.get("issues_list", []):
+        issue_id = int(snapshot_issue.get("id") or 0)
+        live_issue = fetch_mantis_issue_by_id(issue_id) if issue_id else None
+        if live_issue is None:
+            refreshed.append(snapshot_issue)
+            fallback_count += 1
+            continue
+        revalidated_count += 1
+        if issue_matches_constraints(live_issue, constraints):
+            refreshed.append(normalize_issue(live_issue))
+        else:
+            removed_count += 1
+
+    return {
+        **stage,
+        "issues_list": refreshed,
+        "meta": {
+            **(stage.get("meta") or {}),
+            "displayed_count": len(refreshed),
+            "live_revalidated_count": revalidated_count,
+            "stale_removed_count": removed_count,
+            "live_fallback_count": fallback_count,
+        },
+    }
+
+
 def execute_mantis_page_scan(
     search_keyword: str,
     limit: int = 5,

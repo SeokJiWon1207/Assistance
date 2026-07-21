@@ -1203,28 +1203,44 @@ def build_accuracy_analytics(report_data: List[Dict[str, Any]]) -> Dict[str, Any
     trend = [
         {
             "runAt": data.get("run_at"),
-            "score": int((data.get("summary") or {}).get("score") or 0),
+            "score": (
+                int((data.get("summary") or {}).get("score"))
+                if (data.get("summary") or {}).get("score") is not None
+                else None
+            ),
             "passed": int((data.get("summary") or {}).get("passed") or 0),
             "total": int((data.get("summary") or {}).get("total") or 0),
+            "status": (data.get("summary") or {}).get("status", "unknown"),
         }
         for data in reversed(report_data)
     ]
-    latest_score = int((report_data[0].get("summary") or {}).get("score") or 0)
+    scored_reports = [
+        data for data in report_data if (data.get("summary") or {}).get("score") is not None
+    ]
+    latest_score = (
+        int((scored_reports[0].get("summary") or {}).get("score"))
+        if scored_reports
+        else None
+    )
     previous_score = (
-        int((report_data[1].get("summary") or {}).get("score") or 0)
-        if len(report_data) > 1
+        int((scored_reports[1].get("summary") or {}).get("score"))
+        if len(scored_reports) > 1
         else None
     )
     failure_counts: Dict[str, int] = {}
     for data in report_data:
         for result in data.get("results") or []:
-            if result.get("passed"):
+            if result.get("passed") or result.get("outcome") in {"dependency_error", "execution_error"}:
                 continue
             category = str(result.get("category") or "미분류")
             failure_counts[category] = failure_counts.get(category, 0) + 1
     return {
         "trend": trend,
-        "latestDelta": latest_score - previous_score if previous_score is not None else None,
+        "latestDelta": (
+            latest_score - previous_score
+            if latest_score is not None and previous_score is not None
+            else None
+        ),
         "previousScore": previous_score,
         "failureCounts": [
             {"category": category, "count": count}

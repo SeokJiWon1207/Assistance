@@ -74,11 +74,28 @@ def load_report(path: Path) -> Dict[str, Any]:
 def build_slack_message(report: Dict[str, Any], exit_code: int) -> str:
     summary = report.get("summary", {})
     errors = report.get("errors", [])
-    failed_results = [r for r in report.get("results", []) if not r.get("passed")]
+    failed_results = [
+        result
+        for result in report.get("results", [])
+        if result.get("outcome") == "assertion_failed"
+        or (not result.get("outcome") and not result.get("passed"))
+    ]
+    dependency_results = [
+        result
+        for result in report.get("results", [])
+        if result.get("outcome") in {"dependency_error", "execution_error"}
+    ]
+    score = summary.get("score")
+    score_label = f"{score}%" if score is not None else "N/A"
+    status_label = {
+        "passed": "통과",
+        "failed": "정확도 실패",
+        "incomplete": "연동 오류로 불완전",
+    }.get(summary.get("status"), "통과" if exit_code == 0 else "확인 필요")
 
     lines = [
-        f"*AI 비서 정확도 자동 검증* — {'통과' if exit_code == 0 else '확인 필요'}",
-        f"점수: {summary.get('score', 0)}% ({summary.get('passed', 0)}/{summary.get('total', 0)})",
+        f"*AI 비서 정확도 자동 검증* — {status_label}",
+        f"정확도: {score_label} ({summary.get('passed', 0)}/{summary.get('total', 0)} 평가)",
         f"실행 시각: {report.get('run_at', '')}",
     ]
     if errors:
@@ -90,6 +107,8 @@ def build_slack_message(report: Dict[str, Any], exit_code: int) -> str:
             lines.append(f"- [{result.get('source', '?')}] {question}")
         if len(failed_results) > 5:
             lines.append(f"…외 {len(failed_results) - 5}건")
+    if dependency_results:
+        lines.append(f"연동/실행 오류 문항 {len(dependency_results)}건")
     return "\n".join(lines)
 
 
@@ -113,17 +132,28 @@ def source_pass_counts(report: Dict[str, Any]) -> List[Tuple[str, int, int]]:
     results = report.get("results", [])
     counts: List[Tuple[str, int, int]] = []
     for source in ("mantis", "notion"):
-        source_results = [result for result in results if result.get("source") == source]
+        source_results = [
+            result
+            for result in results
+            if result.get("source") == source
+            and result.get("outcome") not in {"dependency_error", "execution_error"}
+        ]
         passed = sum(1 for result in source_results if result.get("passed"))
         counts.append((source, passed, len(source_results)))
     return counts
 
 
 def score_delta_line(report: Dict[str, Any], previous: Optional[Dict[str, Any]]) -> str:
-    current_score = int((report.get("summary") or {}).get("score") or 0)
+    current_raw = (report.get("summary") or {}).get("score")
+    if current_raw is None:
+        return "- 직전 대비: 계산하지 않음 (현재 실행 불완전)"
+    current_score = int(current_raw)
     if not previous:
         return "- 직전 리포트: 없음"
-    previous_score = int((previous.get("summary") or {}).get("score") or 0)
+    previous_raw = (previous.get("summary") or {}).get("score")
+    if previous_raw is None:
+        return "- 직전 대비: 계산하지 않음 (이전 실행 불완전)"
+    previous_score = int(previous_raw)
     delta = current_score - previous_score
     sign = "+" if delta > 0 else ""
     previous_run_at = str(previous.get("run_at") or "")
@@ -132,7 +162,10 @@ def score_delta_line(report: Dict[str, Any], previous: Optional[Dict[str, Any]])
 
 def format_failed_result(result: Dict[str, Any]) -> str:
     expected = json.dumps(result.get("expected"), ensure_ascii=False)
-    actual = json.dumps(result.get("actual", result.get("error", "")), ensure_ascii=False)
+    actual = json.dumps(
+        result.get("dependency_error") or result.get("error") or result.get("actual", ""),
+        ensure_ascii=False,
+    )
     question = str(result.get("question") or "").strip()
     return (
         f"- [{result.get('source', '?')}] {result.get('category', '')}: {question}\n"
@@ -145,7 +178,17 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
     summary = report.get("summary") or {}
     results = report.get("results") or []
     errors = report.get("errors") or []
-    failed_results = [result for result in results if not result.get("passed")]
+    failed_results = [
+        result
+        for result in results
+        if result.get("outcome") == "assertion_failed"
+        or (not result.get("outcome") and not result.get("passed"))
+    ]
+    dependency_results = [
+        result
+        for result in results
+        if result.get("outcome") in {"dependency_error", "execution_error"}
+    ]
     source_lines = [
         f"- {source.capitalize()}: {passed}/{total}"
         for source, passed, total in source_pass_counts(report)
@@ -153,6 +196,8 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
     run_at = str(report.get("run_at") or "")
     note_title = f"Mantis·Notion 정확도 점검 {run_at[:10]}"
 
+    score = summary.get("score")
+    score_label = f"{score}%" if score is not None else "N/A"
     lines = [
         "---",
         "tags: [automation, accuracy-check, mantis, notion]",
@@ -161,7 +206,9 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
         f"# {note_title}",
         "",
         f"- 실행 시각: {run_at}",
-        f"- 전체 점수: {summary.get('score', 0)}% ({summary.get('passed', 0)}/{summary.get('total', 0)})",
+        f"- 실행 상태: {summary.get('status', 'unknown')}",
+        f"- 정확도: {score_label} ({summary.get('passed', 0)}/{summary.get('total', 0)} 평가)",
+        f"- 시도 문항: {summary.get('attempted', len(results))}",
         *source_lines,
         score_delta_line(report, previous),
         f"- 원본 JSON: `{report_path}`",
@@ -182,6 +229,11 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
         lines.append("")
     else:
         lines.extend(["## 연동 오류", "", "- 없음", ""])
+
+    if dependency_results:
+        lines.extend(["## 연동 오류 문항", ""])
+        lines.extend(format_failed_result(result) for result in dependency_results)
+        lines.append("")
 
     lines.extend([
         "## 메모",

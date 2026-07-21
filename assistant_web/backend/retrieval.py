@@ -16,8 +16,10 @@ from backend.common import (
     extract_chroma_date,
     extract_chroma_field,
     extract_project_from_chroma_text,
+    extract_quoted_value,
     extract_title_from_chroma_text,
     normalize_for_match,
+    remove_quoted_value,
 )
 from backend.query_filters import filter_audit_for_source
 from backend.sources.chroma import execute_chroma_search
@@ -27,6 +29,7 @@ from backend.sources.mantis import (
     execute_mantis_page_scan,
     execute_mantis_snapshot_search,
     get_mantis_snapshot_freshness,
+    revalidate_mantis_snapshot_stage,
 )
 from backend.sources.notion import (
     build_notion_terms,
@@ -102,6 +105,16 @@ def run_retrieval_pipeline(
     )
     planner_notion = plan_source == "notion"
     effective_constraints = {} if explicit_notion or planner_notion else constraints
+    literal_notion_title = extract_quoted_value(query_text) if notion_intent else ""
+    # A quoted Notion value is an exact document title, not a bag of customer,
+    # platform, status, owner, or screen-number filters. Re-parse only the text
+    # outside the quotes so an explicitly stated outer condition is preserved
+    # without turning words inside the title into accidental AND filters.
+    notion_constraints = (
+        extract_query_constraints(remove_quoted_value(query_text))
+        if literal_notion_title
+        else constraints
+    )
     notion_terms = planned_terms if plan_source == "notion" and planned_terms else None
     mantis_terms = planned_terms if plan_source == "mantis" and planned_terms else None
     if plan_source == "both":
@@ -133,7 +146,7 @@ def run_retrieval_pipeline(
             execute_notion_search(
                 query_text,
                 limit,
-                constraints,
+                notion_constraints,
                 planned_terms=notion_terms,
             )
         )
@@ -198,6 +211,7 @@ def run_retrieval_pipeline(
 
         if not exact_issue_lookup and not similar_issue_search and structured_snapshot_eligible:
             snapshot_stage = execute_mantis_snapshot_search(limit, constraints)
+            snapshot_stage = revalidate_mantis_snapshot_stage(snapshot_stage, constraints)
             stages.append(snapshot_stage)
             historical_snapshot_used = snapshot_stage.get("status") == "ok"
 
@@ -254,22 +268,25 @@ def run_retrieval_pipeline(
 
     for stage in stages:
         stage_meta = dict(stage.get("meta") or {})
+        audit_constraints = notion_constraints if stage.get("source") == "notion" else constraints
         stage_meta["filter_audit"] = filter_audit_for_source(
             str(stage.get("source") or ""),
-            constraints.get("filter_clauses") or [],
+            audit_constraints.get("filter_clauses") or [],
         )
         stage["meta"] = stage_meta
+
+    result_constraints = notion_constraints if literal_notion_title and notion_only else constraints
 
     return {
         "query": query_text,
         "keyword": keyword,
-        "constraints": constraints,
+        "constraints": result_constraints,
         "intent_plan": intent_plan,
         "query_plan": intent_plan,
         "limit": limit,
         "stages": stages,
         "filter_audit": {
-            "planned_filters": constraints.get("filter_clauses") or [],
+            "planned_filters": result_constraints.get("filter_clauses") or [],
             "sources": [stage.get("meta", {}).get("filter_audit", {}) for stage in stages],
         },
     }
