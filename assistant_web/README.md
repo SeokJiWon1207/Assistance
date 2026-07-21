@@ -26,7 +26,6 @@ Assistance/
 │   ├── tests/               # 자동 테스트와 수동 검증 질문
 │   ├── runtime/             # 감사 DB와 정확도 리포트
 │   ├── deploy/              # AWS 배포 도구
-│   ├── openwebui_tools/     # Open WebUI 연동 도구
 │   └── artifacts/           # 생성된 배포 산출물
 ├── data/
 │   ├── mantis_chroma_db/    # 현재 Mantis 벡터 스냅샷
