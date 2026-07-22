@@ -208,7 +208,9 @@ NOTION_FETCH_PAGE_BLOCKS=true
   정확 ID 조회, Notion 매칭, 공수 집계)을 검사합니다. LLM 답변 생성 단계는
   검사하지 않아 빠릅니다(수 분).
 - **답변 정확도 탭**: `scripts/accuracy/dynamic_accuracy_check.py`를 서버가 서브프로세스로 실행해
-  실시간 데이터 기반 질문 10개를 실제 챗 응답(LLM 답변)까지 채점합니다.
+  실시간 데이터 기반 기본 질문 10개와 후속 질문 시나리오 4개를 실제 챗 응답까지
+  채점합니다. 후속 질문은 1차 답변의 대화 이력과 `contextAuditId`를 실제 웹과 동일하게
+  전달합니다.
   질문별 진행 상황이 스트리밍되고, 완료된 리포트(`runtime/accuracy_reports/`)의 최근
   이력과 상세 결과를 같은 탭에서 조회합니다
   (`POST /api/accuracy/run`, `GET /api/accuracy/reports[/{name}]`).
@@ -247,13 +249,14 @@ Mantis 로컬 스냅샷 기준일/지연 일수가 함께 표시됩니다. 신�
 
 ## Scheduled Accuracy Check
 
-`scripts/accuracy/dynamic_accuracy_check.py` builds ten reproducible questions from live source data,
-asks the real chat endpoint, and compares answer IDs, titles, and counts with an
-independently fetched Mantis/Notion snapshot.
+`scripts/accuracy/dynamic_accuracy_check.py` builds ten reproducible base questions from live source
+data, then runs four follow-up scenarios against the base answers' real conversation
+history and audit context. It compares answer IDs, titles, counts, and referenced
+entities with an independently fetched Mantis/Notion snapshot.
 
 ```bash
 cd assistant_web
-python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10
+python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4
 ```
 
 The daily seed changes the sampled records while keeping a run reproducible.
@@ -262,7 +265,9 @@ assertion failures are counted separately from dependency/execution errors. A
 run is `incomplete` when an integration is unavailable or fewer than the
 requested number of questions can be evaluated; unavailable cases are excluded
 from the accuracy denominator. A non-zero exit means the run is `failed` or
-`incomplete`.
+`incomplete`. Reports preserve the overall summary and also include separate
+`base`, `follow_up`, and Mantis/Notion source summaries. A follow-up whose setup
+question fails is recorded as `blocked_by_prerequisite`.
 
 팀 검증용 기본 질문은 [`tests/test_questions.md`](./tests/test_questions.md), 복합 조건과 연속 대화 질문은
 [`tests/test_scenario_questions.md`](./tests/test_scenario_questions.md)에 정리되어 있습니다.

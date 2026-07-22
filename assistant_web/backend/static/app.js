@@ -2447,10 +2447,21 @@ function renderAccuracyTab() {
       ? {
           passed: state.accuracyLive.filter((result) => result.passed).length,
           total: state.accuracyLive.filter((result) => !result.pending).length,
+          base: {
+            passed: state.accuracyLive.filter((result) => result.case_group === "base" && result.passed).length,
+            total: state.accuracyLive.filter((result) => result.case_group === "base" && !result.pending).length,
+          },
+          follow_up: {
+            passed: state.accuracyLive.filter((result) => result.case_group === "follow_up" && result.passed).length,
+            total: state.accuracyLive.filter((result) => result.case_group === "follow_up" && !result.pending).length,
+          },
         }
       : state.accuracyReport.summary || {};
     const incomplete = summary.status === "incomplete";
-    els.evaluationSummary.innerHTML = `<strong>${summary.passed ?? 0}/${summary.total ?? 0}</strong> 통과 · ${incomplete ? "연동 오류로 일부 문항은 정확도에서 제외됨" : "실제 답변까지 채점한 결과"}`;
+    const groupSummary = summary.base && summary.follow_up
+      ? ` · 기본 ${summary.base.passed ?? 0}/${summary.base.total ?? 0} · 후속 ${summary.follow_up.passed ?? 0}/${summary.follow_up.total ?? 0}`
+      : "";
+    els.evaluationSummary.innerHTML = `<strong>${summary.passed ?? 0}/${summary.total ?? 0}</strong> 통과${groupSummary} · ${incomplete ? "연동 오류로 일부 문항은 정확도에서 제외됨" : "실제 답변까지 채점한 결과"}`;
   } else {
     els.evaluationSummary.innerHTML = "실시간 데이터로 질문을 만들어 실제 답변까지 채점합니다.";
   }
@@ -2460,7 +2471,7 @@ function renderAccuracyTab() {
   const desc = document.createElement("p");
   desc.className = "accuracy-desc";
   desc.textContent =
-    "실시간 Mantis·Notion 데이터로 질문 10개를 만들어 실제 챗 응답(LLM 답변)까지 채점합니다. 수 분이 걸릴 수 있습니다.";
+    "실시간 Mantis·Notion 데이터로 기본 질문 10개와 실제 대화 문맥을 잇는 후속 질문 4개를 채점합니다. 수 분이 걸릴 수 있습니다.";
   const runButton = document.createElement("button");
   runButton.type = "button";
   runButton.className = "run-evaluation-button";
@@ -2512,6 +2523,9 @@ function renderAccuracyTab() {
           ? "연동 오류"
           : "실패";
     const meta = [result.source, result.category].filter(Boolean).join(" · ");
+    const setup = result.setup_question
+      ? `<p class="accuracy-setup-question"><strong>1차 질문</strong> ${escapeHtml(result.setup_question)}</p>`
+      : "";
     const detail = result.pending
       ? ""
       : result.error
@@ -2531,6 +2545,7 @@ function renderAccuracyTab() {
         <span>${escapeHtml(meta)}</span>
         <em>${statusText}</em>
       </div>
+      ${setup}
       <h4>${escapeHtml(result.question || "")}</h4>
       ${detail ? `<ul>${detail}</ul>` : ""}
     `;
@@ -2549,7 +2564,7 @@ async function runAccuracyCheck() {
     const response = await fetch("/api/accuracy/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ questions: 10 }),
+      body: JSON.stringify({ questions: 10, followUpScenarios: 4 }),
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
@@ -2580,8 +2595,10 @@ async function runAccuracyCheck() {
           state.accuracyLive.push({
             pending: true,
             question: event.question,
+            setup_question: event.setupQuestion,
             source: event.source,
             category: event.category,
+            case_group: event.caseGroup,
           });
         } else if (event.type === "case_result") {
           const pendingIndex = state.accuracyLive.findIndex((entry) => entry.pending);

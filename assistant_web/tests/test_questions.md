@@ -70,7 +70,7 @@
 
 ## 6. 최근 자동 점검 기반 회귀 질문
 
-아래 질문은 `scripts/accuracy/dynamic_accuracy_check.py --questions 10`에서 최근 실제로 생성된 케이스입니다. 자동 점검 실패가 반복되는지 수동으로 빠르게 확인할 때 우선 실행합니다.
+아래 질문은 `scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4`의 기본 질문에서 최근 실제로 생성된 케이스입니다. 자동 점검 실패가 반복되는지 수동으로 빠르게 확인할 때 우선 실행합니다.
 
 | 질문 | 출처 | 기대 결과 | 확인 포인트 |
 | --- | --- | --- | --- |

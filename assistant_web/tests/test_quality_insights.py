@@ -7,9 +7,13 @@ from backend.reports import evaluation
 from backend.sources import mantis
 from scripts.accuracy.dynamic_accuracy_check import (
     AccuracyCase,
+    FollowUpScenario,
+    build_follow_up_scenarios,
     complete_mutable_mantis_ids,
     exact_screen_numbers,
     grade,
+    run_follow_up_scenario,
+    summarize_results,
 )
 
 
@@ -173,6 +177,96 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
 
 
 class AccuracyInsightTests(unittest.TestCase):
+    def test_follow_up_scenarios_reuse_four_base_cases(self):
+        cases = [
+            AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "0030916 이슈", "issue_ids", [30916]),
+            AccuracyCase("mantis-project-latest", "mantis", "고객사 최신", "삼성 최근 3개", "issue_ids", [30920, 30919, 30918]),
+            AccuracyCase("mantis-project-status", "mantis", "고객사 상태", "삼성 closed 2개", "issue_ids", [30919, 30918]),
+            AccuracyCase("notion-title-1", "notion", "제목", "노션 제목 검색", "titles", ["테스트 페이지"]),
+        ]
+        issues = [{"id": 30916, "project": {"name": "001Samsung(삼성증권)"}}]
+
+        scenarios = build_follow_up_scenarios(cases, issues, 4)
+
+        self.assertEqual(len(scenarios), 4)
+        self.assertEqual(
+            [scenario.parent_case_id for scenario in scenarios],
+            [
+                "mantis-exact-id",
+                "mantis-project-latest",
+                "mantis-project-status",
+                "notion-title-1",
+            ],
+        )
+        self.assertEqual(scenarios[1].expected, [30919])
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.chat")
+    def test_follow_up_sends_web_equivalent_history_and_audit_context(self, chat):
+        chat.return_value = {
+            "content": "#30919 상세 내용",
+            "sources": [{"issue_id": 30919}],
+            "auditId": "b" * 32,
+        }
+        parent_case = AccuracyCase(
+            "mantis-project-latest", "mantis", "고객사 최신", "삼성 최근 3개", "issue_ids", [30920, 30919]
+        )
+        parent_result = {
+            "passed": True,
+            "outcome": "passed",
+            "answer": "#30920, #30919",
+            "audit_id": "a" * 32,
+        }
+        scenario = FollowUpScenario(
+            "followup-project-second",
+            "mantis",
+            "후속 질문·순번 참조",
+            parent_case.id,
+            "그중 두 번째 이슈를 자세히 알려줘",
+            "exact_issue_ids",
+            [30919],
+        )
+
+        result = run_follow_up_scenario(scenario, parent_case, parent_result, "test-model")
+
+        self.assertTrue(result["passed"])
+        request = chat.call_args.args[0]
+        self.assertEqual(request.contextAuditId, "a" * 32)
+        self.assertEqual([message.role for message in request.messages], ["user", "assistant", "user"])
+        self.assertEqual(request.messages[-1].content, scenario.question)
+        self.assertEqual(request.tools, {"mantis": True, "notion": False, "vectorDb": False})
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.chat")
+    def test_follow_up_is_blocked_when_setup_case_fails(self, chat):
+        parent_case = AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "질문", "issue_ids", [30916])
+        scenario = FollowUpScenario(
+            "followup-exact-project", "mantis", "후속", parent_case.id, "이 이슈 고객사?", "text_any", ["삼성증권"]
+        )
+
+        result = run_follow_up_scenario(
+            scenario,
+            parent_case,
+            {"passed": False, "outcome": "assertion_failed", "audit_id": "a" * 32},
+            "test-model",
+        )
+
+        self.assertEqual(result["outcome"], "blocked_by_prerequisite")
+        chat.assert_not_called()
+
+    def test_summary_counts_base_failures_blocked_followups_and_errors(self):
+        summary = summarize_results([
+            {"passed": True, "outcome": "passed"},
+            {"passed": False, "outcome": "assertion_failed"},
+            {"passed": False, "outcome": "blocked_by_prerequisite"},
+            {"passed": False, "outcome": "dependency_error"},
+        ])
+
+        self.assertEqual(summary["attempted"], 4)
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(summary["passed"], 1)
+        self.assertEqual(summary["failed"], 2)
+        self.assertEqual(summary["blocked_by_prerequisite"], 1)
+        self.assertEqual(summary["score"], 33)
+
     @patch("scripts.accuracy.dynamic_accuracy_check.mantis.revalidate_mantis_snapshot_stage")
     @patch("scripts.accuracy.dynamic_accuracy_check.mantis.execute_mantis_snapshot_search")
     def test_mutable_oracle_combines_live_sample_with_verified_full_snapshot(
