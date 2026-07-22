@@ -163,6 +163,49 @@ def load_evaluation_cases() -> List[Dict[str, Any]]:
 EVALUATION_CASES = load_evaluation_cases()
 
 
+def ungrounded_constraint_labels(
+    grounding_text: str,
+    constraints: Dict[str, Any],
+) -> List[str]:
+    """질문에 근거가 없는 검색 조건을 찾는다.
+
+    기존 검증은 계획과 결과가 서로 맞는지만 봐서, 모델이 만들어낸 고객사·
+    담당자 필터가 조용히 적용돼도 전부 통과했다. 조건이 실제로 사용자가 한
+    말에서 나왔는지를 따로 확인한다.
+
+    근거 텍스트로는 검색에 실제 쓰인 문장을 쓴다. 후속 질문에서 이전 턴의
+    조건을 물려받은 경우까지 근거 없음으로 잡히면 경고가 무의미해진다.
+    """
+    normalized = normalize_for_match(grounding_text)
+    labels: List[str] = []
+
+    customer_key = constraints.get("customer_key")
+    if customer_key and not any(
+        normalize_for_match(alias) in normalized
+        for alias in [customer_key, *(constraints.get("customer_aliases") or [])]
+        if alias
+    ):
+        labels.append(f"고객사={customer_key}")
+
+    platform_key = constraints.get("platform_key")
+    if platform_key and not any(
+        normalize_for_match(alias) in normalized
+        for alias in [platform_key, *(constraints.get("platform_aliases") or [])]
+        if alias
+    ):
+        labels.append(f"플랫폼={platform_key}")
+
+    for name in constraints.get("people", {}).get("names") or []:
+        if normalize_for_match(name) not in normalized:
+            labels.append(f"담당자={name}")
+
+    for number in constraints.get("screen_numbers") or []:
+        if str(number) not in str(grounding_text):
+            labels.append(f"화면번호={number}")
+
+    return labels
+
+
 def build_verification_report(
     question: str,
     content: str,
@@ -241,6 +284,23 @@ def build_verification_report(
             "label": "검색 조건",
             "status": "pass" if not matched_sources or all(matched_sources) else "warning",
             "detail": "조건 일치" if not matched_sources or all(matched_sources) else f"조건 불일치 가능성 {matched_sources.count(False)}건",
+        }
+    )
+
+    ungrounded = ungrounded_constraint_labels(
+        str((retrieval_result or {}).get("query") or question),
+        constraints,
+    )
+    retrieval_checks.append(
+        {
+            "id": "constraint_grounding",
+            "label": "조건 근거",
+            "status": "pass" if not ungrounded else "warning",
+            "detail": (
+                "모든 조건이 질문에 근거함"
+                if not ungrounded
+                else f"질문에 없는 조건: {', '.join(ungrounded)}"
+            ),
         }
     )
 

@@ -11,6 +11,42 @@ from scripts.accuracy.dynamic_accuracy_check import (
 )
 
 
+class ConstraintGroundingTests(unittest.TestCase):
+    def constraints(self, question):
+        return app.extract_query_constraints(question)
+
+    def test_conditions_from_the_question_are_grounded(self):
+        question = "KB증권 MTS 이슈"
+        self.assertEqual(
+            app.ungrounded_constraint_labels(question, self.constraints(question)), []
+        )
+
+    def test_invented_customer_is_flagged(self):
+        # 모델이 지어낸 고객사 필터가 조용히 적용돼도 기존 검증은 통과했다.
+        constraints = self.constraints("최근 이슈 보여줘")
+        constraints["customer_key"] = "유진증권"
+        constraints["customer_aliases"] = ["유진증권"]
+        self.assertEqual(
+            app.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
+            ["고객사=유진증권"],
+        )
+
+    def test_invented_owner_is_flagged(self):
+        constraints = self.constraints("최근 이슈 보여줘")
+        constraints["people"] = {"names": ["석지원"], "role": "handler"}
+        self.assertEqual(
+            app.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
+            ["담당자=석지원"],
+        )
+
+    def test_inherited_follow_up_conditions_are_not_flagged(self):
+        # 근거 텍스트는 검색에 실제 쓰인 문장이라 물려받은 조건도 통과해야 한다.
+        question = "신한 mts 종료된 건은 빼줘"
+        self.assertEqual(
+            app.ungrounded_constraint_labels(question, self.constraints(question)), []
+        )
+
+
 class ScreenNumberAccuracyTests(unittest.TestCase):
     @patch.object(app, "get_mantis_headers", return_value={})
     @patch.object(app, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
