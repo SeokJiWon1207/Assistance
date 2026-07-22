@@ -10,6 +10,7 @@ from backend.answers import (
     format_count_group_lines,
 )
 from backend.schemas import ChatMessage
+from backend.query_planning import extract_group_by
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.app import (
     build_effort_report,
@@ -625,6 +626,23 @@ class CountGroupingTests(unittest.TestCase):
         lines = format_count_group_lines({"A증권": 2, "B증권": 5, "C증권": 5}, "customer")
         self.assertIn("고객사별 건수", lines[1])
         self.assertEqual(lines[2:], ["- B증권 — 5건", "- C증권 — 5건", "- A증권 — 2건"])
+
+    def test_month_group_is_sorted_chronologically(self):
+        # 추이는 많은 순이 아니라 시간순이어야 읽힌다.
+        lines = format_count_group_lines({"2026-03": 9, "2026-01": 4, "2026-02": 7}, "month")
+        self.assertIn("시간순", lines[1])
+        self.assertEqual(
+            lines[2:], ["- 2026-01 — 4건", "- 2026-02 — 7건", "- 2026-03 — 9건"]
+        )
+
+    def test_month_group_key_uses_created_month(self):
+        key = count_group_key("month")
+        self.assertEqual(key({"created_at": "2026-04-16"}), "2026-04")
+
+    def test_monthly_trend_question_is_grouped_by_month(self):
+        self.assertEqual(extract_group_by("2026년 월별 이슈 건수 추이를 알려줘"), "month")
+        # "이번 달 이슈 보여줘"는 그룹 요청이 아니다.
+        self.assertIsNone(extract_group_by("이번 달 이슈 보여줘"))
 
     def test_unsupported_group_has_no_key(self):
         self.assertIsNone(count_group_key("type"))

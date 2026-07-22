@@ -115,6 +115,7 @@ COUNT_GROUP_LABELS = {
     "customer": "고객사",
     "status": "상태",
     "owner": "담당자",
+    "month": "월",
 }
 
 
@@ -126,6 +127,9 @@ def count_group_key(group_by: str):
         return lambda issue: display_status_label(issue.get("status"))
     if group_by == "owner":
         return lambda issue: str(issue.get("handler") or "")
+    if group_by == "month":
+        # 등록일 YYYY-MM-DD에서 월까지만 남긴다.
+        return lambda issue: str(issue.get("created_at") or "")[:7]
     return None
 
 
@@ -134,8 +138,13 @@ def format_count_group_lines(group_counts: Dict[str, int], group_by: str) -> Lis
     if not group_counts:
         return []
     label = COUNT_GROUP_LABELS.get(group_by, "그룹")
-    ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
-    lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
+    if group_by == "month":
+        # 추이는 많은 순이 아니라 시간순으로 봐야 의미가 있다.
+        ordered = sorted(group_counts.items(), key=lambda item: item[0])
+        lines = ["", f"{label}별 건수 (시간순, {len(ordered)}개 {label})"]
+    else:
+        ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
+        lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
     lines.extend(f"- {name} — {count}건" for name, count in ordered)
     return lines
 
