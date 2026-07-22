@@ -144,6 +144,17 @@ def run_retrieval_pipeline(
             or
             constraints.get("created_at")
             or not keyword
+            # 고객사에 매체나 상태까지 겹친 질의는 키워드/의미 검색이 후보를
+            # 못 올려 결과가 0건이 되곤 한다(예: "KB증권 MTS 미종료"). 조건이
+            # 이만큼 분명하면 키워드가 있어도 전체 스냅샷을 정확 조건으로 훑는다.
+            or (
+                constraints.get("customer_aliases")
+                and (
+                    constraints.get("platform_key")
+                    or constraints.get("statuses")
+                    or constraints.get("excluded_statuses")
+                )
+            )
         )
     )
 
