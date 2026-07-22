@@ -55,14 +55,6 @@ from backend.common import *  # noqa: F401,F403
 # 감사 로그 DB + 스트리밍 컨텍스트(CHAT_STREAM_CONTEXT, emit_chat_*)는 audit.py로 분리했다.
 from backend.audit import *  # noqa: F401,F403
 
-# 점검 모드(플래그 파일 기반)는 maintenance.py에 분리했다.
-from backend.maintenance import (
-    build_maintenance_chat_response,
-    get_maintenance_state,
-    start_maintenance,
-    stop_maintenance,
-)
-
 # FastAPI 요청 pydantic 모델은 schemas.py, 모델 레지스트리/호출은 llm.py로 분리했다.
 from backend.schemas import *  # noqa: F401,F403
 from backend.llm import *  # noqa: F401,F403
@@ -476,11 +468,6 @@ def list_evaluation_history(limit: int = 10) -> Dict[str, Any]:
 
 
 def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
-    # 점검 모드에서는 모델·검색을 태우지 않고 안내만 돌려준다. 스트리밍 경로도
-    # 이 함수를 거치므로 여기 한 곳만 막으면 된다.
-    if get_maintenance_state()["active"]:
-        return build_maintenance_chat_response(request.modelId)
-
     emit_chat_status("질문과 대화 맥락을 분석하고 있습니다", "analysis")
     model = get_private_model(request.modelId)
 
@@ -950,12 +937,6 @@ def chat(request: ChatRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@app.get("/api/maintenance")
-def read_maintenance_state() -> Dict[str, Any]:
-    """점검 모드 상태. 프런트엔드가 안내 화면을 띄울지 판단하는 데 쓴다."""
-    return get_maintenance_state()
 
 
 @app.get("/health")

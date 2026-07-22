@@ -14,7 +14,6 @@ ObsidianNotes/.obsidian/workspace.json
 assistant_web/.env
 assistant_web/runtime/assistant_audit.sqlite3
 assistant_web/runtime/accuracy_reports/
-assistant_web/runtime/maintenance.json
 
 # Local generated vector database
 data/mantis_chroma_db/
