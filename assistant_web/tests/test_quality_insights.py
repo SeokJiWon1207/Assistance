@@ -11,6 +11,20 @@ from scripts.accuracy.dynamic_accuracy_check import (
 )
 
 
+class DataFreshnessNoteTests(unittest.TestCase):
+    @patch("backend.answers.get_mantis_snapshot_freshness", return_value="2026-05-07")
+    def test_note_tells_model_the_snapshot_base_date(self, _freshness):
+        # 기준일을 알려주지 않으면 "데이터 기준일"을 물었을 때 모델이 오늘
+        # 날짜를 그대로 답한다.
+        note = app.build_current_date_note()
+        self.assertIn("2026-05-07", note)
+        self.assertIn("데이터 기준일", note)
+
+    @patch("backend.answers.get_mantis_snapshot_freshness", return_value="")
+    def test_note_omits_base_date_when_unknown(self, _freshness):
+        self.assertNotIn("데이터 기준일", app.build_current_date_note())
+
+
 class ConstraintGroundingTests(unittest.TestCase):
     def constraints(self, question):
         return app.extract_query_constraints(question)

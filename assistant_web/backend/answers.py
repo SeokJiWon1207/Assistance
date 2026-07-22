@@ -23,6 +23,7 @@ from backend.retrieval import (
 )
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
+    get_mantis_snapshot_freshness,
     collect_mantis_live_ids_in_range,
     extract_snapshot_limit,
     fetch_mantis_recent_issues,
@@ -70,11 +71,21 @@ def build_current_date_note() -> str:
     언급하도록 돕는 보조 역할이다."""
     now = datetime.now().astimezone()
     weekday = KOREAN_WEEKDAY_NAMES[now.weekday()]
-    return (
+    note = (
         f"오늘은 {now.strftime('%Y-%m-%d')}({weekday}요일)이다. "
         "사용자가 '오늘', '어제', '이번 주', '최근 며칠'처럼 상대적인 시점을 언급하면 "
         "이 날짜를 기준으로 정확히 계산해서 답해라."
     )
+    # 오늘 날짜와 데이터 기준일은 다르다. 이걸 알려주지 않으면 "데이터 기준일"을
+    # 물었을 때 모델이 오늘 날짜를 그대로 답한다.
+    snapshot_as_of = get_mantis_snapshot_freshness()
+    if snapshot_as_of:
+        note += (
+            f" 단, Mantis 로컬 스냅샷의 데이터 기준일은 {snapshot_as_of}로 오늘과 다르다. "
+            "사용자가 데이터 기준일을 물으면 오늘 날짜가 아니라 이 기준일을 답하고, "
+            "기준일 이후 등록된 이슈는 빠져 있을 수 있다는 점을 함께 알려라."
+        )
+    return note
 
 
 def answer_style_instruction(answer_style: str) -> str:
