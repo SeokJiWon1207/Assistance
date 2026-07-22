@@ -131,11 +131,12 @@ NOTION_INTENT_KEYWORDS = {
     "기한",
 }
 
-# 조회할 데이터 소스를 가리키는 말. 실제 프로젝트 목록에 999Mantis가 있어
-# 고객사 별칭으로도 잡히므로, 고객사 후보에서 걸러낼 때 쓴다.
+# 고객사가 아니라 소스나 매체를 가리키는 일반어. 실제 프로젝트 목록에
+# 999Mantis, 903모바일이 있어 고객사 별칭으로도 잡히므로, 고객사 후보에서
+# 걸러낼 때 쓴다. 프로젝트를 명시적으로 가리키면 다시 고객사로 인정한다.
 SOURCE_NAME_ALIASES = {
     normalize_for_match(name)
-    for name in ("mantis", "맨티스", "맨티스에서", "notion", "노션")
+    for name in ("mantis", "맨티스", "맨티스에서", "notion", "노션", "모바일", "mobile")
 }
 
 NOTION_QUERY_STOPWORDS = {
@@ -591,7 +592,7 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     # 프로젝트를 명시적으로 가리킬 때만 고객사 후보로 남긴다.
     if not any(
         normalize_for_match(marker) in normalized_text
-        for marker in ("999Mantis", "고객사", "프로젝트")
+        for marker in ("999Mantis", "903모바일", "고객사", "프로젝트")
     ):
         customer_matches = [
             item

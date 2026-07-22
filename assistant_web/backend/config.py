@@ -203,7 +203,8 @@ AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES = {
 
 PLATFORM_ALIASES = {
     "hts": ["HTS", "H-able", "Hable"],
-    "mts": ["MTS"],
+    # 현업에서 MTS를 "모바일"로 부르는 경우가 많다. 음차/영문 표기까지 함께 둔다.
+    "mts": ["MTS", "엠티에스", "모바일", "mobile"],
 }
 
 STATUS_ALIASES = {

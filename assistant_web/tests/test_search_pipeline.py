@@ -169,6 +169,27 @@ class ExactConstraintTests(unittest.TestCase):
         self.assertIn("KB증권", constraints["customer_aliases"])
         self.assertEqual(extract_query_constraints("디비증권 이슈")["customer_key"], "디비증권")
 
+    def test_mobile_is_read_as_mts_platform(self):
+        # "케이비 증권 모바일"은 KB증권+MTS로 읽혀야 한다. 예전에는 모바일이
+        # 903모바일 프로젝트로 잡혀 고객사가 통째로 바뀌었다.
+        constraints = extract_query_constraints("케이비 증권 모바일 이슈 좀 찾아줘")
+        self.assertIn("KB증권", constraints["customer_aliases"])
+        self.assertEqual(constraints["platform_key"], "mts")
+        self.assertEqual(
+            extract_query_constraints("신한투자증권 엠티에스 이슈 세 개만")["platform_key"],
+            "mts",
+        )
+
+    def test_bare_mobile_is_not_a_customer(self):
+        constraints = extract_query_constraints("모바일 이슈 보여줘")
+        self.assertIsNone(constraints["customer_key"])
+        self.assertEqual(constraints["platform_key"], "mts")
+
+    def test_explicit_mobile_project_is_still_a_customer(self):
+        self.assertEqual(
+            extract_query_constraints("903모바일 프로젝트 이슈")["customer_key"], "903모바일"
+        )
+
     def test_krx_domain_term_is_not_legacy_customer(self):
         constraints = extract_query_constraints("KRX 제도개선 관련 이슈 찾아줘")
         self.assertIsNone(constraints["customer_key"])
