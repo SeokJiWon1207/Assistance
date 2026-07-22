@@ -514,6 +514,29 @@ class LiveStatusRevalidationTests(unittest.TestCase):
         self.assertEqual(len(refreshed["issues_list"]), 1)
 
 
+class TopCustomersTests(unittest.TestCase):
+    def test_vague_most_problems_question_is_detected(self):
+        for question in (
+            "요즘 문제 많은 고객사가 어디야?",
+            "이슈가 많은 고객사 알려줘",
+            "고객사 중에 문제 많은 곳",
+        ):
+            with self.subTest(question=question):
+                self.assertTrue(backend_app.TOP_CUSTOMER_QUESTION.search(question))
+
+    def test_normal_questions_are_not_matched(self):
+        for question in ("KB증권 이슈 보여줘", "고객사별로 열린 이슈 수를 정리해줘"):
+            with self.subTest(question=question):
+                self.assertIsNone(backend_app.build_top_customers_report(question))
+
+    def test_report_states_the_basis_it_used(self):
+        # 기준이 빠진 질문에 임의 기준으로 조용히 답하면 안 된다.
+        report = backend_app.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")
+        self.assertIsNotNone(report)
+        self.assertIn("미종료", report["content"])
+        self.assertIn("고객사별 건수", report["content"])
+
+
 class TableOutputTests(unittest.TestCase):
     def test_table_requests_are_detected(self):
         for question in (

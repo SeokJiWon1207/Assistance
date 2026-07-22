@@ -203,6 +203,39 @@ def format_count_group_lines(group_counts: Dict[str, int], group_by: str) -> Lis
     return lines
 
 
+TOP_CUSTOMER_QUESTION = re.compile(
+    r"(?:문제|이슈|장애|오류)[^가-힣]{0,6}(?:가|이)?\s*(?:많은|많이|잦은|빈번)"
+    r"[^가-힣]{0,4}(?:고객사|프로젝트|증권사)"
+    r"|(?:고객사|프로젝트|증권사)[^가-힣]{0,4}(?:중에서?|중)?\s*"
+    r"(?:문제|이슈|장애|오류)[^가-힣]{0,6}(?:가|이)?\s*(?:많은|많이|잦은|빈번)"
+)
+
+
+def build_top_customers_report(text: str) -> Optional[Dict[str, Any]]:
+    """"문제 많은 고객사"처럼 기준이 빠진 질문에 기준을 밝히고 답한다.
+
+    "많다"의 기준은 질문에 없다. 임의 기준으로 조용히 답하는 대신 무엇을
+    세었는지(미종료 이슈 건수)와 데이터 범위를 함께 밝힌다."""
+    if not TOP_CUSTOMER_QUESTION.search(str(text or "")):
+        return None
+    plan = {
+        "operation": "count",
+        "source": "mantis",
+        "group_by": "customer",
+        "filters": {"statuses": ["open"]},
+        "filter_clauses": [{"field": "status", "operator": "in", "value": ["open"]}],
+    }
+    report = build_mantis_count_report("미종료 이슈", plan)
+    if not report:
+        return None
+    note = (
+        "기준을 정해서 답했어요: **미종료(열린) 이슈 건수**가 많은 순입니다. "
+        "'요즘'의 범위는 따로 지정하지 않아 스냅샷 전체를 기준으로 셌습니다. "
+        "특정 기간이나 다른 기준(예: 장애 건수, 고객사요청일)으로 다시 보시려면 말씀해 주세요.\n"
+    )
+    return {**report, "content": note + "\n" + report["content"]}
+
+
 def build_mantis_count_report(
     text: str,
     query_plan: Dict[str, Any],

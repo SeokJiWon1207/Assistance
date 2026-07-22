@@ -543,6 +543,17 @@ def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
                 {"modelId": request.modelId, **unknown_customer_report},
             )
 
+    # "문제 많은 고객사"처럼 기준이 빠진 질문은 임의 기준으로 답하지 말고
+    # 무엇을 세었는지 밝히면서 답한다.
+    if latest_user_text and enabled_tools.get("mantis"):
+        top_customers_report = build_top_customers_report(latest_user_text)
+        if top_customers_report:
+            return finalize_chat_response(
+                request,
+                latest_user_text,
+                {"modelId": request.modelId, **top_customers_report},
+            )
+
     pending_effort_report = None
     if latest_user_text and enabled_tools.get("mantis"):
         ranking_report = build_effort_ranking_report(latest_user_text)
