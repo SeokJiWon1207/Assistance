@@ -29,13 +29,21 @@ fi
 
 chmod 400 "$SSH_KEY"
 
-SSH="ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 $EC2_USER@$EC2_HOST"
+# zsh는 따옴표 없는 변수를 단어로 쪼개지 않는다. 문자열로 두면 명령 전체가
+# 이름 하나로 취급돼 command not found가 난다. 배열로 둬야 한다.
+SSH_CMD=(
+  ssh
+  -i "$SSH_KEY"
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=10
+  "$EC2_USER@$EC2_HOST"
+)
 
 echo "현재 상태를 확인하는 중..."
-if ! STATE=$($SSH "test -f '$FLAG_PATH' && echo on || echo off" 2>/dev/null); then
+# 접속 실패 원인(키 거부, 타임아웃 등)이 그대로 보이도록 stderr를 감추지 않는다.
+if ! STATE=$("${SSH_CMD[@]}" "test -f '$FLAG_PATH' && echo on || echo off"); then
   echo
-  echo "오류: 서버에 접속하지 못했습니다."
-  echo "네트워크 또는 EC2 상태를 확인해 주세요."
+  echo "오류: 서버에 접속하지 못했습니다. 위 메시지를 확인해 주세요."
   echo
   printf "Enter 를 누르면 창을 닫습니다. "
   read -r _
@@ -46,7 +54,7 @@ echo
 
 if [ "$STATE" = "on" ]; then
   echo "현재 상태: 점검 중"
-  SINCE=$($SSH "cat '$FLAG_PATH' 2>/dev/null | head -1" || true)
+  SINCE=$("${SSH_CMD[@]}" "cat '$FLAG_PATH' 2>/dev/null | head -1" || true)
   if [ -n "$SINCE" ]; then
     echo "  $SINCE"
   fi
@@ -54,7 +62,7 @@ if [ "$STATE" = "on" ]; then
   printf "점검을 종료할까요? (y/N) "
   read -r answer
   if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
-    $SSH "rm -f '$FLAG_PATH'"
+    "${SSH_CMD[@]}" "rm -f '$FLAG_PATH'"
     echo
     echo "점검 모드를 해제했습니다."
     echo "사용자는 새로고침하면 바로 정상 화면을 봅니다."
@@ -69,7 +77,7 @@ else
   read -r answer
   if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
     STAMP="점검 시작: $(date '+%Y-%m-%d %H:%M:%S')"
-    $SSH "echo '$STAMP' > '$FLAG_PATH'"
+    "${SSH_CMD[@]}" "echo '$STAMP' > '$FLAG_PATH'"
     echo
     echo "점검 모드를 켰습니다. ($STAMP)"
     echo "이제 재배포나 서버 재시작을 해도 안내 화면이 계속 표시됩니다."
