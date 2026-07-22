@@ -162,6 +162,13 @@ class ExactConstraintTests(unittest.TestCase):
         self.assertEqual([page["title"] for page in result["notion_pages"]], [title])
         self.assertEqual(result["meta"]["scanned_count"], 1)
 
+    def test_korean_transliterated_customer_is_recognized(self):
+        # "케이비 증권 모바일"이 KB증권을 못 잡고 903모바일 프로젝트로
+        # 넘어가던 회귀. 음차 표기도 고객사로 인식해야 한다.
+        constraints = extract_query_constraints("케이비 증권 모바일 이슈 좀 찾아줘")
+        self.assertIn("KB증권", constraints["customer_aliases"])
+        self.assertEqual(extract_query_constraints("디비증권 이슈")["customer_key"], "디비증권")
+
     def test_krx_domain_term_is_not_legacy_customer(self):
         constraints = extract_query_constraints("KRX 제도개선 관련 이슈 찾아줘")
         self.assertIsNone(constraints["customer_key"])
