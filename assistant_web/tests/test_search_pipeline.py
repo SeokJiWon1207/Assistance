@@ -481,6 +481,21 @@ class NotionContextInheritanceTests(unittest.TestCase):
         self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
 
 
+class TableOutputTests(unittest.TestCase):
+    def test_table_requests_are_detected(self):
+        for question in (
+            "최근 이슈 5개를 ID, 고객사, 상태, 담당자 표로 만들어줘",
+            "표 형태로 보여줘",
+            "테이블로 정리해줘",
+        ):
+            with self.subTest(question=question):
+                self.assertTrue(backend_app.wants_table_output(question))
+
+    def test_normal_requests_are_not_table_requests(self):
+        self.assertFalse(backend_app.wants_table_output("최근 이슈 5개 보여줘"))
+        self.assertFalse(backend_app.wants_table_output("KB증권 이슈 목록"))
+
+
 class UnknownCustomerTests(unittest.TestCase):
     def test_unregistered_customer_is_detected(self):
         # 미등록 고객사를 조용히 버리면 조건 없는 전체 검색이 되어 전혀 다른

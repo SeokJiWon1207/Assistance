@@ -122,6 +122,11 @@ def extract_month_count_query(text: str) -> Optional[Dict[str, int]]:
     }
 
 
+def wants_table_output(text: str) -> bool:
+    """질문이 표 형태를 요구하는지 본다."""
+    return bool(re.search(r"표\s*(?:로|형태|형식)|테이블\s*(?:로|형태|형식)|표로\s*만들", str(text or "")))
+
+
 def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
     """질문이 가리킨 고객사가 등록돼 있지 않으면 그 사실을 그대로 알린다.
 
@@ -815,19 +820,36 @@ def format_deterministic_issue_answer(
         f"검색 기준: {criteria}, 정렬: {'의미 유사도 기준' if similar_base_issue_ids else '최신 이슈 ID 기준'}",
         "",
     ]
-    for index, issue in enumerate(issues, start=1):
-        lines.append(
-            f"{index}. **ID**: {issue['id']} | "
-            f"**프로젝트**: {issue['project']} | "
-            f"**제목**: {issue['summary']} | "
-            f"**상태**: {display_status_label(issue['status'])} | "
-            f"**담당자**: {issue['handler']} | "
-            f"**등록일**: {issue['created_at'] or '미상'}"
+    if wants_table_output(query_text):
+        # 표를 요청했는데 결정형 답변이 늘 목록만 내보내던 문제. 모델을 거치지
+        # 않는 경로라 여기서 직접 표로 조립한다.
+        lines.extend(
+            [
+                "| ID | 고객사 | 제목 | 상태 | 담당자 | 등록일 |",
+                "|---|---|---|---|---|---|",
+            ]
         )
-        if answer_style == "detailed":
-            preview = compact_text(issue.get("preview", ""), 220)
-            if preview:
-                lines.append(f"   - 요약: {preview}")
+        for issue in issues:
+            title = str(issue["summary"]).replace("|", "\\|")
+            lines.append(
+                f"| {issue['id']} | {issue['project']} | {title} | "
+                f"{display_status_label(issue['status'])} | {issue['handler']} | "
+                f"{issue['created_at'] or '미상'} |"
+            )
+    else:
+        for index, issue in enumerate(issues, start=1):
+            lines.append(
+                f"{index}. **ID**: {issue['id']} | "
+                f"**프로젝트**: {issue['project']} | "
+                f"**제목**: {issue['summary']} | "
+                f"**상태**: {display_status_label(issue['status'])} | "
+                f"**담당자**: {issue['handler']} | "
+                f"**등록일**: {issue['created_at'] or '미상'}"
+            )
+            if answer_style == "detailed":
+                preview = compact_text(issue.get("preview", ""), 220)
+                if preview:
+                    lines.append(f"   - 요약: {preview}")
 
     found_count = sum(
         int(stage.get("meta", {}).get("found_count") or stage.get("meta", {}).get("displayed_count") or 0)
