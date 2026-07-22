@@ -350,6 +350,10 @@ def build_query_plan(
         "date_fields": dict(constraints.get("date_fields") or {}),
         "created_at": created_at,
     }
+    # 규칙이 뽑은 상태 조건이 있으면 사용자가 상태를 언급한 것이다.
+    question_mentions_status = bool(
+        constraints.get("statuses") or constraints.get("excluded_statuses")
+    )
     filter_clauses = normalize_filter_clauses(constraints.get("filter_clauses") or [])
     if group_by == "customer":
         model_filter_clauses = [
@@ -362,6 +366,10 @@ def build_query_plan(
         ):
             # filters.created_at을 버려도 이 절이 남으면 검색 제약을 만들 때
             # 다시 날짜 범위로 살아나므로 같은 조건으로 함께 막는다.
+            continue
+        if clause["field"] == "status" and not question_mentions_status:
+            # 질문에 상태 표현이 없는데 모델이 "종료 제외" 같은 필터를 붙이면
+            # 사용자가 요청한 개수보다 훨씬 적은 결과가 조용히 나간다.
             continue
         if _clause_contradicts_filters(clause, filters):
             # 규칙이 이미 조건으로 잡은 값을 모델이 다시 제외하면(예: 플랫폼=MTS인데

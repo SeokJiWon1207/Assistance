@@ -408,6 +408,37 @@ class QueryPlanningTests(unittest.TestCase):
         )
         self.assertIsNone(plan["filters"]["created_at"])
 
+    def test_model_status_filter_is_dropped_without_status_mention(self):
+        # "최근 이슈 5개" 질문에 모델이 종료 제외를 붙여 5개가 아닌 2건만
+        # 나가던 회귀.
+        plan = build_query_plan(
+            "최근 이슈 5개를 ID, 고객사, 상태, 담당자 표로 만들어줘",
+            {"source": "mantis", "confidence": 0.9},
+            extract_query_constraints("최근 이슈 5개를 ID, 고객사, 상태, 담당자 표로 만들어줘"),
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "search",
+                "filter_clauses": [{"field": "status", "operator": "not_equals", "value": "closed"}],
+            },
+        )
+        self.assertEqual([c for c in plan["filter_clauses"] if c["field"] == "status"], [])
+
+    def test_status_filter_is_kept_when_the_question_mentions_status(self):
+        question = "종료되지 않은 최근 이슈 보여줘"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "confidence": 0.9},
+            extract_query_constraints(question),
+            {
+                "planned": True,
+                "source": "mantis",
+                "operation": "search",
+                "filter_clauses": [{"field": "status", "operator": "not_equals", "value": "closed"}],
+            },
+        )
+        self.assertTrue([c for c in plan["filter_clauses"] if c["field"] == "status"])
+
     def test_model_clause_cannot_exclude_the_requested_platform(self):
         # 플랫폼=MTS인데 모델이 플랫폼 제외=MTS를 덧붙이면 결과가 항상 0건이 된다.
         constraints = extract_query_constraints("신한 mts 종료된 건은 빼줘")
