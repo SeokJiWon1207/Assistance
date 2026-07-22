@@ -534,6 +534,17 @@ class DemonstrativeReferenceTests(unittest.TestCase):
         self.assertTrue(is_follow_up_question("그 이슈의 담당자와 상태만 다시 알려줘"))
         self.assertFalse(is_follow_up_question("KB증권 HTS 최근 이슈 5개 보여줘"))
 
+    def test_summary_request_without_targets_is_a_follow_up(self):
+        # "핵심 해결 내용을 한 문장으로 요약해줘"는 길이 제한을 넘고 지시 표현도
+        # 없지만, 그 자체로는 검색할 대상이 없는 후속 질문이다.
+        self.assertTrue(is_follow_up_question("핵심 해결 내용을 한 문장으로 요약해줘"))
+
+    def test_summary_request_with_its_own_target_stays_independent(self):
+        # 고객사·플랫폼·기간처럼 대상을 특정하는 조건이 있으면 독립 질문이다.
+        self.assertFalse(is_follow_up_question("KB증권 이슈를 한 줄씩만 요약해줘"))
+        self.assertFalse(is_follow_up_question("신한 MTS 이슈 정리해줘"))
+        self.assertFalse(is_follow_up_question("2026년 이슈 요약해줘"))
+
     @patch("backend.understanding.load_audit_sources")
     def test_demonstrative_reference_resolves_to_focused_issue(self, load_sources):
         # 상세 조회 뒤 후속 질문이 같은 이슈를 계속 가리켜야 한다.

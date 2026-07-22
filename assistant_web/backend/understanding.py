@@ -749,6 +749,22 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     }
 
 
+def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:
+    """검색 대상 자체를 특정하는 조건이 있는지 본다.
+
+    상태만 있는 경우는 제외한다. "핵심 해결 내용을 요약해줘"의 '해결'처럼
+    본문 낱말이 상태로 잡히는 일이 잦아, 상태 유무로는 독립 질문인지
+    가려낼 수 없다."""
+    return bool(
+        constraints.get("customer_key")
+        or constraints.get("platform_key")
+        or constraints.get("issue_ids")
+        or constraints.get("screen_numbers")
+        or constraints.get("people", {}).get("names")
+        or constraints.get("created_at")
+    )
+
+
 def has_constraint(constraints: Dict[str, Any]) -> bool:
     return bool(
         constraints.get("customer_key")
@@ -1581,6 +1597,12 @@ FOLLOW_UP_WEAK_MARKERS = (
 FOLLOW_UP_WEAK_MAX_LEN = 20
 
 
+# 직전 답변의 내용을 가공해 달라는 요청. 그 자체로는 검색할 대상이 없다.
+FOLLOW_UP_CONTINUATION_MARKERS = (
+    "요약", "한 문장으로", "한줄로", "간단히 정리", "정리해줘", "다시 설명", "풀어서",
+)
+
+
 def get_recent_user_texts(messages: List[ChatMessage], limit: int = 5) -> List[str]:
     texts: List[str] = []
     for message in reversed(messages):
@@ -1596,6 +1618,14 @@ def get_recent_user_texts(messages: List[ChatMessage], limit: int = 5) -> List[s
 def is_follow_up_question(text: str) -> bool:
     normalized = normalize_for_match(text)
     if any(normalize_for_match(marker) in normalized for marker in FOLLOW_UP_STRONG_MARKERS):
+        return True
+    # "핵심 해결 내용을 한 문장으로 요약해줘"처럼 길이 제한을 넘지만 자체
+    # 검색 조건이 전혀 없고 직전 결과를 가공해 달라는 요청은 후속 질문이다.
+    # 조건이 하나라도 있으면 독립 질문일 수 있으므로 건드리지 않는다.
+    if any(
+        normalize_for_match(marker) in normalized
+        for marker in FOLLOW_UP_CONTINUATION_MARKERS
+    ) and not has_targeting_constraint(extract_query_constraints(text)):
         return True
     if len(text.strip()) > FOLLOW_UP_WEAK_MAX_LEN:
         return False
