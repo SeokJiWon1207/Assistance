@@ -3604,3 +3604,58 @@ textarea:focus {
     flex-direction: column;
   }
 }
+
+/* 점검 모드 안내. 채팅 화면을 완전히 덮어 요청을 시도하지 않게 한다. */
+.maintenance-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 18, 24, 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.maintenance-overlay[hidden] {
+  display: none;
+}
+
+.maintenance-card {
+  max-width: 460px;
+  width: 100%;
+  padding: 36px 32px;
+  border-radius: 18px;
+  text-align: center;
+  background: var(--surface, #fff);
+  color: var(--text, #1b1f27);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.32);
+}
+
+.maintenance-icon {
+  font-size: 42px;
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+.maintenance-card h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  word-break: keep-all;
+}
+
+.maintenance-note {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: keep-all;
+}
+
+.maintenance-meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  opacity: 0.7;
+}
