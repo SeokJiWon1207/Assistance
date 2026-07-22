@@ -532,6 +532,17 @@ def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
     # 결정형 계산으로 응답한다. 규칙이 인물/의도를 못 잡으면(pending) 바로 에러를
     # 돌려주지 않고, 아래 LLM 플래너에게 분류를 한 번 더 맡긴 뒤 그래도 안 되면
     # 보류해둔 안내 문구를 반환한다.
+    # 등록되지 않은 고객사를 물으면 조건 없는 전체 검색으로 흘러가 엉뚱한
+    # 고객사 이슈가 답이 된다. 검색 전에 그 사실을 그대로 알린다.
+    if latest_user_text and enabled_tools.get("mantis"):
+        unknown_customer_report = build_unknown_customer_report(retrieval_text or latest_user_text)
+        if unknown_customer_report:
+            return finalize_chat_response(
+                request,
+                latest_user_text,
+                {"modelId": request.modelId, **unknown_customer_report},
+            )
+
     pending_effort_report = None
     if latest_user_text and enabled_tools.get("mantis"):
         ranking_report = build_effort_ranking_report(latest_user_text)

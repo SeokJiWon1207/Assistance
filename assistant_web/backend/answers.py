@@ -111,6 +111,44 @@ def extract_month_count_query(text: str) -> Optional[Dict[str, int]]:
     }
 
 
+def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
+    """질문이 가리킨 고객사가 등록돼 있지 않으면 그 사실을 그대로 알린다.
+
+    미등록 고객사를 조용히 버리면 조건 없는 전체 검색이 되어, 전혀 다른
+    고객사의 최근 이슈가 답으로 나간다. 결과가 없다는 사실 자체가 답이므로
+    검색을 돌리지 않고 여기서 끝낸다."""
+    constraints = extract_query_constraints(text)
+    unknown = constraints.get("unknown_customers") or []
+    if not unknown or constraints.get("customer_key"):
+        return None
+    names = ", ".join(unknown)
+    lines = [
+        f"🔍 '{names}'는 등록된 고객사에서 찾지 못했어요.",
+        "",
+        f"검색 기준: 고객사={names} (미등록)",
+        "",
+        "다른 고객사 결과를 대신 보여드리지 않았습니다. "
+        "고객사명을 다시 확인하시거나, 고객사 조건 없이 찾으려면 이름을 빼고 물어봐 주세요.",
+    ]
+    return {
+        "content": "\n".join(lines),
+        "sources": [],
+        "retrieval": {
+            "query": text,
+            "constraints": constraints,
+            "stages": [
+                {
+                    "source": "mantis",
+                    "status": "skipped",
+                    "reason": "미등록 고객사",
+                    "meta": {"unknown_customers": unknown, "displayed_count": 0},
+                }
+            ],
+        },
+        "raw": {"mode": "deterministic_unknown_customer"},
+    }
+
+
 COUNT_GROUP_LABELS = {
     "customer": "고객사",
     "status": "상태",

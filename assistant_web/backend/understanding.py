@@ -557,6 +557,36 @@ def is_simple_greeting(text: str) -> bool:
     return normalized in {normalize_for_match(term) for term in SIMPLE_GREETING_TERMS}
 
 
+# 고객사를 가리키는 것처럼 보이는 말. 뒤에 오는 일반 명사(사/별/쪽)는 빼고
+# 회사 이름에 해당하는 부분만 잡는다.
+CUSTOMER_LIKE_PATTERN = re.compile(r"[가-힣A-Za-z0-9]{2,20}?(?:투자증권|증권|금융투자|금융)")
+
+# 회사 이름이 아니라 분류를 가리키는 말. 이런 표현만 있으면 미등록 고객사로 보지 않는다.
+GENERIC_CUSTOMER_WORDS = {"증권", "증권사", "금융", "금융사", "금융투자", "투자증권", "고객사"}
+
+
+def extract_unknown_customers(text: str) -> List[str]:
+    """질문이 가리키는 고객사 중 별칭 목록에 없는 이름을 찾는다.
+
+    미등록 고객사를 조용히 버리면 조건 없는 검색이 되어 전혀 다른 고객사
+    이슈가 답으로 나간다. 이름을 따로 남겨 "찾지 못했다"고 답하게 한다."""
+    unknown: List[str] = []
+    for match in CUSTOMER_LIKE_PATTERN.finditer(str(text or "")):
+        name = match.group(0).strip()
+        if normalize_for_match(name) in {
+            normalize_for_match(word) for word in GENERIC_CUSTOMER_WORDS
+        }:
+            continue
+        if any(
+            text_matches_customer_aliases(name, aliases)
+            for aliases in get_customer_alias_groups()
+        ):
+            continue
+        if name not in unknown:
+            unknown.append(name)
+    return unknown
+
+
 def extract_query_constraints(text: str) -> Dict[str, Any]:
     # "하이"는 하이투자증권의 현업 약칭이기도 하지만, 단독 입력은 인사로 취급한다.
     # "하이 이슈 보여줘"처럼 검색 의도가 붙은 문장은 기존 고객사 별칭 검색을 유지한다.
@@ -746,6 +776,9 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         "date_fields": extract_date_field_constraints(text),
         "created_at": created_at,
         "unassigned_people": unassigned_people,
+        # 고객사를 가리켰지만 별칭 목록에 없는 이름. customer_key가 비어 있을 때만
+        # 의미가 있으며, 조건 없는 전체 검색으로 흘러가는 것을 막는 근거가 된다.
+        "unknown_customers": [] if customer_key else extract_unknown_customers(text),
         "filter_clauses": filter_clauses,
     }
 

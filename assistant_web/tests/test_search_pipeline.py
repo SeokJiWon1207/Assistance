@@ -481,6 +481,39 @@ class NotionContextInheritanceTests(unittest.TestCase):
         self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
 
 
+class UnknownCustomerTests(unittest.TestCase):
+    def test_unregistered_customer_is_detected(self):
+        # 미등록 고객사를 조용히 버리면 조건 없는 전체 검색이 되어 전혀 다른
+        # 고객사 이슈가 답으로 나가던 회귀.
+        constraints = extract_query_constraints("존재하지않는증권사123 최근 이슈 보여줘")
+        self.assertIsNone(constraints["customer_key"])
+        self.assertTrue(constraints["unknown_customers"])
+
+    def test_known_customers_are_not_flagged(self):
+        for question in ("유진증권 이슈", "한국투자증권 이슈", "하나금융 이슈", "KB증권 이슈"):
+            with self.subTest(question=question):
+                self.assertEqual(
+                    extract_query_constraints(question)["unknown_customers"], []
+                )
+
+    def test_generic_words_are_not_unknown_customers(self):
+        for question in ("증권사별로 정리해줘", "고객사별 이슈", "최근 이슈 보여줘"):
+            with self.subTest(question=question):
+                self.assertEqual(
+                    extract_query_constraints(question)["unknown_customers"], []
+                )
+
+    def test_unknown_customer_report_refuses_to_substitute_results(self):
+        report = backend_app.build_unknown_customer_report("존재하지않는증권사123 최근 이슈 보여줘")
+        self.assertIsNotNone(report)
+        self.assertEqual(report["sources"], [])
+        self.assertIn("찾지 못했어요", report["content"])
+
+    def test_known_customer_has_no_unknown_report(self):
+        self.assertIsNone(backend_app.build_unknown_customer_report("유진증권 최근 이슈 보여줘"))
+        self.assertIsNone(backend_app.build_unknown_customer_report("최근 이슈 보여줘"))
+
+
 class NotionStatusTypoTests(unittest.TestCase):
     def test_payment_typo_is_corrected_to_approval_status(self):
         # 결재(승인)와 결제(지불)는 발음이 같아 자주 섞인다.
