@@ -219,7 +219,12 @@ STATUS_ALIASES = {
 }
 
 STATUS_MATCH_ALIASES = {
-    "open": ["할당된 이슈", "확인된 이슈", "이슈 검토", "정보 부족", "개발완료", "해결된 이슈"],
+    # 스냅샷은 상태를 한글로, 라이브 API는 영문으로 준다. 한쪽만 두면
+    # 스냅샷 결과를 라이브로 재검증할 때 열린 이슈가 전부 탈락한다.
+    "open": [
+        "할당된 이슈", "확인된 이슈", "이슈 검토", "정보 부족", "개발완료", "해결된 이슈",
+        "assigned", "confirmed", "acknowledged", "feedback", "new", "resolved", "developed",
+    ],
     "closed": ["종료된 이슈", "종료", "closed"],
     "confirmed": ["확인된 이슈", "확인", "confirmed"],
     "assigned": ["할당된 이슈", "할당", "assigned"],

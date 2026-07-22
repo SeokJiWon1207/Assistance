@@ -481,6 +481,39 @@ class NotionContextInheritanceTests(unittest.TestCase):
         self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
 
 
+class LiveStatusRevalidationTests(unittest.TestCase):
+    def test_english_live_status_names_count_as_open(self):
+        # 스냅샷은 상태를 한글로, 라이브 API는 영문으로 준다. 영문 이름이
+        # open에 없어 재검증에서 열린 이슈가 전부 탈락하던 회귀.
+        for status in ("confirmed", "assigned", "acknowledged", "new", "resolved"):
+            with self.subTest(status=status):
+                self.assertTrue(backend_app.text_matches_status(status, ["open"]))
+
+    def test_closed_is_never_open(self):
+        self.assertFalse(backend_app.text_matches_status("closed", ["open"]))
+        self.assertFalse(backend_app.text_matches_status("종료된 이슈", ["open"]))
+        self.assertTrue(backend_app.text_matches_status("closed", ["closed"]))
+
+    def test_revalidation_keeps_live_open_issue(self):
+        constraints = extract_query_constraints("KB증권 MTS 이슈 중 종료되지 않은 최근 5개 보여줘")
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 30977, "status": "확인된 이슈"}],
+            "meta": {"displayed_count": 1},
+        }
+        live_issue = {
+            "id": 30977,
+            "status": {"name": "confirmed"},
+            "project": {"name": "112KBStar(KB증권)"},
+            "summary": "[MTS] 차트 매입평균가 표시 기능 추가 요청",
+            "handler": {"real_name": "하영훈"},
+        }
+        with patch("backend.sources.mantis.fetch_mantis_issue_by_id", return_value=live_issue):
+            refreshed = backend_app.revalidate_mantis_snapshot_stage(stage, constraints)
+        self.assertEqual(len(refreshed["issues_list"]), 1)
+
+
 class TableOutputTests(unittest.TestCase):
     def test_table_requests_are_detected(self):
         for question in (
