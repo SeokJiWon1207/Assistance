@@ -2022,6 +2022,9 @@ def format_deterministic_notion_answer(
     ]
     if structured_labels:
         criteria += f", 조건={'; '.join(structured_labels)}"
+    if notion_constraints.get("unassigned_owner"):
+        # 필터가 적용됐는데 기준에 안 보이면 결과가 왜 줄었는지 알 수 없다.
+        criteria += ", 담당자=미지정"
     criteria += ", 정렬: 최근 수정순"
 
     count_intent = any(
