@@ -21,6 +21,7 @@ from backend.common import (
     normalize_for_match,
     normalize_search_token,
     remove_quoted_value,
+    strip_korean_particle,
 )
 from backend.config import (
     NOTION_API_BASE,
@@ -35,6 +36,7 @@ from backend.schemas import ChatMessage, NotionPageUpdateRequest, NotionPageWrit
 from backend.understanding import (
     ISSUE_LIST_INTENT_KEYWORDS,
     NOTION_QUERY_STOPWORDS,
+    load_known_people,
     should_run_notion_search,
 )
 
@@ -814,6 +816,50 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
     return list(dict.fromkeys(terms))[:8]
 
 
+def trim_owner_adnominal(candidate: str) -> str:
+    """"권한별인"처럼 관형형 어미가 붙어 잡힌 이름을 실제 담당자명으로 다듬는다.
+
+    담당자 필터는 부분 일치로 비교하므로 어미가 남으면 아무 항목과도 맞지
+    않는다. 실제 담당자 명단에 있는 어간일 때만 잘라내 오탐을 막는다."""
+    name = str(candidate or "").strip()
+    handlers, reporters = load_known_people()
+    known = set(handlers) | set(reporters)
+    if name in known:
+        return name
+    for suffix in ("인", "이"):
+        if name.endswith(suffix) and len(name) > 2 and name[: -len(suffix)] in known:
+            return name[: -len(suffix)]
+    return name
+
+
+def inherit_notion_context(recent_texts: List[str]) -> str:
+    """후속 질문이 잃어버린 Notion 조건(DB·상태)을 이전 턴에서 물려받는다.
+
+    "노션에서 결재요청 상태인 항목 보여줘" 다음의 "담당자별로 묶어줘"는
+    Mantis 쪽 조건 상속만으로는 상태와 소스를 모두 잃는다. 반환한 접두
+    텍스트를 질문 앞에 붙이면 기존 조건 추출이 그대로 다시 인식한다.
+    """
+    if len(recent_texts) < 2:
+        return ""
+    latest = extract_notion_constraints(recent_texts[0])
+    if latest.get("status") or latest.get("exact_title") or latest.get("excluded_statuses"):
+        return ""
+    for prior in recent_texts[1:]:
+        prior_constraints = extract_notion_constraints(prior)
+        parts = [
+            value
+            for value in (
+                prior_constraints.get("database_label"),
+                prior_constraints.get("status"),
+            )
+            if value
+        ]
+        if parts:
+            # 소스가 Notion이라는 사실도 함께 물려줘야 Mantis로 새지 않는다.
+            return " ".join([*parts, "노션"])
+    return ""
+
+
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
     exact_title = extract_quoted_value(text) or ""
     constraint_text = remove_quoted_value(text) if exact_title else text
@@ -838,16 +884,34 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         constraint_text,
     )
     owner = ""
+    # "담당자 미지정 항목만"은 미지정이라는 이름을 찾는 게 아니라 담당자가
+    # 비어 있는 항목을 찾는 요청이다.
+    unassigned_owner = bool(
+        re.search(
+            r"담당자?\s*(?:가|는|를|도)?\s*"
+            r"(?:없는|없이|없음|미지정|미배정|안\s*정해진|지정\s*안\s*된|할당\s*안\s*된|배정\s*안\s*된)",
+            constraint_text,
+        )
+    )
     owner_match = re.search(
-        r"(?:담당자|담당|owner)\s*(?:는|은|=|:)?\s*([가-힣]{2,4}|[A-Za-z]{2,20})",
+        # 조사 "가"를 함께 소비하지 않으면 "담당자가"가 담당+자가로 쪼개져
+        # "자가"가 이름으로 잡힌다.
+        r"(?:담당자|담당|owner)\s*(?:가|는|은|를|을|=|:)?\s*([가-힣]{2,4}|[A-Za-z]{2,20})",
         owner_text,
         re.IGNORECASE,
     ) or re.search(
-        r"([가-힣]{2,4}|[A-Za-z]{2,20})\s*(?:님)?(?:이|가|은|는)?\s*(?:담당|소유|작성|등록|할당)",
+        # "담당자가 권한별인"에서 "자가"처럼 담당자라는 말 자체가 이름으로
+        # 잘려 나오지 않도록 앞에 담당이 붙은 경우를 제외한다.
+        r"(?<!담당)([가-힣]{2,4}|[A-Za-z]{2,20})\s*(?:님)?(?:이|가|은|는)?\s*(?:담당|소유|작성|등록|할당)",
         owner_text,
     )
-    if owner_match and is_valid_person_name(owner_match.group(1)):
-        owner = owner_match.group(1)
+    if owner_match and not unassigned_owner:
+        candidate = owner_match.group(1)
+        # 조사가 붙은 일반 명사가 이름으로 잡히지 않도록 어간까지 검증한다.
+        if is_valid_person_name(candidate) and is_valid_person_name(
+            strip_korean_particle(candidate)
+        ):
+            owner = trim_owner_adnominal(candidate)
 
     return {
         "database_label": extract_notion_database_label_from_text(constraint_text) or "",
@@ -855,6 +919,7 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         "status": status,
         "excluded_statuses": excluded_statuses,
         "owner": owner,
+        "unassigned_owner": unassigned_owner,
         "group_by": group_by,
     }
 
@@ -958,6 +1023,12 @@ def notion_page_matches_constraints(page: Dict[str, Any], constraints: Dict[str,
     if constraints.get("owner") and normalize_for_match(constraints["owner"]) not in normalize_for_match(
         page.get("owner", "")
     ):
+        return False
+    if constraints.get("unassigned_owner") and str(page.get("owner", "")).strip() not in {
+        "",
+        "담당자 미지정",
+        "미지정",
+    }:
         return False
     if any(
         normalize_for_match(status) == normalize_for_match(page.get("status", ""))

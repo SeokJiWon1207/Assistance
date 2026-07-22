@@ -500,6 +500,13 @@ def build_chat_response(request: ChatRequest) -> Dict[str, Any]:
     if resolved_reference:
         retrieval_text = resolved_reference
         needs_follow_up_rewrite = False
+    if not resolved_reference:
+        # Mantis 조건 상속은 Notion 상태·DB를 물려주지 않아, 노션 후속 질문이
+        # 소스와 상태를 모두 잃고 모델 재작성으로 엉뚱한 상태가 채워졌다.
+        notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
+        if notion_prefix and not extract_notion_constraints(retrieval_text).get("status"):
+            retrieval_text = f"{notion_prefix} {retrieval_text or latest_user_text}".strip()
+            needs_follow_up_rewrite = False
     if needs_follow_up_rewrite:
         # 규칙 기반 마커/상속으로 대상을 못 찾은 후속 질문만 모델에게 재작성시킨다.
         # 실패하면 원문 그대로 쓰던 기존 동작으로 조용히 폴백한다.

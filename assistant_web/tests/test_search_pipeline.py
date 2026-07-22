@@ -429,6 +429,53 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertTrue(result["variantB"]["failureReasons"])
 
 
+class NotionContextInheritanceTests(unittest.TestCase):
+    def test_follow_up_inherits_notion_status_and_source(self):
+        # "담당자별로 묶어줘"가 상태와 소스를 모두 잃고 0건이 되던 회귀.
+        prefix = backend_app.inherit_notion_context(
+            ["담당자별로 묶어줘", "노션에서 결재요청 상태인 항목 보여줘"]
+        )
+        self.assertTrue(prefix)
+        constraints = extract_notion_constraints(f"{prefix} 담당자별로 묶어줘")
+        self.assertEqual(constraints["status"], "결재요청")
+        self.assertEqual(constraints["group_by"], "owner")
+
+    def test_latest_turn_with_its_own_status_is_not_overridden(self):
+        self.assertEqual(
+            backend_app.inherit_notion_context(
+                ["노션에서 보관됨 항목 보여줘", "노션에서 결재요청 상태인 항목 보여줘"]
+            ),
+            "",
+        )
+
+    def test_non_notion_conversation_inherits_nothing(self):
+        self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
+
+
+class NotionOwnerConstraintTests(unittest.TestCase):
+    def test_unassigned_owner_is_not_a_person_named_mijijeong(self):
+        # "담당자 미지정"을 이름으로 잡아 0건이 되던 회귀.
+        constraints = extract_notion_constraints("담당자 미지정 항목만 다시 보여줘")
+        self.assertEqual(constraints["owner"], "")
+        self.assertTrue(constraints["unassigned_owner"])
+
+    def test_unassigned_filter_keeps_only_unassigned_pages(self):
+        constraints = extract_notion_constraints("담당자 미지정 항목만 보여줘")
+        self.assertFalse(
+            notion_page_matches_constraints({"owner": "권한별", "status": ""}, constraints)
+        )
+        self.assertTrue(
+            notion_page_matches_constraints({"owner": "담당자 미지정", "status": ""}, constraints)
+        )
+
+    def test_owner_particle_is_not_captured_as_name(self):
+        # "담당자가"가 담당+자가로 쪼개져 "자가"가 담당자로 잡히던 회귀.
+        self.assertEqual(
+            extract_notion_constraints("담당자가 권한별인 항목")["owner"], "권한별"
+        )
+        self.assertEqual(extract_notion_constraints("담당자는 석지원")["owner"], "석지원")
+
+
 class ContextDateInheritanceTests(unittest.TestCase):
     def context(self, user_turns):
         messages = []
