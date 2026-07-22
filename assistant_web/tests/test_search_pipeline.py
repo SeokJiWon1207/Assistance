@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import backend.app as backend_app
+from backend import answers, retrieval, understanding
+from backend.sources import mantis, notion
 from backend.answers import (
     build_issue_intro_line,
     count_group_key,
@@ -12,25 +13,29 @@ from backend.answers import (
 from backend.schemas import ChatMessage
 from backend.query_planning import extract_group_by
 from backend.tools.mantis_snapshot import scan_mantis_documents
-from backend.app import (
+from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
-    evaluate_ab_comparison,
-    deduplicate_notion_pages_by_id,
     extract_effort_query,
+    wants_full_effort_roster,
+    wants_effort_ranking,
+)
+from backend.reports.evaluation import evaluate_ab_comparison
+from backend.retrieval import merge_combined_sources, source_specific_terms
+from backend.sources.notion import (
+    deduplicate_notion_pages_by_id,
     extract_notion_constraints,
-    extract_query_constraints,
-    is_follow_up_question,
-    merge_combined_sources,
+    format_grouped_notion_answer,
+    notion_database_status_filter,
     notion_page_matches_constraints,
     notion_search_max_pages,
-    notion_database_status_filter,
-    format_grouped_notion_answer,
     resolve_notion_page_owner,
+)
+from backend.understanding import (
+    extract_query_constraints,
+    is_follow_up_question,
     resolve_result_limit,
     rule_based_search_intent,
-    source_specific_terms,
-    wants_effort_ranking,
 )
 
 
@@ -107,7 +112,7 @@ class ExactConstraintTests(unittest.TestCase):
             "meta": {"displayed_count": 0},
         }
         question = "노션에서 '[MTS] 김호길 확인요청' 항목을 찾아서 알려줘"
-        result = backend_app.run_retrieval_pipeline(
+        result = retrieval.run_retrieval_pipeline(
             question,
             5,
             {"mantis": False, "notion": True, "vectorDb": False},
@@ -152,7 +157,7 @@ class ExactConstraintTests(unittest.TestCase):
         )
 
         with patch.dict("os.environ", {"NOTION_FETCH_PAGE_BLOCKS": "false"}):
-            result = backend_app.execute_notion_search(
+            result = notion.execute_notion_search(
                 f"노션에서 '{title}' 항목을 찾아서 알려줘",
                 limit=5,
                 constraints={},
@@ -328,7 +333,6 @@ class EffortIntentTests(unittest.TestCase):
 
     def test_roster_phrasing_is_treated_as_ranking(self):
         # "공수 기입한 사람들 다 보여줘"는 전원 명단 요청 → 랭킹 경로로 처리한다.
-        from backend.app import wants_full_effort_roster
         self.assertTrue(wants_effort_ranking("작년에 공수 기입한 사람들 다 보여줘"))
         self.assertTrue(wants_effort_ranking("공수 낸 사람들 알려줘"))
         self.assertTrue(wants_full_effort_roster("작년에 공수 기입한 사람들 다 보여줘"))
@@ -461,7 +465,7 @@ class AbEvaluationTests(unittest.TestCase):
 class NotionContextInheritanceTests(unittest.TestCase):
     def test_follow_up_inherits_notion_status_and_source(self):
         # "담당자별로 묶어줘"가 상태와 소스를 모두 잃고 0건이 되던 회귀.
-        prefix = backend_app.inherit_notion_context(
+        prefix = notion.inherit_notion_context(
             ["담당자별로 묶어줘", "노션에서 결재요청 상태인 항목 보여줘"]
         )
         self.assertTrue(prefix)
@@ -471,14 +475,14 @@ class NotionContextInheritanceTests(unittest.TestCase):
 
     def test_latest_turn_with_its_own_status_is_not_overridden(self):
         self.assertEqual(
-            backend_app.inherit_notion_context(
+            notion.inherit_notion_context(
                 ["노션에서 보관됨 항목 보여줘", "노션에서 결재요청 상태인 항목 보여줘"]
             ),
             "",
         )
 
     def test_non_notion_conversation_inherits_nothing(self):
-        self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
+        self.assertEqual(notion.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
 
 
 class LiveStatusRevalidationTests(unittest.TestCase):
@@ -487,12 +491,12 @@ class LiveStatusRevalidationTests(unittest.TestCase):
         # open에 없어 재검증에서 열린 이슈가 전부 탈락하던 회귀.
         for status in ("confirmed", "assigned", "acknowledged", "new", "resolved"):
             with self.subTest(status=status):
-                self.assertTrue(backend_app.text_matches_status(status, ["open"]))
+                self.assertTrue(mantis.text_matches_status(status, ["open"]))
 
     def test_closed_is_never_open(self):
-        self.assertFalse(backend_app.text_matches_status("closed", ["open"]))
-        self.assertFalse(backend_app.text_matches_status("종료된 이슈", ["open"]))
-        self.assertTrue(backend_app.text_matches_status("closed", ["closed"]))
+        self.assertFalse(mantis.text_matches_status("closed", ["open"]))
+        self.assertFalse(mantis.text_matches_status("종료된 이슈", ["open"]))
+        self.assertTrue(mantis.text_matches_status("closed", ["closed"]))
 
     def test_revalidation_keeps_live_open_issue(self):
         constraints = extract_query_constraints("KB증권 MTS 이슈 중 종료되지 않은 최근 5개 보여줘")
@@ -510,7 +514,7 @@ class LiveStatusRevalidationTests(unittest.TestCase):
             "handler": {"real_name": "하영훈"},
         }
         with patch("backend.sources.mantis.fetch_mantis_issue_by_id", return_value=live_issue):
-            refreshed = backend_app.revalidate_mantis_snapshot_stage(stage, constraints)
+            refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
         self.assertEqual(len(refreshed["issues_list"]), 1)
 
 
@@ -522,16 +526,16 @@ class TopCustomersTests(unittest.TestCase):
             "고객사 중에 문제 많은 곳",
         ):
             with self.subTest(question=question):
-                self.assertTrue(backend_app.TOP_CUSTOMER_QUESTION.search(question))
+                self.assertTrue(answers.TOP_CUSTOMER_QUESTION.search(question))
 
     def test_normal_questions_are_not_matched(self):
         for question in ("KB증권 이슈 보여줘", "고객사별로 열린 이슈 수를 정리해줘"):
             with self.subTest(question=question):
-                self.assertIsNone(backend_app.build_top_customers_report(question))
+                self.assertIsNone(answers.build_top_customers_report(question))
 
     def test_report_states_the_basis_it_used(self):
         # 기준이 빠진 질문에 임의 기준으로 조용히 답하면 안 된다.
-        report = backend_app.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")
+        report = answers.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")
         self.assertIsNotNone(report)
         self.assertIn("미종료", report["content"])
         self.assertIn("고객사별 건수", report["content"])
@@ -545,11 +549,11 @@ class TableOutputTests(unittest.TestCase):
             "테이블로 정리해줘",
         ):
             with self.subTest(question=question):
-                self.assertTrue(backend_app.wants_table_output(question))
+                self.assertTrue(answers.wants_table_output(question))
 
     def test_normal_requests_are_not_table_requests(self):
-        self.assertFalse(backend_app.wants_table_output("최근 이슈 5개 보여줘"))
-        self.assertFalse(backend_app.wants_table_output("KB증권 이슈 목록"))
+        self.assertFalse(answers.wants_table_output("최근 이슈 5개 보여줘"))
+        self.assertFalse(answers.wants_table_output("KB증권 이슈 목록"))
 
 
 class UnknownCustomerTests(unittest.TestCase):
@@ -575,14 +579,14 @@ class UnknownCustomerTests(unittest.TestCase):
                 )
 
     def test_unknown_customer_report_refuses_to_substitute_results(self):
-        report = backend_app.build_unknown_customer_report("존재하지않는증권사123 최근 이슈 보여줘")
+        report = answers.build_unknown_customer_report("존재하지않는증권사123 최근 이슈 보여줘")
         self.assertIsNotNone(report)
         self.assertEqual(report["sources"], [])
         self.assertIn("찾지 못했어요", report["content"])
 
     def test_known_customer_has_no_unknown_report(self):
-        self.assertIsNone(backend_app.build_unknown_customer_report("유진증권 최근 이슈 보여줘"))
-        self.assertIsNone(backend_app.build_unknown_customer_report("최근 이슈 보여줘"))
+        self.assertIsNone(answers.build_unknown_customer_report("유진증권 최근 이슈 보여줘"))
+        self.assertIsNone(answers.build_unknown_customer_report("최근 이슈 보여줘"))
 
 
 class NotionStatusTypoTests(unittest.TestCase):
@@ -635,7 +639,7 @@ class ContextDateInheritanceTests(unittest.TestCase):
             messages.append(ChatMessage(role="user", content=text))
             messages.append(ChatMessage(role="assistant", content="결과입니다"))
         messages.append(ChatMessage(role="user", content=user_turns[-1]))
-        text, _ = backend_app.build_contextual_retrieval_text(messages)
+        text, _ = understanding.build_contextual_retrieval_text(messages)
         return extract_query_constraints(text)
 
     def test_month_narrowing_inherits_the_year(self):
@@ -681,7 +685,7 @@ class DemonstrativeReferenceTests(unittest.TestCase):
     def test_demonstrative_reference_resolves_to_focused_issue(self, load_sources):
         # 상세 조회 뒤 후속 질문이 같은 이슈를 계속 가리켜야 한다.
         load_sources.return_value = [{"type": "mantis", "issue_id": 30892}]
-        resolved = backend_app.resolve_reference_from_context(
+        resolved = understanding.resolve_reference_from_context(
             "그 이슈의 담당자와 상태만 다시 알려줘", "audit-1"
         )
         self.assertIsNotNone(resolved)
@@ -695,7 +699,7 @@ class DemonstrativeReferenceTests(unittest.TestCase):
             {"type": "mantis", "issue_id": 30892},
         ]
         self.assertIsNone(
-            backend_app.resolve_reference_from_context("그 이슈의 담당자 알려줘", "audit-1")
+            understanding.resolve_reference_from_context("그 이슈의 담당자 알려줘", "audit-1")
         )
 
     @patch("backend.understanding.load_audit_sources")
@@ -704,7 +708,7 @@ class DemonstrativeReferenceTests(unittest.TestCase):
             {"type": "mantis", "issue_id": 30953},
             {"type": "mantis", "issue_id": 30892},
         ]
-        resolved = backend_app.resolve_reference_from_context(
+        resolved = understanding.resolve_reference_from_context(
             "그중 두 번째 이슈를 자세히 설명해줘", "audit-1"
         )
         self.assertEqual(extract_query_constraints(resolved)["issue_ids"], [30892])
@@ -726,10 +730,10 @@ class UnassignedHandlerTests(unittest.TestCase):
     def test_snapshot_matcher_keeps_only_unassigned_issues(self):
         constraints = extract_query_constraints("담당자가 없는 건만 보여줘")
         self.assertFalse(
-            backend_app.chroma_text_matches_constraints("이슈 ID: 1\n담당자: 정희진\n", constraints)
+            understanding.chroma_text_matches_constraints("이슈 ID: 1\n담당자: 정희진\n", constraints)
         )
         self.assertTrue(
-            backend_app.chroma_text_matches_constraints(
+            understanding.chroma_text_matches_constraints(
                 "이슈 ID: 2\n담당자: 담당자 미지정\n", constraints
             )
         )
@@ -738,8 +742,8 @@ class UnassignedHandlerTests(unittest.TestCase):
         constraints = extract_query_constraints("담당자가 없는 건만 보여줘")
         assigned = {"id": 1, "handler": {"real_name": "정희진"}, "status": {"name": "closed"}}
         unassigned = {"id": 2, "handler": {}, "status": {"name": "closed"}}
-        self.assertFalse(backend_app.issue_matches_constraints(assigned, constraints))
-        self.assertTrue(backend_app.issue_matches_constraints(unassigned, constraints))
+        self.assertFalse(mantis.issue_matches_constraints(assigned, constraints))
+        self.assertTrue(mantis.issue_matches_constraints(unassigned, constraints))
 
 
 class MissingIssueAnswerTests(unittest.TestCase):

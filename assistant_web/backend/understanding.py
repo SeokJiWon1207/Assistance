@@ -6,7 +6,6 @@
 (should_run_*, rule_based_search_intent, plan_search_intent_with_model).
 
 config/common/llm/query_planning 등 하위 계층만 참조한다(순환 방지).
-app.py는 `from backend.understanding import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import json

@@ -34,7 +34,7 @@ Type=simple
 User=$APP_USER
 WorkingDirectory=$APP_ROOT/assistant_web
 Environment=PYTHONUNBUFFERED=1
-ExecStart=$APP_ROOT/assistant_web/.venv/bin/python -m uvicorn backend.app:app --host 127.0.0.1 --port $APP_PORT
+ExecStart=$APP_ROOT/assistant_web/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port $APP_PORT
 Restart=always
 RestartSec=3
 

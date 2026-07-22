@@ -1,8 +1,6 @@
 """경로·상수·연결 설정 모음.
 
-app.py에서 도메인별 모듈을 분리하기 위한 최하위 계층(Layer 0)이다.
-여기 있는 값들은 다른 backend 모듈을 참조하지 않는다(순환 방지).
-app.py는 `from backend.config import *`로 이 이름들을 그대로 재노출한다.
+다른 backend 모듈을 참조하지 않는 최하위 계층으로, 경로와 외부 연결 설정을 제공한다.
 """
 
 import json

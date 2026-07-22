@@ -3,23 +3,25 @@ from unittest.mock import MagicMock, patch
 import requests
 from datetime import date
 
-from backend.app import (
+from backend.answers import (
+    build_mantis_count_report,
+    display_constraints,
+    format_deterministic_issue_answer,
+    generate_follow_up_questions,
+    select_grouped_issue_rows,
+    should_return_deterministic_issue_list,
+)
+from backend.config import notion_post_json
+from backend.reports.effort import extract_effort_query
+from backend.reports.evaluation import build_verification_report
+from backend.retrieval import run_retrieval_pipeline
+from backend.sources.mantis import issue_matches_constraints
+from backend.understanding import (
     build_contextual_retrieval_text,
     build_keyword_terms,
     build_similar_issue_search_text,
-    build_mantis_count_report,
-    build_verification_report,
     chroma_text_matches_constraints,
-    extract_effort_query,
     extract_query_constraints,
-    format_deterministic_issue_answer,
-    display_constraints,
-    generate_follow_up_questions,
-    issue_matches_constraints,
-    notion_post_json,
-    run_retrieval_pipeline,
-    select_grouped_issue_rows,
-    should_return_deterministic_issue_list,
 )
 from backend.schemas import ChatMessage, ChatRequest
 from backend.reports.evaluation import generate_candidate_model_answer
@@ -925,7 +927,7 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertIn("정렬: 의미 유사도 기준", answer)
         self.assertNotIn("총 3건", answer)
 
-    @patch("backend.app.requests.post")
+    @patch("backend.config.requests.post")
     def test_notion_tool_timeout_budget_caps_retries(self, post):
         post.side_effect = requests.Timeout("timeout")
         with patch.dict("os.environ", {"NOTION_TOOL_TIMEOUT_SECONDS": "7", "NOTION_TOOL_MAX_RETRIES": "0"}):

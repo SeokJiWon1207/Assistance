@@ -1,10 +1,9 @@
 """Notion 소스 어댑터 — 페이지 조회/파싱/검색/쓰기(Layer 3).
 
 Notion REST API 호출, 속성/블록 파싱, 페이지 정규화·검색·랭킹, 쓰기(생성/수정)
-명령 해석과 결정론적 답변 포맷을 담당한다. @app 라우트 핸들러는 app.py에 남는다.
+명령 해석과 결정론적 답변 포맷을 담당한다. HTTP 라우트는 api/notion.py에 둔다.
 
 의존: config/common/schemas/query_planning + understanding(should_run_notion_search 등).
-app.py는 `from backend.sources.notion import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import os

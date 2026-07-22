@@ -6,7 +6,7 @@ tags: [backend, api]
 
 ← [[00 Home]] · 관련: [[백엔드 구조]]
 
-`assistant_web/backend/app.py` 하단(6585~7183줄)에 정의된 라우트.
+`assistant_web/backend/api/`의 도메인별 라우터에 정의되고 `backend/main.py`에서 조립된다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
@@ -23,6 +23,11 @@ tags: [backend, api]
 | GET | `/api/validation/logs/{log_id}` | 감사 로그 단건 |
 | GET | `/api/evaluation/cases` | 평가 케이스 목록 |
 | POST | `/api/evaluation/run` | 평가 실행 |
+| GET | `/api/evaluation/history` | 평가 실행 이력 |
+| POST | `/api/accuracy/run` | 동적 답변 정확도 검사 실행 |
+| GET | `/api/accuracy/reports` | 정확도 리포트 목록·분석 |
+| GET | `/api/accuracy/reports/{name}` | 정확도 리포트 상세 |
+| GET | `/api/data/freshness` | Mantis 스냅샷 신선도 |
 | POST | `/api/chat` | 채팅 메인 엔드포인트 |
 | GET | `/health` | 헬스체크 |
 | GET | `/` | 프론트엔드 정적 페이지 |

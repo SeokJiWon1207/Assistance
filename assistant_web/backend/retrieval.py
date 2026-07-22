@@ -3,7 +3,7 @@
 질문·제약조건에 따라 Mantis/Notion/Chroma 소스 검색을 순차 실행하고
 (run_retrieval_pipeline), 결과를 모델 컨텍스트·근거 목록으로 정리한다.
 
-의존: sources/*, understanding. app.py는 `from backend.retrieval import *`로 재노출한다.
+의존: sources/*, understanding.
 """
 
 import re

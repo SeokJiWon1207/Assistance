@@ -8,25 +8,37 @@
 cd assistant_web
 cp .env.example .env
 ollama pull qwen3.5:9b
-python3 -m uvicorn backend.app:app --host 127.0.0.1 --port 8787 --reload
+python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 ```
 
 브라우저에서 `http://127.0.0.1:8787`로 접속합니다.
 Ollama 모델에는 API 키가 필요하지 않습니다. macOS에서는
 `scripts/local/AI비서_서버_재시작.command`를 실행해 앱 서버를 다시 시작할 수도 있습니다.
 
+## Test
+
+```bash
+cd assistant_web
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
+
+이 명령은 검색·답변 단위 테스트와 FastAPI API 통합 테스트를 실행합니다. Node.js가
+설치되어 있으면 프런트엔드 핵심 로직과 JavaScript 구문 검사도 함께 실행합니다.
+
 ## Project Structure
 
 ```text
 Assistance/
 ├── assistant_web/
-│   ├── backend/             # API와 웹 화면
+│   ├── backend/
+│   │   ├── main.py          # FastAPI 앱 조립
+│   │   ├── api/             # 도메인별 API 라우터
+│   │   └── services/        # 채팅 오케스트레이션
 │   ├── config/              # 모델·고객사·검증 설정
 │   ├── scripts/             # 정확도 검사와 로컬 실행 도구
 │   ├── tests/               # 자동 테스트와 수동 검증 질문
 │   ├── runtime/             # 감사 DB와 정확도 리포트
-│   ├── deploy/              # AWS 배포 도구
-│   └── artifacts/           # 생성된 배포 산출물
+│   └── deploy/              # AWS 배포 도구
 ├── data/
 │   ├── mantis_chroma_db/    # 현재 Mantis 벡터 스냅샷
 │   └── backups/             # 스냅샷 백업

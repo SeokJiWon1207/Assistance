@@ -4,7 +4,6 @@ Mantis 이슈의 공수 커스텀필드를 파싱해 기간·고객사·매체·
 조건별 합계, 개인별 리포트와 전체 랭킹 리포트를 생성한다.
 
 의존: common/query_planning + understanding(제약추출) + mantis(이슈 조회/정규화/소스).
-app.py는 `from backend.reports.effort import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import calendar

@@ -2,7 +2,6 @@
 
 외부 I/O 없이 문자열·숫자·날짜를 다루거나, config의 상수 테이블만 참조하는
 함수들이다. backend.config 외의 backend 모듈은 참조하지 않는다(순환 방지).
-app.py는 `from backend.common import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import re

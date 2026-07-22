@@ -1,12 +1,11 @@
 """감사 로그 DB와 채팅 스트리밍 컨텍스트(Layer 2).
 
 - CHAT_STREAM_CONTEXT: 요청 스레드별 SSE emitter를 담는 thread-local.
-  app.py의 스트리밍 핸들러가 emitter를 설정하고, emit_chat_* 가 읽는다.
+  api/chat.py의 스트리밍 핸들러가 emitter를 설정하고, emit_chat_* 가 읽는다.
   같은 객체를 import로 공유하므로 thread-local 의미가 그대로 유지된다.
 - validation_logs / evaluation_runs 테이블 스키마 초기화와 근거 조회.
 
 backend.config 외의 backend 모듈은 참조하지 않는다(순환 방지).
-app.py는 `from backend.audit import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import json

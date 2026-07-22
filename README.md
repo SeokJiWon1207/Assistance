@@ -16,7 +16,7 @@ Assistance/
 
 ```bash
 cd assistant_web
-python3 -m uvicorn backend.app:app --host 127.0.0.1 --port 8787 --reload
+python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 
 cd ..
 python3 scripts/make_vector_db.py --refresh-days 7

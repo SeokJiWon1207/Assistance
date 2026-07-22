@@ -2,7 +2,9 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
-import backend.app as app
+from backend import answers, retrieval, understanding
+from backend.reports import evaluation
+from backend.sources import mantis
 from scripts.accuracy.dynamic_accuracy_check import (
     AccuracyCase,
     complete_mutable_mantis_ids,
@@ -16,23 +18,23 @@ class DataFreshnessNoteTests(unittest.TestCase):
     def test_note_tells_model_the_snapshot_base_date(self, _freshness):
         # 기준일을 알려주지 않으면 "데이터 기준일"을 물었을 때 모델이 오늘
         # 날짜를 그대로 답한다.
-        note = app.build_current_date_note()
+        note = answers.build_current_date_note()
         self.assertIn("2026-05-07", note)
         self.assertIn("데이터 기준일", note)
 
     @patch("backend.answers.get_mantis_snapshot_freshness", return_value="")
     def test_note_omits_base_date_when_unknown(self, _freshness):
-        self.assertNotIn("데이터 기준일", app.build_current_date_note())
+        self.assertNotIn("데이터 기준일", answers.build_current_date_note())
 
 
 class ConstraintGroundingTests(unittest.TestCase):
     def constraints(self, question):
-        return app.extract_query_constraints(question)
+        return understanding.extract_query_constraints(question)
 
     def test_conditions_from_the_question_are_grounded(self):
         question = "KB증권 MTS 이슈"
         self.assertEqual(
-            app.ungrounded_constraint_labels(question, self.constraints(question)), []
+            evaluation.ungrounded_constraint_labels(question, self.constraints(question)), []
         )
 
     def test_invented_customer_is_flagged(self):
@@ -41,7 +43,7 @@ class ConstraintGroundingTests(unittest.TestCase):
         constraints["customer_key"] = "유진증권"
         constraints["customer_aliases"] = ["유진증권"]
         self.assertEqual(
-            app.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
+            evaluation.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
             ["고객사=유진증권"],
         )
 
@@ -49,7 +51,7 @@ class ConstraintGroundingTests(unittest.TestCase):
         constraints = self.constraints("최근 이슈 보여줘")
         constraints["people"] = {"names": ["석지원"], "role": "handler"}
         self.assertEqual(
-            app.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
+            evaluation.ungrounded_constraint_labels("최근 이슈 보여줘", constraints),
             ["담당자=석지원"],
         )
 
@@ -57,14 +59,14 @@ class ConstraintGroundingTests(unittest.TestCase):
         # 근거 텍스트는 검색에 실제 쓰인 문장이라 물려받은 조건도 통과해야 한다.
         question = "신한 mts 종료된 건은 빼줘"
         self.assertEqual(
-            app.ungrounded_constraint_labels(question, self.constraints(question)), []
+            evaluation.ungrounded_constraint_labels(question, self.constraints(question)), []
         )
 
 
 class ScreenNumberAccuracyTests(unittest.TestCase):
-    @patch.object(app, "get_mantis_headers", return_value={})
-    @patch.object(app, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
-    @patch.object(app.requests, "get")
+    @patch.object(mantis, "get_mantis_headers", return_value={})
+    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis.requests, "get")
     def test_page_scan_checks_all_recent_pages_before_selecting_latest_results(
         self, get, _settings, _headers
     ):
@@ -86,7 +88,7 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
             Mock(status_code=200, json=lambda: {"issues": [issue(400)]}),
         ]
 
-        result = app.execute_mantis_page_scan(
+        result = mantis.execute_mantis_page_scan(
             "115다올투자증권 구KTB",
             limit=3,
             constraints={"customer_exact": "115다올투자증권(구KTB)"},
@@ -107,8 +109,8 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(exact_screen_numbers(free_text_issue), set())
 
     def test_audit_screen_match_requires_numeric_boundary(self):
-        self.assertTrue(app.text_matches_screen_numbers("화면번호 9413", ["9413"]))
-        self.assertFalse(app.text_matches_screen_numbers("식별자 194130", ["9413"]))
+        self.assertTrue(understanding.text_matches_screen_numbers("화면번호 9413", ["9413"]))
+        self.assertFalse(understanding.text_matches_screen_numbers("식별자 194130", ["9413"]))
 
     @patch("backend.retrieval.execute_mantis_filter_search")
     @patch("backend.retrieval.execute_mantis_page_scan")
@@ -127,7 +129,7 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
             "status": "ok",
             "issues_list": [],
         }
-        result = app.run_retrieval_pipeline(
+        result = retrieval.run_retrieval_pipeline(
             "화면번호 9413 관련 이슈 3개 보여줘",
             3,
             {"mantis": True, "notion": False, "vectorDb": False},
@@ -161,9 +163,9 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
                 {"id": 29730, "handler": "이준옥"},
             ],
         }
-        constraints = app.extract_query_constraints("담당자 이준옥의 최근 이슈 2개 보여줘")
+        constraints = understanding.extract_query_constraints("담당자 이준옥의 최근 이슈 2개 보여줘")
 
-        result = app.revalidate_mantis_snapshot_stage(stage, constraints)
+        result = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
 
         self.assertEqual([issue["id"] for issue in result["issues_list"]], [29730])
         self.assertEqual(result["meta"]["stale_removed_count"], 1)
@@ -171,8 +173,8 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
 
 
 class AccuracyInsightTests(unittest.TestCase):
-    @patch("scripts.accuracy.dynamic_accuracy_check.assistant.revalidate_mantis_snapshot_stage")
-    @patch("scripts.accuracy.dynamic_accuracy_check.assistant.execute_mantis_snapshot_search")
+    @patch("scripts.accuracy.dynamic_accuracy_check.mantis.revalidate_mantis_snapshot_stage")
+    @patch("scripts.accuracy.dynamic_accuracy_check.mantis.execute_mantis_snapshot_search")
     def test_mutable_oracle_combines_live_sample_with_verified_full_snapshot(
         self, snapshot_search, revalidate
     ):
@@ -237,7 +239,7 @@ class AccuracyInsightTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["outcome"], "dependency_error")
 
-        analytics = app.build_accuracy_analytics(
+        analytics = evaluation.build_accuracy_analytics(
             [
                 {
                     "run_at": "2026-07-21T08:00:00+09:00",
@@ -268,7 +270,7 @@ class AccuracyInsightTests(unittest.TestCase):
                 ],
             },
         ]
-        analytics = app.build_accuracy_analytics(reports)
+        analytics = evaluation.build_accuracy_analytics(reports)
         self.assertEqual(analytics["latestDelta"], 20)
         self.assertEqual([point["score"] for point in analytics["trend"]], [70, 90])
         self.assertEqual(
@@ -279,7 +281,7 @@ class AccuracyInsightTests(unittest.TestCase):
     def test_freshness_marks_old_snapshot_stale(self):
         old_date = (date.today() - timedelta(days=7)).isoformat()
         with patch("backend.sources.mantis.get_mantis_snapshot_freshness", return_value=old_date):
-            status = app.get_mantis_snapshot_freshness_status()
+            status = mantis.get_mantis_snapshot_freshness_status()
         self.assertEqual(status["ageDays"], 7)
         self.assertEqual(status["status"], "stale")
 

@@ -22,7 +22,16 @@ APP_DIR = SCRIPT_DIR.parent.parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-from backend import app as assistant
+from backend.environment import load_dotenv
+
+load_dotenv(APP_DIR / ".env")
+
+from backend.api.chat import chat
+from backend.config import NOTION_API_BASE, parse_notion_database_ids
+from backend.llm import get_model_registry
+from backend.schemas import ChatMessage, ChatRequest
+from backend.sources import mantis
+from backend.understanding import extract_query_constraints
 
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
@@ -89,15 +98,15 @@ def complete_mutable_mantis_ids(
     local candidates only when every displayed candidate was revalidated by an
     exact live lookup. This avoids defining expectations from stale fields.
     """
-    constraints = assistant.extract_query_constraints(question)
+    constraints = extract_query_constraints(question)
     expected_ids = {
         int(issue["id"])
         for issue in live_issues
-        if issue.get("id") and assistant.issue_matches_constraints(issue, constraints)
+        if issue.get("id") and mantis.issue_matches_constraints(issue, constraints)
     }
     try:
-        stage = assistant.execute_mantis_snapshot_search(max(limit * 2, 5), constraints)
-        stage = assistant.revalidate_mantis_snapshot_stage(stage, constraints)
+        stage = mantis.execute_mantis_snapshot_search(max(limit * 2, 5), constraints)
+        stage = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
     except Exception:
         stage = {"status": "error", "issues_list": [], "meta": {}}
     if stage.get("status") == "ok" and not stage.get("meta", {}).get("live_fallback_count"):
@@ -181,7 +190,7 @@ def notion_page_summary(page: Dict[str, Any], database_label: str) -> Dict[str, 
 
 def fetch_notion_snapshot() -> List[Dict[str, str]]:
     token = os.getenv("NOTION_API_TOKEN") or os.getenv("NOTION_TOKEN") or ""
-    database_ids = assistant.parse_notion_database_ids()
+    database_ids = parse_notion_database_ids()
     if not token or not database_ids:
         raise RuntimeError("NOTION_API_TOKEN/NOTION_DATABASE_IDS is not configured")
 
@@ -193,7 +202,7 @@ def fetch_notion_snapshot() -> List[Dict[str, str]]:
     pages: List[Dict[str, str]] = []
     for database_id in database_ids:
         metadata = requests.get(
-            f"{assistant.NOTION_API_BASE}/databases/{database_id}",
+            f"{NOTION_API_BASE}/databases/{database_id}",
             headers=headers,
             timeout=30,
         )
@@ -208,7 +217,7 @@ def fetch_notion_snapshot() -> List[Dict[str, str]]:
             if cursor:
                 payload["start_cursor"] = cursor
             response = requests.post(
-                f"{assistant.NOTION_API_BASE}/databases/{database_id}/query",
+                f"{NOTION_API_BASE}/databases/{database_id}/query",
                 headers=headers,
                 json=payload,
                 timeout=30,
@@ -407,9 +416,9 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             "notion": case.source == "notion",
             "vectorDb": False,
         }
-        response = assistant.chat(assistant.ChatRequest(
+        response = chat(ChatRequest(
             modelId=model_id,
-            messages=[assistant.ChatMessage(role="user", content=case.question)],
+            messages=[ChatMessage(role="user", content=case.question)],
             temperature=0.0,
             seed=42,
             maxTokens=900,
@@ -513,7 +522,7 @@ def main() -> int:
         augment_mutable_oracle=True,
     ) + build_notion_cases(notion_pages, rng)
     cases = cases[: args.questions]
-    models = [model for model in assistant.get_model_registry() if model.get("enabled", True)]
+    models = [model for model in get_model_registry() if model.get("enabled", True)]
     model_id = args.model_id or (str(models[0]["id"]) if models else "")
     if not model_id:
         errors.append("No enabled model is configured")

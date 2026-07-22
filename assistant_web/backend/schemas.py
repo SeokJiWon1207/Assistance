@@ -1,7 +1,6 @@
 """FastAPI 요청 본문 pydantic 모델(Layer 1).
 
 pydantic 외의 backend 모듈을 참조하지 않는다(순환 방지).
-app.py는 `from backend.schemas import *`로 이 모델들을 그대로 재노출한다.
 """
 
 from typing import Any, Dict, List, Literal, Optional

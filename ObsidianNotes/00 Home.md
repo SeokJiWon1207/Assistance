@@ -22,8 +22,8 @@ tags: [MOC]
 
 | 항목 | 내용 |
 |---|---|
-| 실행 | `python3 -m uvicorn backend.app:app --host 127.0.0.1 --port 8787 --reload` |
+| 실행 | `python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload` |
 | 접속 | http://127.0.0.1:8787 |
-| 핵심 파일 | `assistant_web/backend/app.py` (~7,200줄) |
+| 핵심 파일 | `assistant_web/backend/main.py`, `backend/api/`, `backend/services/chat_service.py` |
 | 데이터 소스 | Mantis API, Notion API, 로컬 ChromaDB 스냅샷(`data/mantis_chroma_db`) |
 | 배포 | AWS EC2 시연 서버 (systemd `content-ai-assistant`) |

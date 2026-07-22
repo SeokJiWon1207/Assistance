@@ -28,4 +28,4 @@ echo "브라우저 주소: http://127.0.0.1:$PORT"
 echo "종료하려면 이 터미널에서 Ctrl + C 를 누르세요."
 echo
 
-python3 -m uvicorn backend.app:app --host 127.0.0.1 --port "$PORT" --reload
+python3 -m uvicorn backend.main:app --host 127.0.0.1 --port "$PORT" --reload

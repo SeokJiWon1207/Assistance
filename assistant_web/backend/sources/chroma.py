@@ -4,7 +4,6 @@ chromadb 벡터스토어 조회(지연 import; 없으면 어휘 기반 폴백), 
 where 필터 구성, 의미 유사도 스코어링·재랭킹, 이슈 문서 정규화/조회를 담당한다.
 
 의존: config/common + understanding(제약 매칭·키워드) + mantis(이슈 정규화/조회).
-app.py는 `from backend.sources.chroma import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import os

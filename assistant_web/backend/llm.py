@@ -4,7 +4,6 @@ models.json 기반 모델 목록 로딩, OpenAI 호환/Ollama 네이티브 엔�
 요청 파라미터 → 생성 옵션 변환을 담당한다.
 
 의존: config(CONFIG_DIR), common(parse_date, clamp_*), schemas(ChatRequest).
-app.py는 `from backend.llm import *`로 이 이름들을 그대로 재노출한다.
 """
 
 import json

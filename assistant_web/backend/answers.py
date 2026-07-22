@@ -4,7 +4,7 @@
 Mantis 건수 집계 리포트(build_mantis_count_report 등)와 답변 스타일 지침,
 검증 화면용 제약조건 표시(display_constraints)도 여기에 둔다.
 
-의존: retrieval + sources + understanding. app.py는 `from backend.answers import *`로 재노출한다.
+의존: retrieval + sources + understanding.
 """
 
 import re

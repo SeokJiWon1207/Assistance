@@ -3,11 +3,8 @@
 Mantis REST API 조회, 이슈 정규화, 커스텀 날짜/열거형 포맷, 필터 로딩,
 스냅샷 조회 한도 파싱, 키워드 매칭 점수 계산을 담당한다.
 
-제약조건 매칭(issue_matches_constraints)·검색 오케스트레이션(execute_mantis_*)·
-집계 리포트(build_mantis_count_report 등)와 스냅샷 신선도 함수는 상위 매칭/이해
-계층에 의존하므로 아직 app.py에 남아 있다(해당 계층 분리 후 이곳으로 이동 예정).
-
-app.py는 `from backend.sources.mantis import *`로 이 이름들을 그대로 재노출한다.
+제약조건 매칭(issue_matches_constraints), Mantis 검색 실행(execute_mantis_*),
+스냅샷 신선도 확인까지 이 어댑터가 담당한다.
 """
 
 import json

@@ -5,7 +5,6 @@ A/B 비교(evaluate_ab_*), 감사 로그 기록을 포함한 응답 마무리(fi
 회귀 평가 케이스 실행/저장(run_evaluation_case 등), 정확도 리포트 분석을 담당한다.
 
 의존: retrieval/answers/effort + sources + understanding + llm/audit.
-app.py는 `from backend.reports.evaluation import *`로 재노출한다.
 """
 
 import json

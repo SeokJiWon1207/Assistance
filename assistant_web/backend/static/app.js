@@ -1,3 +1,10 @@
+const {
+  storageSafeMessages,
+  deriveConversationTitle,
+  buildChatMessages,
+  parseSseBuffer,
+} = globalThis.AssistantFrontendCore;
+
 const state = {
   models: [],
   messages: [],
@@ -114,34 +121,6 @@ function createConversation() {
     updatedAt: now,
     messages: [],
   };
-}
-
-function storageSafeMessages(messages) {
-  return messages
-    .filter((message) => !message.loading && !message.streaming)
-    .slice(-60)
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-      sources: (message.sources || []).slice(0, 20).map((source) => ({
-        ...source,
-        content: String(source.content || "").slice(0, 4000),
-        summary: String(source.summary || "").slice(0, 1200),
-        document: String(source.document || "").slice(0, 4000),
-      })),
-      followUps: message.followUps || [],
-      verification: message.verification || null,
-      auditId: message.auditId || "",
-      abTest: message.abTest || null,
-      createdAt: message.createdAt || "",
-      questionAskedAt: message.questionAskedAt || "",
-    }));
-}
-
-function deriveConversationTitle(messages) {
-  const firstQuestion = messages.find((message) => message.role === "user")?.content?.trim();
-  if (!firstQuestion) return "새 대화";
-  return firstQuestion.length > 28 ? `${firstQuestion.slice(0, 28)}…` : firstQuestion;
 }
 
 let toastContainer = null;
@@ -2854,12 +2833,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
   // 대화가 길어져도 서버로 보내는 히스토리는 최근 N개로 제한한다(서버에서도 한 번 더 제한).
   // 현재 질문은 state.messages에 이미 push되어 있으므로(제출 핸들러 참고) history에서는
   // 제외하고, 아래에서 { role: "user", content }로 한 번만 명시적으로 붙인다.
-  const HISTORY_LIMIT = 20;
-  const history = state.messages
-    .filter((message) => !message.loading && !message.streaming)
-    .slice(0, -1)
-    .map((message) => ({ role: message.role, content: message.content }))
-    .slice(-HISTORY_LIMIT);
+  const chatMessages = buildChatMessages(state.messages, content, 20);
 
   // 직전 assistant 답변의 감사 ID. 서버가 "그중 3번째" 같은 서수 참조를
   // 그 답변에서 실제로 보여준 결과 목록으로 정확히 해석하는 데 사용한다.
@@ -2877,7 +2851,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
       abTest: abComparisonEnabled(),
       stream: true,
       contextAuditId: lastAssistantWithAudit?.auditId || null,
-      messages: [...history, { role: "user", content }],
+      messages: chatMessages,
       tools: {
         mantis: toolToggleEnabled(els.mantisToggle),
         notion: toolToggleEnabled(els.notionToggle),
@@ -2899,16 +2873,9 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
   while (true) {
     const { value, done } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const frames = buffer.split("\n\n");
-    buffer = frames.pop() || "";
-    for (const frame of frames) {
-      const payload = frame
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trim())
-        .join("");
-      if (!payload) continue;
-      const event = JSON.parse(payload);
+    const parsed = parseSseBuffer(buffer, done);
+    buffer = parsed.rest;
+    for (const event of parsed.events) {
       onEvent(event);
       if (event.type === "result") result = event.data;
       if (event.type === "error") throw new Error(event.message || "응답 중 오류가 발생했습니다.");
