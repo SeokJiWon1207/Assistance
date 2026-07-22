@@ -453,6 +453,25 @@ class NotionContextInheritanceTests(unittest.TestCase):
         self.assertEqual(backend_app.inherit_notion_context(["KB증권 이슈 보여줘"]), "")
 
 
+class NotionStatusTypoTests(unittest.TestCase):
+    def test_payment_typo_is_corrected_to_approval_status(self):
+        # 결재(승인)와 결제(지불)는 발음이 같아 자주 섞인다.
+        constraints = extract_notion_constraints("노션에서 결제요청 상태 찾아줘")
+        self.assertEqual(constraints["status"], "결재요청")
+        self.assertEqual(constraints["status_typo"], ("결제요청", "결재요청"))
+
+    def test_correct_spelling_reports_no_correction(self):
+        constraints = extract_notion_constraints("노션에서 결재요청 상태 찾아줘")
+        self.assertEqual(constraints["status"], "결재요청")
+        self.assertIsNone(constraints["status_typo"])
+
+    def test_quoted_title_is_not_corrected(self):
+        # 인용한 제목은 사용자가 지정한 정확한 문자열이다.
+        constraints = extract_notion_constraints("노션에서 '결제요청 매뉴얼' 문서 찾아줘")
+        self.assertEqual(constraints["exact_title"], "결제요청 매뉴얼")
+        self.assertIsNone(constraints["status_typo"])
+
+
 class NotionOwnerConstraintTests(unittest.TestCase):
     def test_unassigned_owner_is_not_a_person_named_mijijeong(self):
         # "담당자 미지정"을 이름으로 잡아 0건이 되던 회귀.

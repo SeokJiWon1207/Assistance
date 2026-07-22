@@ -54,6 +54,23 @@ NOTION_STATUS_QUERY_TERMS = {
 }
 
 
+# 현업에서 흔히 틀리는 표기. 결재(승인)와 결제(지불)는 발음이 같아 자주 섞인다.
+# 보정한 사실은 답변의 검색 기준에 그대로 드러나므로 조용한 치환이 아니다.
+NOTION_STATUS_TYPOS = {
+    "결제요청": "결재요청",
+    "결제완료": "결재완료",
+    "결제완료(팀장)": "결재완료(팀장)",
+}
+
+
+def correct_notion_status_typo(text: str) -> Tuple[str, Optional[Tuple[str, str]]]:
+    """Notion 상태 오타를 바로잡은 텍스트와 (원문, 보정값)을 돌려준다."""
+    for wrong, right in NOTION_STATUS_TYPOS.items():
+        if wrong in text:
+            return text.replace(wrong, right), (wrong, right)
+    return text, None
+
+
 def notion_rich_text_to_plain(items: List[Dict[str, Any]]) -> str:
     return "".join(item.get("plain_text", "") for item in items or []).strip()
 
@@ -863,6 +880,8 @@ def inherit_notion_context(recent_texts: List[str]) -> str:
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
     exact_title = extract_quoted_value(text) or ""
     constraint_text = remove_quoted_value(text) if exact_title else text
+    # 인용된 제목은 사용자가 지정한 정확한 문자열이므로 건드리지 않는다.
+    constraint_text, status_typo = correct_notion_status_typo(constraint_text)
     normalized = normalize_for_match(constraint_text)
     status = ""
     excluded_statuses: List[str] = []
@@ -920,6 +939,7 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         "excluded_statuses": excluded_statuses,
         "owner": owner,
         "unassigned_owner": unassigned_owner,
+        "status_typo": status_typo,
         "group_by": group_by,
     }
 
@@ -2025,6 +2045,10 @@ def format_deterministic_notion_answer(
     if notion_constraints.get("unassigned_owner"):
         # 필터가 적용됐는데 기준에 안 보이면 결과가 왜 줄었는지 알 수 없다.
         criteria += ", 담당자=미지정"
+    status_typo = notion_constraints.get("status_typo")
+    if status_typo:
+        # 조용히 바꾸지 않고 무엇을 무엇으로 봤는지 밝힌다.
+        criteria += f", 표기 보정={status_typo[0]}→{status_typo[1]}"
     criteria += ", 정렬: 최근 수정순"
 
     count_intent = any(
