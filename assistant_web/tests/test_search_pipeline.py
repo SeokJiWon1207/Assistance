@@ -9,6 +9,7 @@ from backend.answers import (
     count_group_key,
     format_count_group_lines,
 )
+from backend.schemas import ChatMessage
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.app import (
     build_effort_report,
@@ -426,6 +427,37 @@ class AbEvaluationTests(unittest.TestCase):
         self.assertEqual(result["winner"], "A")
         self.assertGreater(result["variantA"]["score"], result["variantB"]["score"])
         self.assertTrue(result["variantB"]["failureReasons"])
+
+
+class ContextDateInheritanceTests(unittest.TestCase):
+    def context(self, user_turns):
+        messages = []
+        for text in user_turns[:-1]:
+            messages.append(ChatMessage(role="user", content=text))
+            messages.append(ChatMessage(role="assistant", content="결과입니다"))
+        messages.append(ChatMessage(role="user", content=user_turns[-1]))
+        text, _ = backend_app.build_contextual_retrieval_text(messages)
+        return extract_query_constraints(text)
+
+    def test_month_narrowing_inherits_the_year(self):
+        # "그중 4월 것만"이 연도를 잃어 모델이 임의의 연도를 채우던 회귀.
+        constraints = self.context(["유진증권 2026년 이슈 보여줘", "그중 4월 것만 남겨줘"])
+        self.assertEqual(
+            constraints["created_at"]["from"], "2026-04-01"
+        )
+        self.assertEqual(constraints["created_at"]["to"], "2026-04-30")
+
+    def test_narrowed_month_persists_into_later_turns(self):
+        # 좁힌 4월이 이후 턴에서도 유지돼야 "총 몇 건이야?"가 4월 기준으로 센다.
+        constraints = self.context(
+            ["유진증권 2026년 이슈 보여줘", "그중 4월 것만 남겨줘", "총 몇 건이야?"]
+        )
+        self.assertEqual(constraints["created_at"]["from"], "2026-04-01")
+        self.assertEqual(constraints["created_at"]["to"], "2026-04-30")
+
+    def test_explicit_date_in_latest_turn_wins(self):
+        constraints = self.context(["유진증권 2026년 이슈 보여줘", "2025년 이슈만 보여줘"])
+        self.assertEqual(constraints["created_at"]["from"], "2025-01-01")
 
 
 class DemonstrativeReferenceTests(unittest.TestCase):

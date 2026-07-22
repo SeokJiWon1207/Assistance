@@ -11,6 +11,7 @@ app.py는 `from backend.understanding import *`로 이 이름들을 그대로 �
 
 import json
 import os
+import calendar
 import re
 import sqlite3
 from datetime import date
@@ -1683,6 +1684,31 @@ def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Option
     return None
 
 
+def resolve_recent_created_at(texts: List[str]) -> Optional[Dict[str, str]]:
+    """최신순 텍스트 목록에서 마지막으로 확정된 등록일 범위를 돌려준다.
+
+    "그중 4월 것만"처럼 연도 없이 월만 좁힌 턴은 그 자체로는 범위를 만들지
+    못하므로, 더 이전 턴에서 확정된 연도를 물려받아 해석한다."""
+    year: Optional[int] = None
+    resolved: Optional[Dict[str, str]] = None
+    for text in reversed(texts):
+        own = extract_created_at_range(text)
+        if own:
+            resolved = own
+            year = int(str(own["from"])[:4])
+            continue
+        month_match = re.search(r"(?<!\d)(1[0-2]|0?[1-9])\s*월", text)
+        if month_match and year and not re.search(r"20\d{2}\s*년", text):
+            month = int(month_match.group(1))
+            last_day = calendar.monthrange(year, month)[1]
+            resolved = {
+                "from": f"{year:04d}-{month:02d}-01",
+                "to": f"{year:04d}-{month:02d}-{last_day:02d}",
+                "precision": "month",
+            }
+    return resolved
+
+
 def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, bool]:
     """검색 라우팅용 텍스트를 만든다.
 
@@ -1718,6 +1744,27 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
     seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses"))
     seen_issue_ids = False
     seen_screen_numbers = False
+    seen_created_at = bool(latest_constraints.get("created_at"))
+    # "그중 4월 것만"처럼 연도 없이 월만 좁히는 후속 질문은 이전 턴의 연도를
+    # 물려받아야 한다. 물려받지 못하면 모델이 임의의 연도를 채워 넣는다.
+    latest_month = re.search(r"(?<!\d)(1[0-2]|0?[1-9])\s*월", latest)
+    latest_has_year = bool(re.search(r"20\d{2}\s*년", latest))
+    prior_range = None if seen_created_at else resolve_recent_created_at(recent[1:])
+    if prior_range:
+        prior_year = int(str(prior_range["from"])[:4])
+        if latest_month and not latest_has_year:
+            month = int(latest_month.group(1))
+            last_day = calendar.monthrange(prior_year, month)[1]
+            inherited.append(
+                f"{prior_year}년 {month}월 1일부터 {prior_year}년 {month}월 {last_day}일까지"
+            )
+        elif not latest_month and not latest_has_year:
+            start, end = str(prior_range["from"]), str(prior_range["to"])
+            inherited.append(
+                f"{start[:4]}년 {int(start[5:7])}월 {int(start[8:])}일부터 "
+                f"{end[:4]}년 {int(end[5:7])}월 {int(end[8:])}일까지"
+            )
+
     for prior in recent[1:]:
         prior_constraints = extract_query_constraints(prior)
         # 이슈ID/화면번호처럼 특정 대상을 정확히 가리키는 조건을 최우선으로 상속한다.
