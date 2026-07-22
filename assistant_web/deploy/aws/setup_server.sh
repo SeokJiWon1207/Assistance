@@ -49,7 +49,15 @@ server {
 
     client_max_body_size 20m;
 
+    # 점검 모드: $APP_ROOT/maintenance.on 이 있으면 앱으로 넘기지 않고 안내를 내려준다.
+    # 앱(uvicorn)이 아니라 nginx가 판단하므로 재배포·재시작으로 앱이 완전히 죽어 있어도
+    # 502 대신 안내가 보인다. 요청마다 파일을 확인하므로 nginx 재시작도 필요 없다.
+    set \$maintenance_flag "$APP_ROOT/maintenance.on";
+
     location / {
+        if (-f \$maintenance_flag) {
+            return 503;
+        }
         proxy_pass http://127.0.0.1:$APP_PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -58,6 +66,16 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_buffering off;
         proxy_read_timeout 300;
+    }
+
+    # 점검 안내는 503으로 내려준다. 200으로 주면 모니터링과 크롤러가 정상 응답으로
+    # 오해한다. Retry-After 로 잠시 뒤 다시 오라는 뜻을 함께 전한다.
+    error_page 503 @maintenance;
+    location @maintenance {
+        root $APP_ROOT/assistant_web/deploy/aws;
+        rewrite ^ /maintenance.html break;
+        add_header Retry-After 300 always;
+        add_header Cache-Control "no-store" always;
     }
 }
 NGINX
