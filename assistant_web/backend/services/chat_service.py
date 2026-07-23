@@ -43,6 +43,8 @@ from backend.reports.effort import (
     build_effort_report_from_plan,
 )
 from backend.reports.evaluation import finalize_chat_response
+from backend.reports.similar import build_similar_resolution_report
+from backend.reports.sla import build_sla_report
 from backend.retrieval import (
     build_model_retrieval_context,
     build_sources,
@@ -152,6 +154,29 @@ class ChatService:
                     request,
                     latest_user_text,
                     {"modelId": request.modelId, **unknown_customer_report},
+                )
+
+        # "#12345랑 비슷한 이슈 어떻게 해결했어?"처럼 기준 이슈 + 유사 + 해결 의도가
+        # 모두 있으면 유사 사례와 그때의 조치를 함께 정리한다. 기준 이슈 번호가
+        # 필요한 가장 구체적인 의도라 먼저 처리한다.
+        if latest_user_text and enabled_tools.get("mantis") and enabled_tools.get("vectorDb"):
+            similar_resolution_report = build_similar_resolution_report(latest_user_text)
+            if similar_resolution_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **similar_resolution_report},
+                )
+
+        # "처리시간 얼마나 걸려", "오래 방치된 이슈"처럼 시간 성과를 묻는 질문은
+        # 라이브 이슈의 등록/최종수정/상태로 리드타임·적체를 결정형으로 계산한다.
+        if latest_user_text and enabled_tools.get("mantis"):
+            sla_report = build_sla_report(latest_user_text)
+            if sla_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **sla_report},
                 )
 
         # "고객사별 월별"처럼 축과 월 두 축을 함께 지정한 요청은 피벗 표로 답한다.
