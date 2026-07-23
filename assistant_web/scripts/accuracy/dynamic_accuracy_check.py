@@ -51,6 +51,17 @@ class AccuracyCase:
     expected: Any
 
 
+@dataclass
+class FollowUpScenario:
+    id: str
+    source: str
+    category: str
+    parent_case_id: str
+    question: str
+    expected_kind: str
+    expected: Any
+
+
 def normalize(value: Any) -> str:
     return re.sub(r"[\s\W_]+", "", str(value or "").casefold())
 
@@ -340,6 +351,85 @@ def build_notion_cases(pages: List[Dict[str, str]], rng: random.Random) -> List[
     ]
 
 
+def build_follow_up_scenarios(
+    cases: List[AccuracyCase],
+    mantis_issues: List[Dict[str, Any]],
+    limit: int = 4,
+) -> List[FollowUpScenario]:
+    """Build deterministic conversation checks from already generated base cases.
+
+    The setup turn is one of the ten base cases, so four follow-up scenarios add
+    only four model calls. Expected values come from the live snapshot oracle,
+    never from the model's first answer.
+    """
+    if limit <= 0:
+        return []
+    by_id = {case.id: case for case in cases}
+    issues_by_id = {
+        int(issue["id"]): issue
+        for issue in mantis_issues
+        if issue.get("id")
+    }
+    scenarios: List[FollowUpScenario] = []
+
+    exact_case = by_id.get("mantis-exact-id")
+    if exact_case and exact_case.expected:
+        issue = issues_by_id.get(int(exact_case.expected[0]))
+        project = str((issue or {}).get("project", {}).get("name") or "").strip()
+        if project:
+            project_alias = human_project_name(project)
+            scenarios.append(FollowUpScenario(
+                "followup-exact-project",
+                "mantis",
+                "후속 질문·대상 속성",
+                exact_case.id,
+                "이 이슈는 어느 고객사 건이야?",
+                "text_any",
+                list(dict.fromkeys([project_alias, project])),
+            ))
+
+    project_case = by_id.get("mantis-project-latest")
+    if project_case and len(project_case.expected) >= 2:
+        scenarios.append(FollowUpScenario(
+            "followup-project-second",
+            "mantis",
+            "후속 질문·순번 참조",
+            project_case.id,
+            "그중 두 번째 이슈를 자세히 알려줘",
+            "exact_issue_ids",
+            [int(project_case.expected[1])],
+        ))
+
+    status_case = by_id.get("mantis-project-status")
+    if status_case and status_case.expected:
+        scenarios.append(FollowUpScenario(
+            "followup-project-status-latest",
+            "mantis",
+            "후속 질문·조건 상속",
+            status_case.id,
+            "방금 조건에서 가장 최근 이슈 하나만 자세히 알려줘",
+            "exact_issue_ids",
+            [int(status_case.expected[0])],
+        ))
+
+    notion_case = next(
+        (case for case in cases if case.source == "notion" and case.expected),
+        None,
+    )
+    if notion_case:
+        scenarios.append(FollowUpScenario(
+            "followup-notion-title",
+            "notion",
+            "후속 질문·Notion 문맥",
+            notion_case.id,
+            "그 항목의 제목을 정확히 다시 알려줘",
+            "titles",
+            list(notion_case.expected),
+        ))
+
+    return scenarios[:limit]
+
+
 def observed_issue_ids(response: Dict[str, Any]) -> set[int]:
     ids = {
         int(source["issue_id"])
@@ -370,12 +460,31 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         observed = observed_issue_ids(response)
         passed = expected.issubset(observed)
         actual: Any = sorted(observed)
+    elif case.expected_kind == "exact_issue_ids":
+        expected = {int(value) for value in case.expected}
+        observed = observed_issue_ids(response)
+        passed = expected == observed
+        actual = sorted(observed)
     elif case.expected_kind == "titles":
         haystacks = [content, *(str(source.get("title") or "") for source in sources)]
         expected_titles = [str(value) for value in case.expected]
         missing = [title for title in expected_titles if not any(normalize(title) in normalize(text) for text in haystacks)]
         passed = not missing
         actual = {"matched": len(expected_titles) - len(missing), "missing": missing}
+    elif case.expected_kind == "text_any":
+        haystack = normalize(
+            " ".join([
+                content,
+                json.dumps(sources, ensure_ascii=False, default=str),
+            ])
+        )
+        alternatives = [str(value) for value in case.expected]
+        matched = next(
+            (value for value in alternatives if normalize(value) in haystack),
+            None,
+        )
+        passed = matched is not None
+        actual = {"matched": matched}
     elif case.expected_kind == "count":
         actual = extract_answer_count(content)
         passed = actual == int(case.expected)
@@ -441,6 +550,110 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
         }
 
 
+def blocked_follow_up_result(
+    scenario: FollowUpScenario,
+    parent_case: AccuracyCase,
+    parent_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        **asdict(scenario),
+        "case_group": "follow_up",
+        "setup_question": parent_case.question,
+        "setup_outcome": parent_result.get("outcome"),
+        "setup_audit_id": parent_result.get("audit_id"),
+        "passed": False,
+        "outcome": "blocked_by_prerequisite",
+        "actual": None,
+        "error": "1차 질문이 통과하지 않아 후속 질문을 실행하지 않았습니다.",
+    }
+
+
+def run_follow_up_scenario(
+    scenario: FollowUpScenario,
+    parent_case: AccuracyCase,
+    parent_result: Dict[str, Any],
+    model_id: str,
+) -> Dict[str, Any]:
+    if not parent_result.get("passed") or not parent_result.get("audit_id"):
+        return blocked_follow_up_result(scenario, parent_case, parent_result)
+
+    case = AccuracyCase(
+        scenario.id,
+        scenario.source,
+        scenario.category,
+        scenario.question,
+        scenario.expected_kind,
+        scenario.expected,
+    )
+    try:
+        tools = {
+            "mantis": scenario.source == "mantis",
+            "notion": scenario.source == "notion",
+            "vectorDb": False,
+        }
+        response = chat(ChatRequest(
+            modelId=model_id,
+            messages=[
+                ChatMessage(role="user", content=parent_case.question),
+                ChatMessage(role="assistant", content=str(parent_result.get("answer") or "")),
+                ChatMessage(role="user", content=scenario.question),
+            ],
+            contextAuditId=str(parent_result["audit_id"]),
+            temperature=0.0,
+            seed=42,
+            maxTokens=900,
+            searchLimit=5,
+            showSources=True,
+            stream=False,
+            tools=tools,
+        ))
+        result = grade(case, response)
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {str(exc)[:500]}"
+        dependency_error = isinstance(exc, requests.RequestException) or any(
+            token in error.casefold() for token in ("timeout", "timed out", "connection")
+        )
+        result = {
+            **asdict(case),
+            "passed": False,
+            "outcome": "dependency_error" if dependency_error else "execution_error",
+            "error": error,
+        }
+    return {
+        **result,
+        "case_group": "follow_up",
+        "parent_case_id": scenario.parent_case_id,
+        "setup_question": parent_case.question,
+        "setup_outcome": parent_result.get("outcome"),
+        "setup_audit_id": parent_result.get("audit_id"),
+    }
+
+
+def summarize_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    passed = sum(1 for result in results if result.get("passed"))
+    dependency_errors = sum(1 for result in results if result.get("outcome") == "dependency_error")
+    execution_errors = sum(1 for result in results if result.get("outcome") == "execution_error")
+    blocked = sum(1 for result in results if result.get("outcome") == "blocked_by_prerequisite")
+    attempted = len(results)
+    evaluated = attempted - dependency_errors - execution_errors
+    failed = sum(
+        1
+        for result in results
+        if result.get("outcome") in {"assertion_failed", "blocked_by_prerequisite"}
+    )
+    return {
+        "attempted": attempted,
+        "total": evaluated,
+        "evaluated": evaluated,
+        "passed": passed,
+        "failed": failed,
+        "blocked_by_prerequisite": blocked,
+        "dependency_errors": dependency_errors,
+        "execution_errors": execution_errors,
+        "score": round(passed / evaluated * 100) if evaluated else None,
+    }
+
+
 def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
@@ -449,20 +662,31 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     summary = report["summary"]
+    base_summary = summary.get("base", {})
+    follow_up_summary = summary.get("follow_up", {})
     score_label = f"{summary['score']}%" if summary.get("score") is not None else "N/A"
+    base_score_label = f"{base_summary.get('score')}%" if base_summary.get("score") is not None else "N/A"
+    follow_up_score_label = (
+        f"{follow_up_summary.get('score')}%"
+        if follow_up_summary.get("score") is not None
+        else "N/A"
+    )
     lines = [
         "# Dynamic accuracy report",
         "",
         f"- Run: {report['run_at']}",
         f"- Status: {summary.get('status', 'unknown')}",
         f"- Accuracy: {score_label} ({summary['passed']}/{summary['total']} evaluated)",
+        f"- Base questions: {base_score_label} ({base_summary.get('passed', 0)}/{base_summary.get('total', 0)})",
+        f"- Follow-up scenarios: {follow_up_score_label} ({follow_up_summary.get('passed', 0)}/{follow_up_summary.get('total', 0)})",
         f"- Attempted: {summary.get('attempted', summary['total'])}",
+        f"- Blocked follow-ups: {summary.get('blocked_by_prerequisite', 0)}",
         f"- Dependency errors: {summary.get('dependency_errors', 0)}",
         f"- Mantis snapshot: {report['snapshots']['mantis']} items",
         f"- Notion snapshot: {report['snapshots']['notion']} items",
         "",
-        "| Result | Source | Category | Question | Expected | Actual |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Result | Group | Source | Category | Question | Expected | Actual |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for result in report["results"]:
         mark = {
@@ -477,9 +701,12 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
             or result.get("actual", "")
         )
         actual = json.dumps(actual_value, ensure_ascii=False)
+        question = result["question"]
+        if result.get("setup_question"):
+            question = f"1차: {result['setup_question']} → 후속: {question}"
         lines.append(
-            f"| {mark} | {result['source']} | {result['category']} | "
-            f"{result['question'].replace('|', '/')} | {expected} | {actual} |"
+            f"| {mark} | {result.get('case_group', 'base')} | {result['source']} | {result['category']} | "
+            f"{question.replace('|', '/')} | {expected} | {actual} |"
         )
     markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, markdown_path
@@ -495,6 +722,7 @@ def emit_progress(enabled: bool, event: Dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questions", type=int, default=10, choices=range(1, 11))
+    parser.add_argument("--follow-up-scenarios", type=int, default=4, choices=range(0, 5))
     parser.add_argument("--seed", default=datetime.now().astimezone().strftime("%Y-%m-%d"))
     parser.add_argument("--model-id", default="")
     parser.add_argument("--progress", action="store_true", help="print PROGRESS json lines while running")
@@ -522,52 +750,96 @@ def main() -> int:
         augment_mutable_oracle=True,
     ) + build_notion_cases(notion_pages, rng)
     cases = cases[: args.questions]
+    follow_up_scenarios = build_follow_up_scenarios(
+        cases,
+        mantis_issues,
+        args.follow_up_scenarios,
+    )
     models = [model for model in get_model_registry() if model.get("enabled", True)]
     model_id = args.model_id or (str(models[0]["id"]) if models else "")
     if not model_id:
         errors.append("No enabled model is configured")
 
-    emit_progress(args.progress, {"type": "run_start", "total": len(cases) if model_id else 0})
+    planned_total = len(cases) + len(follow_up_scenarios)
+    emit_progress(args.progress, {"type": "run_start", "total": planned_total if model_id else 0})
     results: List[Dict[str, Any]] = []
+    base_results_by_id: Dict[str, Dict[str, Any]] = {}
     if model_id:
         for index, case in enumerate(cases, start=1):
             emit_progress(args.progress, {
                 "type": "case_start",
                 "caseId": case.id,
                 "index": index,
-                "total": len(cases),
+                "total": planned_total,
                 "question": case.question,
                 "source": case.source,
                 "category": case.category,
+                "caseGroup": "base",
             })
-            result = run_case(case, model_id)
+            result = {**run_case(case, model_id), "case_group": "base"}
+            results.append(result)
+            base_results_by_id[case.id] = result
+            emit_progress(args.progress, {"type": "case_result", "result": result})
+
+        cases_by_id = {case.id: case for case in cases}
+        for offset, scenario in enumerate(follow_up_scenarios, start=1):
+            parent_case = cases_by_id[scenario.parent_case_id]
+            parent_result = base_results_by_id[scenario.parent_case_id]
+            emit_progress(args.progress, {
+                "type": "case_start",
+                "caseId": scenario.id,
+                "index": len(cases) + offset,
+                "total": planned_total,
+                "question": scenario.question,
+                "setupQuestion": parent_case.question,
+                "source": scenario.source,
+                "category": scenario.category,
+                "caseGroup": "follow_up",
+            })
+            result = run_follow_up_scenario(
+                scenario,
+                parent_case,
+                parent_result,
+                model_id,
+            )
             results.append(result)
             emit_progress(args.progress, {"type": "case_result", "result": result})
-    passed = sum(1 for result in results if result.get("passed"))
-    dependency_errors = sum(1 for result in results if result.get("outcome") == "dependency_error")
-    execution_errors = sum(1 for result in results if result.get("outcome") == "execution_error")
-    attempted = len(results)
-    evaluated = attempted - dependency_errors - execution_errors
-    failed = sum(1 for result in results if result.get("outcome") == "assertion_failed")
-    incomplete = len(cases) < args.questions or dependency_errors > 0 or execution_errors > 0 or bool(errors)
-    run_status = "incomplete" if incomplete else "failed" if failed else "passed"
+
+    base_results = [result for result in results if result.get("case_group") == "base"]
+    follow_up_results = [result for result in results if result.get("case_group") == "follow_up"]
+    totals = summarize_results(results)
+    base_summary = summarize_results(base_results)
+    follow_up_summary = summarize_results(follow_up_results)
+    source_summaries = {
+        source: summarize_results([result for result in results if result.get("source") == source])
+        for source in ("mantis", "notion")
+    }
+    incomplete = (
+        len(cases) < args.questions
+        or len(follow_up_scenarios) < args.follow_up_scenarios
+        or totals["dependency_errors"] > 0
+        or totals["execution_errors"] > 0
+        or bool(errors)
+    )
+    run_status = "incomplete" if incomplete else "failed" if totals["failed"] else "passed"
     report = {
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "seed": args.seed,
         "model_id": model_id,
         "requested_questions": args.questions,
         "generated_questions": len(cases),
+        "requested_follow_up_scenarios": args.follow_up_scenarios,
+        "generated_follow_up_scenarios": len(follow_up_scenarios),
+        "model_requests": len(base_results) + sum(
+            1 for result in follow_up_results if result.get("outcome") != "blocked_by_prerequisite"
+        ),
         "snapshots": {"mantis": len(mantis_issues), "notion": len(notion_pages)},
         "summary": {
-            "attempted": attempted,
-            "total": evaluated,
-            "evaluated": evaluated,
-            "passed": passed,
-            "failed": failed,
-            "dependency_errors": dependency_errors,
-            "execution_errors": execution_errors,
-            "score": round(passed / evaluated * 100) if evaluated else None,
+            **totals,
             "status": run_status,
+            "base": base_summary,
+            "follow_up": follow_up_summary,
+            "by_source": source_summaries,
         },
         "errors": errors,
         "results": results,
@@ -581,11 +853,16 @@ def main() -> int:
         "reportMarkdown": markdown_path.name,
     })
     score_label = f"{report['summary']['score']}%" if report["summary"]["score"] is not None else "N/A"
-    print(f"Accuracy score: {score_label} ({passed}/{evaluated}) · status={run_status}")
+    print(
+        f"Accuracy score: {score_label} ({totals['passed']}/{totals['total']}) · "
+        f"base={base_summary['passed']}/{base_summary['total']} · "
+        f"follow-up={follow_up_summary['passed']}/{follow_up_summary['total']} · "
+        f"status={run_status}"
+    )
     print(f"JSON report: {json_path}")
     print(f"Markdown report: {markdown_path}")
     for result in results:
-        if result.get("outcome") == "assertion_failed":
+        if result.get("outcome") in {"assertion_failed", "blocked_by_prerequisite"}:
             print(f"FAIL [{result['source']}] {result['question']}")
         elif result.get("outcome") in {"dependency_error", "execution_error"}:
             print(f"ERROR [{result['source']}] {result['question']}")

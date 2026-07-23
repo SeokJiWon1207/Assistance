@@ -24,7 +24,7 @@ tags: [backend, api]
 | GET | `/api/evaluation/cases` | 평가 케이스 목록 |
 | POST | `/api/evaluation/run` | 평가 실행 |
 | GET | `/api/evaluation/history` | 평가 실행 이력 |
-| POST | `/api/accuracy/run` | 동적 답변 정확도 검사 실행 |
+| POST | `/api/accuracy/run` | 기본 질문·후속 시나리오 동적 정확도 검사 실행 (`questions`, `followUpScenarios`) |
 | GET | `/api/accuracy/reports` | 정확도 리포트 목록·분석 |
 | GET | `/api/accuracy/reports/{name}` | 정확도 리포트 상세 |
 | GET | `/api/data/freshness` | Mantis 스냅샷 신선도 |

@@ -182,7 +182,7 @@ ACCURACY_REPORT_NAME_PATTERN = re.compile(r"accuracy-\d{8}-\d{6}\.json")
 ACCURACY_RUN_LOCK = threading.Lock()
 
 
-def stream_accuracy_run(questions: int):
+def stream_accuracy_run(questions: int, follow_up_scenarios: int):
     def frame(event: Dict[str, Any]) -> str:
         return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
@@ -193,7 +193,15 @@ def stream_accuracy_run(questions: int):
         # 서브프로세스로 실행해 스크립트의 os.environ 변경과 예외가 서버에 영향을
         # 주지 않게 하고, stdout의 PROGRESS 라인을 SSE로 중계한다.
         process = subprocess.Popen(
-            [sys.executable, str(ACCURACY_SCRIPT_PATH), "--questions", str(questions), "--progress"],
+            [
+                sys.executable,
+                str(ACCURACY_SCRIPT_PATH),
+                "--questions",
+                str(questions),
+                "--follow-up-scenarios",
+                str(follow_up_scenarios),
+                "--progress",
+            ],
             cwd=str(APP_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -217,8 +225,9 @@ def stream_accuracy_run(questions: int):
 @router.post("/api/accuracy/run")
 def run_accuracy(request: AccuracyRunRequest):
     questions = max(1, min(request.questions, 10))
+    follow_up_scenarios = max(0, min(request.followUpScenarios, 4))
     return StreamingResponse(
-        stream_accuracy_run(questions),
+        stream_accuracy_run(questions, follow_up_scenarios),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

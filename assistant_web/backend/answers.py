@@ -193,13 +193,43 @@ def format_count_group_lines(group_counts: Dict[str, int], group_by: str) -> Lis
         return []
     label = COUNT_GROUP_LABELS.get(group_by, "그룹")
     if group_by == "month":
-        # 추이는 많은 순이 아니라 시간순으로 봐야 의미가 있다.
-        ordered = sorted(group_counts.items(), key=lambda item: item[0])
-        lines = ["", f"{label}별 건수 (시간순, {len(ordered)}개 {label})"]
-    else:
-        ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
-        lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
+        # 추이는 많은 순이 아니라 시간순으로 봐야 의미가 있다. 단순 나열에 그치지
+        # 않고 전월 대비 증감과 추세 요약까지 붙여 '추세 리포트'로 읽히게 한다.
+        return format_month_trend_lines(group_counts, label)
+    ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
+    lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
     lines.extend(f"- {name} — {count}건" for name, count in ordered)
+    return lines
+
+
+def format_month_trend_lines(group_counts: Dict[str, int], label: str) -> List[str]:
+    """월별 건수를 시간순으로 나열하되 전월 대비 증감과 추세 요약을 덧붙인다."""
+    ordered = sorted(group_counts.items(), key=lambda item: item[0])
+    lines = ["", f"{label}별 건수 (시간순, {len(ordered)}개 {label})"]
+    prev: Optional[int] = None
+    for name, count in ordered:
+        if prev is None:
+            lines.append(f"- {name} — {count}건")
+        else:
+            diff = count - prev
+            arrow = "▲" if diff > 0 else ("▼" if diff < 0 else "―")
+            if diff == 0:
+                lines.append(f"- {name} — {count}건 (― 변동 없음)")
+            else:
+                pct = (diff / prev * 100) if prev else 0.0
+                lines.append(f"- {name} — {count}건 ({arrow}{abs(diff)}, {pct:+.1f}%)")
+        prev = count
+    counts = [count for _, count in ordered]
+    if len(counts) >= 2:
+        avg = sum(counts) / len(counts)
+        peak_name, peak_count = max(ordered, key=lambda item: item[1])
+        last_name, last_count = ordered[-1]
+        vs_avg = ((last_count - avg) / avg * 100) if avg else 0.0
+        lines.extend([
+            "",
+            f"요약: 최다 {peak_name}({peak_count}건), 월평균 {avg:.1f}건, "
+            f"최근 {last_name}은 평균 대비 {vs_avg:+.1f}%.",
+        ])
     return lines
 
 
@@ -234,6 +264,336 @@ def build_top_customers_report(text: str) -> Optional[Dict[str, Any]]:
         "특정 기간이나 다른 기준(예: 장애 건수, 고객사요청일)으로 다시 보시려면 말씀해 주세요.\n"
     )
     return {**report, "content": note + "\n" + report["content"]}
+
+
+# 급증(이상탐지) 판정 기준. "많은 순"이 아니라 "평소 대비 튄 순"으로 답한다.
+SPIKE_MIN_RECENT = 3          # 최근 월 최소 건수(노이즈 컷)
+SPIKE_RATIO = 1.5             # 직전 평균 대비 몇 배 이상이면 급증으로 본다
+SPIKE_BASELINE_MONTHS = 3     # 직전 몇 개월 평균을 기준선으로 쓸지
+SPIKE_TOP_N = 10             # 최대 노출 개수
+
+SPIKE_QUESTION = re.compile(
+    r"급증|폭증|급등"
+    r"|(?:평소|여느\s*때)\s*(?:보다|대비)"
+    r"|갑자기\s*(?:늘|많|증가|생긴)"
+    r"|최근\s*들어\s*(?:늘|많|증가)"
+    r"|늘어난|많아진|잦아진|튄"
+)
+
+
+def _spike_axis(text: str) -> Tuple[str, Any, str]:
+    """급증 집계 축을 질문에서 고른다. 기본은 고객사."""
+    normalized = str(text or "")
+    if re.search(r"화면\s*번호|화면", normalized):
+        return "screen", (lambda issue: str(issue.get("screen_number") or "")), "화면번호"
+    if re.search(r"담당자|담당", normalized):
+        return "owner", (lambda issue: str(issue.get("handler") or "")), "담당자"
+    return "customer", (lambda issue: str(issue.get("project") or "")), "고객사"
+
+
+def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
+    """평소 대비 이슈가 급증한 축(고객사/화면번호/담당자)을 찾아 답한다.
+
+    '많은 순'이 아니라 최근 월 건수를 직전 몇 개월 평균과 비교해 '튄 순'으로
+    정렬한다. 기준선이 없는(직전 0건) 신규 급증도 함께 드러낸다.
+    """
+    if not SPIKE_QUESTION.search(str(text or "")):
+        return None
+
+    axis_key, axis_extract, axis_label = _spike_axis(text)
+    constraints = extract_query_constraints(text)
+    # 축값과 등록월을 한 번의 스캔으로 함께 세기 위해 복합 그룹키를 쓴다.
+    sep = "\x1f"
+
+    def group_key(issue: Dict[str, Any]) -> str:
+        axis_value = str(axis_extract(issue) or "").strip() or "미지정"
+        month = str(issue.get("created_at") or "")[:7]
+        return f"{axis_value}{sep}{month}"
+
+    snapshot = scan_mantis_documents(
+        CHROMA_DB_PATH,
+        lambda content: chroma_text_matches_constraints(content, constraints),
+        normalize_chroma_issue_document,
+        example_limit=1,
+        group_key=group_key,
+    )
+    if not snapshot["available"]:
+        return {
+            "content": f"Mantis 집계 도구를 사용할 수 없습니다.\n\n{snapshot['reason']}",
+            "sources": [],
+            "retrieval": {
+                "query": text,
+                "constraints": constraints,
+                "stages": [{"source": "mantis_spike", "status": "error", "reason": snapshot["reason"]}],
+            },
+            "raw": {"mode": "deterministic_mantis_spike"},
+        }
+
+    # 복합키를 축값 -> {월: 건수}로 되돌린다. 월이 비어 있는(등록일 없는 옛 문서)
+    # 버킷은 시계열 비교에 쓸 수 없어 제외한다.
+    per_axis: Dict[str, Dict[str, int]] = {}
+    all_months: set = set()
+    for composite, count in (snapshot.get("group_counts") or {}).items():
+        axis_value, _, month = str(composite).partition(sep)
+        if len(month) != 7:
+            continue
+        per_axis.setdefault(axis_value, {})[month] = per_axis.get(axis_value, {}).get(month, 0) + count
+        all_months.add(month)
+
+    ordered_months = sorted(all_months)
+    if len(ordered_months) < 2:
+        return {
+            "content": (
+                "급증 여부를 판단하려면 최소 2개 이상의 월 데이터가 필요한데, "
+                "현재 스냅샷의 등록월 구간이 부족합니다. "
+                "`scripts/make_vector_db.py --full`로 등록일을 채워 재구축하면 정확해집니다."
+            ),
+            "sources": [],
+            "retrieval": {
+                "query": text,
+                "constraints": constraints,
+                "stages": [{"source": "mantis_spike", "status": "insufficient_history",
+                            "meta": {"months": ordered_months}}],
+            },
+            "raw": {"mode": "deterministic_mantis_spike"},
+        }
+
+    recent_month = ordered_months[-1]
+    baseline_months = ordered_months[-(SPIKE_BASELINE_MONTHS + 1):-1]
+
+    flagged: List[Dict[str, Any]] = []
+    for axis_value, monthly in per_axis.items():
+        if axis_value in {"미지정", "미상", "담당자 미지정"}:
+            continue
+        recent = monthly.get(recent_month, 0)
+        if recent < SPIKE_MIN_RECENT:
+            continue
+        base_vals = [monthly.get(month, 0) for month in baseline_months]
+        baseline_avg = (sum(base_vals) / len(base_vals)) if base_vals else 0.0
+        if baseline_avg == 0:
+            ratio = float("inf")  # 직전 구간에 없던 신규 급증
+        elif recent / baseline_avg >= SPIKE_RATIO:
+            ratio = recent / baseline_avg
+        else:
+            continue
+        flagged.append({
+            "axis": axis_value,
+            "recent": recent,
+            "baseline_avg": baseline_avg,
+            "ratio": ratio,
+        })
+
+    flagged.sort(key=lambda item: (item["ratio"], item["recent"]), reverse=True)
+    flagged = flagged[:SPIKE_TOP_N]
+
+    baseline_desc = (
+        f"직전 {len(baseline_months)}개월({baseline_months[0]}~{baseline_months[-1]}) 평균"
+        if baseline_months else "직전 구간"
+    )
+    lines = [
+        f"급증 판정 기준: 최근 월({recent_month}) 건수 vs {baseline_desc}, "
+        f"최소 {SPIKE_MIN_RECENT}건 이상, {SPIKE_RATIO}배 이상.",
+        f"기준 데이터: Mantis 인덱스 전체 {snapshot['scanned_count']}건",
+        "",
+    ]
+    if not flagged:
+        lines.append(f"현재 기준으로 평소 대비 급증한 {axis_label}는 감지되지 않았습니다.")
+    else:
+        lines.append(f"평소 대비 급증한 {axis_label} ({len(flagged)}개, 급증 강도 순)")
+        for item in flagged:
+            if item["ratio"] == float("inf"):
+                lines.append(
+                    f"- {item['axis']} — 최근 {recent_month} {item['recent']}건 "
+                    f"(신규 급증, 직전 0건) ▲"
+                )
+            else:
+                lines.append(
+                    f"- {item['axis']} — 최근 {recent_month} {item['recent']}건 "
+                    f"(직전 평균 {item['baseline_avg']:.1f}건, {item['ratio']:.1f}배) ▲"
+                )
+
+    retrieval = {
+        "query": text,
+        "constraints": constraints,
+        "stages": [{
+            "source": "mantis_spike",
+            "status": "ok",
+            "meta": {
+                "axis": axis_key,
+                "recent_month": recent_month,
+                "baseline_months": baseline_months,
+                "scanned_count": snapshot["scanned_count"],
+                "flagged_count": len(flagged),
+                "min_recent": SPIKE_MIN_RECENT,
+                "ratio_threshold": SPIKE_RATIO,
+            },
+        }],
+    }
+    return {
+        "content": "\n".join(lines),
+        "sources": [],
+        "retrieval": retrieval,
+        "raw": {"mode": "deterministic_mantis_spike"},
+    }
+
+
+# 피벗(두 축 교차) 표. "고객사별 월별"처럼 축과 월이 함께 지정될 때만 잡는다.
+PIVOT_MONTH_PATTERN = re.compile(r"(?:월|달)\s*(?:별(?:로)?|마다|기준(?:으)?로)")
+PIVOT_AXIS_PATTERNS = {
+    "customer": (re.compile(r"(?:고객사|프로젝트|증권사)\s*(?:별(?:로)?|마다)"),
+                 lambda issue: str(issue.get("project") or ""), "고객사"),
+    "screen": (re.compile(r"화면\s*번호?\s*(?:별(?:로)?|마다)"),
+               lambda issue: str(issue.get("screen_number") or ""), "화면번호"),
+    "owner": (re.compile(r"(?:담당자|담당)\s*(?:별(?:로)?|마다)"),
+              lambda issue: str(issue.get("handler") or ""), "담당자"),
+    "status": (re.compile(r"상태\s*(?:별(?:로)?|마다)"),
+               lambda issue: display_status_label(issue.get("status")), "상태"),
+}
+
+PIVOT_MAX_MONTHS = 6   # 표 가독성을 위해 최근 N개월만 열로 보인다
+PIVOT_MAX_ROWS = 15    # 합계 상위 N개 행만 보인다
+
+
+def _detect_pivot_axis(text: str) -> Optional[Tuple[str, Any, str]]:
+    """'축별 월별' 두 축 요청이면 (field, extractor, label)을 돌려준다."""
+    normalized = str(text or "")
+    if not PIVOT_MONTH_PATTERN.search(normalized):
+        return None
+    for field, (pattern, extractor, label) in PIVOT_AXIS_PATTERNS.items():
+        if pattern.search(normalized):
+            return field, extractor, label
+    return None
+
+
+def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
+    """축(고객사/화면번호/담당자/상태) × 월 교차 건수를 표로 보여준다.
+
+    단일 축 집계(build_mantis_count_report)와 달리 두 축을 동시에 요청했을 때만
+    동작한다. 한 번의 스캔으로 (축값×월) 복합 집계를 낸 뒤 피벗 표로 조립한다.
+    """
+    detected = _detect_pivot_axis(text)
+    if not detected:
+        return None
+    axis_field, axis_extract, axis_label = detected
+
+    constraints = extract_query_constraints(text)
+    sep = "\x1f"
+
+    def group_key(issue: Dict[str, Any]) -> str:
+        axis_value = str(axis_extract(issue) or "").strip() or "미지정"
+        month = str(issue.get("created_at") or "")[:7]
+        return f"{axis_value}{sep}{month}"
+
+    snapshot = scan_mantis_documents(
+        CHROMA_DB_PATH,
+        lambda content: chroma_text_matches_constraints(content, constraints),
+        normalize_chroma_issue_document,
+        example_limit=1,
+        group_key=group_key,
+    )
+    if not snapshot["available"]:
+        return {
+            "content": f"Mantis 집계 도구를 사용할 수 없습니다.\n\n{snapshot['reason']}",
+            "sources": [],
+            "retrieval": {
+                "query": text,
+                "constraints": constraints,
+                "stages": [{"source": "mantis_pivot", "status": "error", "reason": snapshot["reason"]}],
+            },
+            "raw": {"mode": "deterministic_mantis_pivot"},
+        }
+
+    # 복합키를 축값 -> {월: 건수}로 되돌린다. 등록월이 없는(옛 포맷) 버킷은 제외한다.
+    per_axis: Dict[str, Dict[str, int]] = {}
+    all_months: set = set()
+    for composite, count in (snapshot.get("group_counts") or {}).items():
+        axis_value, _, month = str(composite).partition(sep)
+        if len(month) != 7 or axis_value in {"미지정", "미상", "담당자 미지정"}:
+            continue
+        per_axis.setdefault(axis_value, {})[month] = per_axis.get(axis_value, {}).get(month, 0) + count
+        all_months.add(month)
+
+    if not per_axis or not all_months:
+        return {
+            "content": (
+                "교차 집계할 등록월 데이터가 부족합니다. "
+                "`scripts/make_vector_db.py --full`로 등록일을 채워 재구축하면 정확해집니다."
+            ),
+            "sources": [],
+            "retrieval": {
+                "query": text,
+                "constraints": constraints,
+                "stages": [{"source": "mantis_pivot", "status": "insufficient_history"}],
+            },
+            "raw": {"mode": "deterministic_mantis_pivot"},
+        }
+
+    ordered_months = sorted(all_months)
+    shown_months = ordered_months[-PIVOT_MAX_MONTHS:]
+    months_truncated = len(ordered_months) > len(shown_months)
+
+    # 행은 표시 구간 내 합계가 큰 순으로 정렬해 상위 N개만 보인다.
+    rows = []
+    for axis_value, monthly in per_axis.items():
+        row_total = sum(monthly.get(month, 0) for month in shown_months)
+        if row_total == 0:
+            continue
+        rows.append((axis_value, monthly, row_total))
+    rows.sort(key=lambda item: (item[2], item[0]), reverse=True)
+    rows_truncated = len(rows) > PIVOT_MAX_ROWS
+    rows = rows[:PIVOT_MAX_ROWS]
+
+    header = f"| {axis_label} | " + " | ".join(shown_months) + " | 합계 |"
+    divider = "| --- | " + " | ".join(["---"] * len(shown_months)) + " | --- |"
+    table_lines = [header, divider]
+    col_totals = {month: 0 for month in shown_months}
+    grand_total = 0
+    for axis_value, monthly, row_total in rows:
+        cells = []
+        for month in shown_months:
+            value = monthly.get(month, 0)
+            col_totals[month] += value
+            cells.append(str(value))
+        grand_total += row_total
+        table_lines.append(f"| {axis_value} | " + " | ".join(cells) + f" | {row_total} |")
+    total_cells = " | ".join(str(col_totals[month]) for month in shown_months)
+    table_lines.append(f"| 합계 | {total_cells} | {grand_total} |")
+
+    lines = [
+        f"{axis_label}별 × 월별 이슈 건수 "
+        f"(표시 {len(shown_months)}개월, 상위 {len(rows)}개 {axis_label})",
+        f"기준 데이터: Mantis 인덱스 전체 {snapshot['scanned_count']}건",
+        "",
+        *table_lines,
+    ]
+    notes = []
+    if months_truncated:
+        notes.append(f"※ 최근 {PIVOT_MAX_MONTHS}개월만 표시했습니다(전체 {len(ordered_months)}개월).")
+    if rows_truncated:
+        notes.append(f"※ 합계 상위 {PIVOT_MAX_ROWS}개 {axis_label}만 표시했습니다.")
+    if notes:
+        lines.extend(["", *notes])
+
+    retrieval = {
+        "query": text,
+        "constraints": constraints,
+        "stages": [{
+            "source": "mantis_pivot",
+            "status": "ok",
+            "meta": {
+                "axis": axis_field,
+                "shown_months": shown_months,
+                "row_count": len(rows),
+                "scanned_count": snapshot["scanned_count"],
+            },
+        }],
+    }
+    return {
+        "content": "\n".join(lines),
+        "sources": [],
+        "retrieval": retrieval,
+        "raw": {"mode": "deterministic_mantis_pivot"},
+    }
 
 
 def build_mantis_count_report(

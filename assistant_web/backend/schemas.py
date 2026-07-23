@@ -137,3 +137,4 @@ class EvaluationRunRequest(BaseModel):
 
 class AccuracyRunRequest(BaseModel):
     questions: int = 10
+    followUpScenarios: int = 4

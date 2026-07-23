@@ -176,6 +176,32 @@ python3 scripts/make_vector_db.py --full      # 전체 재구축(기존 DB는 da
 }
 ```
 
+### 추세·급증 분석
+
+건수 집계에 시간축 해석을 얹은 결정형 리포트입니다. 새 데이터 수집 없이 로컬
+스냅샷의 등록일만으로 동작합니다.
+
+- **월별 추이**: "월별 이슈 건수 추이" 같은 `month` 그룹 집계는 단순 나열이 아니라
+  전월 대비 증감(`▲8, +26.7%`)과 추세 요약(최다월·월평균·평균 대비)을 함께 냅니다.
+- **급증(이상탐지)**: "평소보다 급증한 고객사/화면번호/담당자"처럼 시점 변화를 묻는
+  질문은 '많은 순'이 아니라 최근 월 건수를 직전 몇 개월 평균과 비교한 '튄 순'으로
+  답합니다. 직전 구간에 없던 신규 급증도 함께 드러냅니다.
+- **피벗(교차 표)**: "고객사별 월별", "화면번호별 달마다"처럼 축과 월을 함께 지정하면
+  축(고객사/화면번호/담당자/상태) × 월 교차 건수를 표로 냅니다. 가독성을 위해 최근
+  `PIVOT_MAX_MONTHS`개월과 합계 상위 `PIVOT_MAX_ROWS`개 행만 보이고, 잘린 경우 안내합니다.
+  축이 하나뿐이면 피벗 대신 단일 축 집계(위 월별 추이/그룹 집계)로 처리합니다.
+
+```text
+평소 대비 급증한 고객사 (2개, 급증 강도 순)
+- 신한투자증권 — 최근 2026-07 9건 (신규 급증, 직전 0건) ▲
+- 유진증권 — 최근 2026-07 18건 (직전 평균 6.0건, 3.0배) ▲
+```
+
+급증 판정 기준은 `backend/answers.py`의 `SPIKE_MIN_RECENT`(최소 건수),
+`SPIKE_RATIO`(급증 배수), `SPIKE_BASELINE_MONTHS`(기준선 개월 수)로 조정합니다.
+월 구간이 1개뿐이면 비교가 불가능하므로 스냅샷을 `--full`로 재구축해 등록일을
+채우라고 안내합니다.
+
 ## Notion Integration
 
 Notion은 백엔드에서 공식 API를 직접 호출합니다. 토큰과 DB ID는 프론트엔드에 노출하지 않고 `.env`에만 저장합니다.
@@ -208,7 +234,9 @@ NOTION_FETCH_PAGE_BLOCKS=true
   정확 ID 조회, Notion 매칭, 공수 집계)을 검사합니다. LLM 답변 생성 단계는
   검사하지 않아 빠릅니다(수 분).
 - **답변 정확도 탭**: `scripts/accuracy/dynamic_accuracy_check.py`를 서버가 서브프로세스로 실행해
-  실시간 데이터 기반 질문 10개를 실제 챗 응답(LLM 답변)까지 채점합니다.
+  실시간 데이터 기반 기본 질문 10개와 후속 질문 시나리오 4개를 실제 챗 응답까지
+  채점합니다. 후속 질문은 1차 답변의 대화 이력과 `contextAuditId`를 실제 웹과 동일하게
+  전달합니다.
   질문별 진행 상황이 스트리밍되고, 완료된 리포트(`runtime/accuracy_reports/`)의 최근
   이력과 상세 결과를 같은 탭에서 조회합니다
   (`POST /api/accuracy/run`, `GET /api/accuracy/reports[/{name}]`).
@@ -247,13 +275,14 @@ Mantis 로컬 스냅샷 기준일/지연 일수가 함께 표시됩니다. 신�
 
 ## Scheduled Accuracy Check
 
-`scripts/accuracy/dynamic_accuracy_check.py` builds ten reproducible questions from live source data,
-asks the real chat endpoint, and compares answer IDs, titles, and counts with an
-independently fetched Mantis/Notion snapshot.
+`scripts/accuracy/dynamic_accuracy_check.py` builds ten reproducible base questions from live source
+data, then runs four follow-up scenarios against the base answers' real conversation
+history and audit context. It compares answer IDs, titles, counts, and referenced
+entities with an independently fetched Mantis/Notion snapshot.
 
 ```bash
 cd assistant_web
-python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10
+python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4
 ```
 
 The daily seed changes the sampled records while keeping a run reproducible.
@@ -262,7 +291,9 @@ assertion failures are counted separately from dependency/execution errors. A
 run is `incomplete` when an integration is unavailable or fewer than the
 requested number of questions can be evaluated; unavailable cases are excluded
 from the accuracy denominator. A non-zero exit means the run is `failed` or
-`incomplete`.
+`incomplete`. Reports preserve the overall summary and also include separate
+`base`, `follow_up`, and Mantis/Notion source summaries. A follow-up whose setup
+question fails is recorded as `blocked_by_prerequisite`.
 
 팀 검증용 기본 질문은 [`tests/test_questions.md`](./tests/test_questions.md), 복합 조건과 연속 대화 질문은
 [`tests/test_scenario_questions.md`](./tests/test_scenario_questions.md)에 정리되어 있습니다.

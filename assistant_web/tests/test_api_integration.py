@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -159,6 +159,24 @@ class ApiIntegrationTests(unittest.TestCase):
         ):
             response = self.client.get("/api/accuracy/reports/accuracy-20260722-000000.json")
         self.assertEqual(response.status_code, 404)
+
+    @patch.object(quality_api.subprocess, "Popen")
+    def test_accuracy_runner_passes_follow_up_scenario_count(self, popen):
+        process = Mock()
+        process.stdout = iter([
+            'PROGRESS {"type":"run_start","total":14}\n',
+            'PROGRESS {"type":"summary","summary":{"passed":14,"total":14}}\n',
+        ])
+        process.wait.return_value = 0
+        popen.return_value = process
+
+        frames = list(quality_api.stream_accuracy_run(10, 4))
+
+        command = popen.call_args.args[0]
+        self.assertIn("--questions", command)
+        self.assertIn("--follow-up-scenarios", command)
+        self.assertEqual(command[command.index("--follow-up-scenarios") + 1], "4")
+        self.assertTrue(any('"total": 14' in frame for frame in frames))
 
 
 if __name__ == "__main__":

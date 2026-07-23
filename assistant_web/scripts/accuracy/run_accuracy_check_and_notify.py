@@ -77,7 +77,7 @@ def build_slack_message(report: Dict[str, Any], exit_code: int) -> str:
     failed_results = [
         result
         for result in report.get("results", [])
-        if result.get("outcome") == "assertion_failed"
+        if result.get("outcome") in {"assertion_failed", "blocked_by_prerequisite"}
         or (not result.get("outcome") and not result.get("passed"))
     ]
     dependency_results = [
@@ -96,6 +96,10 @@ def build_slack_message(report: Dict[str, Any], exit_code: int) -> str:
     lines = [
         f"*AI 비서 정확도 자동 검증* — {status_label}",
         f"정확도: {score_label} ({summary.get('passed', 0)}/{summary.get('total', 0)} 평가)",
+        (
+            f"기본: {(summary.get('base') or {}).get('passed', 0)}/{(summary.get('base') or {}).get('total', 0)} · "
+            f"후속: {(summary.get('follow_up') or {}).get('passed', 0)}/{(summary.get('follow_up') or {}).get('total', 0)}"
+        ),
         f"실행 시각: {report.get('run_at', '')}",
     ]
     if errors:
@@ -181,7 +185,7 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
     failed_results = [
         result
         for result in results
-        if result.get("outcome") == "assertion_failed"
+        if result.get("outcome") in {"assertion_failed", "blocked_by_prerequisite"}
         or (not result.get("outcome") and not result.get("passed"))
     ]
     dependency_results = [
@@ -208,6 +212,8 @@ def build_obsidian_note(report: Dict[str, Any], report_path: Path, previous: Opt
         f"- 실행 시각: {run_at}",
         f"- 실행 상태: {summary.get('status', 'unknown')}",
         f"- 정확도: {score_label} ({summary.get('passed', 0)}/{summary.get('total', 0)} 평가)",
+        f"- 기본 질문: {(summary.get('base') or {}).get('passed', 0)}/{(summary.get('base') or {}).get('total', 0)}",
+        f"- 후속 시나리오: {(summary.get('follow_up') or {}).get('passed', 0)}/{(summary.get('follow_up') or {}).get('total', 0)}",
         f"- 시도 문항: {summary.get('attempted', len(results))}",
         *source_lines,
         score_delta_line(report, previous),
@@ -277,9 +283,16 @@ def notify_slack(webhook_url: str, report: Dict[str, Any], exit_code: int) -> No
         print(f"Slack 알림 전송 실패: {exc}", file=sys.stderr)
 
 
-def run_accuracy_check(questions: str) -> int:
+def run_accuracy_check(questions: str, follow_up_scenarios: str) -> int:
     result = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "dynamic_accuracy_check.py"), "--questions", questions],
+        [
+            sys.executable,
+            str(SCRIPT_DIR / "dynamic_accuracy_check.py"),
+            "--questions",
+            questions,
+            "--follow-up-scenarios",
+            follow_up_scenarios,
+        ],
         cwd=APP_DIR,
     )
     return result.returncode
@@ -288,7 +301,8 @@ def run_accuracy_check(questions: str) -> int:
 def main() -> int:
     load_dotenv()
     questions = os.getenv("ACCURACY_CHECK_QUESTIONS", "10")
-    exit_code = run_accuracy_check(questions)
+    follow_up_scenarios = os.getenv("ACCURACY_CHECK_FOLLOW_UP_SCENARIOS", "4")
+    exit_code = run_accuracy_check(questions, follow_up_scenarios)
 
     webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if not webhook_url:
