@@ -15,6 +15,8 @@ from backend.answers import (
     answer_style_instruction,
     build_current_date_note,
     build_mantis_count_report,
+    build_mantis_pivot_report,
+    build_mantis_spike_report,
     build_top_customers_report,
     build_unknown_customer_report,
     format_deterministic_combined_answer,
@@ -150,6 +152,29 @@ class ChatService:
                     request,
                     latest_user_text,
                     {"modelId": request.modelId, **unknown_customer_report},
+                )
+
+        # "고객사별 월별"처럼 축과 월 두 축을 함께 지정한 요청은 피벗 표로 답한다.
+        # 단일 축 집계(count_report)나 급증보다 구체적인 의도라 가장 먼저 처리한다.
+        if latest_user_text and enabled_tools.get("mantis"):
+            pivot_report = build_mantis_pivot_report(latest_user_text)
+            if pivot_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **pivot_report},
+                )
+
+        # "평소보다 급증한 고객사/화면번호"처럼 시점 변화를 묻는 질문은 '많은 순'이
+        # 아니라 최근 월을 직전 평균과 비교한 '튄 순'으로 답한다. '많은 순'을 답하는
+        # top_customers보다 구체적인 의도라 먼저 처리한다.
+        if latest_user_text and enabled_tools.get("mantis"):
+            spike_report = build_mantis_spike_report(latest_user_text)
+            if spike_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **spike_report},
                 )
 
         # "문제 많은 고객사"처럼 기준이 빠진 질문은 임의 기준으로 답하지 말고

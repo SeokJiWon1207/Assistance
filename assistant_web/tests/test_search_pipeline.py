@@ -794,16 +794,102 @@ class CountGroupingTests(unittest.TestCase):
         self.assertEqual(lines[2:], ["- B증권 — 5건", "- C증권 — 5건", "- A증권 — 2건"])
 
     def test_month_group_is_sorted_chronologically(self):
-        # 추이는 많은 순이 아니라 시간순이어야 읽힌다.
+        # 추이는 많은 순이 아니라 시간순이어야 읽히고, 전월 대비 증감과 요약이 붙는다.
         lines = format_count_group_lines({"2026-03": 9, "2026-01": 4, "2026-02": 7}, "month")
         self.assertIn("시간순", lines[1])
-        self.assertEqual(
-            lines[2:], ["- 2026-01 — 4건", "- 2026-02 — 7건", "- 2026-03 — 9건"]
-        )
+        # 첫 월은 기준점이라 증감이 없고, 이후 월은 전월 대비 증감이 붙는다.
+        self.assertEqual(lines[2], "- 2026-01 — 4건")
+        self.assertEqual(lines[3], "- 2026-02 — 7건 (▲3, +75.0%)")
+        self.assertEqual(lines[4], "- 2026-03 — 9건 (▲2, +28.6%)")
+        # 마지막에 추세 요약 한 줄(최다월/월평균/평균 대비)이 붙는다.
+        self.assertTrue(any(line.startswith("요약:") for line in lines))
 
     def test_month_group_key_uses_created_month(self):
         key = count_group_key("month")
         self.assertEqual(key({"created_at": "2026-04-16"}), "2026-04")
+
+    def _run_spike(self, question, group_counts):
+        """급증 리포트를 합성 스냅샷으로 실행한다."""
+        original_scan = answers.scan_mantis_documents
+        original_constraints = answers.extract_query_constraints
+        answers.scan_mantis_documents = lambda *a, **k: {
+            "available": True,
+            "scanned_count": sum(group_counts.values()),
+            "group_counts": group_counts,
+            "issues": [],
+            "matched_count": 0,
+        }
+        answers.extract_query_constraints = lambda text: {}
+        try:
+            return answers.build_mantis_spike_report(question)
+        finally:
+            answers.scan_mantis_documents = original_scan
+            answers.extract_query_constraints = original_constraints
+
+    def test_spike_report_flags_recent_surge_over_baseline(self):
+        sep = "\x1f"
+        counts = {
+            f"유진증권{sep}2026-05": 5, f"유진증권{sep}2026-06": 7, f"유진증권{sep}2026-07": 18,
+            f"신한투자증권{sep}2026-07": 9,  # 직전 0건 신규 급증
+            f"KB증권{sep}2026-05": 10, f"KB증권{sep}2026-06": 11, f"KB증권{sep}2026-07": 12,
+        }
+        report = self._run_spike("평소보다 이슈 급증한 고객사 알려줘", counts)
+        content = report["content"]
+        self.assertIn("유진증권", content)
+        self.assertIn("3.0배", content)
+        self.assertIn("신규 급증", content)  # 신한투자증권
+        # 평탄한 KB증권(1.1배)은 급증으로 잡히지 않는다.
+        self.assertNotIn("KB증권", content)
+        # 신규 급증(비율 무한대)이 배수 급증보다 위로 정렬된다.
+        self.assertLess(content.index("신한투자증권"), content.index("유진증권"))
+
+    def test_spike_report_needs_two_months_of_history(self):
+        sep = "\x1f"
+        counts = {f"유진증권{sep}2026-07": 20}
+        report = self._run_spike("급증한 고객사 알려줘", counts)
+        self.assertIn("2개 이상의 월", report["content"])
+
+    def test_spike_report_ignores_non_spike_questions(self):
+        self.assertIsNone(answers.build_mantis_spike_report("KB증권 HTS 이슈 보여줘"))
+        self.assertIsNone(answers.build_mantis_spike_report("이슈 많은 고객사 알려줘"))
+
+    def _run_pivot(self, question, group_counts):
+        original_scan = answers.scan_mantis_documents
+        original_constraints = answers.extract_query_constraints
+        answers.scan_mantis_documents = lambda *a, **k: {
+            "available": True,
+            "scanned_count": sum(group_counts.values()),
+            "group_counts": group_counts,
+            "issues": [],
+            "matched_count": 0,
+        }
+        answers.extract_query_constraints = lambda text: {}
+        try:
+            return answers.build_mantis_pivot_report(question)
+        finally:
+            answers.scan_mantis_documents = original_scan
+            answers.extract_query_constraints = original_constraints
+
+    def test_pivot_report_cross_tabulates_axis_by_month(self):
+        sep = "\x1f"
+        counts = {
+            f"유진증권{sep}2026-05": 5, f"유진증권{sep}2026-06": 7, f"유진증권{sep}2026-07": 18,
+            f"KB증권{sep}2026-05": 10, f"KB증권{sep}2026-06": 11, f"KB증권{sep}2026-07": 12,
+        }
+        report = self._run_pivot("고객사별 월별 이슈 건수 표로 보여줘", counts)
+        content = report["content"]
+        self.assertIn("| 고객사 | 2026-05 | 2026-06 | 2026-07 | 합계 |", content)
+        self.assertIn("| 유진증권 | 5 | 7 | 18 | 30 |", content)
+        # 행은 합계가 큰 순으로 정렬된다(KB 33 > 유진 30).
+        self.assertLess(content.index("KB증권"), content.index("유진증권"))
+        # 열 합계 행이 붙는다.
+        self.assertIn("| 합계 | 15 | 18 | 30 | 63 |", content)
+
+    def test_pivot_report_requires_two_axes(self):
+        # 축 하나만 있는 요청은 피벗이 아니라 단일 축 집계로 흘려보낸다.
+        self.assertIsNone(answers._detect_pivot_axis("월별 이슈 추이"))
+        self.assertIsNone(answers._detect_pivot_axis("고객사별 이슈 건수"))
+        self.assertEqual(answers._detect_pivot_axis("담당자별 월별 처리 건수")[0], "owner")
 
     def test_monthly_trend_question_is_grouped_by_month(self):
         self.assertEqual(extract_group_by("2026년 월별 이슈 건수 추이를 알려줘"), "month")
