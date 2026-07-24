@@ -61,6 +61,8 @@ class FrontendCoreTests(unittest.TestCase):
             "messages",
             "newChatBtn",
             "evaluationModal",
+            "sourceModeSelect",
+            "manualSourceControls",
         ):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))

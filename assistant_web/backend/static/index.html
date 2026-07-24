@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260715-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260724-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -47,12 +47,22 @@
           </label>
         </section>
 
-        <section class="control-group compact-controls sidebar-primary-control">
-          <span class="section-label">검색 소스</span>
-          <div class="source-toggle-group" role="group" aria-label="검색 소스">
-            <button id="mantisToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="원본 이슈">Mantis</button>
-            <button id="notionToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="팀 문서">Notion</button>
-            <button id="vectorToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="과거 유사 사례">Vector DB</button>
+        <section class="control-group compact-controls sidebar-primary-control source-controls">
+          <label class="field-row" for="sourceModeSelect">
+            <span>검색 소스</span>
+            <select id="sourceModeSelect">
+              <option value="auto">자동 선택 (권장)</option>
+              <option value="manual">직접 선택</option>
+            </select>
+          </label>
+          <small id="sourceModeHint" class="source-mode-hint">질문에 맞는 이슈·문서·유사 사례를 자동으로 찾습니다.</small>
+          <div id="manualSourceControls" class="manual-source-controls" hidden>
+            <div class="source-toggle-group" role="group" aria-label="검색 소스 직접 선택">
+              <button id="mantisToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="원본 이슈">Mantis</button>
+              <button id="notionToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="팀 문서">Notion</button>
+              <button id="vectorToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="과거 유사 사례">Vector DB</button>
+            </div>
+            <small>Mantis는 원본 이슈, Notion은 팀 문서, Vector DB는 과거 유사 사례를 검색합니다.</small>
           </div>
         </section>
 
@@ -221,6 +231,6 @@
     </div>
 
     <script src="/static/frontend_core.js?v=20260722-1"></script>
-    <script src="/static/app.js?v=20260722-1"></script>
+    <script src="/static/app.js?v=20260724-1"></script>
   </body>
 </html>

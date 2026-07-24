@@ -71,6 +71,9 @@ const els = {
   activeConversationTitle: document.querySelector("#activeConversationTitle"),
   editNotice: document.querySelector("#editNotice"),
   cancelEditBtn: document.querySelector("#cancelEditBtn"),
+  sourceModeSelect: document.querySelector("#sourceModeSelect"),
+  sourceModeHint: document.querySelector("#sourceModeHint"),
+  manualSourceControls: document.querySelector("#manualSourceControls"),
   mantisToggle: document.querySelector("#mantisToggle"),
   notionToggle: document.querySelector("#notionToggle"),
   vectorToggle: document.querySelector("#vectorToggle"),
@@ -102,6 +105,7 @@ const defaultOptions = {
   showSources: true,
   abTest: false,
   searchLimit: "5",
+  sourceMode: "auto",
   mantis: true,
   notion: true,
   vectorDb: true,
@@ -256,6 +260,7 @@ function updateModelMeta() {
   if (!model) {
     els.modelMeta.textContent = "";
     els.statusLine.textContent = "사용 가능한 모델이 없습니다.";
+    els.statusLine.className = "status-danger";
     return;
   }
 
@@ -264,13 +269,10 @@ function updateModelMeta() {
   const modelControl = els.modelSelect.closest(".control-group");
   modelControl?.setAttribute("hidden", "");
   modelControl?.classList.add("model-control-hidden");
-  els.statusLine.textContent = model.status === "active" ? "사용 가능" : statusLabel(model.status);
-  els.statusLine.className =
-    model.status === "active"
-      ? "status-active"
-      : model.status === "missing_key"
-        ? "status-warning"
-        : "status-danger";
+  if (model.status !== "active") {
+    els.statusLine.textContent = statusLabel(model.status);
+    els.statusLine.className = model.status === "missing_key" ? "status-warning" : "status-danger";
+  }
 }
 
 function renderModels() {
@@ -340,6 +342,67 @@ function toolToggleEnabled(element) {
   return element?.getAttribute("aria-pressed") === "true";
 }
 
+function setSourceMode(mode) {
+  const selectedMode = mode === "manual" ? "manual" : "auto";
+  if (els.sourceModeSelect) els.sourceModeSelect.value = selectedMode;
+  if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
+  if (els.sourceModeHint) {
+    els.sourceModeHint.textContent = selectedMode === "auto"
+      ? "질문에 맞는 이슈·문서·유사 사례를 자동으로 찾습니다."
+      : "사용할 검색 소스를 하나 이상 선택해 주세요.";
+  }
+  if (selectedMode === "auto") {
+    setToolToggle(els.mantisToggle, true);
+    setToolToggle(els.notionToggle, true);
+    setToolToggle(els.vectorToggle, true);
+  }
+}
+
+function sourceToolsPayload() {
+  if (els.sourceModeSelect?.value !== "manual") {
+    return { mantis: true, notion: true, vectorDb: true };
+  }
+  return {
+    mantis: toolToggleEnabled(els.mantisToggle),
+    notion: toolToggleEnabled(els.notionToggle),
+    vectorDb: toolToggleEnabled(els.vectorToggle),
+  };
+}
+
+const STARTER_QUESTIONS = [
+  { category: "오늘 확인", title: "오늘 미종료 이슈", question: "오늘 등록된 미종료 이슈 보여줘", icon: "today" },
+  { category: "고객사 분석", title: "고객사별 이슈 비교", question: "이번 달 고객사별 이슈 건수 비교해줘", icon: "customer" },
+  { category: "이상 징후", title: "급증한 고객사", question: "평소보다 이슈가 급증한 고객사 알려줘", icon: "spike" },
+  { category: "장기 적체", title: "오래된 미종료 이슈", question: "30일 넘게 미종료된 이슈 보여줘", icon: "aging" },
+  { category: "유사 사례", title: "과거 이슈 찾아보기", question: "최근 등록된 이슈와 비슷한 과거 이슈 찾아줘", icon: "similar" },
+  { category: "공수·SLA", title: "처리시간 확인", question: "지난달 고객사별 공수와 평균 처리시간 보여줘", icon: "effort" },
+];
+
+const STARTER_ICONS = {
+  today: '<path d="M5 8h14M8 3v4M16 3v4M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z"/><path d="m8 14 2.2 2.2L16 10.5"/>',
+  customer: '<path d="M4 20v-2.2c0-2.1 1.8-3.8 4-3.8s4 1.7 4 3.8V20M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15 5h5M15 9h5M15 13h4"/>',
+  spike: '<path d="M4 18 9 12l3 3 7-9"/><path d="M14 6h5v5"/>',
+  aging: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>',
+  similar: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6M10 7v6"/>',
+  effort: '<path d="M5 20V10M12 20V4M19 20v-7"/><path d="M3 20h18"/>',
+};
+
+function renderStarterQuestions() {
+  return STARTER_QUESTIONS.map((item) => `
+    <button type="button" class="starter-card" data-starter-question="${escapeHtml(item.question)}">
+      <span class="starter-card-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon]}</svg>
+      </span>
+      <span class="starter-card-copy">
+        <small>${escapeHtml(item.category)}</small>
+        <strong>${escapeHtml(item.title)}</strong>
+        <em>${escapeHtml(item.question)}</em>
+      </span>
+      <span class="starter-card-arrow" aria-hidden="true">→</span>
+    </button>
+  `).join("");
+}
+
 function formatQuestionAskedAt(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -385,8 +448,12 @@ function renderMessages() {
           <path d="M58 58 L78 78" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
           <path d="M30 40h20M30 48h14" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
         </svg>
-        <h3>컨텐츠서비스 AI 비서입니다</h3>
-        <p>Mantis 이슈, Notion 문서 조회부터 원인 분석까지 무엇이든 물어보세요.</p>
+        <p class="empty-state-eyebrow">무엇부터 확인할까요?</p>
+        <h3>업무 질문을 바로 시작해 보세요</h3>
+        <p>원하는 질문을 선택하거나 아래 입력창에 고객사·기간·플랫폼을 함께 적어보세요.</p>
+        <div class="starter-grid" aria-label="추천 질문">
+          ${renderStarterQuestions()}
+        </div>
       </div>
     `;
     els.messages.appendChild(empty);
@@ -2175,6 +2242,7 @@ function resetOptions() {
   els.stop.value = defaultOptions.stop;
   setShowSources(defaultOptions.showSources);
   setAbComparison(defaultOptions.abTest);
+  setSourceMode(defaultOptions.sourceMode);
   setToolToggle(els.mantisToggle, defaultOptions.mantis);
   setToolToggle(els.notionToggle, defaultOptions.notion);
   setToolToggle(els.vectorToggle, defaultOptions.vectorDb);
@@ -2232,6 +2300,40 @@ async function loadModels() {
   const data = await response.json();
   state.models = data.models || [];
   renderModels();
+}
+
+function formatFreshnessDate(value) {
+  if (!value) return "기준일 확인 필요";
+  const [year, month, day] = String(value).split("-");
+  if (!year || !month || !day) return String(value);
+  return `${Number(month)}월 ${Number(day)}일 기준`;
+}
+
+async function loadDataStatus() {
+  const [freshnessResult, notionResult] = await Promise.allSettled([
+    fetch("/api/data/freshness").then((response) => {
+      if (!response.ok) throw new Error("freshness");
+      return response.json();
+    }),
+    fetch("/api/notion/status").then((response) => {
+      if (!response.ok) throw new Error("notion");
+      return response.json();
+    }),
+  ]);
+
+  const freshness = freshnessResult.status === "fulfilled" ? freshnessResult.value?.mantis : null;
+  const notion = notionResult.status === "fulfilled" ? notionResult.value : null;
+  const model = selectedModel();
+  if (model && model.status !== "active") return;
+  const freshnessLabel = formatFreshnessDate(freshness?.asOf);
+  const notionLabel = notion?.configured ? "Notion 연결됨" : "Notion 설정 필요";
+  els.statusLine.textContent = ["Mantis 실시간", notionLabel, `Vector DB ${freshnessLabel}`].join(" · ");
+  els.statusLine.className = freshness?.status === "stale" || !notion?.configured
+    ? "status-warning data-status-line"
+    : "status-active data-status-line";
+  els.statusLine.title = freshness?.updatedAt
+    ? `Vector DB 마지막 갱신: ${formatQuestionAskedAt(freshness.updatedAt)}`
+    : "";
 }
 
 async function loadEvaluationData() {
@@ -2869,11 +2971,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
       stream: true,
       contextAuditId: lastAssistantWithAudit?.auditId || null,
       messages: chatMessages,
-      tools: {
-        mantis: toolToggleEnabled(els.mantisToggle),
-        notion: toolToggleEnabled(els.notionToggle),
-        vectorDb: toolToggleEnabled(els.vectorToggle),
-      },
+      tools: sourceToolsPayload(),
     }),
   });
 
@@ -3006,6 +3104,14 @@ els.input.addEventListener("keydown", (event) => {
   }
 });
 
+els.messages.addEventListener("click", (event) => {
+  const starter = event.target.closest(".starter-card");
+  if (!starter || state.busy) return;
+  els.input.value = starter.dataset.starterQuestion || "";
+  autoResizeInput();
+  els.form.requestSubmit();
+});
+
 els.temperature.addEventListener("input", () => {
   els.temperatureValue.textContent = Number(els.temperature.value).toFixed(1);
 });
@@ -3026,8 +3132,17 @@ els.abTestToggle.addEventListener("click", () => {
   renderMessages();
 });
 [els.mantisToggle, els.notionToggle, els.vectorToggle].forEach((toggle) => {
-  toggle.addEventListener("click", () => setToolToggle(toggle, !toolToggleEnabled(toggle)));
+  toggle.addEventListener("click", () => {
+    const enabledTools = [els.mantisToggle, els.notionToggle, els.vectorToggle]
+      .filter((item) => toolToggleEnabled(item));
+    if (toolToggleEnabled(toggle) && enabledTools.length === 1) {
+      showToast("검색 소스를 하나 이상 선택해 주세요.", "warning");
+      return;
+    }
+    setToolToggle(toggle, !toolToggleEnabled(toggle));
+  });
 });
+els.sourceModeSelect?.addEventListener("change", () => setSourceMode(els.sourceModeSelect.value));
 
 els.modelSelect.addEventListener("change", updateModelMeta);
 els.resetOptionsBtn.addEventListener("click", () => {
@@ -3244,10 +3359,16 @@ document.addEventListener("keydown", (event) => {
 });
 
 loadConversations();
-loadModels().catch((error) => {
-  els.statusLine.textContent = error.message;
-  els.statusLine.className = "status-danger";
+loadDataStatus().catch(() => {
+  els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
+  els.statusLine.className = "status-warning";
+}).finally(() => {
+  loadModels().catch((error) => {
+    els.statusLine.textContent = error.message;
+    els.statusLine.className = "status-danger";
+  });
 });
 loadTheme();
 setAbComparison(defaultOptions.abTest);
+setSourceMode(defaultOptions.sourceMode);
 renderMessages();
