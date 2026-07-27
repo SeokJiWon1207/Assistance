@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260724-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260724-2" />
   </head>
   <body>
     <main class="app-shell">
@@ -194,6 +194,62 @@
       </section>
     </main>
 
+    <div id="templateModal" class="modal-backdrop" hidden>
+      <section class="modal template-modal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle">
+        <header class="modal-header">
+          <div>
+            <p>팀 공용 템플릿</p>
+            <h3 id="templateModalTitle">질문 조건 입력</h3>
+          </div>
+          <button id="templateModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+        </header>
+        <form id="templateForm" class="modal-form">
+          <p id="templateModalDescription" class="modal-form-description"></p>
+          <div id="templateFields" class="template-fields"></div>
+          <div class="template-preview" aria-live="polite">
+            <span>완성 질문</span>
+            <p id="templateQuestionPreview"></p>
+          </div>
+          <div class="modal-form-actions">
+            <button id="templateCancelBtn" class="secondary-button" type="button">취소</button>
+            <button class="run-evaluation-button" type="submit">질문 실행</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="feedbackModal" class="modal-backdrop" hidden>
+      <section class="modal feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedbackModalTitle">
+        <header class="modal-header">
+          <div>
+            <p>답변 품질 피드백</p>
+            <h3 id="feedbackModalTitle">어떤 점을 개선하면 좋을까요?</h3>
+          </div>
+          <button id="feedbackModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+        </header>
+        <form id="feedbackForm" class="modal-form">
+          <p id="feedbackQuestion" class="feedback-question"></p>
+          <fieldset class="feedback-reason-group">
+            <legend>개선 필요 사유</legend>
+            <label><input type="radio" name="feedbackReason" value="missing_results" required /><span>검색 결과가 누락됨</span></label>
+            <label><input type="radio" name="feedbackReason" value="wrong_filters" /><span>검색 조건이 잘못됨</span></label>
+            <label><input type="radio" name="feedbackReason" value="incorrect_facts" /><span>내용이 사실과 다름</span></label>
+            <label><input type="radio" name="feedbackReason" value="stale_data" /><span>데이터가 오래됨</span></label>
+            <label><input type="radio" name="feedbackReason" value="hard_to_read" /><span>답변이 이해하기 어려움</span></label>
+            <label><input type="radio" name="feedbackReason" value="other" /><span>기타</span></label>
+          </fieldset>
+          <label class="feedback-comment-field" for="feedbackComment">
+            <span>추가 의견 <small>선택</small></span>
+            <textarea id="feedbackComment" rows="3" maxlength="500" placeholder="어떤 부분이 달랐는지 알려주시면 개선에 도움이 됩니다."></textarea>
+          </label>
+          <div class="modal-form-actions">
+            <button id="feedbackCancelBtn" class="secondary-button" type="button">취소</button>
+            <button class="run-evaluation-button" type="submit">피드백 보내기</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
     <div id="chromaModal" class="modal-backdrop" hidden>
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="chromaModalTitle">
         <header class="modal-header">
@@ -224,13 +280,14 @@
           <button class="evaluation-tab" type="button" data-evaluation-tab="summary">요약</button>
           <button class="evaluation-tab active" type="button" data-evaluation-tab="cases">검증 질문</button>
           <button class="evaluation-tab" type="button" data-evaluation-tab="accuracy">답변 정확도</button>
+          <button class="evaluation-tab" type="button" data-evaluation-tab="feedback">답변 피드백</button>
           <button class="evaluation-tab" type="button" data-evaluation-tab="logs">감사 로그</button>
         </div>
         <div id="evaluationContent" class="evaluation-content"></div>
       </section>
     </div>
 
-    <script src="/static/frontend_core.js?v=20260722-1"></script>
-    <script src="/static/app.js?v=20260724-1"></script>
+    <script src="/static/frontend_core.js?v=20260724-2"></script>
+    <script src="/static/app.js?v=20260724-2"></script>
   </body>
 </html>

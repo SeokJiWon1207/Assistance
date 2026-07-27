@@ -2,6 +2,7 @@ const {
   storageSafeMessages,
   deriveConversationTitle,
   buildChatMessages,
+  buildTeamTemplateQuestion,
   parseSseBuffer,
 } = globalThis.AssistantFrontendCore;
 
@@ -26,11 +27,15 @@ const state = {
   accuracyStatusMessage: "",
   validationLogs: [],
   validationSummary: null,
+  feedbackSummary: null,
   evaluationTab: "cases",
   conversations: [],
   activeConversationId: null,
   editingMessageIndex: null,
   chatAbortController: null,
+  activeTemplateId: null,
+  pendingTemplateId: null,
+  feedbackMessageIndex: null,
 };
 
 const els = {
@@ -88,6 +93,20 @@ const els = {
   chromaModalTitle: document.querySelector("#chromaModalTitle"),
   chromaModalContent: document.querySelector("#chromaModalContent"),
   chromaModalClose: document.querySelector("#chromaModalClose"),
+  templateModal: document.querySelector("#templateModal"),
+  templateModalTitle: document.querySelector("#templateModalTitle"),
+  templateModalDescription: document.querySelector("#templateModalDescription"),
+  templateModalClose: document.querySelector("#templateModalClose"),
+  templateForm: document.querySelector("#templateForm"),
+  templateFields: document.querySelector("#templateFields"),
+  templateQuestionPreview: document.querySelector("#templateQuestionPreview"),
+  templateCancelBtn: document.querySelector("#templateCancelBtn"),
+  feedbackModal: document.querySelector("#feedbackModal"),
+  feedbackModalClose: document.querySelector("#feedbackModalClose"),
+  feedbackForm: document.querySelector("#feedbackForm"),
+  feedbackQuestion: document.querySelector("#feedbackQuestion"),
+  feedbackComment: document.querySelector("#feedbackComment"),
+  feedbackCancelBtn: document.querySelector("#feedbackCancelBtn"),
 };
 
 const defaultOptions = {
@@ -369,13 +388,77 @@ function sourceToolsPayload() {
   };
 }
 
-const STARTER_QUESTIONS = [
-  { category: "오늘 확인", title: "오늘 미종료 이슈", question: "오늘 등록된 미종료 이슈 보여줘", icon: "today" },
-  { category: "고객사 분석", title: "고객사별 이슈 비교", question: "이번 달 고객사별 이슈 건수 비교해줘", icon: "customer" },
-  { category: "이상 징후", title: "급증한 고객사", question: "평소보다 이슈가 급증한 고객사 알려줘", icon: "spike" },
-  { category: "장기 적체", title: "오래된 미종료 이슈", question: "30일 넘게 미종료된 이슈 보여줘", icon: "aging" },
-  { category: "유사 사례", title: "과거 이슈 찾아보기", question: "최근 등록된 이슈와 비슷한 과거 이슈 찾아줘", icon: "similar" },
-  { category: "공수·SLA", title: "처리시간 확인", question: "지난달 고객사별 공수와 평균 처리시간 보여줘", icon: "effort" },
+const TEAM_TEMPLATES = [
+  {
+    id: "daily-operations",
+    category: "운영 현황",
+    title: "오늘의 운영 현황",
+    description: "기간과 상태를 골라 고객사별 주요 이슈를 확인합니다.",
+    icon: "today",
+    fields: [
+      { name: "period", label: "기간", type: "select", value: "오늘", options: ["오늘", "이번 주", "이번 달"] },
+      { name: "status", label: "상태", type: "select", value: "미종료", options: ["미종료", "종료", "전체"] },
+    ],
+  },
+  {
+    id: "customer-analysis",
+    category: "고객사 분석",
+    title: "고객사별 이슈 분석",
+    description: "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
+    icon: "customer",
+    fields: [
+      { name: "customer", label: "고객사", type: "text", required: true, placeholder: "예: 유진증권" },
+      { name: "period", label: "기간", type: "select", value: "이번 달", options: ["이번 주", "이번 달", "지난달", "올해"] },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+      { name: "status", label: "상태", type: "select", value: "전체", options: ["전체", "미종료", "종료"] },
+      { name: "format", label: "결과 형태", type: "select", value: "표", options: ["표", "목록", "요약"] },
+    ],
+  },
+  {
+    id: "aging-issues",
+    category: "장기 적체",
+    title: "장기 미종료 이슈",
+    description: "기준 일수를 넘긴 미종료 이슈를 오래된 순으로 찾습니다.",
+    icon: "aging",
+    fields: [
+      { name: "days", label: "기준 일수", type: "number", value: "30", required: true, min: 1, max: 365 },
+      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+    ],
+  },
+  {
+    id: "similar-issues",
+    category: "유사 사례",
+    title: "유사 사례 조사",
+    description: "기준 이슈와 유사한 과거 원인과 해결 내용을 비교합니다.",
+    icon: "similar",
+    fields: [
+      { name: "issueId", label: "기준 이슈 ID", type: "text", required: true, placeholder: "예: #30225" },
+    ],
+  },
+  {
+    id: "effort-sla",
+    category: "공수·SLA",
+    title: "공수 및 처리시간",
+    description: "기간별 공수와 평균 처리시간을 표로 비교합니다.",
+    icon: "effort",
+    fields: [
+      { name: "period", label: "기간", type: "select", value: "지난달", options: ["이번 달", "지난달", "올해"] },
+      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+    ],
+  },
+  {
+    id: "weekly-report",
+    category: "보고서",
+    title: "주간 보고서 작성",
+    description: "신규·미종료·장기 적체·공수 현황을 보고서로 정리합니다.",
+    icon: "report",
+    fields: [
+      { name: "period", label: "보고 기간", type: "select", value: "지난주", options: ["지난주", "이번 주"] },
+      { name: "customer", label: "고객사", type: "text", placeholder: "전체 고객사" },
+    ],
+  },
 ];
 
 const STARTER_ICONS = {
@@ -385,22 +468,76 @@ const STARTER_ICONS = {
   aging: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>',
   similar: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6M10 7v6"/>',
   effort: '<path d="M5 20V10M12 20V4M19 20v-7"/><path d="M3 20h18"/>',
+  report: '<path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/>',
 };
 
-function renderStarterQuestions() {
-  return STARTER_QUESTIONS.map((item) => `
-    <button type="button" class="starter-card" data-starter-question="${escapeHtml(item.question)}">
+function renderTeamTemplates() {
+  return TEAM_TEMPLATES.map((item) => `
+    <button type="button" class="starter-card" data-template-id="${escapeHtml(item.id)}">
       <span class="starter-card-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon]}</svg>
       </span>
       <span class="starter-card-copy">
         <small>${escapeHtml(item.category)}</small>
         <strong>${escapeHtml(item.title)}</strong>
-        <em>${escapeHtml(item.question)}</em>
+        <em>${escapeHtml(item.description)}</em>
       </span>
       <span class="starter-card-arrow" aria-hidden="true">→</span>
     </button>
   `).join("");
+}
+
+function selectedTeamTemplate() {
+  return TEAM_TEMPLATES.find((template) => template.id === state.activeTemplateId) || null;
+}
+
+function templateFormValues() {
+  if (!els.templateForm) return {};
+  return Object.fromEntries(new FormData(els.templateForm).entries());
+}
+
+function updateTemplatePreview() {
+  const template = selectedTeamTemplate();
+  if (!template || !els.templateQuestionPreview) return;
+  els.templateQuestionPreview.textContent = buildTeamTemplateQuestion(template.id, templateFormValues());
+}
+
+function renderTemplateFields(template) {
+  els.templateFields.innerHTML = template.fields.map((field) => {
+    const inputId = `templateField-${field.name}`;
+    const required = field.required ? "required" : "";
+    const requiredLabel = field.required ? '<small class="required-mark">필수</small>' : '<small>선택</small>';
+    const control = field.type === "select"
+      ? `<select id="${inputId}" name="${escapeHtml(field.name)}" ${required}>
+          ${field.options.map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+        </select>`
+      : `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
+    return `
+      <label class="template-field" for="${inputId}">
+        <span>${escapeHtml(field.label)} ${requiredLabel}</span>
+        ${control}
+      </label>
+    `;
+  }).join("");
+}
+
+function openTemplateModal(templateId) {
+  const template = TEAM_TEMPLATES.find((item) => item.id === templateId);
+  if (!template || !els.templateModal) return;
+  state.activeTemplateId = template.id;
+  els.templateModalTitle.textContent = template.title;
+  els.templateModalDescription.textContent = template.description;
+  renderTemplateFields(template);
+  updateTemplatePreview();
+  els.templateModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.templateFields.querySelector("input, select")?.focus();
+}
+
+function closeTemplateModal() {
+  if (!els.templateModal) return;
+  els.templateModal.hidden = true;
+  document.body.classList.remove("modal-open");
 }
 
 function formatQuestionAskedAt(value) {
@@ -448,11 +585,11 @@ function renderMessages() {
           <path d="M58 58 L78 78" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
           <path d="M30 40h20M30 48h14" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
         </svg>
-        <p class="empty-state-eyebrow">무엇부터 확인할까요?</p>
-        <h3>업무 질문을 바로 시작해 보세요</h3>
-        <p>원하는 질문을 선택하거나 아래 입력창에 고객사·기간·플랫폼을 함께 적어보세요.</p>
-        <div class="starter-grid" aria-label="추천 질문">
-          ${renderStarterQuestions()}
+        <p class="empty-state-eyebrow">팀 공용 템플릿 6개</p>
+        <h3>조건만 고르면 업무 질문이 완성됩니다</h3>
+        <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요.</p>
+        <div class="starter-grid" aria-label="팀 공용 템플릿">
+          ${renderTeamTemplates()}
         </div>
       </div>
     `;
@@ -568,12 +705,26 @@ const MESSAGE_ACTION_ICONS = {
   check: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8 14l7.5-8"/></svg>',
   regenerate: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 0 1 11.2-4.5M16.5 10a6.5 6.5 0 0 1-11.2 4.5"/><path d="M14.5 3v3h-3M5.5 17v-3h3"/></svg>',
   edit: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5 15.5 8 7 16.5H3.5V13z"/></svg>',
+  helpful: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 8.5 9.5 3c1.2.2 2 1.3 1.7 2.5L10.8 8h4.1c1.2 0 2.1 1.1 1.8 2.3l-1.2 5A2.2 2.2 0 0 1 13.4 17H6.5z"/><path d="M3.5 8.5h3v8.5h-3z"/></svg>',
+  improve: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 11.5 3 5.5c1.2-.2 2-1.3 1.7-2.5l-.4-2.5h4.1c1.2 0 2.1-1.1 1.8-2.3l-1.2-5A2.2 2.2 0 0 0 13.4 3H6.5z"/><path d="M3.5 3h3v8.5h-3z"/></svg>',
 };
 
 function renderMessageActions(message, messageIndex) {
   const actions = document.createElement("div");
   actions.className = "message-actions";
   if (message.role === "assistant") {
+    const helpfulSelected = message.feedback?.rating === "helpful";
+    const improveSelected = message.feedback?.rating === "needs_improvement";
+    const feedbackActions = message.auditId ? `
+      <span class="message-action-divider" aria-hidden="true"></span>
+      <span class="message-feedback-label">도움이 되었나요?</span>
+      <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="helpful" data-message-index="${messageIndex}" aria-label="도움됨" aria-pressed="${helpfulSelected}">
+        ${MESSAGE_ACTION_ICONS.helpful}<span>${helpfulSelected ? "도움됨 ✓" : "도움됨"}</span>
+      </button>
+      <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="needs_improvement" data-message-index="${messageIndex}" aria-label="개선 필요" aria-pressed="${improveSelected}">
+        ${MESSAGE_ACTION_ICONS.improve}<span>${improveSelected ? "의견 남김 ✓" : "개선 필요"}</span>
+      </button>
+    ` : "";
     actions.innerHTML = `
       <button type="button" class="message-action-btn" data-message-action="copy" data-message-index="${messageIndex}" aria-label="답변 복사">
         ${MESSAGE_ACTION_ICONS.copy}<span>복사</span>
@@ -581,6 +732,7 @@ function renderMessageActions(message, messageIndex) {
       <button type="button" class="message-action-btn" data-message-action="regenerate" data-message-index="${messageIndex}" aria-label="답변 재생성">
         ${MESSAGE_ACTION_ICONS.regenerate}<span>재생성</span>
       </button>
+      ${feedbackActions}
     `;
   } else {
     actions.innerHTML = `
@@ -590,6 +742,59 @@ function renderMessageActions(message, messageIndex) {
     `;
   }
   return actions;
+}
+
+function feedbackQuestionForMessage(messageIndex) {
+  return state.messages.slice(0, messageIndex).reverse().find((message) => message.role === "user")?.content || "";
+}
+
+function openFeedbackModal(messageIndex) {
+  const message = state.messages[messageIndex];
+  if (!message?.auditId || !els.feedbackModal) return;
+  state.feedbackMessageIndex = messageIndex;
+  els.feedbackForm.reset();
+  els.feedbackQuestion.textContent = feedbackQuestionForMessage(messageIndex);
+  els.feedbackComment.value = message.feedback?.comment || "";
+  if (message.feedback?.reason) {
+    const selectedReason = els.feedbackForm.querySelector(`[name="feedbackReason"][value="${message.feedback.reason}"]`);
+    if (selectedReason) selectedReason.checked = true;
+  }
+  els.feedbackModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.feedbackForm.querySelector('[name="feedbackReason"]')?.focus();
+}
+
+function closeFeedbackModal() {
+  if (!els.feedbackModal) return;
+  els.feedbackModal.hidden = true;
+  state.feedbackMessageIndex = null;
+  document.body.classList.remove("modal-open");
+}
+
+async function saveMessageFeedback(messageIndex, rating, reason = "", comment = "") {
+  const message = state.messages[messageIndex];
+  if (!message?.auditId) return;
+  const response = await fetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      auditId: message.auditId,
+      rating,
+      reason: reason || null,
+      comment,
+      templateId: message.templateId || null,
+    }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "피드백을 저장하지 못했습니다.");
+  }
+  const data = await response.json();
+  message.feedback = data.feedback;
+  persistConversations();
+  renderMessages();
+  refreshFeedbackSummary();
+  showToast(rating === "helpful" ? "도움이 되었다는 의견을 반영했어요." : "개선 의견을 저장했어요.", "success");
 }
 
 const CHART_COLORS = [
@@ -2337,11 +2542,12 @@ async function loadDataStatus() {
 }
 
 async function loadEvaluationData() {
-  const [casesResponse, logsResponse, summaryResponse, historyResponse] = await Promise.all([
+  const [casesResponse, logsResponse, summaryResponse, historyResponse, feedbackResponse] = await Promise.all([
     fetch("/api/evaluation/cases"),
     fetch("/api/validation/logs?limit=30"),
     fetch("/api/validation/summary?limit=500"),
     fetch("/api/evaluation/history?limit=8"),
+    fetch("/api/feedback/summary?limit=200"),
   ]);
   if (!casesResponse.ok || !logsResponse.ok || !summaryResponse.ok) {
     throw new Error("검증 데이터를 불러오지 못했습니다.");
@@ -2354,8 +2560,20 @@ async function loadEvaluationData() {
   state.validationSummary = summaryData;
   // 실행 이력은 부가 정보라 실패해도 모달 자체는 열리게 둔다.
   state.evaluationHistory = historyResponse.ok ? (await historyResponse.json()).runs || [] : [];
+  state.feedbackSummary = feedbackResponse.ok ? await feedbackResponse.json() : null;
   await refreshAccuracyReports();
   renderEvaluationContent();
+}
+
+async function refreshFeedbackSummary() {
+  try {
+    const response = await fetch("/api/feedback/summary?limit=200");
+    if (!response.ok) return;
+    state.feedbackSummary = await response.json();
+    if (state.evaluationTab === "feedback") renderEvaluationContent();
+  } catch {
+    // 피드백 집계는 답변 사용을 막지 않는 부가 정보다.
+  }
 }
 
 async function refreshAccuracyReports() {
@@ -2403,6 +2621,10 @@ function renderEvaluationContent() {
   }
   if (state.evaluationTab === "accuracy") {
     renderAccuracyTab();
+    return;
+  }
+  if (state.evaluationTab === "feedback") {
+    renderFeedbackTab();
     return;
   }
   renderEvaluationCases();
@@ -2747,6 +2969,111 @@ function renderValidationLogs() {
   });
 }
 
+function teamTemplateLabel(templateId) {
+  return TEAM_TEMPLATES.find((template) => template.id === templateId)?.title || templateId || "일반 질문";
+}
+
+function renderFeedbackTab() {
+  const summary = state.feedbackSummary || {
+    total: 0,
+    helpfulCount: 0,
+    needsImprovementCount: 0,
+    helpfulRate: 0,
+    reasonCounts: [],
+    templateCounts: [],
+    recent: [],
+  };
+  els.evaluationSummary.innerHTML = `<strong>${summary.total || 0}</strong>건 피드백 · 도움됨 <strong>${summary.helpfulRate || 0}%</strong>`;
+
+  const wrap = document.createElement("div");
+  wrap.className = "validation-summary feedback-dashboard";
+  const statCards = document.createElement("div");
+  statCards.className = "summary-stat-grid";
+  [
+    { label: "도움됨", value: summary.helpfulCount || 0, tone: "pass" },
+    { label: "개선 필요", value: summary.needsImprovementCount || 0, tone: "warning" },
+    { label: "도움됨 비율", value: `${summary.helpfulRate || 0}%`, tone: "neutral" },
+  ].forEach(({ label, value, tone }) => {
+    const card = document.createElement("div");
+    card.className = `summary-stat-card tone-${tone}`;
+    card.innerHTML = `<strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
+    statCards.appendChild(card);
+  });
+  wrap.appendChild(statCards);
+
+  if (!summary.total) {
+    const empty = document.createElement("p");
+    empty.className = "accuracy-empty";
+    empty.textContent = "아직 등록된 답변 피드백이 없습니다. 실제 답변 아래의 ‘도움됨’ 또는 ‘개선 필요’를 선택하면 여기에 집계됩니다.";
+    wrap.appendChild(empty);
+    els.evaluationContent.appendChild(wrap);
+    return;
+  }
+
+  const reasons = summary.reasonCounts || [];
+  const reasonSection = document.createElement("section");
+  reasonSection.className = "summary-section";
+  reasonSection.innerHTML = "<h4>개선 필요 사유 6개</h4>";
+  const reasonList = document.createElement("div");
+  reasonList.className = "summary-bar-list";
+  const maxReasonCount = Math.max(1, ...reasons.map((item) => item.count || 0));
+  reasons.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "summary-bar-row";
+    const width = Math.round(((item.count || 0) / maxReasonCount) * 100);
+    row.innerHTML = `
+      <span class="summary-bar-label">${escapeHtml(item.label)}</span>
+      <span class="summary-bar-track"><span class="summary-bar-fill" style="width:${width}%"></span></span>
+      <span class="summary-bar-count">${Number(item.count) || 0}</span>
+    `;
+    reasonList.appendChild(row);
+  });
+  reasonSection.appendChild(reasonList);
+  wrap.appendChild(reasonSection);
+
+  if (summary.templateCounts?.length) {
+    const templateSection = document.createElement("section");
+    templateSection.className = "summary-section";
+    templateSection.innerHTML = "<h4>팀 템플릿별 만족도</h4>";
+    const templateList = document.createElement("div");
+    templateList.className = "feedback-template-list";
+    summary.templateCounts.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "feedback-template-row";
+      row.innerHTML = `
+        <strong>${escapeHtml(teamTemplateLabel(item.templateId))}</strong>
+        <span>${Number(item.total) || 0}건</span>
+        <em>도움됨 ${Number(item.helpfulRate) || 0}%</em>
+      `;
+      templateList.appendChild(row);
+    });
+    templateSection.appendChild(templateList);
+    wrap.appendChild(templateSection);
+  }
+
+  const recentSection = document.createElement("section");
+  recentSection.className = "summary-section";
+  recentSection.innerHTML = "<h4>최근 피드백</h4>";
+  const recentList = document.createElement("div");
+  recentList.className = "feedback-recent-list";
+  (summary.recent || []).forEach((item) => {
+    const row = document.createElement("article");
+    row.className = `feedback-log feedback-${item.rating}`;
+    const statusLabel = item.rating === "helpful" ? "도움됨" : "개선 필요";
+    const detail = item.comment || item.reasonLabel || "추가 의견 없음";
+    row.innerHTML = `
+      <div><span>${escapeHtml(statusLabel)}</span><time>${escapeHtml(String(item.updatedAt || "").replace("T", " ").slice(0, 16))}</time></div>
+      <h4>${escapeHtml(item.question || "")}</h4>
+      <p>${escapeHtml(detail)}</p>
+      <small>${escapeHtml(teamTemplateLabel(item.templateId))} · LOG ${escapeHtml(String(item.auditId || "").slice(0, 8))}</small>
+    `;
+    recentList.appendChild(row);
+  });
+  recentSection.appendChild(recentList);
+  wrap.appendChild(recentSection);
+  els.evaluationContent.appendChild(wrap);
+}
+
 const MODE_LABELS = {
   model: "모델 답변",
   deterministic_issue_list: "Mantis 목록",
@@ -3001,7 +3328,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
   return result;
 }
 
-async function requestAssistant(content, questionAskedAt = "") {
+async function requestAssistant(content, questionAskedAt = "", templateId = "") {
   state.messages.push({
     role: "assistant",
     content: "",
@@ -3009,6 +3336,7 @@ async function requestAssistant(content, questionAskedAt = "") {
     loading: true,
     streaming: false,
     progress: "요청을 준비하고 있습니다",
+    templateId,
   });
   const assistantIndex = state.messages.length - 1;
   renderMessages();
@@ -3041,6 +3369,7 @@ async function requestAssistant(content, questionAskedAt = "") {
       effortChart: answer.effortChart || null,
       effortRanking: answer.effortRanking || null,
       questionAskedAt,
+      templateId,
     };
   } catch (error) {
     if (error.name === "AbortError") {
@@ -3053,12 +3382,14 @@ async function requestAssistant(content, questionAskedAt = "") {
           : "답변 생성을 중지했습니다.",
         stopped: true,
         questionAskedAt,
+        templateId,
       };
     } else {
       state.messages[assistantIndex] = {
         role: "assistant",
         content: `오류: ${error.message}`,
         questionAskedAt,
+        templateId,
       };
     }
   } finally {
@@ -3072,6 +3403,7 @@ async function requestAssistant(content, questionAskedAt = "") {
 
 function cancelMessageEdit() {
   state.editingMessageIndex = null;
+  state.pendingTemplateId = null;
   if (els.editNotice) els.editNotice.hidden = true;
 }
 
@@ -3083,6 +3415,8 @@ els.form.addEventListener("submit", async (event) => {
   }
   const content = els.input.value.trim();
   if (!content) return;
+  const templateId = state.pendingTemplateId || "";
+  state.pendingTemplateId = null;
 
   if (state.editingMessageIndex !== null) {
     state.messages = state.messages.slice(0, state.editingMessageIndex);
@@ -3091,9 +3425,9 @@ els.form.addEventListener("submit", async (event) => {
   els.input.value = "";
   autoResizeInput();
   const questionAskedAt = new Date().toISOString();
-  state.messages.push({ role: "user", content, createdAt: questionAskedAt });
+  state.messages.push({ role: "user", content, createdAt: questionAskedAt, templateId });
   persistConversations();
-  await requestAssistant(content, questionAskedAt);
+  await requestAssistant(content, questionAskedAt, templateId);
 });
 
 els.input.addEventListener("input", autoResizeInput);
@@ -3105,10 +3439,23 @@ els.input.addEventListener("keydown", (event) => {
 });
 
 els.messages.addEventListener("click", (event) => {
-  const starter = event.target.closest(".starter-card");
-  if (!starter || state.busy) return;
-  els.input.value = starter.dataset.starterQuestion || "";
+  const templateCard = event.target.closest("[data-template-id]");
+  if (!templateCard || state.busy) return;
+  openTemplateModal(templateCard.dataset.templateId);
+});
+
+els.templateFields?.addEventListener("input", updateTemplatePreview);
+els.templateFields?.addEventListener("change", updateTemplatePreview);
+els.templateForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const template = selectedTeamTemplate();
+  if (!template) return;
+  const question = buildTeamTemplateQuestion(template.id, templateFormValues());
+  if (!question) return;
+  state.pendingTemplateId = template.id;
+  els.input.value = question;
   autoResizeInput();
+  closeTemplateModal();
   els.form.requestSubmit();
 });
 
@@ -3219,6 +3566,32 @@ els.conversationList.addEventListener("click", (event) => {
   if (openButton) openConversation(openButton.dataset.conversationId);
 });
 els.evaluationBtn.addEventListener("click", openEvaluationModal);
+els.templateModalClose?.addEventListener("click", closeTemplateModal);
+els.templateCancelBtn?.addEventListener("click", closeTemplateModal);
+els.templateModal?.addEventListener("click", (event) => {
+  if (event.target === els.templateModal) closeTemplateModal();
+});
+els.feedbackModalClose?.addEventListener("click", closeFeedbackModal);
+els.feedbackCancelBtn?.addEventListener("click", closeFeedbackModal);
+els.feedbackModal?.addEventListener("click", (event) => {
+  if (event.target === els.feedbackModal) closeFeedbackModal();
+});
+els.feedbackForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const messageIndex = state.feedbackMessageIndex;
+  const reason = new FormData(els.feedbackForm).get("feedbackReason");
+  if (messageIndex === null || !reason) return;
+  const submitButton = els.feedbackForm.querySelector('[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    await saveMessageFeedback(messageIndex, "needs_improvement", String(reason), els.feedbackComment.value.trim());
+    closeFeedbackModal();
+  } catch (error) {
+    showToast(error.message, "warning");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
 els.evaluationModalClose.addEventListener("click", closeEvaluationModal);
 els.runEvaluationBtn.addEventListener("click", () => runEvaluations());
 els.evaluationContent.addEventListener("click", (event) => {
@@ -3251,6 +3624,17 @@ els.scrollToTopBtn?.addEventListener("click", () => {
 });
 
 els.messages.addEventListener("click", (event) => {
+  const feedbackButton = event.target.closest("[data-feedback-rating]");
+  if (feedbackButton) {
+    const messageIndex = Number(feedbackButton.dataset.messageIndex);
+    if (feedbackButton.dataset.feedbackRating === "helpful") {
+      saveMessageFeedback(messageIndex, "helpful").catch((error) => showToast(error.message, "warning"));
+    } else {
+      openFeedbackModal(messageIndex);
+    }
+    return;
+  }
+
   const conditionButton = event.target.closest("[data-remove-condition]");
   if (conditionButton) {
     try {
@@ -3277,6 +3661,7 @@ els.messages.addEventListener("click", (event) => {
       });
     } else if (actionButton.dataset.messageAction === "edit") {
       state.editingMessageIndex = messageIndex;
+      state.pendingTemplateId = message.templateId || "";
       els.editNotice.hidden = false;
       els.input.value = message.content || "";
       autoResizeInput();
@@ -3287,9 +3672,10 @@ els.messages.addEventListener("click", (event) => {
       if (userIndex < 0) return;
       const question = state.messages[userIndex].content;
       const questionAskedAt = state.messages[userIndex].createdAt || "";
+      const templateId = state.messages[userIndex].templateId || message.templateId || "";
       state.messages = state.messages.slice(0, messageIndex);
       persistConversations();
-      requestAssistant(question, questionAskedAt);
+      requestAssistant(question, questionAskedAt, templateId);
     }
     return;
   }
@@ -3351,7 +3737,11 @@ els.chromaModal.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.chromaModal.hidden) {
+  if (event.key === "Escape" && !els.templateModal.hidden) {
+    closeTemplateModal();
+  } else if (event.key === "Escape" && !els.feedbackModal.hidden) {
+    closeFeedbackModal();
+  } else if (event.key === "Escape" && !els.chromaModal.hidden) {
     closeChromaModal();
   } else if (event.key === "Escape" && !els.evaluationModal.hidden) {
     closeEvaluationModal();
