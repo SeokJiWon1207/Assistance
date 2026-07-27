@@ -63,6 +63,10 @@ class FrontendCoreTests(unittest.TestCase):
             "evaluationModal",
             "sourceModeSelect",
             "manualSourceControls",
+            "templateModal",
+            "templateForm",
+            "feedbackModal",
+            "feedbackForm",
         ):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))

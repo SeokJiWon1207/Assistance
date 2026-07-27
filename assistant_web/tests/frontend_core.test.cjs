@@ -5,6 +5,7 @@ const {
   storageSafeMessages,
   deriveConversationTitle,
   buildChatMessages,
+  buildTeamTemplateQuestion,
   parseSseBuffer,
 } = require("../backend/static/frontend_core.js");
 
@@ -14,6 +15,8 @@ test("storageSafeMessages removes transient rows and bounds stored source text",
     {
       role: "assistant",
       content: "done",
+      templateId: "customer-analysis",
+      feedback: { rating: "helpful" },
       sources: Array.from({ length: 25 }, (_, index) => ({
         issue_id: index,
         content: "c".repeat(5000),
@@ -30,6 +33,8 @@ test("storageSafeMessages removes transient rows and bounds stored source text",
   assert.equal(stored[0].sources[0].content.length, 4000);
   assert.equal(stored[0].sources[0].summary.length, 1200);
   assert.equal(stored[0].sources[0].document.length, 4000);
+  assert.equal(stored[0].templateId, "customer-analysis");
+  assert.equal(stored[0].feedback.rating, "helpful");
 });
 
 test("storageSafeMessages retains only the latest sixty completed messages", () => {
@@ -87,4 +92,37 @@ test("parseSseBuffer flushes a final frame without a blank terminator", () => {
   const parsed = parseSseBuffer('data: {"type":"done"}', true);
   assert.deepEqual(parsed.events, [{ type: "done" }]);
   assert.equal(parsed.rest, "");
+});
+
+test("buildTeamTemplateQuestion creates all six shared template questions", () => {
+  assert.equal(
+    buildTeamTemplateQuestion("daily-operations", { period: "오늘", status: "미종료" }),
+    "오늘 등록된 미종료 이슈를 고객사별로 요약해줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion("customer-analysis", {
+      period: "이번 달",
+      customer: "유진증권",
+      platform: "MTS",
+      status: "미종료",
+      format: "표",
+    }),
+    "이번 달 유진증권 MTS 미종료 이슈를 표로 보여줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion("aging-issues", { days: "30", platform: "전체" }),
+    "30일 넘게 미종료된 이슈를 오래된 순으로 보여줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion("similar-issues", { issueId: "#30225" }),
+    "#30225와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion("effort-sla", { period: "지난달", platform: "HTS" }),
+    "지난달 고객사별 HTS 공수와 평균 처리시간을 표로 보여줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion("weekly-report", { period: "지난주", customer: "NH증권" }),
+    "지난주 NH증권 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘",
+  );
 });

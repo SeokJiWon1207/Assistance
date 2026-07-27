@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sqlite3
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -9,6 +10,7 @@ from backend.api import chat as chat_api
 from backend.api import notion as notion_api
 from backend.api import quality as quality_api
 from backend.api import search as search_api
+from backend import audit as audit_module
 from backend.main import app
 
 
@@ -158,6 +160,71 @@ class ApiIntegrationTests(unittest.TestCase):
             quality_api, "ACCURACY_REPORT_DIR", Path(directory)
         ):
             response = self.client.get("/api/accuracy/reports/accuracy-20260722-000000.json")
+        self.assertEqual(response.status_code, 404)
+
+    def test_feedback_is_saved_updated_and_summarized_by_audit_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "audit.sqlite3"
+            with patch.object(audit_module, "AUDIT_DB_PATH", audit_path), patch.object(
+                quality_api, "AUDIT_DB_PATH", audit_path
+            ):
+                audit_module.init_audit_db()
+                audit_id = "a" * 32
+                with sqlite3.connect(audit_path) as connection:
+                    connection.execute(
+                        "INSERT INTO validation_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (audit_id, "2026-07-24T12:00:00+09:00", "테스트 질문", "test-model", "model", 95, "pass", "{}"),
+                    )
+
+                missing_reason = self.client.post(
+                    "/api/feedback",
+                    json={"auditId": audit_id, "rating": "needs_improvement"},
+                )
+                self.assertEqual(missing_reason.status_code, 400)
+
+                saved = self.client.post(
+                    "/api/feedback",
+                    json={
+                        "auditId": audit_id,
+                        "rating": "needs_improvement",
+                        "reason": "wrong_filters",
+                        "comment": "기간 조건이 달라요.",
+                        "templateId": "customer-analysis",
+                    },
+                )
+                self.assertEqual(saved.status_code, 200)
+                self.assertEqual(saved.json()["feedback"]["reasonLabel"], "검색 조건이 잘못됨")
+
+                updated = self.client.post(
+                    "/api/feedback",
+                    json={
+                        "auditId": audit_id,
+                        "rating": "helpful",
+                        "templateId": "customer-analysis",
+                    },
+                )
+                self.assertEqual(updated.status_code, 200)
+                self.assertIsNone(updated.json()["feedback"]["reason"])
+
+                summary = self.client.get("/api/feedback/summary?limit=20")
+                self.assertEqual(summary.status_code, 200)
+                payload = summary.json()
+                self.assertEqual(payload["total"], 1)
+                self.assertEqual(payload["helpfulCount"], 1)
+                self.assertEqual(payload["helpfulRate"], 100)
+                self.assertEqual(payload["templateCounts"][0]["templateId"], "customer-analysis")
+                self.assertEqual(payload["recent"][0]["question"], "테스트 질문")
+
+    def test_feedback_rejects_an_unknown_audit_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            audit_path = Path(directory) / "audit.sqlite3"
+            with patch.object(audit_module, "AUDIT_DB_PATH", audit_path), patch.object(
+                quality_api, "AUDIT_DB_PATH", audit_path
+            ):
+                response = self.client.post(
+                    "/api/feedback",
+                    json={"auditId": "b" * 32, "rating": "helpful"},
+                )
         self.assertEqual(response.status_code, 404)
 
     @patch.object(quality_api.subprocess, "Popen")
