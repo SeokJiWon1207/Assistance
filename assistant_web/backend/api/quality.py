@@ -7,6 +7,8 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
@@ -21,11 +23,164 @@ from backend.reports.evaluation import (
     run_evaluation_case_safely,
     save_evaluation_run,
 )
-from backend.schemas import AccuracyRunRequest, EvaluationRunRequest
+from backend.schemas import AccuracyRunRequest, AnswerFeedbackRequest, EvaluationRunRequest
 from backend.sources.mantis import get_mantis_snapshot_freshness_status
 
 
 router = APIRouter()
+
+
+FEEDBACK_REASON_LABELS = {
+    "missing_results": "검색 결과가 누락됨",
+    "wrong_filters": "검색 조건이 잘못됨",
+    "incorrect_facts": "내용이 사실과 다름",
+    "stale_data": "데이터가 오래됨",
+    "hard_to_read": "답변이 이해하기 어려움",
+    "other": "기타",
+}
+
+
+@router.post("/api/feedback")
+def save_answer_feedback(request: AnswerFeedbackRequest) -> Dict[str, Any]:
+    init_audit_db()
+    if request.rating == "needs_improvement" and not request.reason:
+        raise HTTPException(status_code=400, detail="개선 필요 사유를 선택해 주세요.")
+
+    feedback_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    reason = request.reason if request.rating == "needs_improvement" else None
+    comment = request.comment.strip()
+    template_id = (request.templateId or "").strip() or None
+    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+        audit_row = connection.execute(
+            "SELECT id FROM validation_logs WHERE id = ?",
+            (request.auditId,),
+        ).fetchone()
+        if not audit_row:
+            raise HTTPException(status_code=404, detail="피드백을 연결할 답변 로그를 찾지 못했습니다.")
+        connection.execute(
+            """
+            INSERT INTO answer_feedback (
+                id, audit_id, created_at, updated_at, rating, reason, comment, template_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(audit_id) DO UPDATE SET
+                updated_at = excluded.updated_at,
+                rating = excluded.rating,
+                reason = excluded.reason,
+                comment = excluded.comment,
+                template_id = excluded.template_id
+            """,
+            (
+                feedback_id,
+                request.auditId,
+                now,
+                now,
+                request.rating,
+                reason,
+                comment,
+                template_id,
+            ),
+        )
+        row = connection.execute(
+            "SELECT id, audit_id, created_at, updated_at, rating, reason, comment, template_id "
+            "FROM answer_feedback WHERE audit_id = ?",
+            (request.auditId,),
+        ).fetchone()
+
+    assert row is not None
+    return {
+        "feedback": {
+            "id": row[0],
+            "auditId": row[1],
+            "createdAt": row[2],
+            "updatedAt": row[3],
+            "rating": row[4],
+            "reason": row[5],
+            "reasonLabel": FEEDBACK_REASON_LABELS.get(row[5], "") if row[5] else "",
+            "comment": row[6],
+            "templateId": row[7],
+        }
+    }
+
+
+@router.get("/api/feedback/summary")
+def get_feedback_summary(limit: int = 200) -> Dict[str, Any]:
+    init_audit_db()
+    safe_limit = max(1, min(limit, 1000))
+    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT f.id, f.audit_id, f.created_at, f.updated_at, f.rating, f.reason,
+                   f.comment, f.template_id, v.question, v.model_id, v.mode
+            FROM answer_feedback f
+            JOIN validation_logs v ON v.id = f.audit_id
+            ORDER BY f.updated_at DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        ).fetchall()
+
+    total = len(rows)
+    helpful_count = sum(1 for row in rows if row["rating"] == "helpful")
+    needs_improvement_count = total - helpful_count
+    reason_counts = {reason: 0 for reason in FEEDBACK_REASON_LABELS}
+    template_counts: Dict[str, Dict[str, int]] = {}
+    recent: List[Dict[str, Any]] = []
+
+    for row in rows:
+        reason = row["reason"]
+        if reason in reason_counts:
+            reason_counts[reason] += 1
+        template_id = row["template_id"] or ""
+        if template_id:
+            counts = template_counts.setdefault(template_id, {"total": 0, "helpful": 0, "needsImprovement": 0})
+            counts["total"] += 1
+            if row["rating"] == "helpful":
+                counts["helpful"] += 1
+            else:
+                counts["needsImprovement"] += 1
+        if len(recent) < 50:
+            recent.append(
+                {
+                    "id": row["id"],
+                    "auditId": row["audit_id"],
+                    "createdAt": row["created_at"],
+                    "updatedAt": row["updated_at"],
+                    "rating": row["rating"],
+                    "reason": reason,
+                    "reasonLabel": FEEDBACK_REASON_LABELS.get(reason, "") if reason else "",
+                    "comment": row["comment"],
+                    "templateId": template_id or None,
+                    "question": row["question"],
+                    "modelId": row["model_id"],
+                    "mode": row["mode"],
+                }
+            )
+
+    templates = []
+    for template_id, counts in sorted(template_counts.items(), key=lambda item: item[1]["total"], reverse=True):
+        templates.append(
+            {
+                "templateId": template_id,
+                **counts,
+                "helpfulRate": round(counts["helpful"] / counts["total"] * 100) if counts["total"] else 0,
+            }
+        )
+
+    return {
+        "windowSize": safe_limit,
+        "total": total,
+        "helpfulCount": helpful_count,
+        "needsImprovementCount": needs_improvement_count,
+        "helpfulRate": round(helpful_count / total * 100) if total else 0,
+        "reasonCounts": [
+            {"reason": reason, "label": label, "count": reason_counts[reason]}
+            for reason, label in FEEDBACK_REASON_LABELS.items()
+        ],
+        "templateCounts": templates,
+        "recent": recent,
+    }
 
 
 @router.get("/api/validation/logs")

@@ -15,6 +15,7 @@ __all__ = [
     "NotionPageUpdateRequest",
     "EvaluationRunRequest",
     "AccuracyRunRequest",
+    "AnswerFeedbackRequest",
     "FilterClause",
     "SortClause",
     "StructuredQueryPlan",
@@ -138,3 +139,20 @@ class EvaluationRunRequest(BaseModel):
 class AccuracyRunRequest(BaseModel):
     questions: int = 10
     followUpScenarios: int = 4
+
+
+class AnswerFeedbackRequest(BaseModel):
+    auditId: str = Field(pattern=r"^[0-9a-f]{32}$")
+    rating: Literal["helpful", "needs_improvement"]
+    reason: Optional[
+        Literal[
+            "missing_results",
+            "wrong_filters",
+            "incorrect_facts",
+            "stale_data",
+            "hard_to_read",
+            "other",
+        ]
+    ] = None
+    comment: str = Field(default="", max_length=500)
+    templateId: Optional[str] = Field(default=None, max_length=64)

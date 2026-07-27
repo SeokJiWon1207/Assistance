@@ -66,6 +66,27 @@ def init_audit_db() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_evaluation_runs_run_at ON evaluation_runs(run_at DESC)"
         )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS answer_feedback (
+                id TEXT PRIMARY KEY,
+                audit_id TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                rating TEXT NOT NULL,
+                reason TEXT,
+                comment TEXT NOT NULL DEFAULT '',
+                template_id TEXT,
+                FOREIGN KEY (audit_id) REFERENCES validation_logs(id)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_answer_feedback_updated_at ON answer_feedback(updated_at DESC)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_answer_feedback_rating ON answer_feedback(rating)"
+        )
 
 
 def load_audit_sources(audit_id: str) -> List[Dict[str, Any]]:
