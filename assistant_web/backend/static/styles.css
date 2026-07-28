@@ -498,6 +498,185 @@ select:focus,
   box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
 }
 
+.custom-select {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+select.custom-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  min-width: 1px !important;
+  height: 1px !important;
+  min-height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 13px 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(25, 31, 40, 0.03);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.custom-select-trigger:hover {
+  border-color: color-mix(in srgb, var(--blue) 38%, var(--line-strong));
+  background: color-mix(in srgb, var(--blue-soft) 22%, var(--surface));
+}
+
+.custom-select-trigger:focus-visible,
+.custom-select.is-open .custom-select-trigger {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent), 0 4px 12px rgba(25, 31, 40, 0.07);
+}
+
+.custom-select-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-chevron {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.18s ease, stroke 0.18s ease;
+}
+
+.custom-select.is-open .custom-select-chevron {
+  transform: rotate(180deg);
+  stroke: var(--blue);
+}
+
+.custom-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.custom-select-menu {
+  position: fixed;
+  z-index: 180;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 18px 44px rgba(25, 31, 40, 0.17), 0 3px 10px rgba(25, 31, 40, 0.08);
+  backdrop-filter: blur(18px);
+  animation: custom-select-enter 0.14s ease-out;
+}
+
+.custom-select-menu[data-placement="top"] {
+  transform-origin: bottom center;
+}
+
+.custom-select-menu[data-placement="bottom"] {
+  transform-origin: top center;
+}
+
+.custom-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.13s ease, background 0.13s ease;
+}
+
+.custom-select-option:hover,
+.custom-select-option.is-active {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.custom-select-option.is-selected {
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.custom-select-option.is-selected.is-active,
+.custom-select-option.is-selected:hover {
+  background: color-mix(in srgb, var(--blue) 16%, var(--surface));
+}
+
+.custom-select-option svg {
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.custom-select-option.is-selected svg {
+  opacity: 1;
+}
+
+.custom-select-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.template-field .custom-select-trigger {
+  min-height: 44px;
+}
+
+@keyframes custom-select-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-select-menu {
+    animation: none;
+  }
+}
+
 .field-row,
 .mini-range-row {
   display: grid;
@@ -1822,7 +2001,7 @@ body.theme-dark .chat-header {
 
 .empty-state p {
   max-width: 520px;
-  margin: 0;
+  margin: 0 auto;
   line-height: 1.65;
   word-break: keep-all;
 }

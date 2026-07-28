@@ -306,6 +306,7 @@ function renderModels() {
 
   const activeModel = state.models.find((model) => model.status === "active");
   if (activeModel) els.modelSelect.value = activeModel.id;
+  globalThis.AssistantCustomSelect?.sync(els.modelSelect);
   updateModelMeta();
 }
 
@@ -364,6 +365,7 @@ function toolToggleEnabled(element) {
 function setSourceMode(mode) {
   const selectedMode = mode === "manual" ? "manual" : "auto";
   if (els.sourceModeSelect) els.sourceModeSelect.value = selectedMode;
+  globalThis.AssistantCustomSelect?.sync(els.sourceModeSelect);
   if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
   if (els.sourceModeHint) {
     els.sourceModeHint.textContent = selectedMode === "auto"
@@ -519,6 +521,7 @@ function renderTemplateFields(template) {
       </label>
     `;
   }).join("");
+  globalThis.AssistantCustomSelect?.enhanceAll(els.templateFields);
 }
 
 function openTemplateModal(templateId) {
@@ -531,7 +534,7 @@ function openTemplateModal(templateId) {
   updateTemplatePreview();
   els.templateModal.hidden = false;
   document.body.classList.add("modal-open");
-  els.templateFields.querySelector("input, select")?.focus();
+  els.templateFields.querySelector("input, .custom-select-trigger, select")?.focus();
 }
 
 function closeTemplateModal() {
@@ -2453,6 +2456,7 @@ function resetOptions() {
   setToolToggle(els.vectorToggle, defaultOptions.vectorDb);
   els.searchLimit.value = defaultOptions.searchLimit;
   els.searchLimitValue.textContent = `${defaultOptions.searchLimit}건`;
+  globalThis.AssistantCustomSelect?.syncAll();
 }
 
 function optionalNumber(element) {
