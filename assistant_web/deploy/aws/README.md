@@ -92,5 +92,8 @@ ssh -i KEY ubuntu@EC2_PUBLIC_IP "rm -f /opt/content-ai-assistant/maintenance.on"
 ## 6. 주의
 
 - 이 구성은 시연용입니다. 로그인/HTTPS는 아직 붙이지 않았습니다.
+- Firebase 로그인을 활성화하려면 먼저 도메인과 HTTPS를 적용하고
+  `AUTH_COOKIE_SECURE=true`를 사용하세요. `AUTH_COOKIE_SECURE=false`는
+  `127.0.0.1` 로컬 개발에서만 허용하며, 원격 HTTP 서버에서 로그인 정보를 보내면 안 됩니다.
 - 공개 인터넷에 오래 열어둘 경우 HTTPS, 인증, IP 제한을 추가해야 합니다.
 - 로컬 스냅샷(`data/mantis_chroma_db`)도 함께 업로드하므로 로컬과 유사한 검색 결과가 나옵니다.

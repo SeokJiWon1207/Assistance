@@ -4,9 +4,35 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260727-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260729-1" />
   </head>
-  <body>
+  <body class="auth-pending">
+    <section id="authGate" class="auth-gate" aria-live="polite">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <span class="brand-mark"><img src="/static/assets/company-logo.png" alt="회사 로고" /></span>
+          <div>
+            <strong>컨텐츠서비스 AI 비서</strong>
+            <span>승인된 팀 계정으로 로그인해 주세요.</span>
+          </div>
+        </div>
+        <div id="authChecking" class="auth-checking">
+          <span class="auth-spinner" aria-hidden="true"></span>
+          <p>로그인 상태를 확인하고 있습니다.</p>
+        </div>
+        <form id="loginForm" class="login-form" hidden>
+          <div>
+            <h2>로그인</h2>
+            <p>관리자가 초대한 Firebase 이메일 계정을 사용합니다.</p>
+          </div>
+          <label for="loginEmail"><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" required /></label>
+          <label for="loginPassword"><span>비밀번호</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
+          <p id="loginError" class="login-error" role="alert" hidden></p>
+          <button id="loginSubmit" class="auth-primary-button" type="submit">로그인</button>
+          <button id="passwordResetBtn" class="auth-link-button" type="button">비밀번호 재설정 메일 받기</button>
+        </form>
+      </div>
+    </section>
     <main class="app-shell">
       <aside class="sidebar">
         <div class="brand" id="brandHome" role="button" tabindex="0" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작">
@@ -26,6 +52,16 @@
           </div>
           <div id="conversationList" class="conversation-list"></div>
         </section>
+
+        <nav class="workspace-navigation" aria-label="개인 워크스페이스">
+          <button id="myWorkBtn" class="workspace-nav-button" type="button">
+            <span aria-hidden="true">▦</span><strong>내 업무</strong>
+            <em id="workspaceUnreadBadge" hidden>0</em>
+          </button>
+          <button id="teamDashboardBtn" class="workspace-nav-button" type="button" hidden>
+            <span aria-hidden="true">◫</span><strong>팀 대시보드</strong>
+          </button>
+        </nav>
 
         <!-- 모델 선택 UI는 노출하지 않는다. 활성 모델이 자동 선택되어 요청에 실리도록
              select/meta 요소는 숨긴 채 DOM에는 남겨 둔다(app.js가 값을 참조). -->
@@ -148,6 +184,16 @@
           </div>
         </details>
 
+        <section id="signedInUser" class="signed-in-user" hidden aria-label="로그인 사용자">
+          <span id="signedInUserAvatar" class="signed-in-user-avatar" aria-hidden="true">U</span>
+          <span class="signed-in-user-copy">
+            <strong id="signedInUserName">사용자</strong>
+            <small id="signedInUserMeta"></small>
+          </span>
+          <button id="adminInviteBtn" class="signed-in-user-action" type="button" title="사용자 초대" aria-label="사용자 초대" hidden>＋</button>
+          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃">↗</button>
+        </section>
+
         <div class="sidebar-footer-actions">
           <button id="evaluationBtn" class="sidebar-action-button" type="button"><span aria-hidden="true">✓</span><strong>검증</strong></button>
           <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><span aria-hidden="true">↻</span><strong>초기화</strong></button>
@@ -193,6 +239,30 @@
         </form>
       </section>
     </main>
+
+    <div id="workspaceModal" class="modal-backdrop" hidden>
+      <section class="modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspaceModalTitle">
+        <header class="modal-header workspace-modal-header">
+          <div>
+            <p id="workspaceModalEyebrow">개인 워크스페이스</p>
+            <h3 id="workspaceModalTitle">내 업무</h3>
+          </div>
+          <div class="workspace-header-actions">
+            <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
+            <button id="workspaceModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+          </div>
+        </header>
+        <nav id="workspaceTabs" class="workspace-tabs" aria-label="워크스페이스 보기">
+          <button type="button" data-workspace-tab="overview" class="active">업무</button>
+          <button type="button" data-workspace-tab="brief">주간 브리핑</button>
+          <button type="button" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
+          <button type="button" data-workspace-tab="favorites">즐겨찾기</button>
+        </nav>
+        <div id="workspaceContent" class="workspace-content">
+          <div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>
+        </div>
+      </section>
+    </div>
 
     <div id="templateModal" class="modal-backdrop" hidden>
       <section class="modal template-modal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle">
@@ -250,6 +320,38 @@
       </section>
     </div>
 
+    <div id="inviteModal" class="modal-backdrop" hidden>
+      <section class="modal invite-modal" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
+        <header class="modal-header">
+          <div>
+            <p>관리자</p>
+            <h3 id="inviteModalTitle">팀 사용자 초대</h3>
+          </div>
+          <button id="inviteModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+        </header>
+        <form id="inviteForm" class="modal-form">
+          <p class="modal-form-description">Firebase 계정을 만들거나 기존 계정을 승인하고 비밀번호 설정 링크를 발급합니다.</p>
+          <div class="template-fields">
+            <label class="template-field" for="inviteEmail"><span>이메일 <small class="required-mark">필수</small></span><input id="inviteEmail" name="email" type="email" required /></label>
+            <label class="template-field" for="inviteDisplayName"><span>이름 <small>선택</small></span><input id="inviteDisplayName" name="displayName" type="text" maxlength="100" /></label>
+            <label class="template-field" for="inviteRole"><span>권한</span><select id="inviteRole" name="role"><option value="member">팀원</option><option value="manager">팀장</option><option value="admin">관리자</option></select></label>
+            <label class="template-field" for="inviteMantisUsername"><span>Mantis 담당자명 <small>선택</small></span><input id="inviteMantisUsername" name="mantisUsername" type="text" maxlength="100" /></label>
+            <label class="template-field" for="inviteTeam"><span>팀 <small>선택</small></span><input id="inviteTeam" name="team" type="text" maxlength="100" /></label>
+          </div>
+          <div id="inviteResult" class="invite-result" hidden>
+            <strong>비밀번호 설정 링크</strong>
+            <p>아래 링크를 사용자에게 안전하게 전달해 주세요.</p>
+            <div><input id="inviteSetupUrl" type="text" readonly /><button id="copyInviteUrlBtn" class="secondary-button" type="button">복사</button></div>
+          </div>
+          <p id="inviteError" class="login-error" role="alert" hidden></p>
+          <div class="modal-form-actions">
+            <button id="inviteCancelBtn" class="secondary-button" type="button">닫기</button>
+            <button id="inviteSubmitBtn" class="run-evaluation-button" type="submit">초대 링크 만들기</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
     <div id="chromaModal" class="modal-backdrop" hidden>
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="chromaModalTitle">
         <header class="modal-header">
@@ -289,6 +391,7 @@
 
     <script src="/static/frontend_core.js?v=20260724-2"></script>
     <script src="/static/custom_select.js?v=20260727-4"></script>
-    <script src="/static/app.js?v=20260727-1"></script>
+    <script src="/static/auth.js?v=20260728-1"></script>
+    <script src="/static/app.js?v=20260729-1"></script>
   </body>
 </html>

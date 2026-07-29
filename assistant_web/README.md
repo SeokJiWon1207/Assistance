@@ -15,6 +15,66 @@ python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 Ollama 모델에는 API 키가 필요하지 않습니다. macOS에서는
 `scripts/local/AI비서_서버_재시작.command`를 실행해 앱 서버를 다시 시작할 수도 있습니다.
 
+## Firebase 로그인
+
+로그인은 Firebase Authentication의 **이메일/비밀번호**를 사용하고, 인증 성공 후에는
+FastAPI가 발급한 HttpOnly 세션 쿠키로 앱 API를 보호합니다. 공개 회원가입은 제공하지
+않으며 로컬 승인 사용자 DB(`runtime/users.sqlite3`)에 등록된 계정만 사용할 수 있습니다.
+
+### 1. Firebase 준비
+
+1. Firebase Console → Authentication → Sign-in method에서 `Email/Password`를 활성화합니다.
+2. Project settings에서 Web API Key와 Project ID를 확인합니다.
+3. Project settings → Service accounts에서 서버용 서비스 계정 JSON을 발급합니다.
+4. Authentication → Users에서 최초 관리자 계정을 하나 생성합니다.
+
+서비스 계정 JSON은 Git에 추가하지 않습니다. 로컬에서는 프로젝트 밖의 안전한 경로에
+저장하고 `FIREBASE_SERVICE_ACCOUNT_PATH`로 지정합니다. 배포 환경에서는 비밀 저장소에서
+`FIREBASE_SERVICE_ACCOUNT_JSON` 환경변수로 주입할 수도 있습니다.
+
+### 2. 환경변수
+
+```bash
+FIREBASE_AUTH_ENABLED=true
+FIREBASE_WEB_API_KEY=Firebase_Web_API_Key
+FIREBASE_PROJECT_ID=Firebase_Project_ID
+FIREBASE_SERVICE_ACCOUNT_PATH=/absolute/secret/firebase-service-account.json
+FIREBASE_BOOTSTRAP_ADMIN_EMAILS=admin@company.example
+AUTH_SESSION_HOURS=8
+
+# 로컬 HTTP에서만 false
+AUTH_COOKIE_SECURE=false
+```
+
+서버를 재시작한 뒤 최초 관리자 계정으로 로그인합니다. 사이드바 사용자 영역의 `＋` 버튼에서
+팀원을 초대하면 Firebase 계정 생성·앱 승인과 함께 비밀번호 설정 링크가 발급됩니다.
+링크는 메신저 등 안전한 채널로 사용자에게 전달합니다. 이미 Firebase에 있는 이메일이면
+새 계정을 중복 생성하지 않고 앱 사용 승인과 비밀번호 재설정 링크만 발급합니다.
+
+### 3. 운영 보안 설정
+
+운영에서는 도메인과 HTTPS를 먼저 적용하고 다음 값을 사용해야 합니다.
+
+```bash
+AUTH_COOKIE_SECURE=true
+```
+
+인증이 켜지면 `/health`, 정적 파일, 로그인 API를 제외한 업무 API는 세션이 필요합니다.
+`검증`, 정확도 실행, 감사 로그와 사용자 초대 API는 `admin` 역할만 접근할 수 있습니다.
+팀원 정보와 Mantis 담당자 연결은 `runtime/users.sqlite3`에 저장됩니다.
+
+### 로그인 사용자 워크스페이스
+
+사이드바의 `내 업무`에서 로그인 사용자별 Mantis 담당 이슈와 Notion 담당 문서,
+일정 지연·장기 미종료 알림, 주간 브리핑을 확인할 수 있습니다. Mantis 담당자명은
+사용자 프로필의 `mantisUsername`을 우선 사용하고, 비어 있으면 표시 이름으로 연결합니다.
+사내망에서 Mantis 실시간 API에 연결되지 않으면 화면을 실패시키지 않고 로컬 Chroma
+스냅샷으로 전환하며 화면에 데이터 기준을 표시합니다.
+
+대화 기록과 즐겨찾기는 Firebase UID별로 `runtime/workspace.sqlite3`에 저장되어 다른
+브라우저에서도 이어집니다. `admin`은 `팀 대시보드`에서 담당자별 미종료·지연·장기
+이슈 현황을 볼 수 있으며, 같은 Mantis 담당자를 사용하는 보조 계정은 중복 집계하지 않습니다.
+
 ## Test
 
 ```bash

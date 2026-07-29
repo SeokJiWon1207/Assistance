@@ -195,13 +195,13 @@ def find_matching_mantis_filter(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def fetch_mantis_issues(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+def fetch_mantis_issues(params: Dict[str, Any], timeout: int = 30) -> List[Dict[str, Any]]:
     settings = get_mantis_settings()
     response = requests.get(
         settings["url"],
         headers=get_mantis_headers(),
         params=params,
-        timeout=30,
+        timeout=max(3, min(int(timeout), 60)),
     )
     if response.status_code != 200:
         raise HTTPException(
@@ -235,7 +235,11 @@ def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
     return issues[0]
 
 
-def fetch_mantis_recent_issues(total_limit: int = 800, page_size: int = 100) -> List[Dict[str, Any]]:
+def fetch_mantis_recent_issues(
+    total_limit: int = 800,
+    page_size: int = 100,
+    request_timeout: int = 30,
+) -> List[Dict[str, Any]]:
     total_limit = max(1, min(total_limit, 3000))
     page_size = max(1, min(page_size, 100))
     issues: List[Dict[str, Any]] = []
@@ -245,7 +249,8 @@ def fetch_mantis_recent_issues(total_limit: int = 800, page_size: int = 100) -> 
             {
                 "page_size": page_size,
                 "page": page,
-            }
+            },
+            timeout=request_timeout,
         )
         if not batch:
             break

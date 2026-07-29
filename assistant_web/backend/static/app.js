@@ -5,6 +5,7 @@ const {
   buildTeamTemplateQuestion,
   parseSseBuffer,
 } = globalThis.AssistantFrontendCore;
+const apiFetch = globalThis.AssistantApiFetch || globalThis.fetch.bind(globalThis);
 
 const state = {
   models: [],
@@ -36,6 +37,11 @@ const state = {
   activeTemplateId: null,
   pendingTemplateId: null,
   feedbackMessageIndex: null,
+  currentUser: globalThis.AssistantCurrentUser || null,
+  myWorkspace: null,
+  teamDashboard: null,
+  workspaceMode: "personal",
+  workspaceTab: "overview",
 };
 
 const els = {
@@ -107,6 +113,17 @@ const els = {
   feedbackQuestion: document.querySelector("#feedbackQuestion"),
   feedbackComment: document.querySelector("#feedbackComment"),
   feedbackCancelBtn: document.querySelector("#feedbackCancelBtn"),
+  myWorkBtn: document.querySelector("#myWorkBtn"),
+  teamDashboardBtn: document.querySelector("#teamDashboardBtn"),
+  workspaceUnreadBadge: document.querySelector("#workspaceUnreadBadge"),
+  workspaceModal: document.querySelector("#workspaceModal"),
+  workspaceModalClose: document.querySelector("#workspaceModalClose"),
+  workspaceModalEyebrow: document.querySelector("#workspaceModalEyebrow"),
+  workspaceModalTitle: document.querySelector("#workspaceModalTitle"),
+  workspaceRefreshBtn: document.querySelector("#workspaceRefreshBtn"),
+  workspaceTabs: document.querySelector("#workspaceTabs"),
+  workspaceTabUnread: document.querySelector("#workspaceTabUnread"),
+  workspaceContent: document.querySelector("#workspaceContent"),
 };
 
 const defaultOptions = {
@@ -131,9 +148,23 @@ const defaultOptions = {
 };
 
 const themeStorageKey = "team-ai-assistant-theme";
-const conversationsStorageKey = "team-ai-assistant-conversations-v1";
-const activeConversationStorageKey = "team-ai-assistant-active-conversation-v1";
+const conversationsStorageKeyBase = "team-ai-assistant-conversations-v2";
+const activeConversationStorageKeyBase = "team-ai-assistant-active-conversation-v2";
 const maxStoredConversations = 20;
+const conversationSyncTimers = new Map();
+
+function userScopedStorageKey(base) {
+  const uid = state.currentUser?.uid || "guest";
+  return `${base}:${uid}`;
+}
+
+function conversationsStorageKey() {
+  return userScopedStorageKey(conversationsStorageKeyBase);
+}
+
+function activeConversationStorageKey() {
+  return userScopedStorageKey(activeConversationStorageKeyBase);
+}
 
 function createConversation() {
   const now = new Date().toISOString();
@@ -142,6 +173,7 @@ function createConversation() {
     title: "새 대화",
     createdAt: now,
     updatedAt: now,
+    favorite: false,
     messages: [],
   };
 }
@@ -172,31 +204,75 @@ function persistConversations() {
     active.title = deriveConversationTitle(active.messages);
     active.updatedAt = new Date().toISOString();
   }
-  state.conversations.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  state.conversations.sort((a, b) => (
+    Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
+    || String(b.updatedAt).localeCompare(String(a.updatedAt))
+  ));
   state.conversations = state.conversations.slice(0, maxStoredConversations);
   try {
-    localStorage.setItem(conversationsStorageKey, JSON.stringify(state.conversations));
-    localStorage.setItem(activeConversationStorageKey, state.activeConversationId || "");
+    localStorage.setItem(conversationsStorageKey(), JSON.stringify(state.conversations));
+    localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
   } catch {
     state.conversations = state.conversations.slice(0, 8);
     try {
-      localStorage.setItem(conversationsStorageKey, JSON.stringify(state.conversations));
+      localStorage.setItem(conversationsStorageKey(), JSON.stringify(state.conversations));
     } catch {
-      localStorage.removeItem(conversationsStorageKey);
+      localStorage.removeItem(conversationsStorageKey());
       showToast("대화 저장 공간이 가득 차 일부 기록을 정리했어요.", "warning");
     }
   }
+  if (active) scheduleConversationSync(active);
   renderConversationList();
 }
 
-function loadConversations() {
+async function syncConversation(conversation) {
+  if (!state.currentUser?.uid || !conversation?.id) return;
+  const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: conversation.title || "새 대화",
+      messages: storageSafeMessages(conversation.messages || []),
+      favorite: Boolean(conversation.favorite),
+      createdAt: conversation.createdAt || "",
+    }),
+  });
+  if (!response.ok) throw new Error("대화 기록을 서버에 저장하지 못했습니다.");
+}
+
+function scheduleConversationSync(conversation) {
+  if (!state.currentUser?.uid || !conversation?.id) return;
+  clearTimeout(conversationSyncTimers.get(conversation.id));
+  conversationSyncTimers.set(conversation.id, setTimeout(() => {
+    syncConversation(conversation).catch(() => {});
+    conversationSyncTimers.delete(conversation.id);
+  }, 350));
+}
+
+async function loadConversations() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(conversationsStorageKey) || "[]");
+    const parsed = JSON.parse(localStorage.getItem(conversationsStorageKey()) || "[]");
     state.conversations = Array.isArray(parsed) ? parsed : [];
   } catch {
     state.conversations = [];
   }
-  let activeId = localStorage.getItem(activeConversationStorageKey);
+  if (state.currentUser?.uid) {
+    try {
+      const response = await apiFetch("/api/workspace/conversations?limit=40");
+      if (response.ok) {
+        const serverItems = (await response.json()).conversations || [];
+        if (serverItems.length) {
+          const localById = new Map(state.conversations.map((item) => [item.id, item]));
+          state.conversations = serverItems.map((item) => ({ ...localById.get(item.id), ...item }));
+        } else {
+          state.conversations.filter((item) => item.messages?.length).forEach(scheduleConversationSync);
+        }
+      }
+    } catch {
+      // 오프라인 또는 서버 오류 시 사용자별 로컬 기록으로 계속 동작한다.
+    }
+  }
+  let activeId = localStorage.getItem(activeConversationStorageKey());
   if (!state.conversations.length) state.conversations.push(createConversation());
   if (!state.conversations.some((item) => item.id === activeId)) activeId = state.conversations[0].id;
   state.activeConversationId = activeId;
@@ -223,6 +299,13 @@ function renderConversationList() {
     openButton.dataset.conversationId = conversation.id;
     openButton.textContent = conversation.title || "새 대화";
     openButton.title = conversation.title || "새 대화";
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = `conversation-favorite${conversation.favorite ? " active" : ""}`;
+    favoriteButton.dataset.favoriteConversationId = conversation.id;
+    favoriteButton.setAttribute("aria-label", conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가");
+    favoriteButton.title = conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가";
+    favoriteButton.textContent = conversation.favorite ? "★" : "☆";
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "conversation-delete";
@@ -230,7 +313,7 @@ function renderConversationList() {
     deleteButton.setAttribute("aria-label", `${conversation.title || "대화"} 삭제`);
     deleteButton.title = "대화 삭제";
     deleteButton.textContent = "×";
-    row.append(openButton, deleteButton);
+    row.append(openButton, favoriteButton, deleteButton);
     els.conversationList.appendChild(row);
   });
 }
@@ -257,9 +340,237 @@ function openConversation(conversationId) {
   state.activeConversationId = conversationId;
   state.messages = [...(conversation.messages || [])];
   cancelMessageEdit();
-  localStorage.setItem(activeConversationStorageKey, conversationId);
+  localStorage.setItem(activeConversationStorageKey(), conversationId);
   renderConversationList();
   renderMessages();
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function workspaceMetric(label, value, tone = "") {
+  return `<article class="workspace-metric ${tone}"><strong>${escapeHtml(String(value ?? 0))}</strong><span>${escapeHtml(label)}</span></article>`;
+}
+
+function workspaceEmpty(message) {
+  return `<div class="workspace-empty"><span aria-hidden="true">✓</span><p>${escapeHtml(message)}</p></div>`;
+}
+
+function issueWorkspaceRow(issue) {
+  const metadata = [issue.project, issue.status, issue.dueDate ? `예정 ${issue.dueDate}` : "", issue.ageDays ? `${issue.ageDays}일 경과` : ""]
+    .filter(Boolean).join(" · ");
+  return `
+    <article class="workspace-item ${issue.overdue ? "is-overdue" : ""}">
+      <div class="workspace-item-main">
+        <strong><span>#${escapeHtml(String(issue.id || ""))}</span> ${escapeHtml(issue.title || "제목 없음")}</strong>
+        <small>${escapeHtml(metadata)}</small>
+      </div>
+      <button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">AI에게 묻기</button>
+    </article>`;
+}
+
+function notionWorkspaceRow(page) {
+  const url = safeExternalUrl(page.url);
+  const title = escapeHtml(page.title || "제목 없음");
+  return `
+    <article class="workspace-item">
+      <div class="workspace-item-main">
+        <strong>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title}</strong>
+        <small>${escapeHtml([page.databaseLabel, page.status, page.dueDate ? `기한 ${page.dueDate}` : ""].filter(Boolean).join(" · "))}</small>
+      </div>
+      <button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`Notion 문서 '${page.title || ""}' 내용을 요약해줘`)}">AI에게 묻기</button>
+    </article>`;
+}
+
+function renderPersonalOverview(data) {
+  const summary = data.summary || {};
+  const issues = data.mantis?.issues || [];
+  const notionPages = data.notion?.pages || [];
+  const sourceLabel = data.mantis?.status === "snapshot" ? "로컬 스냅샷" : "실시간";
+  const mapping = data.user?.mantisUsername
+    ? `Mantis 담당자 '${data.user.mantisUsername}'(으)로 연결됨 · ${sourceLabel}`
+    : "Mantis 담당자명이 연결되지 않았습니다. 관리자에게 담당자명 등록을 요청해 주세요.";
+  return `
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "")}
+      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
+      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
+      ${workspaceMetric("Notion 업무", summary.notion)}
+    </section>
+    <p class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">${escapeHtml(mapping)}</p>
+    <div class="workspace-columns">
+      <section class="workspace-section">
+        <header><div><span>Mantis</span><h4>내 담당 이슈</h4></div><em>${issues.length}건</em></header>
+        <div class="workspace-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("최근 담당 이슈가 없습니다.")}</div>
+      </section>
+      <section class="workspace-section">
+        <header><div><span>Notion</span><h4>내 문서와 업무</h4></div><em>${notionPages.length}건</em></header>
+        <div class="workspace-list">${notionPages.length ? notionPages.map(notionWorkspaceRow).join("") : workspaceEmpty(data.notion?.reason || "담당 문서가 없습니다.")}</div>
+      </section>
+    </div>`;
+}
+
+function renderWeeklyBrief(data) {
+  const brief = data.weeklyBrief || {};
+  const highlights = brief.highlights || [];
+  return `
+    <section class="workspace-brief-hero">
+      <span>이번 주 업무 브리핑</span>
+      <h4>${escapeHtml(data.user?.displayName || "사용자")}님의 업무 요약</h4>
+      <p>${escapeHtml(brief.period || "")}</p>
+    </section>
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("신규 이슈", brief.newIssues)}
+      ${workspaceMetric("변경 이슈", brief.updatedIssues, "is-blue")}
+      ${workspaceMetric("현재 미종료", brief.openIssues)}
+      ${workspaceMetric("일정 지연", brief.overdueIssues, brief.overdueIssues ? "is-danger" : "")}
+    </section>
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Priority</span><h4>이번 주 확인할 항목</h4></div></header>
+      <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty("이번 주 우선 확인할 이슈가 없습니다.")}</div>
+    </section>
+    <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈와 Notion 업무를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
+}
+
+function renderNotifications(data) {
+  const notifications = data.notifications || [];
+  return `
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Notifications</span><h4>업무 알림</h4></div><em>${notifications.filter((item) => !item.read).length}개 안 읽음</em></header>
+      <div class="workspace-list">${notifications.length ? notifications.map((item) => `
+        <article class="workspace-notification ${item.read ? "is-read" : ""}">
+          <span class="workspace-notification-dot" aria-hidden="true"></span>
+          <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.description)}</p><small>${escapeHtml(item.date || "")}</small></div>
+          ${item.read ? "" : `<button type="button" data-notification-read="${escapeHtml(item.id)}">읽음</button>`}
+        </article>`).join("") : workspaceEmpty("새 업무 알림이 없습니다.")}</div>
+    </section>`;
+}
+
+function renderFavoriteConversations() {
+  const favorites = state.conversations.filter((item) => item.favorite);
+  return `
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Saved</span><h4>즐겨찾는 대화</h4></div><em>${favorites.length}개</em></header>
+      <div class="workspace-list">${favorites.length ? favorites.map((conversation) => `
+        <article class="workspace-item">
+          <div class="workspace-item-main"><strong>${escapeHtml(conversation.title || "새 대화")}</strong><small>${escapeHtml(String(conversation.updatedAt || "").slice(0, 10))} · ${(conversation.messages || []).length}개 메시지</small></div>
+          <button type="button" class="workspace-item-action" data-open-favorite="${escapeHtml(conversation.id)}">대화 열기</button>
+        </article>`).join("") : workspaceEmpty("사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요.")}</div>
+    </section>`;
+}
+
+function renderTeamDashboard(data) {
+  const summary = data.summary || {};
+  const members = data.members || [];
+  const aging = data.agingIssues || [];
+  return `
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("승인 사용자", summary.members)}
+      ${workspaceMetric("미종료 이슈", summary.open, "is-blue")}
+      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
+      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
+    </section>
+    <p class="workspace-connection ${data.source?.status === "live" ? "" : "is-warning"}">Mantis 데이터: ${data.source?.status === "live" ? "실시간" : data.source?.status === "snapshot" ? "로컬 스냅샷" : "연결 오류"}</p>
+    <div class="workspace-columns">
+      <section class="workspace-section">
+        <header><div><span>Workload</span><h4>담당자별 현황</h4></div></header>
+        <div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>담당자</th><th>미종료</th><th>지연</th><th>장기</th></tr></thead><tbody>
+          ${members.map((member) => `<tr><td><strong>${escapeHtml(member.displayName || "")}</strong><small>${escapeHtml(member.mantisUsername || "미연결")}</small></td><td>${member.open}</td><td class="${member.overdue ? "danger-text" : ""}">${member.overdue}</td><td>${member.aging}</td></tr>`).join("")}
+        </tbody></table></div>
+      </section>
+      <section class="workspace-section">
+        <header><div><span>Aging</span><h4>장기 미종료 이슈</h4></div><em>${aging.length}건 표시</em></header>
+        <div class="workspace-list">${aging.length ? aging.map(issueWorkspaceRow).join("") : workspaceEmpty("30일 이상 미종료 이슈가 없습니다.")}</div>
+      </section>
+    </div>`;
+}
+
+function updateWorkspaceUnread() {
+  const unread = state.myWorkspace?.summary?.unreadNotifications || 0;
+  if (els.workspaceUnreadBadge) {
+    els.workspaceUnreadBadge.textContent = String(unread);
+    els.workspaceUnreadBadge.hidden = unread < 1;
+  }
+  if (els.workspaceTabUnread) els.workspaceTabUnread.textContent = unread ? String(unread) : "";
+}
+
+function renderWorkspace() {
+  if (!els.workspaceContent) return;
+  if (state.workspaceMode === "team") {
+    els.workspaceModalEyebrow.textContent = "관리자 워크스페이스";
+    els.workspaceModalTitle.textContent = "팀 대시보드";
+    els.workspaceTabs.hidden = true;
+    els.workspaceContent.innerHTML = state.teamDashboard
+      ? renderTeamDashboard(state.teamDashboard)
+      : `<div class="workspace-loading">팀 현황을 불러오는 중입니다.</div>`;
+    return;
+  }
+  els.workspaceModalEyebrow.textContent = "개인 워크스페이스";
+  els.workspaceModalTitle.textContent = "내 업무";
+  els.workspaceTabs.hidden = false;
+  els.workspaceTabs.querySelectorAll("[data-workspace-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.workspaceTab === state.workspaceTab);
+  });
+  if (!state.myWorkspace) {
+    els.workspaceContent.innerHTML = `<div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>`;
+    return;
+  }
+  const renderers = {
+    overview: () => renderPersonalOverview(state.myWorkspace),
+    brief: () => renderWeeklyBrief(state.myWorkspace),
+    notifications: () => renderNotifications(state.myWorkspace),
+    favorites: renderFavoriteConversations,
+  };
+  els.workspaceContent.innerHTML = (renderers[state.workspaceTab] || renderers.overview)();
+  updateWorkspaceUnread();
+}
+
+async function loadMyWorkspace(force = false) {
+  if (force) state.myWorkspace = null;
+  renderWorkspace();
+  const response = await apiFetch("/api/workspace/me");
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
+  state.myWorkspace = data;
+  updateWorkspaceUnread();
+  renderWorkspace();
+}
+
+async function loadTeamDashboard(force = false) {
+  if (force) state.teamDashboard = null;
+  renderWorkspace();
+  const response = await apiFetch("/api/workspace/team");
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "팀 현황을 불러오지 못했습니다.");
+  state.teamDashboard = data;
+  renderWorkspace();
+}
+
+function closeWorkspaceModal() {
+  els.workspaceModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+async function openWorkspaceModal(mode = "personal") {
+  state.workspaceMode = mode;
+  if (mode === "personal" && !["overview", "brief", "notifications", "favorites"].includes(state.workspaceTab)) {
+    state.workspaceTab = "overview";
+  }
+  els.workspaceModal.hidden = false;
+  document.body.classList.add("modal-open");
+  renderWorkspace();
+  try {
+    if (mode === "team") await loadTeamDashboard();
+    else if (!state.myWorkspace) await loadMyWorkspace();
+  } catch (error) {
+    els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
+  }
 }
 
 function selectedModel() {
@@ -777,7 +1088,7 @@ function closeFeedbackModal() {
 async function saveMessageFeedback(messageIndex, rating, reason = "", comment = "") {
   const message = state.messages[messageIndex];
   if (!message?.auditId) return;
-  const response = await fetch("/api/feedback", {
+  const response = await apiFetch("/api/feedback", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -2399,7 +2710,7 @@ async function openSourceDetail(source) {
   });
 
   try {
-    const response = await fetch(`/api/chroma/documents/${encodeURIComponent(source.issue_id)}`);
+    const response = await apiFetch(`/api/chroma/documents/${encodeURIComponent(source.issue_id)}`);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || "문서를 불러오지 못했습니다.");
     const titleMatch = data.content.match(/\[제목\]\s*([\s\S]*?)(\n\n|\[고객사 본문 요청 내용\])/);
@@ -2504,7 +2815,7 @@ function generationPayload() {
 }
 
 async function loadModels() {
-  const response = await fetch("/api/models");
+  const response = await apiFetch("/api/models");
   if (!response.ok) throw new Error("모델 목록을 불러오지 못했습니다.");
   const data = await response.json();
   state.models = data.models || [];
@@ -2520,11 +2831,11 @@ function formatFreshnessDate(value) {
 
 async function loadDataStatus() {
   const [freshnessResult, notionResult] = await Promise.allSettled([
-    fetch("/api/data/freshness").then((response) => {
+    apiFetch("/api/data/freshness").then((response) => {
       if (!response.ok) throw new Error("freshness");
       return response.json();
     }),
-    fetch("/api/notion/status").then((response) => {
+    apiFetch("/api/notion/status").then((response) => {
       if (!response.ok) throw new Error("notion");
       return response.json();
     }),
@@ -2547,11 +2858,11 @@ async function loadDataStatus() {
 
 async function loadEvaluationData() {
   const [casesResponse, logsResponse, summaryResponse, historyResponse, feedbackResponse] = await Promise.all([
-    fetch("/api/evaluation/cases"),
-    fetch("/api/validation/logs?limit=30"),
-    fetch("/api/validation/summary?limit=500"),
-    fetch("/api/evaluation/history?limit=8"),
-    fetch("/api/feedback/summary?limit=200"),
+    apiFetch("/api/evaluation/cases"),
+    apiFetch("/api/validation/logs?limit=30"),
+    apiFetch("/api/validation/summary?limit=500"),
+    apiFetch("/api/evaluation/history?limit=8"),
+    apiFetch("/api/feedback/summary?limit=200"),
   ]);
   if (!casesResponse.ok || !logsResponse.ok || !summaryResponse.ok) {
     throw new Error("검증 데이터를 불러오지 못했습니다.");
@@ -2571,7 +2882,7 @@ async function loadEvaluationData() {
 
 async function refreshFeedbackSummary() {
   try {
-    const response = await fetch("/api/feedback/summary?limit=200");
+    const response = await apiFetch("/api/feedback/summary?limit=200");
     if (!response.ok) return;
     state.feedbackSummary = await response.json();
     if (state.evaluationTab === "feedback") renderEvaluationContent();
@@ -2582,7 +2893,7 @@ async function refreshFeedbackSummary() {
 
 async function refreshAccuracyReports() {
   try {
-    const response = await fetch("/api/accuracy/reports?limit=8");
+    const response = await apiFetch("/api/accuracy/reports?limit=8");
     if (!response.ok) return;
     const data = await response.json();
     state.accuracyReports = data.reports || [];
@@ -2592,7 +2903,7 @@ async function refreshAccuracyReports() {
     // 라이브 결과가 없을 때만 불러온다.
     if (!state.accuracyLive.length && state.accuracyReports.length) {
       const latest = state.accuracyReports[0];
-      const detail = await fetch(`/api/accuracy/reports/${encodeURIComponent(latest.name)}`);
+      const detail = await apiFetch(`/api/accuracy/reports/${encodeURIComponent(latest.name)}`);
       if (detail.ok) state.accuracyReport = await detail.json();
     }
   } catch {
@@ -2602,7 +2913,7 @@ async function refreshAccuracyReports() {
 
 async function refreshEvaluationHistory() {
   try {
-    const response = await fetch("/api/evaluation/history?limit=8");
+    const response = await apiFetch("/api/evaluation/history?limit=8");
     if (response.ok) state.evaluationHistory = (await response.json()).runs || [];
   } catch {
     // 이력 갱신 실패는 치명적이지 않다.
@@ -2889,7 +3200,7 @@ async function runAccuracyCheck() {
   state.accuracyStatusMessage = "정확도 검증을 준비하고 있습니다";
   if (state.evaluationTab === "accuracy") renderEvaluationContent();
   try {
-    const response = await fetch("/api/accuracy/run", {
+    const response = await apiFetch("/api/accuracy/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ questions: 10, followUpScenarios: 4 }),
@@ -3217,7 +3528,7 @@ async function runEvaluations(caseIds = []) {
   els.runEvaluationBtn.textContent = "테스트 실행 중";
   if (state.evaluationTab === "cases") renderEvaluationContent();
   try {
-    const response = await fetch("/api/evaluation/run", {
+    const response = await apiFetch("/api/evaluation/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ caseIds, stream: true }),
@@ -3291,7 +3602,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
     .reverse()
     .find((message) => message.role === "assistant" && message.auditId && !message.loading);
 
-  const response = await fetch("/api/chat", {
+  const response = await apiFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal,
@@ -3550,6 +3861,18 @@ els.cancelEditBtn.addEventListener("click", () => {
   els.input.focus();
 });
 els.conversationList.addEventListener("click", (event) => {
+  const favoriteButton = event.target.closest("[data-favorite-conversation-id]");
+  if (favoriteButton) {
+    if (state.busy) return;
+    const conversation = state.conversations.find((item) => item.id === favoriteButton.dataset.favoriteConversationId);
+    if (!conversation) return;
+    conversation.favorite = !conversation.favorite;
+    conversation.updatedAt = new Date().toISOString();
+    persistConversations();
+    if (state.workspaceTab === "favorites" && !els.workspaceModal?.hidden) renderWorkspace();
+    showToast(conversation.favorite ? "대화를 즐겨찾기에 추가했어요." : "즐겨찾기에서 해제했어요.");
+    return;
+  }
   const deleteButton = event.target.closest("[data-delete-conversation-id]");
   if (deleteButton) {
     if (state.busy) return;
@@ -3563,6 +3886,9 @@ els.conversationList.addEventListener("click", (event) => {
     }
     persistConversations();
     renderMessages();
+    if (state.currentUser?.uid) {
+      apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }).catch(() => {});
+    }
     showToast(`"${removed?.title || "대화"}"를 삭제했어요.`);
     return;
   }
@@ -3610,6 +3936,63 @@ els.evaluationContent.addEventListener("click", (event) => {
 });
 els.evaluationModal.addEventListener("click", (event) => {
   if (event.target === els.evaluationModal) closeEvaluationModal();
+});
+els.myWorkBtn?.addEventListener("click", () => openWorkspaceModal("personal"));
+els.teamDashboardBtn?.addEventListener("click", () => openWorkspaceModal("team"));
+els.workspaceModalClose?.addEventListener("click", closeWorkspaceModal);
+els.workspaceModal?.addEventListener("click", (event) => {
+  if (event.target === els.workspaceModal) closeWorkspaceModal();
+});
+els.workspaceRefreshBtn?.addEventListener("click", async () => {
+  els.workspaceRefreshBtn.disabled = true;
+  try {
+    if (state.workspaceMode === "team") await loadTeamDashboard(true);
+    else await loadMyWorkspace(true);
+  } catch (error) {
+    showToast(error.message, "warning");
+  } finally {
+    els.workspaceRefreshBtn.disabled = false;
+  }
+});
+els.workspaceTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-workspace-tab]");
+  if (!button) return;
+  state.workspaceTab = button.dataset.workspaceTab;
+  renderWorkspace();
+});
+els.workspaceContent?.addEventListener("click", async (event) => {
+  const questionButton = event.target.closest("[data-workspace-question]");
+  if (questionButton) {
+    els.input.value = decodeURIComponent(questionButton.dataset.workspaceQuestion || "");
+    autoResizeInput();
+    closeWorkspaceModal();
+    els.input.focus();
+    return;
+  }
+  const favoriteButton = event.target.closest("[data-open-favorite]");
+  if (favoriteButton) {
+    closeWorkspaceModal();
+    openConversation(favoriteButton.dataset.openFavorite);
+    return;
+  }
+  const notificationButton = event.target.closest("[data-notification-read]");
+  if (notificationButton) {
+    const notificationId = notificationButton.dataset.notificationRead;
+    notificationButton.disabled = true;
+    try {
+      const response = await apiFetch(`/api/workspace/notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST" });
+      if (!response.ok) throw new Error("알림 상태를 저장하지 못했습니다.");
+      const notification = state.myWorkspace?.notifications?.find((item) => item.id === notificationId);
+      if (notification) notification.read = true;
+      if (state.myWorkspace?.summary) {
+        state.myWorkspace.summary.unreadNotifications = state.myWorkspace.notifications.filter((item) => !item.read).length;
+      }
+      renderWorkspace();
+    } catch (error) {
+      showToast(error.message, "warning");
+      notificationButton.disabled = false;
+    }
+  }
 });
 document.querySelectorAll(".evaluation-tab").forEach((button) => {
   button.addEventListener("click", () => {
@@ -3749,20 +4132,35 @@ document.addEventListener("keydown", (event) => {
     closeChromaModal();
   } else if (event.key === "Escape" && !els.evaluationModal.hidden) {
     closeEvaluationModal();
+  } else if (event.key === "Escape" && !els.workspaceModal.hidden) {
+    closeWorkspaceModal();
   }
 });
 
-loadConversations();
-loadDataStatus().catch(() => {
-  els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
-  els.statusLine.className = "status-warning";
-}).finally(() => {
-  loadModels().catch((error) => {
-    els.statusLine.textContent = error.message;
-    els.statusLine.className = "status-danger";
+async function bootstrapApplication(authState = {}) {
+  state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
+  if (authState.enabled && state.currentUser?.role !== "admin") {
+    els.evaluationBtn.hidden = true;
+  }
+  if (els.teamDashboardBtn) els.teamDashboardBtn.hidden = state.currentUser?.role !== "admin";
+  await loadConversations();
+  if (state.currentUser?.uid) {
+    loadMyWorkspace().catch(() => {});
+  }
+  loadDataStatus().catch(() => {
+    els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
+    els.statusLine.className = "status-warning";
+  }).finally(() => {
+    loadModels().catch((error) => {
+      els.statusLine.textContent = error.message;
+      els.statusLine.className = "status-danger";
+    });
   });
-});
-loadTheme();
-setAbComparison(defaultOptions.abTest);
-setSourceMode(defaultOptions.sourceMode);
-renderMessages();
+  loadTheme();
+  setAbComparison(defaultOptions.abTest);
+  setSourceMode(defaultOptions.sourceMode);
+  renderMessages();
+}
+
+Promise.resolve(globalThis.AssistantAuthReady || { enabled: false, authenticated: false, user: null })
+  .then(bootstrapApplication);

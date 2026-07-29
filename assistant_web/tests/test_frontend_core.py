@@ -38,7 +38,7 @@ class FrontendCoreTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("Node.js가 없어 JavaScript 구문 검사를 건너뜁니다.")
-        for script in ("frontend_core.js", "app.js"):
+        for script in ("frontend_core.js", "auth.js", "app.js"):
             with self.subTest(script=script):
                 result = subprocess.run(
                     [node, "--check", str(STATIC_DIR / script)],
@@ -67,8 +67,14 @@ class FrontendCoreTests(unittest.TestCase):
             "templateForm",
             "feedbackModal",
             "feedbackForm",
+            "authGate",
+            "loginForm",
+            "signedInUser",
+            "inviteModal",
+            "inviteForm",
         ):
             self.assertIn(required_id, parser.ids)
+        self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
 
 

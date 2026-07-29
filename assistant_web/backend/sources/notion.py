@@ -1176,6 +1176,7 @@ def execute_notion_search(
     limit: int = 5,
     constraints: Optional[Dict[str, Any]] = None,
     planned_terms: Optional[List[str]] = None,
+    include_blocks: bool = True,
 ) -> Dict[str, Any]:
     settings = get_notion_settings()
     database_ids = settings.get("database_ids", [])
@@ -1517,7 +1518,7 @@ def execute_notion_search(
     )
     deduplicated_pages = deduplicate_notion_pages_by_id(pages)
     limited_pages = deduplicated_pages[:limit]
-    if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
+    if include_blocks and os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
         for page in limited_pages:
             # notion_body_scan 단계에서 이미 본문을 조회한 페이지는 재조회하지 않는다.
             if page.get("match_method") == "notion_body_scan" and page.get("content"):

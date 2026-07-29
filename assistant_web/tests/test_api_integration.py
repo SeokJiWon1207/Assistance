@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import sqlite3
@@ -17,11 +18,14 @@ from backend.main import app
 class ApiIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.auth_env = patch.dict(os.environ, {"FIREBASE_AUTH_ENABLED": "false"})
+        cls.auth_env.start()
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
         cls.client.close()
+        cls.auth_env.stop()
 
     def test_health_and_frontend_assets_are_served(self):
         health = self.client.get("/health")
