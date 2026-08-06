@@ -86,7 +86,6 @@ const els = {
   sourceModeHint: document.querySelector("#sourceModeHint"),
   manualSourceControls: document.querySelector("#manualSourceControls"),
   mantisToggle: document.querySelector("#mantisToggle"),
-  notionToggle: document.querySelector("#notionToggle"),
   vectorToggle: document.querySelector("#vectorToggle"),
   evaluationBtn: document.querySelector("#evaluationBtn"),
   evaluationModal: document.querySelector("#evaluationModal"),
@@ -143,7 +142,7 @@ const defaultOptions = {
   searchLimit: "5",
   sourceMode: "auto",
   mantis: true,
-  notion: true,
+  notion: false,
   vectorDb: true,
 };
 
@@ -375,23 +374,9 @@ function issueWorkspaceRow(issue) {
     </article>`;
 }
 
-function notionWorkspaceRow(page) {
-  const url = safeExternalUrl(page.url);
-  const title = escapeHtml(page.title || "제목 없음");
-  return `
-    <article class="workspace-item">
-      <div class="workspace-item-main">
-        <strong>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title}</strong>
-        <small>${escapeHtml([page.databaseLabel, page.status, page.dueDate ? `기한 ${page.dueDate}` : ""].filter(Boolean).join(" · "))}</small>
-      </div>
-      <button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`Notion 문서 '${page.title || ""}' 내용을 요약해줘`)}">AI에게 묻기</button>
-    </article>`;
-}
-
 function renderPersonalOverview(data) {
   const summary = data.summary || {};
   const issues = data.mantis?.issues || [];
-  const notionPages = data.notion?.pages || [];
   const sourceLabel = data.mantis?.status === "snapshot" ? "로컬 스냅샷" : "실시간";
   const mapping = data.user?.mantisUsername
     ? `Mantis 담당자 '${data.user.mantisUsername}'(으)로 연결됨 · ${sourceLabel}`
@@ -401,19 +386,12 @@ function renderPersonalOverview(data) {
       ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "")}
       ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
       ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
-      ${workspaceMetric("Notion 업무", summary.notion)}
     </section>
     <p class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">${escapeHtml(mapping)}</p>
-    <div class="workspace-columns">
-      <section class="workspace-section">
-        <header><div><span>Mantis</span><h4>내 담당 이슈</h4></div><em>${issues.length}건</em></header>
-        <div class="workspace-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("최근 담당 이슈가 없습니다.")}</div>
-      </section>
-      <section class="workspace-section">
-        <header><div><span>Notion</span><h4>내 문서와 업무</h4></div><em>${notionPages.length}건</em></header>
-        <div class="workspace-list">${notionPages.length ? notionPages.map(notionWorkspaceRow).join("") : workspaceEmpty(data.notion?.reason || "담당 문서가 없습니다.")}</div>
-      </section>
-    </div>`;
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Mantis</span><h4>내 담당 이슈</h4></div><em>${issues.length}건</em></header>
+      <div class="workspace-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("최근 담당 이슈가 없습니다.")}</div>
+    </section>`;
 }
 
 function renderWeeklyBrief(data) {
@@ -435,7 +413,7 @@ function renderWeeklyBrief(data) {
       <header><div><span>Priority</span><h4>이번 주 확인할 항목</h4></div></header>
       <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty("이번 주 우선 확인할 이슈가 없습니다.")}</div>
     </section>
-    <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈와 Notion 업무를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
+    <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
 }
 
 function renderNotifications(data) {
@@ -680,23 +658,22 @@ function setSourceMode(mode) {
   if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
   if (els.sourceModeHint) {
     els.sourceModeHint.textContent = selectedMode === "auto"
-      ? "질문에 맞는 이슈·문서·유사 사례를 자동으로 찾습니다."
+      ? "질문에 맞는 Mantis 이슈와 유사 사례를 자동으로 찾습니다."
       : "사용할 검색 소스를 하나 이상 선택해 주세요.";
   }
   if (selectedMode === "auto") {
     setToolToggle(els.mantisToggle, true);
-    setToolToggle(els.notionToggle, true);
     setToolToggle(els.vectorToggle, true);
   }
 }
 
 function sourceToolsPayload() {
   if (els.sourceModeSelect?.value !== "manual") {
-    return { mantis: true, notion: true, vectorDb: true };
+    return { mantis: true, notion: false, vectorDb: true };
   }
   return {
     mantis: toolToggleEnabled(els.mantisToggle),
-    notion: toolToggleEnabled(els.notionToggle),
+    notion: false,
     vectorDb: toolToggleEnabled(els.vectorToggle),
   };
 }
@@ -2763,7 +2740,6 @@ function resetOptions() {
   setAbComparison(defaultOptions.abTest);
   setSourceMode(defaultOptions.sourceMode);
   setToolToggle(els.mantisToggle, defaultOptions.mantis);
-  setToolToggle(els.notionToggle, defaultOptions.notion);
   setToolToggle(els.vectorToggle, defaultOptions.vectorDb);
   els.searchLimit.value = defaultOptions.searchLimit;
   els.searchLimitValue.textContent = `${defaultOptions.searchLimit}건`;
@@ -3793,9 +3769,9 @@ els.abTestToggle.addEventListener("click", () => {
   setAbComparison(!abComparisonEnabled());
   renderMessages();
 });
-[els.mantisToggle, els.notionToggle, els.vectorToggle].forEach((toggle) => {
+[els.mantisToggle, els.vectorToggle].forEach((toggle) => {
   toggle.addEventListener("click", () => {
-    const enabledTools = [els.mantisToggle, els.notionToggle, els.vectorToggle]
+    const enabledTools = [els.mantisToggle, els.vectorToggle]
       .filter((item) => toolToggleEnabled(item));
     if (toolToggleEnabled(toggle) && enabledTools.length === 1) {
       showToast("검색 소스를 하나 이상 선택해 주세요.", "warning");

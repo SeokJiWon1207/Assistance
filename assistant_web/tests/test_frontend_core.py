@@ -70,12 +70,32 @@ class FrontendCoreTests(unittest.TestCase):
             "authGate",
             "loginForm",
             "signedInUser",
+            "logoutConfirmModal",
+            "logoutConfirmBtn",
+            "logoutCancelBtn",
             "inviteModal",
             "inviteForm",
         ):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
+
+    def test_notion_controls_are_hidden_in_mantis_focused_ui(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertNotIn('id="notionToggle"', html)
+        self.assertNotIn("Notion 업무", app_js)
+        self.assertIn("return { mantis: true, notion: false, vectorDb: true };", app_js)
+
+    def test_logout_requires_confirmation(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        auth_js = (STATIC_DIR / "auth.js").read_text(encoding="utf-8")
+
+        self.assertIn("로그아웃하시겠습니까?", html)
+        self.assertIn('logoutButton?.addEventListener("click", open)', auth_js)
+        self.assertIn('confirmButton?.addEventListener("click", async () =>', auth_js)
+        self.assertIn('apiFetch("/api/auth/logout", { method: "POST" })', auth_js)
 
 
 if __name__ == "__main__":

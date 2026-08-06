@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260729-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260806-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -91,14 +91,13 @@
               <option value="manual">직접 선택</option>
             </select>
           </label>
-          <small id="sourceModeHint" class="source-mode-hint">질문에 맞는 이슈·문서·유사 사례를 자동으로 찾습니다.</small>
+          <small id="sourceModeHint" class="source-mode-hint">질문에 맞는 Mantis 이슈와 유사 사례를 자동으로 찾습니다.</small>
           <div id="manualSourceControls" class="manual-source-controls" hidden>
             <div class="source-toggle-group" role="group" aria-label="검색 소스 직접 선택">
               <button id="mantisToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="원본 이슈">Mantis</button>
-              <button id="notionToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="팀 문서">Notion</button>
               <button id="vectorToggle" class="source-chip" type="button" role="switch" aria-pressed="true" title="과거 유사 사례">Vector DB</button>
             </div>
-            <small>Mantis는 원본 이슈, Notion은 팀 문서, Vector DB는 과거 유사 사례를 검색합니다.</small>
+            <small>Mantis는 원본 이슈, Vector DB는 과거 유사 사례를 검색합니다.</small>
           </div>
         </section>
 
@@ -239,6 +238,26 @@
         </form>
       </section>
     </main>
+
+    <div id="logoutConfirmModal" class="modal-backdrop" hidden>
+      <section class="modal logout-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="logoutConfirmTitle" aria-describedby="logoutConfirmDescription">
+        <header class="modal-header">
+          <div>
+            <p>계정</p>
+            <h3 id="logoutConfirmTitle">로그아웃하시겠습니까?</h3>
+          </div>
+          <button id="logoutConfirmClose" class="modal-close" type="button" aria-label="닫기">×</button>
+        </header>
+        <div class="modal-form">
+          <p id="logoutConfirmDescription" class="modal-form-description">현재 계정의 세션을 종료하고 로그인 화면으로 이동합니다.</p>
+          <p id="logoutConfirmError" class="login-error" role="alert" hidden></p>
+          <div class="modal-form-actions">
+            <button id="logoutCancelBtn" class="secondary-button" type="button">취소</button>
+            <button id="logoutConfirmBtn" class="logout-confirm-button" type="button">로그아웃</button>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <div id="workspaceModal" class="modal-backdrop" hidden>
       <section class="modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspaceModalTitle">
@@ -391,7 +410,7 @@
 
     <script src="/static/frontend_core.js?v=20260724-2"></script>
     <script src="/static/custom_select.js?v=20260727-4"></script>
-    <script src="/static/auth.js?v=20260728-1"></script>
-    <script src="/static/app.js?v=20260729-1"></script>
+    <script src="/static/auth.js?v=20260806-1"></script>
+    <script src="/static/app.js?v=20260806-1"></script>
   </body>
 </html>

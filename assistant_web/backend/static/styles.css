@@ -1989,6 +1989,35 @@ body.theme-dark .chat-header {
   width: min(680px, 100%);
 }
 
+.logout-confirm-modal {
+  width: min(440px, 100%);
+}
+
+.logout-confirm-button {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.logout-confirm-button:hover {
+  filter: brightness(0.94);
+}
+
+.logout-confirm-button:active {
+  transform: translateY(1px);
+}
+
+.logout-confirm-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .invite-result {
   display: grid;
   gap: 8px;

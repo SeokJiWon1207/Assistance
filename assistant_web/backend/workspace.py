@@ -6,7 +6,6 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -405,11 +404,7 @@ def mark_notification_read(user_uid: str, notification_id: str) -> None:
 
 
 def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        mantis_future = executor.submit(_my_mantis_issues, user)
-        notion_future = executor.submit(_my_notion_pages, user)
-        person, all_issues, mantis_meta = mantis_future.result()
-        notion_result = notion_future.result()
+    person, all_issues, mantis_meta = _my_mantis_issues(user)
     issues = [_issue_summary(issue) for issue in all_issues]
     issues.sort(
         key=lambda item: (
@@ -419,7 +414,6 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
             str(item.get("updatedAt") or ""),
         )
     )
-    notion_pages = notion_result.get("notion_pages") or []
     open_issues = [item for item in issues if _is_open(item["status"])]
     today = date.today()
     week_start = today - timedelta(days=6)
@@ -427,7 +421,7 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
     updated_this_week = [item for item in issues if (_parse_date(item["updatedAt"]) or date.min) >= week_start]
     overdue = [item for item in open_issues if item["overdue"]]
     aging = [item for item in open_issues if (item["ageDays"] or 0) >= 30]
-    notifications = _notifications(user["uid"], all_issues, notion_pages)
+    notifications = _notifications(user["uid"], all_issues, [])
     return {
         "user": {
             "displayName": user.get("displayName", ""),
@@ -440,7 +434,6 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
             "open": len(open_issues),
             "overdue": len(overdue),
             "aging": len(aging),
-            "notion": len(notion_pages),
             "unreadNotifications": sum(not item["read"] for item in notifications),
         },
         "mantis": {
@@ -449,21 +442,9 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
             "issues": issues[:30],
         },
         "notion": {
-            "status": notion_result.get("status", "unknown"),
-            "reason": notion_result.get("reason"),
-            "pages": [
-                {
-                    "id": page.get("id"),
-                    "title": page.get("title", "제목 없음"),
-                    "status": page.get("status", "상태 미상"),
-                    "owner": page.get("owner", "담당자 미지정"),
-                    "dueDate": page.get("due_date", ""),
-                    "updatedAt": page.get("last_edited_time", ""),
-                    "url": page.get("url", ""),
-                    "databaseLabel": page.get("database_label", "Notion DB"),
-                }
-                for page in notion_pages
-            ],
+            "status": "hidden",
+            "reason": "Mantis 중심 모드에서는 Notion을 조회하지 않습니다.",
+            "pages": [],
         },
         "notifications": notifications,
         "weeklyBrief": {

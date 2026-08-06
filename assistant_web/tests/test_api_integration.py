@@ -128,6 +128,33 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn('"type": "result"', response.text)
         self.assertIn("스트리밍 완료", response.text)
 
+    @patch.object(chat_api, "current_request_user")
+    @patch.object(chat_api.chat_service, "build_response")
+    def test_chat_passes_authenticated_user_context(self, build_response, current_user):
+        current_user.return_value = {
+            "uid": "uid-1",
+            "displayName": "석지원",
+            "role": "admin",
+            "mantisUsername": "석지원",
+        }
+        build_response.return_value = {
+            "modelId": "test-model",
+            "content": "석지원님으로 로그인되어 있습니다.",
+            "sources": [],
+        }
+
+        response = self.client.post(
+            "/api/chat",
+            json={
+                "modelId": "test-model",
+                "messages": [{"role": "user", "content": "내가 누구야?"}],
+                "stream": False,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(build_response.call_args.kwargs["user"]["uid"], "uid-1")
+
     def test_chat_rejects_an_invalid_message_role(self):
         response = self.client.post(
             "/api/chat",

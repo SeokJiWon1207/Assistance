@@ -62,21 +62,6 @@ class PersonalWorkspaceTests(unittest.TestCase):
                 "date_fields": {},
             },
         ]
-        notion = {
-            "status": "ok",
-            "notion_pages": [
-                {
-                    "id": "page-1",
-                    "title": "검토 업무",
-                    "status": "진행중",
-                    "owner": "석지원",
-                    "due_date": overdue,
-                    "last_edited_time": recent,
-                    "url": "https://notion.so/page-1",
-                    "database_label": "업무",
-                }
-            ],
-        }
         user = {
             "uid": "uid-1",
             "email": "user@example.com",
@@ -91,8 +76,6 @@ class PersonalWorkspaceTests(unittest.TestCase):
             workspace,
             "_my_mantis_issues",
             return_value=("석지원", issues, {"status": "live", "matchedCount": 2}),
-        ), patch.object(
-            workspace, "_my_notion_pages", return_value=notion
         ):
             result = workspace.build_my_workspace(user)
 
@@ -100,8 +83,9 @@ class PersonalWorkspaceTests(unittest.TestCase):
         self.assertEqual(result["summary"]["open"], 1)
         self.assertEqual(result["summary"]["overdue"], 1)
         self.assertEqual(result["summary"]["aging"], 1)
-        self.assertEqual(result["summary"]["notion"], 1)
-        self.assertEqual(result["summary"]["unreadNotifications"], 2)
+        self.assertNotIn("notion", result["summary"])
+        self.assertEqual(result["notion"]["status"], "hidden")
+        self.assertEqual(result["summary"]["unreadNotifications"], 1)
         self.assertEqual(result["weeklyBrief"]["newIssues"], 1)
 
     def test_notification_read_state_is_per_user(self):

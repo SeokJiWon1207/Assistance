@@ -95,12 +95,45 @@
 
   function setupSessionActions() {
     const logoutButton = document.querySelector("#logoutBtn");
-    logoutButton?.addEventListener("click", async () => {
-      logoutButton.disabled = true;
+    const modal = document.querySelector("#logoutConfirmModal");
+    const confirmButton = document.querySelector("#logoutConfirmBtn");
+    const cancelButton = document.querySelector("#logoutCancelBtn");
+    const error = document.querySelector("#logoutConfirmError");
+    const close = () => {
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      error.hidden = true;
+      error.textContent = "";
+      logoutButton?.focus();
+    };
+    const open = () => {
+      modal.hidden = false;
+      document.body.classList.add("modal-open");
+      error.hidden = true;
+      error.textContent = "";
+      cancelButton?.focus();
+    };
+    logoutButton?.addEventListener("click", open);
+    cancelButton?.addEventListener("click", close);
+    document.querySelector("#logoutConfirmClose")?.addEventListener("click", close);
+    modal?.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && modal && !modal.hidden) close();
+    });
+    confirmButton?.addEventListener("click", async () => {
+      confirmButton.disabled = true;
+      cancelButton.disabled = true;
+      confirmButton.textContent = "로그아웃 중…";
       try {
-        await apiFetch("/api/auth/logout", { method: "POST" });
-      } finally {
+        const response = await apiFetch("/api/auth/logout", { method: "POST" });
+        if (!response.ok) throw new Error("로그아웃 요청을 처리하지 못했습니다.");
         globalScope.location.reload();
+      } catch (logoutError) {
+        error.textContent = logoutError.message;
+        error.hidden = false;
+        confirmButton.disabled = false;
+        cancelButton.disabled = false;
+        confirmButton.textContent = "로그아웃";
       }
     });
   }

@@ -5,6 +5,7 @@ HTTP 라우팅과 분리해 질문 해석, 검색, 결정형 응답, 모델 폴�
 
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -77,11 +78,67 @@ from backend.understanding import (
 )
 
 
+IDENTITY_QUESTIONS = {
+    "내가누구야",
+    "나는누구야",
+    "내가누구지",
+    "나는누구지",
+    "내이름뭐야",
+    "내이름이뭐야",
+    "내정보알려줘",
+    "내계정정보알려줘",
+    "내로그인정보알려줘",
+    "지금로그인한사람누구야",
+}
+
+
+def is_identity_question(text: str) -> bool:
+    normalized = re.sub(r"[\s?!.,]+", "", str(text or "")).casefold()
+    return normalized in IDENTITY_QUESTIONS
+
+
+def format_authenticated_identity(user: Optional[Dict[str, Any]]) -> str:
+    if not user:
+        return "현재 로그인한 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요."
+    role_labels = {"admin": "관리자", "manager": "매니저", "member": "사용자"}
+    display_name = str(user.get("displayName") or user.get("email") or "사용자").strip()
+    role = role_labels.get(str(user.get("role") or "member"), str(user.get("role") or "사용자"))
+    team = str(user.get("team") or "미설정").strip()
+    mantis_name = str(user.get("mantisUsername") or display_name).strip()
+    return (
+        f"{display_name}님으로 로그인되어 있습니다.\n\n"
+        f"- 역할: {role}\n"
+        f"- 팀: {team}\n"
+        f"- Mantis 담당자: {mantis_name}"
+    )
+
+
 class ChatService:
     """단일 채팅 요청의 전체 검색·답변 파이프라인을 실행한다."""
 
-    def build_response(self, request: ChatRequest) -> Dict[str, Any]:
+    def build_response(
+        self,
+        request: ChatRequest,
+        user: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         emit_chat_status("질문과 대화 맥락을 분석하고 있습니다", "analysis")
+        latest_user_text = get_latest_user_text(request.messages)
+        if is_identity_question(latest_user_text):
+            return finalize_chat_response(
+                request,
+                latest_user_text,
+                {
+                    "modelId": request.modelId,
+                    "content": format_authenticated_identity(user),
+                    "sources": [],
+                    "followUps": [
+                        "내 담당 미종료 이슈 보여줘",
+                        "내 장기 미종료 이슈 알려줘",
+                        "이번 주 내 업무보고서 작성해줘",
+                    ],
+                    "raw": {"mode": "authenticated_identity"},
+                },
+            )
         model = get_private_model(request.modelId)
 
         if model["status"] == "expired":
@@ -102,7 +159,6 @@ class ChatService:
         history_limit = clamp_int(os.getenv("MODEL_HISTORY_MAX_MESSAGES", "20"), 2, 200) or 20
         if len(messages) > history_limit:
             messages = messages[-history_limit:]
-        latest_user_text = get_latest_user_text(request.messages)
         # 후속 질문이면 직전 대화의 조건을 물려받은 라우팅용 텍스트. 검색/조건 추출에만 쓰고
         # 감사 로그·중복 판정·Notion 쓰기는 사용자가 실제 입력한 latest_user_text를 그대로 쓴다.
         retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
@@ -135,7 +191,7 @@ class ChatService:
         retrieval_result = None
         intent_plan = None
         query_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
-        enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
+        enabled_tools = {"mantis": True, "vectorDb": True, "notion": False, **request.tools}
         system_notes.append(answer_style_instruction(request.answerStyle))
         system_notes.append(CONVERSATION_TONE_NOTE)
         system_notes.append(build_current_date_note())

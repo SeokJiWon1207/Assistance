@@ -5,9 +5,10 @@ import queue
 import threading
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from backend.auth import current_request_user
 from backend.audit import CHAT_STREAM_CONTEXT
 from backend.schemas import ChatRequest
 from backend.services.chat_service import chat_service
@@ -16,7 +17,7 @@ from backend.services.chat_service import chat_service
 router = APIRouter()
 
 
-def stream_chat_response(request: ChatRequest):
+def stream_chat_response(request: ChatRequest, user: Dict[str, Any] | None = None):
     events: queue.Queue = queue.Queue()
     sentinel = object()
 
@@ -27,7 +28,7 @@ def stream_chat_response(request: ChatRequest):
         CHAT_STREAM_CONTEXT.emitter = emit
         CHAT_STREAM_CONTEXT.content_streamed = False
         try:
-            result = chat_service.build_response(request)
+            result = chat_service.build_response(request, user=user)
             events.put({"type": "result", "data": result})
         except HTTPException as exc:
             events.put({"type": "error", "message": str(exc.detail), "status": exc.status_code})
@@ -47,11 +48,12 @@ def stream_chat_response(request: ChatRequest):
 
 
 @router.post("/api/chat")
-def chat(request: ChatRequest):
-    if not request.stream:
-        return chat_service.build_response(request)
+def chat(payload: ChatRequest, http_request: Request):
+    user = current_request_user(http_request)
+    if not payload.stream:
+        return chat_service.build_response(payload, user=user)
     return StreamingResponse(
-        stream_chat_response(request),
+        stream_chat_response(payload, user=user),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
