@@ -142,7 +142,7 @@ const defaultOptions = {
   searchLimit: "5",
   sourceMode: "auto",
   mantis: true,
-  notion: false,
+  notion: true,
   vectorDb: true,
 };
 
@@ -658,7 +658,7 @@ function setSourceMode(mode) {
   if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
   if (els.sourceModeHint) {
     els.sourceModeHint.textContent = selectedMode === "auto"
-      ? "질문에 맞는 Mantis 이슈와 유사 사례를 자동으로 찾습니다."
+      ? "질문에 맞는 Mantis 이슈, Notion 자료와 유사 사례를 자동으로 찾습니다."
       : "사용할 검색 소스를 하나 이상 선택해 주세요.";
   }
   if (selectedMode === "auto") {
@@ -669,11 +669,11 @@ function setSourceMode(mode) {
 
 function sourceToolsPayload() {
   if (els.sourceModeSelect?.value !== "manual") {
-    return { mantis: true, notion: false, vectorDb: true };
+    return { mantis: true, notion: true, vectorDb: true };
   }
   return {
     mantis: toolToggleEnabled(els.mantisToggle),
-    notion: false,
+    notion: true,
     vectorDb: toolToggleEnabled(els.vectorToggle),
   };
 }

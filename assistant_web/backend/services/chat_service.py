@@ -222,7 +222,10 @@ class ChatService:
         retrieval_result = None
         intent_plan = None
         query_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
-        enabled_tools = {"mantis": True, "vectorDb": True, "notion": False, **request.tools}
+        # Notion은 화면의 기본 소스 선택에서는 숨겨두지만, 노션을 명시한 질문은
+        # 실제 연결된 DB에서 조회할 수 있어야 한다. 클라이언트가 false를 보내면
+        # 기존처럼 해당 요청에서만 비활성화한다.
+        enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
         system_notes.append(answer_style_instruction(request.answerStyle))
         system_notes.append(CONVERSATION_TONE_NOTE)
         system_notes.append(build_current_date_note())

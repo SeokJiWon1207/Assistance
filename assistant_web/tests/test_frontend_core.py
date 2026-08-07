@@ -86,7 +86,7 @@ class FrontendCoreTests(unittest.TestCase):
 
         self.assertNotIn('id="notionToggle"', html)
         self.assertNotIn("Notion 업무", app_js)
-        self.assertIn("return { mantis: true, notion: false, vectorDb: true };", app_js)
+        self.assertIn("return { mantis: true, notion: true, vectorDb: true };", app_js)
 
     def test_logout_requires_confirmation(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
