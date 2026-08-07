@@ -1503,7 +1503,7 @@ body.theme-dark .chat-header {
   min-width: 0;
 }
 
-.ab-panel[hidden] {
+.ab-panel.is-collapsed {
   display: none;
 }
 
@@ -1639,7 +1639,7 @@ body.theme-dark .chat-header {
   }
 
   .ab-panels .ab-panel,
-  .ab-panels .ab-panel[hidden] {
+  .ab-panels .ab-panel.is-collapsed {
     display: grid;
     padding: 12px;
     border: 1px solid var(--line);

@@ -1434,7 +1434,10 @@ function renderAbComparison(message, aBubble, messageIndex) {
   bPanel.className = "ab-panel";
   aPanel.setAttribute("role", "tabpanel");
   bPanel.setAttribute("role", "tabpanel");
-  bPanel.hidden = true;
+  // hidden 속성은 브라우저 기본 스타일이 display:none !important로 걸어서 넓은 화면의
+  // 2단 비교 레이아웃(styles.css의 min-width:1100px)에서 CSS로 다시 펼 수 없다.
+  // 탭 전환은 클래스로 제어해 좁은 화면에서만 한쪽을 접는다.
+  bPanel.classList.add("is-collapsed");
 
   const aTitle = document.createElement("h3");
   const bTitle = document.createElement("h3");
@@ -1468,8 +1471,8 @@ function renderAbComparison(message, aBubble, messageIndex) {
     const showA = selected === "a";
     aTab.setAttribute("aria-selected", String(showA));
     bTab.setAttribute("aria-selected", String(!showA));
-    aPanel.hidden = !showA;
-    bPanel.hidden = showA;
+    aPanel.classList.toggle("is-collapsed", !showA);
+    bPanel.classList.toggle("is-collapsed", showA);
   };
   aTab.addEventListener("click", () => select("a"));
   bTab.addEventListener("click", () => select("b"));
