@@ -71,6 +71,70 @@ class SlaReportTest(unittest.TestCase):
     def test_returns_none_for_non_sla_questions(self):
         self.assertIsNone(sla.build_sla_report("KB증권 HTS 이슈 5개"))
 
+    def test_aging_drops_created_at_constraint(self):
+        """'이번 주 ... 장기 적체'처럼 등록일 범위가 붙어도 적체 대상이 살아 있어야 한다.
+
+        적체 임계값(30일)과 최근 등록 구간은 정의상 겹칠 수 없어, 등록일 조건을 그대로
+        적용하면 데이터와 무관하게 항상 0건이 된다.
+        """
+        constraints = {
+            "customer_aliases": ["159eBest"],
+            "created_at": {"from": "2026-08-03", "to": "2026-08-09"},
+            "filter_clauses": [
+                {"field": "customer", "operator": "equals", "value": "eBest"},
+                {"field": "created_at", "operator": "between", "value": ["2026-08-03", "2026-08-09"]},
+            ],
+        }
+        sla.extract_query_constraints = lambda text: constraints
+        # 등록일 조건이 살아 있으면 아무것도 통과하지 못하도록 실제 매칭기를 흉내 낸다.
+        sla.issue_matches_constraints = lambda issue, cc: "created_at" not in cc
+        self._set_issues([
+            {"id": 301, "summary": "묵은건", "status": "assigned", "project": "eBest",
+             "created_at": "2026-01-01", "updated_at": "2026-01-02"},
+        ])
+
+        report = sla.build_sla_report("이번 주 ebest 장기 적체 알려줘")
+        content = report["content"]
+        self.assertIn("#301", content)
+        self.assertIn("적체 분석에 적용하지 않았습니다", content)
+        # 실제로 적용한 조건만 칩·검증 패널에 남아야 한다.
+        applied = report["retrieval"]["constraints"]
+        self.assertNotIn("created_at", applied)
+        self.assertEqual(
+            [clause["field"] for clause in applied["filter_clauses"]],
+            ["customer"],
+        )
+
+    def test_duration_keeps_created_at_constraint(self):
+        sla.extract_query_constraints = lambda text: {"created_at": {"from": "2026-08-03"}}
+        sla.issue_matches_constraints = lambda issue, cc: "created_at" in cc
+        self._set_issues([
+            {"id": 401, "summary": "종료건", "status": "closed", "project": "KB증권",
+             "created_at": "2026-08-03", "updated_at": "2026-08-05"},
+        ])
+
+        report = sla.build_sla_report("평균 처리시간 며칠 걸려?")
+        self.assertIn("#401", report["content"])
+        self.assertIn("created_at", report["retrieval"]["constraints"])
+
+    def test_empty_result_names_the_constraint_that_emptied_it(self):
+        sla.extract_query_constraints = lambda text: {
+            "customer_aliases": ["159eBest"],
+            "statuses": ["open"],
+        }
+        # 고객사만 맞고 상태는 맞지 않는 상황을 만든다.
+        sla.issue_matches_constraints = lambda issue, cc: "statuses" not in cc
+        self._set_issues([
+            {"id": 501, "summary": "A", "status": "closed", "project": "eBest",
+             "created_at": "2026-01-01", "updated_at": "2026-01-02"},
+        ])
+
+        content = sla.build_sla_report("ebest 장기 적체 알려줘")["content"]
+        self.assertIn("조건에 맞는 이슈가 없습니다", content)
+        self.assertIn("상태 조건을 빼면 1건", content)
+        # 결과를 비우지 않은 조건은 힌트에 나오면 안 된다.
+        self.assertNotIn("고객사 조건을 빼면", content)
+
 
 class SimilarResolutionReportTest(unittest.TestCase):
     def setUp(self):
