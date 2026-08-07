@@ -121,6 +121,40 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
                 "precision": "day_range",
             }
 
+    # ``올해 3월 1일부터 7월 10일까지`` 또는 ``3월 1일~7월 10일``처럼
+    # 시작 연도를 숫자로 쓰지 않은 일 단위 범위. 공수 집계뿐 아니라 일반
+    # Mantis 기간 조회에서도 같은 해석을 공유한다.
+    relative_day_range_match = re.search(
+        r"(?:(올해|금년|이번\s*해|이번\s*년도|작년|전년|지난\s*해|지난\s*년도)\s*)?"
+        r"(1[0-2]|0?[1-9])\s*월\s*(3[01]|[12]\d|0?[1-9])\s*일\s*"
+        r"(?:부터|~|～|-)\s*"
+        r"(?:(20\d{2})\s*년\s*)?"
+        r"(1[0-2]|0?[1-9])\s*월\s*(3[01]|[12]\d|0?[1-9])\s*일\s*(?:까지)?",
+        question,
+    )
+    if relative_day_range_match:
+        base_year = date.today().year
+        relative_year = str(relative_day_range_match.group(1) or "")
+        if re.search(r"작년|전년|지난\s*해|지난\s*년도", relative_year):
+            base_year -= 1
+        end_year = int(relative_day_range_match.group(4) or base_year)
+        start = _safe_date(
+            base_year,
+            int(relative_day_range_match.group(2)),
+            int(relative_day_range_match.group(3)),
+        )
+        end = _safe_date(
+            end_year,
+            int(relative_day_range_match.group(5)),
+            int(relative_day_range_match.group(6)),
+        )
+        if start and end and start <= end:
+            return {
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                "precision": "day_range",
+            }
+
     range_match = re.search(
         r"(20\d{2})\s*년?\s*(1[0-2]|0?[1-9])\s*월?\s*"
         r"(?:부터|~|～|-)\s*(?:(20\d{2})\s*년?\s*)?"

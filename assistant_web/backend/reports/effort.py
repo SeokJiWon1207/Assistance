@@ -16,7 +16,7 @@ from backend.common import (
     normalize_for_match,
     text_contains_person_name,
 )
-from backend.query_planning import build_query_plan
+from backend.query_planning import build_query_plan, extract_created_at_range
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_issues,
@@ -55,10 +55,43 @@ def parse_effort_period(text: str) -> tuple[int, Optional[int]]:
     return year, int(month_match.group(1)) if month_match else None
 
 
+def extract_effort_date_range(text: str) -> Optional[Dict[str, str]]:
+    """공수 질문의 일 단위 시작일·종료일을 추출한다.
+
+    일반 날짜 파서가 처리하는 명시 연도 범위를 우선 사용하고, ``올해 3월
+    1일~7월 10일`` 또는 ``3월 1일~7월 10일``처럼 연도를 생략한 표현은
+    현재 연도를 기준으로 보완한다.
+    """
+    parsed = extract_created_at_range(text)
+    return parsed if parsed and parsed.get("precision") == "day_range" else None
+
+
+def effort_period_bounds(
+    year: int,
+    month: Optional[int],
+    date_range: Optional[Dict[str, str]] = None,
+) -> tuple[str, str, str, str]:
+    """공수 집계에 사용할 시작일·종료일·표시명·기간 유형을 반환한다."""
+    if date_range and date_range.get("from") and date_range.get("to"):
+        start_date = str(date_range["from"])
+        end_date = str(date_range["to"])
+        return start_date, end_date, f"{start_date} ~ {end_date}", "range"
+    if month:
+        last_day = calendar.monthrange(year, month)[1]
+        return (
+            f"{year:04d}-{month:02d}-01",
+            f"{year:04d}-{month:02d}-{last_day:02d}",
+            f"{year}년 {month}월",
+            "month",
+        )
+    return f"{year:04d}-01-01", f"{year:04d}-12-31", f"{year}년", "year"
+
+
 def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
     if "공수" not in normalize_for_match(text):
         return None
     year, month = parse_effort_period(text)
+    date_range = extract_effort_date_range(text)
     person = ""
     person_match = re.search(
         r"([가-힣]{2,4}?)(?:님)?(?:의)?\s*(?:\d{4}\s*년|올해|금년|이번\s*해|이번\s*년도|작년|전년|지난\s*해|지난\s*년도)?\s*(?:\d{1,2}\s*월)?\s*공수",
@@ -87,14 +120,18 @@ def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
                 "year": year,
                 "constraints": constraints,
             }
-            if month:
+            if date_range:
+                query["date_range"] = date_range
+            elif month:
                 query["month"] = month
             else:
                 query["period"] = "year"
             return query
         return {"error": "공수를 조회할 인물 이름을 함께 입력해 주세요."}
     query = {"person": person, "year": year}
-    if month:
+    if date_range:
+        query["date_range"] = date_range
+    elif month:
         query["month"] = month
     else:
         query["period"] = "year"
@@ -130,8 +167,15 @@ def build_effort_report(text: str) -> Optional[Dict[str, Any]]:
             query["year"],
             query.get("month"),
             query["constraints"],
+            query.get("date_range"),
         )
-    return run_person_effort_report(text, query["person"], query["year"], query.get("month"))
+    return run_person_effort_report(
+        text,
+        query["person"],
+        query["year"],
+        query.get("month"),
+        query.get("date_range"),
+    )
 
 
 def run_filtered_effort_report(
@@ -139,18 +183,14 @@ def run_filtered_effort_report(
     year: int,
     month: Optional[int],
     constraints: Dict[str, Any],
+    date_range: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """고객사·매체 조건에 맞는 이슈의 모든 인물 공수를 합산한다."""
-    is_year_period = not month
-    if is_year_period:
-        start_date = f"{year:04d}-01-01"
-        end_date = f"{year:04d}-12-31"
-        period_label = f"{year}년"
-    else:
-        last_day = calendar.monthrange(year, month)[1]
-        start_date = f"{year:04d}-{month:02d}-01"
-        end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
-        period_label = f"{year}년 {month}월"
+    start_date, end_date, period_label, period_kind = effort_period_bounds(
+        year,
+        month,
+        date_range,
+    )
 
     effort_constraints = {
         **constraints,
@@ -282,7 +322,7 @@ def run_filtered_effort_report(
                     "displayed_count": len(matched_rows),
                     "year": year,
                     "month": month,
-                    "period": "year" if is_year_period else "month",
+                    "period": period_kind,
                     "totals": {key: round(value, 4) for key, value in totals.items()},
                     "total_effort": total_effort,
                     "date_basis": "created_at",
@@ -304,22 +344,26 @@ def run_person_effort_report(
     person: str,
     year: int,
     month: Optional[int] = None,
+    date_range: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """특정 인물의 기간 공수를 Mantis 라이브 API에서 합산한다(결정형 계산 코어)."""
-    is_year_period = not month
-    if is_year_period:
-        start_date = f"{year:04d}-01-01"
-        end_date = f"{year:04d}-12-31"
-        period_label = f"{year}년"
-        period_reason = "연간 개인 공수 집계"
-    else:
-        last_day = calendar.monthrange(year, month)[1]
-        start_date = f"{year:04d}-{month:02d}-01"
-        end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
-        period_label = f"{year}년 {month}월"
-        period_reason = "월별 개인 공수 집계"
+    start_date, end_date, period_label, period_kind = effort_period_bounds(
+        year,
+        month,
+        date_range,
+    )
+    period_reason = {
+        "range": "기간별 개인 공수 집계",
+        "month": "월별 개인 공수 집계",
+        "year": "연간 개인 공수 집계",
+    }[period_kind]
     effort_constraints = extract_query_constraints(text)
     effort_constraints["people"] = {"names": [person], "role": "any"}
+    effort_constraints["created_at"] = {
+        "from": start_date,
+        "to": end_date,
+        "precision": "range",
+    }
     effort_plan = build_query_plan(
         text,
         {"source": "mantis", "planner": "rule", "confidence": 1.0},
@@ -432,7 +476,7 @@ def run_person_effort_report(
                     "person": person,
                     "year": year,
                     "month": month,
-                    "period": "year" if is_year_period else "month",
+                    "period": period_kind,
                     "totals": {key: round(value, 4) for key, value in totals.items()},
                     "total_effort": total_effort,
                     "date_basis": "created_at",
@@ -505,25 +549,21 @@ def build_effort_ranking_report(text: str) -> Optional[Dict[str, Any]]:
     if not wants_effort_ranking(text):
         return None
     year, month = parse_effort_period(text)
-    return run_effort_ranking_report(text, year, month)
+    return run_effort_ranking_report(text, year, month, extract_effort_date_range(text))
 
 
 def run_effort_ranking_report(
     text: str,
     year: int,
     month: Optional[int] = None,
+    date_range: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """기간 내 전체 이슈를 스캔해 인물별 공수를 집계·정렬한다(결정형 계산 코어)."""
-    is_year_period = not month
-    if is_year_period:
-        start_date = f"{year:04d}-01-01"
-        end_date = f"{year:04d}-12-31"
-        period_label = f"{year}년"
-    else:
-        last_day = calendar.monthrange(year, month)[1]
-        start_date = f"{year:04d}-{month:02d}-01"
-        end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
-        period_label = f"{year}년 {month}월"
+    start_date, end_date, period_label, period_kind = effort_period_bounds(
+        year,
+        month,
+        date_range,
+    )
 
     per_person: Dict[str, Dict[str, float]] = {}
     consecutive_old_pages = 0
@@ -616,7 +656,7 @@ def run_effort_ranking_report(
                 "meta": {
                     "displayed_count": len(top_n),
                     "found_count": len(per_person),
-                    "period": "year" if is_year_period else "month",
+                    "period": period_kind,
                     "year": year,
                     "month": month,
                     "date_basis": "created_at",
@@ -647,9 +687,10 @@ def build_effort_report_from_plan(
     if not effort:
         return None
     year, month = parse_effort_period(text)
+    date_range = extract_effort_date_range(text)
     effort_type = str(effort.get("type", "")).strip().lower()
     if effort_type == "ranking":
-        return run_effort_ranking_report(text, year, month)
+        return run_effort_ranking_report(text, year, month, date_range)
     if effort_type == "person":
         person = str(effort.get("person") or "").strip()
         if not person or not is_valid_person_name(person):
@@ -657,5 +698,5 @@ def build_effort_report_from_plan(
         handlers, reporters = load_known_people()
         if person not in set(handlers) | set(reporters):
             return None
-        return run_person_effort_report(text, person, year, month)
+        return run_person_effort_report(text, person, year, month, date_range)
     return None
