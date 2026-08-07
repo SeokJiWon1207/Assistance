@@ -372,7 +372,7 @@ entities with an independently fetched Mantis/Notion snapshot.
 
 ```bash
 cd assistant_web
-python3 scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4
+.venv/bin/python scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4
 ```
 
 The daily seed changes the sampled records while keeping a run reproducible.
@@ -396,7 +396,7 @@ Markdown 노트로 남긴다. 통과 시에는 Slack만 조용히 넘어간다.
 
 ```bash
 cd assistant_web
-python3 scripts/accuracy/run_accuracy_check_and_notify.py
+.venv/bin/python scripts/accuracy/run_accuracy_check_and_notify.py
 ```
 
 Slack 알림을 받으려면 `.env`에 Incoming Webhook URL을 추가한다.
@@ -415,5 +415,5 @@ OBSIDIAN_ACCURACY_FOLDER=Automation Reports/Mantis Notion
 cron에 등록하지 않는다 - 시스템 스케줄 변경은 사용자가 직접 결정해야 한다).
 
 ```cron
-0 8 * * * cd /path/to/Assistance/assistant_web && /usr/bin/python3 scripts/accuracy/run_accuracy_check_and_notify.py >> runtime/accuracy_reports/cron.log 2>&1
+0 8 * * * cd /path/to/Assistance/assistant_web && .venv/bin/python scripts/accuracy/run_accuracy_check_and_notify.py >> runtime/accuracy_reports/cron.log 2>&1
 ```

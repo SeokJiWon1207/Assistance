@@ -9,34 +9,42 @@ import os
 import random
 import re
 import sys
+import time
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import requests
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 APP_DIR = SCRIPT_DIR.parent.parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+from scripts.accuracy._runtime import reexec_in_project_venv
+
+if __name__ == "__main__":
+    reexec_in_project_venv(APP_DIR)
+
+import requests
+
 from backend.environment import load_dotenv
 
 load_dotenv(APP_DIR / ".env")
 
-from backend.api.chat import chat
 from backend.config import NOTION_API_BASE, parse_notion_database_ids
 from backend.llm import get_model_registry
 from backend.schemas import ChatMessage, ChatRequest
+from backend.services.chat_service import chat_service
 from backend.sources import mantis
 from backend.understanding import extract_query_constraints
 
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
-MANTIS_PAGES = 8
-MANTIS_PAGE_SIZE = 100
+MANTIS_PAGES = 16
+MANTIS_PAGE_SIZE = 50
+MANTIS_REQUEST_ATTEMPTS = 3
+MANTIS_REQUEST_TIMEOUT = (10, 45)
 NOTION_PAGES = 3
 NOTION_PAGE_SIZE = 100
 
@@ -138,18 +146,38 @@ def fetch_mantis_snapshot() -> List[Dict[str, Any]]:
     issues: List[Dict[str, Any]] = []
     headers = {"Authorization": token, "Content-Type": "application/json"}
     for page in range(1, MANTIS_PAGES + 1):
-        response = requests.get(
-            url,
-            headers=headers,
-            params={"page_size": MANTIS_PAGE_SIZE, "page": page},
-            timeout=30,
-        )
-        response.raise_for_status()
-        batch = response.json().get("issues", [])
+        for attempt in range(1, MANTIS_REQUEST_ATTEMPTS + 1):
+            try:
+                response = requests.get(
+                    url,
+                    headers=headers,
+                    params={"page_size": MANTIS_PAGE_SIZE, "page": page},
+                    timeout=MANTIS_REQUEST_TIMEOUT,
+                )
+                response.raise_for_status()
+                batch = response.json().get("issues", [])
+                break
+            except requests.RequestException as exc:
+                status_code = getattr(exc.response, "status_code", None)
+                retryable = (
+                    isinstance(exc, (requests.ConnectionError, requests.Timeout))
+                    or status_code == 429
+                    or bool(status_code and status_code >= 500)
+                )
+                if not retryable or attempt == MANTIS_REQUEST_ATTEMPTS:
+                    raise
+                time.sleep(2 ** (attempt - 1))
         if not batch:
             break
         issues.extend(batch)
+        if len(batch) < MANTIS_PAGE_SIZE:
+            break
     return sorted(issues, key=lambda item: int(item.get("id") or 0), reverse=True)
+
+
+def execute_chat(request: ChatRequest) -> Dict[str, Any]:
+    """Run the chat service without depending on the authenticated HTTP route."""
+    return chat_service.build_response(request, user=None)
 
 
 def notion_plain_text(items: Iterable[Dict[str, Any]]) -> str:
@@ -525,7 +553,7 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             "notion": case.source == "notion",
             "vectorDb": False,
         }
-        response = chat(ChatRequest(
+        response = execute_chat(ChatRequest(
             modelId=model_id,
             messages=[ChatMessage(role="user", content=case.question)],
             temperature=0.0,
@@ -591,7 +619,7 @@ def run_follow_up_scenario(
             "notion": scenario.source == "notion",
             "vectorDb": False,
         }
-        response = chat(ChatRequest(
+        response = execute_chat(ChatRequest(
             modelId=model_id,
             messages=[
                 ChatMessage(role="user", content=parent_case.question),

@@ -2,15 +2,21 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
 
+import requests
+
 from backend import answers, retrieval, understanding
 from backend.reports import evaluation
+from backend.schemas import ChatRequest
+from backend.services.chat_service import chat_service
 from backend.sources import mantis
 from scripts.accuracy.dynamic_accuracy_check import (
     AccuracyCase,
     FollowUpScenario,
     build_follow_up_scenarios,
     complete_mutable_mantis_ids,
+    execute_chat,
     exact_screen_numbers,
+    fetch_mantis_snapshot,
     grade,
     run_follow_up_scenario,
     summarize_results,
@@ -119,6 +125,35 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual([row["id"] for row in result["issues_list"]], [400, 300, 200])
         self.assertEqual(get.call_count, 2)
 
+    @patch.object(mantis.time, "sleep")
+    @patch.object(mantis, "get_mantis_headers", return_value={})
+    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis.requests, "get")
+    def test_page_scan_retries_transient_timeout(self, get, _settings, _headers, sleep):
+        response = Mock(status_code=200)
+        response.json.return_value = {"issues": [{"id": 300, "summary": "테스트"}]}
+        get.side_effect = [requests.ReadTimeout("slow"), response]
+
+        result = mantis.execute_mantis_page_scan("", limit=1, constraints={})
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([row["id"] for row in result["issues_list"]], [300])
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    @patch.object(mantis.time, "sleep")
+    @patch.object(mantis, "get_mantis_headers", return_value={})
+    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis.requests, "get")
+    def test_exact_issue_lookup_retries_transient_timeout(self, get, _settings, _headers, sleep):
+        response = Mock(status_code=200)
+        response.json.return_value = {"issues": [{"id": 31351}]}
+        get.side_effect = [requests.ReadTimeout("slow"), response]
+
+        self.assertEqual(mantis.fetch_mantis_issue_by_id(31351), {"id": 31351})
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(1)
+
     def test_dynamic_oracle_matches_field_or_exact_title_marker(self):
         field_issue = {
             "summary": "해외주식 차트 수정",
@@ -218,9 +253,9 @@ class AccuracyInsightTests(unittest.TestCase):
         )
         self.assertEqual(scenarios[1].expected, [30919])
 
-    @patch("scripts.accuracy.dynamic_accuracy_check.chat")
-    def test_follow_up_sends_web_equivalent_history_and_audit_context(self, chat):
-        chat.return_value = {
+    @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat")
+    def test_follow_up_sends_web_equivalent_history_and_audit_context(self, execute):
+        execute.return_value = {
             "content": "#30919 상세 내용",
             "sources": [{"issue_id": 30919}],
             "auditId": "b" * 32,
@@ -247,14 +282,14 @@ class AccuracyInsightTests(unittest.TestCase):
         result = run_follow_up_scenario(scenario, parent_case, parent_result, "test-model")
 
         self.assertTrue(result["passed"])
-        request = chat.call_args.args[0]
+        request = execute.call_args.args[0]
         self.assertEqual(request.contextAuditId, "a" * 32)
         self.assertEqual([message.role for message in request.messages], ["user", "assistant", "user"])
         self.assertEqual(request.messages[-1].content, scenario.question)
         self.assertEqual(request.tools, {"mantis": True, "notion": False, "vectorDb": False})
 
-    @patch("scripts.accuracy.dynamic_accuracy_check.chat")
-    def test_follow_up_is_blocked_when_setup_case_fails(self, chat):
+    @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat")
+    def test_follow_up_is_blocked_when_setup_case_fails(self, execute):
         parent_case = AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "질문", "issue_ids", [30916])
         scenario = FollowUpScenario(
             "followup-exact-project", "mantis", "후속", parent_case.id, "이 이슈 고객사?", "text_any", ["삼성증권"]
@@ -268,7 +303,35 @@ class AccuracyInsightTests(unittest.TestCase):
         )
 
         self.assertEqual(result["outcome"], "blocked_by_prerequisite")
-        chat.assert_not_called()
+        execute.assert_not_called()
+
+    @patch.object(chat_service, "build_response")
+    def test_accuracy_chat_uses_service_layer_without_http_request(self, build_response):
+        build_response.return_value = {"content": "ok", "sources": []}
+        request = ChatRequest(
+            modelId="test-model",
+            messages=[{"role": "user", "content": "질문"}],
+        )
+
+        self.assertEqual(execute_chat(request), build_response.return_value)
+        build_response.assert_called_once_with(request, user=None)
+
+    @patch.dict(
+        "os.environ",
+        {"MANTIS_API_URL": "https://mantis.example/issues", "MANTIS_API_TOKEN": "token"},
+    )
+    @patch("scripts.accuracy.dynamic_accuracy_check.time.sleep")
+    @patch("scripts.accuracy.dynamic_accuracy_check.requests.get")
+    def test_mantis_snapshot_retries_transient_timeout(self, get, sleep):
+        response = Mock(status_code=200)
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"issues": [{"id": 10}]}
+        get.side_effect = [requests.ReadTimeout("slow"), response]
+
+        self.assertEqual(fetch_mantis_snapshot(), [{"id": 10}])
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(1)
+        self.assertEqual(get.call_args.kwargs["params"]["page_size"], 50)
 
     def test_summary_counts_base_failures_blocked_followups_and_errors(self):
         summary = summarize_results([

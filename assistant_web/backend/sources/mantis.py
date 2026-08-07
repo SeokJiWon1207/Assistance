@@ -10,6 +10,7 @@ Mantis REST API 조회, 이슈 정규화, 커스텀 날짜/열거형 포맷, 필
 import json
 import re
 import sqlite3
+import time
 from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -195,20 +196,38 @@ def find_matching_mantis_filter(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def fetch_mantis_issues(params: Dict[str, Any], timeout: int = 30) -> List[Dict[str, Any]]:
+def fetch_mantis_issues(
+    params: Dict[str, Any],
+    timeout: int = 30,
+    attempts: int = 3,
+) -> List[Dict[str, Any]]:
     settings = get_mantis_settings()
-    response = requests.get(
-        settings["url"],
-        headers=get_mantis_headers(),
-        params=params,
-        timeout=max(3, min(int(timeout), 60)),
-    )
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
-        )
-    return response.json().get("issues", [])
+    safe_attempts = max(1, min(int(attempts), 3))
+    for attempt in range(1, safe_attempts + 1):
+        try:
+            response = requests.get(
+                settings["url"],
+                headers=get_mantis_headers(),
+                params=params,
+                timeout=max(3, min(int(timeout), 60)),
+            )
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == safe_attempts:
+                raise
+            time.sleep(2 ** (attempt - 1))
+            continue
+
+        retryable_status = response.status_code == 429 or response.status_code >= 500
+        if retryable_status and attempt < safe_attempts:
+            time.sleep(2 ** (attempt - 1))
+            continue
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
+            )
+        return response.json().get("issues", [])
+    return []
 
 
 def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
@@ -217,22 +236,34 @@ def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
 
     settings = get_mantis_settings()
     issue_url = f"{settings['url'].rstrip('/')}/{issue_id}"
-    try:
-        response = requests.get(
-            issue_url,
-            headers=get_mantis_headers(),
-            timeout=20,
-        )
-    except requests.RequestException:
-        return None
+    for attempt in range(1, 4):
+        try:
+            response = requests.get(
+                issue_url,
+                headers=get_mantis_headers(),
+                timeout=20,
+            )
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == 3:
+                raise
+            time.sleep(2 ** (attempt - 1))
+            continue
 
-    if response.status_code != 200:
-        return None
+        retryable_status = response.status_code == 429 or response.status_code >= 500
+        if retryable_status and attempt < 3:
+            time.sleep(2 ** (attempt - 1))
+            continue
+        if retryable_status:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
+            )
+        if response.status_code != 200:
+            return None
 
-    issues = response.json().get("issues", [])
-    if not issues:
-        return None
-    return issues[0]
+        issues = response.json().get("issues", [])
+        return issues[0] if issues else None
+    return None
 
 
 def fetch_mantis_recent_issues(
@@ -745,31 +776,19 @@ def execute_mantis_page_scan(
     limit: int = 5,
     constraints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    settings = get_mantis_settings()
-
     keywords = [kw.strip().casefold() for kw in search_keyword.split() if kw.strip()]
     filtered_issues: List[Dict[str, Any]] = []
     status_excluded_count = 0
     page = 1
-    page_size = 100
-    max_pages = 8
-    headers = get_mantis_headers()
+    page_size = 50
+    max_pages = 16
 
     try:
         while page <= max_pages:
-            response = requests.get(
-                settings["url"],
-                headers=headers,
-                params={"page_size": page_size, "page": page},
-                timeout=30,
+            issues = fetch_mantis_issues(
+                {"page_size": page_size, "page": page},
+                timeout=45,
             )
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
-                )
-
-            issues = response.json().get("issues", [])
             if not issues:
                 break
 
@@ -807,19 +826,19 @@ def execute_mantis_page_scan(
 
     if not filtered_issues and len(keywords) > 1 and not (constraints and has_constraint(constraints)):
         fallback_keyword = keywords[0]
-        response = requests.get(
-            settings["url"],
-            headers=headers,
-            params={"page_size": page_size, "page": 1},
-            timeout=30,
-        )
-        if response.status_code == 200:
+        try:
+            issues = fetch_mantis_issues(
+                {"page_size": page_size, "page": 1},
+                timeout=45,
+            )
             filtered_issues = [
                 issue
-                for issue in response.json().get("issues", [])
+                for issue in issues
                 if fallback_keyword
                 in f"{issue.get('project', {}).get('name', '')} {issue.get('summary', '')}".lower()
             ]
+        except (HTTPException, requests.RequestException):
+            pass
 
     filtered_issues.sort(
         key=lambda issue: (issue.get("_assistant_match_score", 0), issue.get("id", 0)),

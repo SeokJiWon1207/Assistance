@@ -25,10 +25,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import requests
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 APP_DIR = SCRIPT_DIR.parent.parent
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from scripts.accuracy._runtime import reexec_in_project_venv
+
+if __name__ == "__main__":
+    reexec_in_project_venv(APP_DIR)
+
+import requests
+
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
 DEFAULT_OBSIDIAN_VAULTS = (
     APP_DIR.parent / "ObsidianNotes",
