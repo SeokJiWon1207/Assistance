@@ -28,6 +28,7 @@ from backend.sources.notion import (
     format_grouped_notion_answer,
     notion_database_status_filter,
     notion_page_matches_constraints,
+    notion_properties_to_text,
     notion_search_max_pages,
     resolve_notion_page_owner,
 )
@@ -606,6 +607,48 @@ class NotionStatusTypoTests(unittest.TestCase):
         constraints = extract_notion_constraints("노션에서 '결제요청 매뉴얼' 문서 찾아줘")
         self.assertEqual(constraints["exact_title"], "결제요청 매뉴얼")
         self.assertIsNone(constraints["status_typo"])
+
+
+class NotionPropertyTextTests(unittest.TestCase):
+    def test_derived_and_system_columns_are_left_out_of_body(self):
+        # 주차 계산·필터 수식·시스템 타임스탬프는 사람이 읽을 값이 아니다.
+        properties = {
+            "내용": {"type": "title", "title": [{"type": "text", "text": {"content": "버전 처리 NG"}}]},
+            "작성주차": {"type": "formula", "formula": {"type": "number", "number": 202626}},
+            "종료일 On/Off": {"type": "formula", "formula": {"type": "number", "number": 0}},
+            "등록일": {"type": "created_time", "created_time": "2026-06-24T01:11:00.000Z"},
+            "모니터링": {"type": "checkbox", "checkbox": False},
+            "고객사": {"type": "multi_select", "multi_select": [{"name": "미래에셋"}]},
+        }
+        text = notion_properties_to_text(properties)
+        self.assertEqual(text, "고객사: 미래에셋")
+
+    def test_unnamed_people_are_counted_instead_of_printing_uuids(self):
+        # 노션이 이름 없이 사용자 ID만 주는 경우가 있다. UUID를 그대로 찍으면
+        # 화면과 모델 근거가 의미 없는 문자열로 덮인다.
+        properties = {
+            "공유(입력)": {
+                "type": "people",
+                "people": [
+                    {"object": "user", "id": "6e15cf9a-68c2-48cf-b45b-e969a76e4e62"},
+                    {"object": "user", "id": "042779f1-cd9f-4421-b0a6-f3554369a7c9", "name": "우동헌"},
+                    {"object": "user", "id": "3e265b1b-ab60-4c25-a81b-61a8a3fe6dec"},
+                ],
+            },
+        }
+        text = notion_properties_to_text(properties)
+        self.assertEqual(text, "공유(입력): 우동헌, 미확인 사용자 2명")
+        self.assertNotIn("-", text.split(": ", 1)[1])
+
+    def test_relation_reports_count_rather_than_page_ids(self):
+        properties = {
+            "일괄처리 업무분장": {
+                "type": "relation",
+                "relation": [{"id": "3d91082e-bb4c-8390-ad1d-0158ff0fbc6c"}],
+            },
+            "코스콤 버전관리": {"type": "relation", "relation": []},
+        }
+        self.assertEqual(notion_properties_to_text(properties), "일괄처리 업무분장: 연결 항목 1건")
 
 
 class NotionOwnerConstraintTests(unittest.TestCase):

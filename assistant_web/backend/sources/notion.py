@@ -285,10 +285,74 @@ def notion_type(properties: Dict[str, Dict[str, Any]]) -> str:
     return notion_prop_by_keywords(properties, ["타입", "유형", "분류", "type", "category"]) or ""
 
 
+# 노션 DB에는 업무용 컬럼 옆에 주차 계산, 필터용 수식, 시스템 타임스탬프가 함께 산다.
+# 사람이 읽을 값이 아니고 모델 근거로도 잡음이라 본문에서 뺀다.
+NOISY_PROPERTY_NAME_KEYWORDS = (
+    "휴가표시",
+    "vacation",
+    "주차",
+    "금주",
+    "차주",
+    "경과",
+    "오늘",
+    "생성",
+    "최종",
+    "편집",
+    "on/off",
+    "id",
+    "uuid",
+)
+
+# formula는 다른 컬럼에서 파생된 값이고, 제목은 카드 헤더에, 생성/수정 정보는
+# 카드 상단 필드에 이미 나온다. 본문에 다시 적으면 중복만 늘어난다.
+NOISY_PROPERTY_TYPES = frozenset(
+    {"formula", "title", "created_time", "last_edited_time", "created_by", "last_edited_by"}
+)
+
+
+def is_noisy_property_name(name: str) -> bool:
+    normalized_name = normalize_for_match(name)
+    return any(
+        normalize_for_match(keyword) in normalized_name
+        for keyword in NOISY_PROPERTY_NAME_KEYWORDS
+    )
+
+
+def notion_display_property_text(prop: Dict[str, Any]) -> str:
+    """본문 표시용 값. 사람이 읽을 수 없는 UUID는 건수로 바꾼다.
+
+    people/relation은 원본 API가 이름 없이 사용자·페이지 ID만 주는 경우가 있다.
+    그대로 찍으면 화면과 모델 근거가 UUID로 뒤덮이므로, 이름을 아는 만큼만 적고
+    나머지는 "미확인 사용자 N명"처럼 건수로 남겨 배정 사실 자체는 잃지 않는다.
+    """
+    prop_type = prop.get("type")
+    if prop_type == "people":
+        names: List[str] = []
+        unknown = 0
+        for user in prop.get("people") or []:
+            name = str(user.get("name") or (user.get("person") or {}).get("email") or "").strip()
+            if name:
+                names.append(name)
+            else:
+                unknown += 1
+        if unknown:
+            names.append(f"미확인 사용자 {unknown}명")
+        return ", ".join(names)
+    if prop_type == "relation":
+        # 관계 대상 제목은 페이지마다 추가 조회가 필요해 목록 응답에서는 건수만 남긴다.
+        count = len(prop.get("relation") or [])
+        return f"연결 항목 {count}건" if count else ""
+    if prop_type == "checkbox":
+        return "예" if prop.get("checkbox") else ""
+    return notion_property_to_text(prop)
+
+
 def notion_properties_to_text(properties: Dict[str, Dict[str, Any]]) -> str:
     parts = []
     for name, prop in properties.items():
-        text = notion_property_to_text(prop)
+        if prop.get("type") in NOISY_PROPERTY_TYPES or is_noisy_property_name(name):
+            continue
+        text = notion_display_property_text(prop)
         if text:
             parts.append(f"{name}: {text}")
     return "\n".join(parts)
@@ -311,25 +375,10 @@ def notion_properties_to_search_text(properties: Dict[str, Dict[str, Any]]) -> s
         "category",
         "status",
     ]
-    noisy_name_keywords = [
-        "휴가표시",
-        "vacation",
-        "주차",
-        "금주",
-        "차주",
-        "경과",
-        "오늘",
-        "생성",
-        "최종",
-        "편집",
-        "on/off",
-        "id",
-        "uuid",
-    ]
     parts = []
     for name, prop in properties.items():
         normalized_name = normalize_for_match(name)
-        if any(normalize_for_match(keyword) in normalized_name for keyword in noisy_name_keywords):
+        if is_noisy_property_name(name):
             continue
         if not any(normalize_for_match(keyword) in normalized_name for keyword in useful_name_keywords):
             continue
