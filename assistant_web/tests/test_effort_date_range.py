@@ -73,6 +73,28 @@ class EffortDateRangeTests(unittest.TestCase):
         )
         self.assertEqual([source["issue_id"] for source in report["sources"]], [2])
 
+    def test_iso_day_range_is_recognized(self):
+        """``2026-03-01 ~ 2026-07-10`` 표기가 연 단위로 넓어지면 안 된다."""
+        expected = {"from": "2026-03-01", "to": "2026-07-10", "precision": "day_range"}
+        for question in (
+            "2026-03-01 ~ 2026-07-10 미래에셋증권 공수는 얼마야",
+            "2026-03-01~2026-07-10 미래에셋증권 공수는 얼마야",
+            "2026-03-01 부터 2026-07-10 까지 미래에셋증권 공수는 얼마야",
+            "2026-03-01-2026-07-10 미래에셋증권 공수는 얼마야",
+            "2026.3.1 ~ 2026.7.10 미래에셋증권 공수는 얼마야",
+            "2026/03/01~2026/07/10 미래에셋증권 공수는 얼마야",
+        ):
+            with self.subTest(question=question):
+                self.assertEqual(extract_created_at_range(question), expected)
+                query = extract_effort_query(question)
+                self.assertEqual(query["date_range"], expected)
+                self.assertNotIn("period", query)
+
+    def test_invalid_or_reversed_iso_range_is_not_guessed(self):
+        """잘못된 구간을 그럴듯한 다른 범위로 바꿔치기하면 안 된다."""
+        self.assertIsNone(extract_created_at_range("2026-07-10 ~ 2026-03-01 이슈"))
+        self.assertIsNone(extract_created_at_range("2026-02-30 ~ 2026-07-10 이슈"))
+
     def test_cross_year_explicit_range_is_supported(self):
         query = extract_effort_query(
             "2025년 12월 31일부터 2026년 1월 2일까지 석지원 공수 알려줘"

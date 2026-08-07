@@ -80,6 +80,10 @@ def _safe_date(year: int, month: int, day: int) -> Optional[date]:
         return None
 
 
+# ``2026-03-01`` / ``2026.3.1`` / ``2026/03/01``을 연·월·일 세 그룹으로 잡는다.
+_ISO_DATE_PATTERN = r"(20\d{2})[-./](1[0-2]|0?[1-9])[-./](3[01]|[12]\d|0?[1-9])"
+
+
 def has_invalid_month_expression(question: str) -> bool:
     """"2026년 13월"처럼 존재하지 않는 월을 가리키는 표현인지 판별한다."""
     return bool(re.search(r"(?<!\d)(1[3-9]|[2-9]\d)\s*월", str(question or "")))
@@ -92,6 +96,23 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
     # 조건을 그럴듯한 다른 범위로 대체하면 사용자가 결과를 오해하게 된다.
     if has_invalid_month_expression(question):
         return None
+
+    # ``2026-03-01 ~ 2026-07-10``처럼 ISO 표기로 적은 일 단위 구간. 한글 날짜
+    # 표현만 처리하던 때에는 이 형식이 어떤 규칙에도 걸리지 않아, 기간 조건이
+    # 조용히 사라지고 연 단위 집계로 넓어졌다.
+    iso_range_match = re.search(
+        rf"{_ISO_DATE_PATTERN}\s*(?:부터|~|～|-|–|—)\s*{_ISO_DATE_PATTERN}\s*(?:까지)?",
+        question,
+    )
+    if iso_range_match:
+        start = _safe_date(*(int(value) for value in iso_range_match.group(1, 2, 3)))
+        end = _safe_date(*(int(value) for value in iso_range_match.group(4, 5, 6)))
+        if start and end and start <= end:
+            return {
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                "precision": "day_range",
+            }
 
     # 일 단위까지 명시한 구간은 월 단위 규칙보다 먼저 처리한다. 그렇지 않으면
     # "2025년 12월 31일부터 2026년 1월 2일까지"가 아래 월 규칙에 걸려
