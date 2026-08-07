@@ -113,6 +113,36 @@ def format_authenticated_identity(user: Optional[Dict[str, Any]]) -> str:
     )
 
 
+def should_scope_to_authenticated_mantis_user(text: str) -> bool:
+    """개인 업무 요청인지 판정해 로그인 사용자의 Mantis 담당 범위를 적용한다."""
+    normalized = re.sub(r"\s+", "", str(text or "")).casefold()
+    if any(marker in normalized for marker in ("notion", "노션", "노선")):
+        return False
+    constraints = extract_query_constraints(text)
+    if constraints.get("people", {}).get("names"):
+        return False
+    if any(
+        marker in normalized
+        for marker in ("업무보고서", "주간보고서", "주간업무보고", "주간업무")
+    ):
+        return True
+    return any(
+        marker in normalized
+        for marker in ("내담당", "내이슈", "나의이슈", "내업무", "내가맡은")
+    )
+
+
+def apply_authenticated_mantis_scope(
+    text: str,
+    user: Optional[Dict[str, Any]],
+) -> str:
+    """개인 Mantis 요청에 인증 계정의 담당자명을 검색 조건으로 명시한다."""
+    mantis_username = str((user or {}).get("mantisUsername") or "").strip()
+    if not mantis_username or not should_scope_to_authenticated_mantis_user(text):
+        return text
+    return f"{text} 담당자: {mantis_username}".strip()
+
+
 class ChatService:
     """단일 채팅 요청의 전체 검색·답변 파이프라인을 실행한다."""
 
@@ -187,6 +217,7 @@ class ChatService:
             if rewritten:
                 retrieval_text = rewritten
         retrieval_text = retrieval_text or latest_user_text
+        retrieval_text = apply_authenticated_mantis_scope(retrieval_text, user)
         system_notes = []
         retrieval_result = None
         intent_plan = None

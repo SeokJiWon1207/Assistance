@@ -34,6 +34,29 @@ class AuthenticatedIdentityTests(unittest.TestCase):
     def test_non_identity_question_does_not_match(self):
         self.assertFalse(chat_service_module.is_identity_question("이 이슈 담당자는 누구야?"))
 
+    def test_weekly_report_is_scoped_to_authenticated_mantis_username(self):
+        scoped = chat_service_module.apply_authenticated_mantis_scope(
+            "저번주 업무보고서 작성해줘",
+            {"mantisUsername": "석지원"},
+        )
+        constraints = chat_service_module.extract_query_constraints(scoped)
+
+        self.assertIn("담당자: 석지원", scoped)
+        self.assertEqual(constraints["people"], {"names": ["석지원"], "role": "handler"})
+
+    def test_explicit_other_person_is_not_overridden_by_login(self):
+        with patch.object(
+            chat_service_module,
+            "extract_query_constraints",
+            return_value={"people": {"names": ["김담당"], "role": "handler"}},
+        ):
+            scoped = chat_service_module.apply_authenticated_mantis_scope(
+                "김담당 주간 업무보고서 작성해줘",
+                {"mantisUsername": "석지원"},
+            )
+
+        self.assertEqual(scoped, "김담당 주간 업무보고서 작성해줘")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -87,6 +87,30 @@ def source_specific_terms(query_text: str, source: str, constraints: Dict[str, A
     return list(dict.fromkeys(filtered))[:6]
 
 
+def grounded_mantis_terms(
+    query_text: str,
+    constraints: Dict[str, Any],
+    planned_terms: Optional[List[str]] = None,
+) -> List[str]:
+    """질문에 실제로 남는 Mantis 키워드만 플래너 결과에서 허용한다."""
+    deterministic_terms = source_specific_terms(query_text, "mantis", constraints)
+    if not planned_terms or not deterministic_terms:
+        return deterministic_terms
+
+    grounded = []
+    normalized_deterministic = [normalize_for_match(term) for term in deterministic_terms]
+    for term in planned_terms:
+        normalized = normalize_for_match(str(term))
+        if normalized and any(
+            normalized == candidate
+            or normalized in candidate
+            or candidate in normalized
+            for candidate in normalized_deterministic
+        ):
+            grounded.append(str(term))
+    return list(dict.fromkeys(grounded or deterministic_terms))[:6]
+
+
 def run_retrieval_pipeline(
     query_text: str,
     limit: int,
@@ -122,7 +146,11 @@ def run_retrieval_pipeline(
         else constraints
     )
     notion_terms = planned_terms if plan_source == "notion" and planned_terms else None
-    mantis_terms = planned_terms if plan_source == "mantis" and planned_terms else None
+    mantis_terms = (
+        grounded_mantis_terms(query_text, effective_constraints, planned_terms)
+        if plan_source == "mantis"
+        else None
+    )
     if plan_source == "both":
         notion_terms = source_specific_terms(query_text, "notion", effective_constraints)
         mantis_terms = source_specific_terms(query_text, "mantis", effective_constraints)
@@ -581,14 +609,16 @@ def build_snapshot_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
     as_of = snapshot_stage.get("meta", {}).get("snapshot_as_of") or get_mantis_snapshot_freshness()
     if not as_of:
         return None
-    live_supplemented = any(
+    live_succeeded = any(
         stage.get("source") in {"mantis_page_scan", "mantis_filter"}
         and stage.get("status") == "ok"
-        and stage.get("issues_list")
         for stage in stages
     )
-    if live_supplemented:
-        return f"데이터 기준: 로컬 스냅샷 {as_of} 수집분이며, 이후 구간은 실시간 조회로 보완했어요."
+    # 실시간 단계가 정상 완료되면 결과가 0건이어도 그 조회가 최신 구간의 근거다.
+    # 오래된 로컬 스냅샷 기준일을 함께 노출하면 전체 Mantis 데이터가 그 날짜에서
+    # 멈춘 것처럼 오해되므로 스냅샷 경고를 표시하지 않는다.
+    if live_succeeded:
+        return None
     return f"데이터 기준: 로컬 스냅샷 {as_of} 수집분입니다. 이후 등록된 이슈는 포함되지 않았을 수 있어요."
 
 

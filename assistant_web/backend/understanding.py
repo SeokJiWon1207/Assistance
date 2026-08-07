@@ -526,7 +526,11 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
 
     if not people:
         explicit_handler = re.search(
-            r"(?:담당자|담당)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{1,31})",
+            r"(?:담당자|담당)\s*[:=]\s*([가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31})",
+            person_text,
+            re.IGNORECASE,
+        ) or re.search(
+            r"(?:담당자|담당)\s*([A-Za-z][A-Za-z0-9_.-]{1,31})",
             person_text,
             re.IGNORECASE,
         )
@@ -1484,6 +1488,12 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
         "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
         "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
+        # 보고서 작성 지시와 상대 기간 표현은 이슈 본문의 검색어가 아니다.
+        # 이 값들이 라이브 페이지 스캔에 AND 키워드로 들어가면 날짜·담당자
+        # 조건에 맞는 실제 이슈가 있어도 0건이 된다.
+        "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
+        "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
+        "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
     }
     terms = [
         term

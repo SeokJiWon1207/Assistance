@@ -18,17 +18,35 @@ from scripts.accuracy.dynamic_accuracy_check import (
 
 
 class DataFreshnessNoteTests(unittest.TestCase):
-    @patch("backend.answers.get_mantis_snapshot_freshness", return_value="2026-05-07")
-    def test_note_tells_model_the_snapshot_base_date(self, _freshness):
-        # 기준일을 알려주지 않으면 "데이터 기준일"을 물었을 때 모델이 오늘
-        # 날짜를 그대로 답한다.
+    def test_current_date_note_does_not_present_snapshot_as_live_freshness(self):
         note = answers.build_current_date_note()
-        self.assertIn("2026-05-07", note)
-        self.assertIn("데이터 기준일", note)
+        self.assertNotIn("2026-05-07", note)
+        self.assertNotIn("데이터 기준일", note)
 
-    @patch("backend.answers.get_mantis_snapshot_freshness", return_value="")
-    def test_note_omits_base_date_when_unknown(self, _freshness):
-        self.assertNotIn("데이터 기준일", answers.build_current_date_note())
+    def test_snapshot_note_is_hidden_after_successful_live_lookup(self):
+        result = {
+            "stages": [
+                {
+                    "source": "mantis_snapshot",
+                    "status": "ok",
+                    "meta": {"snapshot_as_of": "2026-05-07"},
+                },
+                {"source": "mantis_page_scan", "status": "ok", "issues_list": []},
+            ]
+        }
+        self.assertIsNone(retrieval.build_snapshot_note(result))
+
+    def test_snapshot_only_result_keeps_freshness_warning(self):
+        result = {
+            "stages": [
+                {
+                    "source": "mantis_snapshot",
+                    "status": "ok",
+                    "meta": {"snapshot_as_of": "2026-05-07"},
+                }
+            ]
+        }
+        self.assertIn("2026-05-07", retrieval.build_snapshot_note(result))
 
 
 class ConstraintGroundingTests(unittest.TestCase):

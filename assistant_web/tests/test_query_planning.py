@@ -14,7 +14,7 @@ from backend.answers import (
 from backend.config import notion_post_json
 from backend.reports.effort import extract_effort_query
 from backend.reports.evaluation import build_verification_report
-from backend.retrieval import run_retrieval_pipeline
+from backend.retrieval import grounded_mantis_terms, run_retrieval_pipeline
 from backend.sources.mantis import issue_matches_constraints
 from backend.understanding import (
     build_contextual_retrieval_text,
@@ -38,6 +38,19 @@ from backend.query_planning import (
 
 
 class QueryPlanningTests(unittest.TestCase):
+    def test_weekly_report_control_words_do_not_become_mantis_keywords(self):
+        question = "저번주 업무보고서 작성해줘 담당자: 석지원"
+        constraints = extract_query_constraints(question)
+        self.assertEqual(build_keyword_terms(question, constraints), [])
+        self.assertEqual(
+            grounded_mantis_terms(
+                question,
+                constraints,
+                ["업무보고서", "저번주"],
+            ),
+            [],
+        )
+
     def test_customer_grouping_is_not_hana_customer_filter(self):
         question = "고객사별 최근 이슈를 하나씩 보여줘"
         constraints = extract_query_constraints(question)
