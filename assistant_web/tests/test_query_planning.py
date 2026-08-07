@@ -90,6 +90,30 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertEqual([issue["id"] for issue in grouped], [300, 250, 150])
 
+    def test_follow_up_quantity_hana_inherits_the_previous_customer(self):
+        messages = [
+            ChatMessage(role="user", content="159eBest에서 상태가 closed인 최근 이슈 2개 보여줘"),
+            ChatMessage(role="assistant", content="31350, 31347입니다"),
+            ChatMessage(role="user", content="방금 조건에서 가장 최근 이슈 하나만 자세히 알려줘"),
+        ]
+
+        latest = extract_query_constraints(messages[-1].content)
+        retrieval_text, needs_rewrite = build_contextual_retrieval_text(messages)
+        inherited = extract_query_constraints(retrieval_text)
+
+        self.assertIsNone(latest["customer_key"])
+        self.assertFalse(needs_rewrite)
+        self.assertEqual(inherited["customer_key"], "159eBest")
+        self.assertEqual(inherited["statuses"], ["closed"])
+        self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
+
+    def test_explicit_hana_customer_is_not_removed(self):
+        self.assertEqual(extract_query_constraints("하나 이슈 보여줘")["customer_key"], "하나")
+        self.assertEqual(
+            extract_query_constraints("하나금융 최근 이슈 하나만 보여줘")["customer_key"],
+            "하나금융",
+        )
+
     def test_customer_grouping_answer_lists_one_issue_per_customer(self):
         def issue(issue_id, project):
             return {

@@ -647,6 +647,19 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         customer_aliases = []
         customer_exact = None
 
+    # "최근 이슈 하나만"의 하나는 수량이지 하나금융의 짧은 별칭이 아니다.
+    # 명시적인 "하나증권/하나금융"이나 "하나 이슈"는 계속 고객사로 인식한다.
+    hana_count_expression = bool(
+        re.search(
+            r"(?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*하나\s*(?:만|씩|를|가|는|$)",
+            text,
+        )
+    )
+    if customer_key and normalize_for_match(customer_key) == "하나" and hana_count_expression:
+        customer_key = None
+        customer_aliases = []
+        customer_exact = None
+
     # KRX is both a legacy project/customer alias and a market-domain keyword.
     # In questions such as "KRX 제도개선" it describes the subject, not 119KRX.
     # Keep the customer constraint only when the user explicitly points to a
@@ -1488,6 +1501,9 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
         "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
         "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
+        # 후속 질문의 대화 제어 표현은 Mantis 본문 검색어가 아니다. 구조화된
+        # 고객사/상태 조건만 남겨야 라이브 페이지 스캔이 최신 이슈를 보완한다.
+        "방금", "아까", "해당", "위", "조건",
         # 보고서 작성 지시와 상대 기간 표현은 이슈 본문의 검색어가 아니다.
         # 이 값들이 라이브 페이지 스캔에 AND 키워드로 들어가면 날짜·담당자
         # 조건에 맞는 실제 이슈가 있어도 0건이 된다.
