@@ -1,11 +1,18 @@
-"""헬스체크와 정적 앱 진입점."""
+"""Liveness/readiness checks and the static application entry point."""
 
-from typing import Dict
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+from typing import Any, Dict
 
 from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
-from backend.config import STATIC_DIR
+from backend.auth import users_db_path
+from backend.config import AUDIT_DB_PATH, CHROMA_DB_PATH, STATIC_DIR
+from backend.sources.mantis import get_mantis_snapshot_freshness_status
+from backend.startup_validation import get_model_transport_security_status
+from backend.workspace import workspace_db_path
 
 
 router = APIRouter()
@@ -14,6 +21,63 @@ router = APIRouter()
 @router.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+def _sqlite_check(
+    path: Path,
+    required_table: str,
+    *,
+    verify_integrity: bool = True,
+) -> Dict[str, Any]:
+    if not path.exists():
+        return {"status": "error", "reason": "missing"}
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
+            quick_check = (
+                str(connection.execute("PRAGMA quick_check").fetchone()[0])
+                if verify_integrity
+                else "ok"
+            )
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (required_table,),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        return {"status": "error", "reason": type(exc).__name__}
+    if quick_check != "ok" or table is None:
+        return {
+            "status": "error",
+            "reason": "integrity" if quick_check != "ok" else "schema",
+        }
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+def readiness() -> JSONResponse:
+    model_transport = get_model_transport_security_status()
+    checks = {
+        "usersDb": _sqlite_check(users_db_path(), "users"),
+        "workspaceDb": _sqlite_check(workspace_db_path(), "conversations"),
+        "auditDb": _sqlite_check(AUDIT_DB_PATH, "validation_logs"),
+        # 수백 MB 스냅샷에 PRAGMA quick_check를 매 요청마다 실행하면 readiness가
+        # 수십 초 동안 블로킹된다. 전체 무결성은 원자 재구축/배포 단계에서 검증하고,
+        # 여기서는 읽기 전용 open과 필수 스키마 존재만 확인한다.
+        "snapshotDb": _sqlite_check(
+            CHROMA_DB_PATH,
+            "embedding_metadata",
+            verify_integrity=False,
+        ),
+    }
+    ready = all(check["status"] == "ok" for check in checks.values()) and model_transport[
+        "status"
+    ] not in {"error", "expired"}
+    payload = {
+        "status": "ready" if ready else "not_ready",
+        "checks": checks,
+        "freshness": {"mantis": get_mantis_snapshot_freshness_status()},
+        "security": {"modelTransport": model_transport},
+    }
+    return JSONResponse(payload, status_code=200 if ready else 503)
 
 
 @router.get("/")

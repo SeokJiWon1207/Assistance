@@ -5,8 +5,8 @@
     "model": "qwen3.6-35b-a3b",
     "provider": "openai-compatible",
     "endpointEnv": "COMPANY_MODEL_46_ENDPOINT",
-    "endpoint": "http://59.6.135.38:13025/v1/chat/completions",
     "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
+    "expiresAtEnv": "COMPANY_MODEL_46_EXPIRES_AT",
     "think": false,
     "expiresAt": "2026-12-31",
     "enabled": true

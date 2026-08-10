@@ -8,6 +8,7 @@ Notion REST API 호출, 속성/블록 파싱, 페이지 정규화·검색·랭�
 
 import os
 import re
+import time
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -440,8 +441,16 @@ def fetch_notion_page_blocks(page_id: str, max_blocks: int = 30) -> str:
     return "\n".join(text for text in (notion_block_text(block) for block in blocks) if text).strip()
 
 
-@lru_cache(maxsize=16)
-def fetch_notion_database_title(database_id: str) -> str:
+def _notion_cache_bucket() -> int:
+    try:
+        ttl_seconds = max(30, min(int(os.getenv("NOTION_CACHE_TTL_SECONDS", "600")), 3600))
+    except ValueError:
+        ttl_seconds = 600
+    return int(time.monotonic() // ttl_seconds)
+
+
+@lru_cache(maxsize=64)
+def _fetch_notion_database_title_cached(database_id: str, _bucket: int) -> str:
     try:
         response = requests.get(
             f"{NOTION_API_BASE}/databases/{database_id}",
@@ -459,8 +468,12 @@ def fetch_notion_database_title(database_id: str) -> str:
     return title or (database_id[-8:] if database_id else "Notion DB")
 
 
-@lru_cache(maxsize=16)
-def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
+def fetch_notion_database_title(database_id: str) -> str:
+    return _fetch_notion_database_title_cached(database_id, _notion_cache_bucket())
+
+
+@lru_cache(maxsize=64)
+def _fetch_notion_database_schema_cached(database_id: str, _bucket: int) -> Dict[str, Any]:
     response = requests.get(
         f"{NOTION_API_BASE}/databases/{database_id}",
         headers=get_notion_headers(),
@@ -472,6 +485,10 @@ def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
             detail=f"Notion DB 정보를 불러오지 못했습니다: {response.status_code} {response.text[:300]}",
         )
     return response.json()
+
+
+def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
+    return _fetch_notion_database_schema_cached(database_id, _notion_cache_bucket())
 
 
 def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
@@ -497,6 +514,29 @@ def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
         if "주요이슈" in normalize_for_match(title):
             return database_id
     return database_ids[0]
+
+
+def normalize_notion_id(value: str) -> str:
+    return re.sub(r"[^0-9a-f]", "", str(value or "").lower())
+
+
+def validate_notion_page_id(page_id: str) -> str:
+    normalized = normalize_notion_id(page_id)
+    if len(normalized) != 32:
+        raise HTTPException(status_code=422, detail="올바르지 않은 Notion 페이지 ID입니다.")
+    return normalized
+
+
+def ensure_configured_notion_database(database_id: str) -> str:
+    normalized = normalize_notion_id(database_id)
+    allowed = {
+        normalize_notion_id(item)
+        for item in get_notion_settings().get("database_ids", [])
+        if normalize_notion_id(item)
+    }
+    if not normalized or normalized not in allowed:
+        raise HTTPException(status_code=403, detail="허용되지 않은 Notion 데이터베이스입니다.")
+    return normalized
 
 
 def notion_property_schema(database_id: str) -> Dict[str, Dict[str, Any]]:
@@ -632,8 +672,8 @@ def notion_property_payload(prop: Dict[str, Any], value: Any) -> Optional[Dict[s
     return None
 
 
-@lru_cache(maxsize=1)
-def fetch_notion_users() -> tuple[tuple[str, str], ...]:
+@lru_cache(maxsize=8)
+def _fetch_notion_users_cached(_bucket: int) -> tuple[tuple[str, str], ...]:
     users: List[tuple[str, str]] = []
     cursor = None
     while True:
@@ -658,6 +698,10 @@ def fetch_notion_users() -> tuple[tuple[str, str], ...]:
             break
         cursor = data.get("next_cursor")
     return tuple(users)
+
+
+def fetch_notion_users() -> tuple[tuple[str, str], ...]:
+    return _fetch_notion_users_cached(_notion_cache_bucket())
 
 
 def notion_people_payload(prop: Dict[str, Any], value: str) -> Optional[Dict[str, Any]]:
@@ -775,6 +819,7 @@ def create_notion_page(request: NotionPageWriteRequest) -> Dict[str, Any]:
 
 
 def update_notion_page(page_id: str, request: NotionPageUpdateRequest) -> Dict[str, Any]:
+    page_id = validate_notion_page_id(page_id)
     page_response = requests.get(
         f"{NOTION_API_BASE}/pages/{page_id}",
         headers=get_notion_headers(),
@@ -789,6 +834,7 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest) -> Dict[s
     database_id = page.get("parent", {}).get("database_id", "")
     if not database_id:
         raise HTTPException(status_code=400, detail="DB 항목이 아닌 Notion 페이지는 수정할 수 없습니다.")
+    ensure_configured_notion_database(database_id)
 
     properties = build_notion_write_properties(database_id, request.model_dump(), require_title=False)
     if not properties:
@@ -1967,7 +2013,12 @@ def execute_notion_write_command(text: str) -> Dict[str, Any]:
     }
 
 
-def run_notion_write_command(text: str, messages: List[ChatMessage]) -> Optional[Dict[str, Any]]:
+def run_notion_write_command(
+    text: str,
+    messages: List[ChatMessage],
+    *,
+    allow_write: bool = True,
+) -> Optional[Dict[str, Any]]:
     pending_command = find_pending_notion_write_command(messages)
     if pending_command:
         if is_notion_write_cancel_phrase(text):
@@ -1977,6 +2028,12 @@ def run_notion_write_command(text: str, messages: List[ChatMessage]) -> Optional
                 "raw": {"mode": "notion_write_cancelled"},
             }
         if is_notion_write_confirm_phrase(text):
+            if not allow_write:
+                return {
+                    "content": "Notion 수정은 매니저 이상만 가능합니다.",
+                    "sources": [],
+                    "raw": {"mode": "notion_write_forbidden"},
+                }
             return execute_notion_write_command(pending_command)
         # 확인/취소 문구가 아니면 대기 중이던 작업은 그대로 소멸시킨다(서버에 상태를
         # 남기지 않으므로 다시 언급하지 않는 한 실행되지 않는다). 현재 입력은 아래에서
@@ -2079,7 +2136,7 @@ def format_deterministic_notion_answer(
         for item in notion_stage.get("meta", {}).get("databases", [])
         if item.get("database_label")
     ]
-    criteria = f"검색 기준: Notion DB"
+    criteria = "검색 기준: Notion DB"
     if database_labels:
         criteria += f"({', '.join(database_labels)})"
     if terms:

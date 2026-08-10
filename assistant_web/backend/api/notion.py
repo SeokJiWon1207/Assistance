@@ -3,22 +3,31 @@
 from typing import Any, Dict
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from backend.auth import current_request_user
 from backend.config import NOTION_API_BASE, get_notion_headers, get_notion_settings, notion_is_configured
 from backend.schemas import ChromaSearchRequest, NotionPageUpdateRequest, NotionPageWriteRequest
 from backend.sources.notion import (
     build_sources_from_single_notion_page,
     create_notion_page,
+    ensure_configured_notion_database,
     execute_notion_search,
     fetch_notion_database_title,
     normalize_notion_page,
     update_notion_page,
+    validate_notion_page_id,
 )
 from backend.understanding import extract_query_constraints
 
 
 router = APIRouter()
+
+
+def _require_notion_writer(request: Request) -> None:
+    user = current_request_user(request)
+    if user and user.get("role") not in {"manager", "admin"}:
+        raise HTTPException(status_code=403, detail="Notion 수정은 매니저 이상만 가능합니다.")
 
 
 @router.get("/api/notion/status")
@@ -43,6 +52,7 @@ def search_notion(request: ChromaSearchRequest) -> Dict[str, Any]:
 
 @router.get("/api/notion/pages/{page_id}")
 def get_notion_page_endpoint(page_id: str) -> Dict[str, Any]:
+    page_id = validate_notion_page_id(page_id)
     response = requests.get(
         f"{NOTION_API_BASE}/pages/{page_id}",
         headers=get_notion_headers(),
@@ -55,6 +65,7 @@ def get_notion_page_endpoint(page_id: str) -> Dict[str, Any]:
         )
     page = response.json()
     database_id = page.get("parent", {}).get("database_id", "")
+    ensure_configured_notion_database(database_id)
     return {
         "page": normalize_notion_page(
             page,
@@ -66,12 +77,18 @@ def get_notion_page_endpoint(page_id: str) -> Dict[str, Any]:
 
 
 @router.post("/api/notion/pages")
-def create_notion_page_endpoint(request: NotionPageWriteRequest) -> Dict[str, Any]:
-    page = create_notion_page(request)
+def create_notion_page_endpoint(payload: NotionPageWriteRequest, request: Request) -> Dict[str, Any]:
+    _require_notion_writer(request)
+    page = create_notion_page(payload)
     return {"page": page, "sources": build_sources_from_single_notion_page(page)}
 
 
 @router.patch("/api/notion/pages/{page_id}")
-def update_notion_page_endpoint(page_id: str, request: NotionPageUpdateRequest) -> Dict[str, Any]:
-    page = update_notion_page(page_id, request)
+def update_notion_page_endpoint(
+    page_id: str,
+    payload: NotionPageUpdateRequest,
+    request: Request,
+) -> Dict[str, Any]:
+    _require_notion_writer(request)
+    page = update_notion_page(validate_notion_page_id(page_id), payload)
     return {"page": page, "sources": build_sources_from_single_notion_page(page)}

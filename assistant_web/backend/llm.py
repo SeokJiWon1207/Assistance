@@ -7,6 +7,7 @@ models.json 기반 모델 목록 로딩, OpenAI 호환/Ollama 네이티브 엔�
 """
 
 import json
+import logging
 import os
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -19,26 +20,49 @@ from backend.config import CONFIG_DIR
 from backend.schemas import ChatRequest
 
 
+LOGGER = logging.getLogger(__name__)
+
+
+def _default_model_registry() -> List[Dict[str, Any]]:
+    return [
+        {
+            "id": "company-qwen3.6-35b-a3b",
+            "label": "회사 Qwen 3.6 35B",
+            "model": "qwen3.6-35b-a3b",
+            "provider": "openai-compatible",
+            "endpointEnv": "COMPANY_MODEL_46_ENDPOINT",
+            "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
+            "think": False,
+            "expiresAt": os.getenv("COMPANY_MODEL_46_EXPIRES_AT", ""),
+            "enabled": True,
+        },
+        {
+            "id": "qwen3.5-9b-local",
+            "label": "Qwen 3.5 9B (로컬)",
+            "model": "qwen3.5:9b",
+            "provider": "ollama",
+            "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
+            "nativeEndpoint": "http://127.0.0.1:11434/api/chat",
+            "think": False,
+            "expiresAt": "",
+            "enabled": True,
+        },
+    ]
+
+
 def get_model_registry() -> List[Dict[str, Any]]:
     registry_path = CONFIG_DIR / "models.json"
     if registry_path.exists():
-        raw_models = json.loads(registry_path.read_text(encoding="utf-8"))
+        try:
+            loaded = json.loads(registry_path.read_text(encoding="utf-8"))
+            if not isinstance(loaded, list) or not all(isinstance(item, dict) for item in loaded):
+                raise ValueError("models.json root must be a list of objects")
+            raw_models = loaded
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            LOGGER.warning("models.json을 읽지 못해 기본 모델 목록을 사용합니다: %s", exc)
+            raw_models = _default_model_registry()
     else:
-        raw_models = [
-            {
-                "id": "company-qwen3.6-35b-a3b",
-                "label": "회사 Qwen 3.6 35B",
-                "model": "qwen3.6-35b-a3b",
-                "endpoint": os.getenv(
-                    "COMPANY_MODEL_46_ENDPOINT",
-                    "http://59.6.135.38:13025/v1/chat/completions",
-                ),
-                "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
-                "think": False,
-                "expiresAt": os.getenv("COMPANY_MODEL_46_EXPIRES_AT", ""),
-                "enabled": True,
-            }
-        ]
+        raw_models = _default_model_registry()
 
     today = date.today()
     models = []
@@ -52,7 +76,14 @@ def get_model_registry() -> List[Dict[str, Any]]:
         resolved_model = {**model}
         if resolved_endpoint:
             resolved_model["endpoint"] = resolved_endpoint
-        expires_at = parse_date(str(model.get("expiresAt", "")))
+        expires_at_env = str(model.get("expiresAtEnv", "")).strip()
+        resolved_expires_at = (
+            os.getenv(expires_at_env, str(model.get("expiresAt", ""))).strip()
+            if expires_at_env
+            else str(model.get("expiresAt", "")).strip()
+        )
+        resolved_model["expiresAt"] = resolved_expires_at
+        expires_at = parse_date(resolved_expires_at)
         api_key = os.getenv(str(model.get("apiKeyEnv", "")), "").strip()
         is_local_ollama = str(model.get("provider", "")).strip().lower() == "ollama"
         has_key = is_local_ollama or (bool(api_key) and not api_key.startswith("replace_with_"))
