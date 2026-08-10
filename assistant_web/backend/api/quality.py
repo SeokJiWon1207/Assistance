@@ -8,13 +8,15 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import closing
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from backend.audit import init_audit_db
+from backend.auth import current_request_user
 from backend.config import APP_DIR, AUDIT_DB_PATH, RUNTIME_DIR
 from backend.reports.evaluation import (
     EVALUATION_CASES,
@@ -41,7 +43,7 @@ FEEDBACK_REASON_LABELS = {
 
 
 @router.post("/api/feedback")
-def save_answer_feedback(request: AnswerFeedbackRequest) -> Dict[str, Any]:
+def save_answer_feedback(request: AnswerFeedbackRequest, http_request: Request) -> Dict[str, Any]:
     init_audit_db()
     if request.rating == "needs_improvement" and not request.reason:
         raise HTTPException(status_code=400, detail="개선 필요 사유를 선택해 주세요.")
@@ -51,10 +53,11 @@ def save_answer_feedback(request: AnswerFeedbackRequest) -> Dict[str, Any]:
     reason = request.reason if request.rating == "needs_improvement" else None
     comment = request.comment.strip()
     template_id = (request.templateId or "").strip() or None
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    user_uid = str((current_request_user(http_request) or {}).get("uid") or "").strip()
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         audit_row = connection.execute(
-            "SELECT id FROM validation_logs WHERE id = ?",
-            (request.auditId,),
+            "SELECT id FROM validation_logs WHERE id = ? AND user_uid = ?",
+            (request.auditId, user_uid),
         ).fetchone()
         if not audit_row:
             raise HTTPException(status_code=404, detail="피드백을 연결할 답변 로그를 찾지 못했습니다.")
@@ -107,7 +110,7 @@ def save_answer_feedback(request: AnswerFeedbackRequest) -> Dict[str, Any]:
 def get_feedback_summary(limit: int = 200) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 1000))
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """
@@ -187,7 +190,7 @@ def get_feedback_summary(limit: int = 200) -> Dict[str, Any]:
 def list_validation_logs(limit: int = 20) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 100))
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             "SELECT id, created_at, question, model_id, mode, score, status FROM validation_logs ORDER BY created_at DESC LIMIT ?",
@@ -204,10 +207,10 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
     운영 대시보드용 엔드포인트다."""
     init_audit_db()
     safe_limit = max(1, min(limit, 2000))
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            "SELECT id, created_at, question, model_id, mode, score, status, payload "
+            "SELECT id, created_at, question, model_id, mode, score, status, failed_checks_json "
             "FROM validation_logs ORDER BY created_at DESC LIMIT ?",
             (safe_limit,),
         ).fetchall()
@@ -231,15 +234,15 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
         score_sum += row["score"] or 0
 
         try:
-            payload = json.loads(row["payload"] or "{}")
+            failed_checks = json.loads(row["failed_checks_json"] or "[]")
         except (TypeError, ValueError):
-            payload = {}
-        verification = payload.get("verification") or {}
-        for check in verification.get("checks", []):
-            if check.get("status") == "fail":
-                check_id = str(check.get("id", "unknown"))
-                check_fail_counts[check_id] = check_fail_counts.get(check_id, 0) + 1
-                check_labels[check_id] = check.get("label", check_id)
+            failed_checks = []
+        for check in failed_checks:
+            if not isinstance(check, dict):
+                continue
+            check_id = str(check.get("id", "unknown"))
+            check_fail_counts[check_id] = check_fail_counts.get(check_id, 0) + 1
+            check_labels[check_id] = check.get("label", check_id)
 
         if status in {"fail", "warning"} and len(recent_issues) < 20:
             recent_issues.append(
@@ -278,7 +281,7 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
 @router.get("/api/validation/logs/{log_id}")
 def read_validation_log(log_id: str) -> Dict[str, Any]:
     init_audit_db()
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         row = connection.execute(
             "SELECT payload FROM validation_logs WHERE id = ?",
             (log_id,),
@@ -344,6 +347,7 @@ def stream_accuracy_run(questions: int, follow_up_scenarios: int):
     if not ACCURACY_RUN_LOCK.acquire(blocking=False):
         yield frame({"type": "error", "message": "이미 실행 중인 정확도 검증이 있습니다. 잠시 후 다시 시도해 주세요."})
         return
+    process = None
     try:
         # 서브프로세스로 실행해 스크립트의 os.environ 변경과 예외가 서버에 영향을
         # 주지 않게 하고, stdout의 PROGRESS 라인을 SSE로 중계한다.
@@ -374,6 +378,17 @@ def stream_accuracy_run(questions: int, follow_up_scenarios: int):
         exit_code = process.wait()
         yield frame({"type": "done", "exitCode": exit_code})
     finally:
+        if process is not None:
+            close_stdout = getattr(process.stdout, "close", None)
+            if callable(close_stdout):
+                close_stdout()
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=3)
         ACCURACY_RUN_LOCK.release()
 
 
@@ -432,14 +447,14 @@ def read_accuracy_report(name: str) -> Dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError) as exc:
-        raise HTTPException(status_code=500, detail=f"리포트를 읽지 못했습니다: {exc}")
+        raise HTTPException(status_code=500, detail=f"리포트를 읽지 못했습니다: {exc}") from exc
 
 
 @router.get("/api/evaluation/history")
 def list_evaluation_history(limit: int = 10) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 50))
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             "SELECT id, run_at, total, passed, failed, score, duration_ms FROM evaluation_runs "

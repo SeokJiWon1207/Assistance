@@ -10,8 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from backend.common import extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
+from backend.common import clamp_int, extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
+from backend.db_migrations import run_sqlite_migrations
 from backend.sources.mantis import fetch_mantis_recent_issues, normalize_issue
 from backend.sources.notion import (
     fetch_notion_database_schema,
@@ -19,6 +20,7 @@ from backend.sources.notion import (
     fetch_notion_users,
     normalize_notion_page,
 )
+from backend.schemas import ConversationMessage
 from backend.tools.mantis_snapshot import scan_mantis_documents
 
 
@@ -31,11 +33,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def init_workspace_db() -> None:
-    path = workspace_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(path)) as connection, connection:
-        connection.execute(
+class ConversationQuotaError(ValueError):
+    """A user exceeded the configured server-side conversation storage quota."""
+
+
+def _create_workspace_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
             """
             CREATE TABLE IF NOT EXISTS conversations (
                 user_uid TEXT NOT NULL,
@@ -49,11 +52,11 @@ def init_workspace_db() -> None:
             )
             """
         )
-        connection.execute(
+    connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_conversations_user_updated "
             "ON conversations(user_uid, favorite DESC, updated_at DESC)"
         )
-        connection.execute(
+    connection.execute(
             """
             CREATE TABLE IF NOT EXISTS notification_reads (
                 user_uid TEXT NOT NULL,
@@ -65,15 +68,38 @@ def init_workspace_db() -> None:
         )
 
 
+def init_workspace_db() -> None:
+    run_sqlite_migrations(
+        workspace_db_path(),
+        [_create_workspace_schema],
+        database_name="workspace",
+    )
+
+
 def _safe_messages(messages: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     safe: List[Dict[str, Any]] = []
     for raw in list(messages)[:80]:
-        if not isinstance(raw, dict) or raw.get("role") not in {"user", "assistant"}:
+        try:
+            item = ConversationMessage.model_validate(raw)
+        except (TypeError, ValueError):
             continue
-        item = dict(raw)
-        item["content"] = str(item.get("content") or "")[:30000]
-        safe.append(item)
+        safe.append(item.model_dump(exclude_none=True))
     return safe
+
+
+def _conversation_from_row(row: sqlite3.Row) -> Dict[str, Any]:
+    try:
+        messages = json.loads(row["messages_json"])
+    except (TypeError, ValueError):
+        messages = []
+    return {
+        "id": row["conversation_id"],
+        "title": row["title"],
+        "messages": _safe_messages(messages) if isinstance(messages, list) else [],
+        "favorite": bool(row["favorite"]),
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
 
 
 def list_conversations(user_uid: str, limit: int = 40) -> List[Dict[str, Any]]:
@@ -88,23 +114,7 @@ def list_conversations(user_uid: str, limit: int = 40) -> List[Dict[str, Any]]:
             """,
             (user_uid, max(1, min(limit, 100))),
         ).fetchall()
-    conversations = []
-    for row in rows:
-        try:
-            messages = json.loads(row["messages_json"])
-        except (TypeError, ValueError):
-            messages = []
-        conversations.append(
-            {
-                "id": row["conversation_id"],
-                "title": row["title"],
-                "messages": messages if isinstance(messages, list) else [],
-                "favorite": bool(row["favorite"]),
-                "createdAt": row["created_at"],
-                "updatedAt": row["updated_at"],
-            }
-        )
-    return conversations
+    return [_conversation_from_row(row) for row in rows]
 
 
 def save_conversation(
@@ -120,7 +130,44 @@ def save_conversation(
     safe_messages = _safe_messages(messages)
     safe_title = str(title or "새 대화").strip()[:120] or "새 대화"
     safe_created_at = str(created_at or now)[:40]
+    messages_json = json.dumps(safe_messages, ensure_ascii=False)
+    max_conversations = clamp_int(
+        os.getenv("CONVERSATION_MAX_PER_USER", "200"), 1, 5000
+    ) or 200
+    max_total_bytes = clamp_int(
+        os.getenv("CONVERSATION_MAX_TOTAL_BYTES_PER_USER", "50000000"),
+        1_000_000,
+        1_000_000_000,
+    ) or 50_000_000
+    max_conversation_bytes = clamp_int(
+        os.getenv("CONVERSATION_MAX_BYTES", "1000000"), 100_000, 10_000_000
+    ) or 1_000_000
+    new_bytes = len(messages_json.encode("utf-8")) + len(safe_title.encode("utf-8"))
+    if new_bytes > max_conversation_bytes:
+        raise ConversationQuotaError("대화 한 건의 저장 크기 제한을 초과했습니다.")
     with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+        connection.execute("BEGIN IMMEDIATE")
+        current = connection.execute(
+            """
+            SELECT COUNT(*), COALESCE(SUM(
+                length(CAST(messages_json AS BLOB)) + length(CAST(title AS BLOB))
+            ), 0)
+            FROM conversations WHERE user_uid = ?
+            """,
+            (user_uid,),
+        ).fetchone()
+        existing = connection.execute(
+            """
+            SELECT length(CAST(messages_json AS BLOB)) + length(CAST(title AS BLOB))
+            FROM conversations WHERE user_uid = ? AND conversation_id = ?
+            """,
+            (user_uid, conversation_id),
+        ).fetchone()
+        existing_bytes = int(existing[0]) if existing else 0
+        if not existing and int(current[0]) >= max_conversations:
+            raise ConversationQuotaError("사용자별 대화 저장 개수 제한을 초과했습니다.")
+        if int(current[1]) - existing_bytes + new_bytes > max_total_bytes:
+            raise ConversationQuotaError("사용자별 대화 저장 용량 제한을 초과했습니다.")
         connection.execute(
             """
             INSERT INTO conversations (
@@ -136,15 +183,24 @@ def save_conversation(
                 user_uid,
                 conversation_id,
                 safe_title,
-                json.dumps(safe_messages, ensure_ascii=False),
+                messages_json,
                 int(bool(favorite)),
                 safe_created_at,
                 now,
             ),
         )
-    return next(
-        item for item in list_conversations(user_uid) if item["id"] == conversation_id
-    )
+    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """
+            SELECT conversation_id, title, messages_json, favorite, created_at, updated_at
+            FROM conversations WHERE user_uid = ? AND conversation_id = ?
+            """,
+            (user_uid, conversation_id),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Saved conversation could not be read back")
+    return _conversation_from_row(row)
 
 
 def delete_conversation(user_uid: str, conversation_id: str) -> bool:

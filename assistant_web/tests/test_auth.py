@@ -125,6 +125,101 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("초대한 계정", response.json()["detail"])
 
+    def test_protected_api_rejects_missing_session(self):
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ):
+            response = self.client.get("/api/auth/me")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "로그인이 필요합니다.")
+
+    def test_protected_api_rejects_expired_or_forged_session(self):
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ), patch.object(
+            auth_module,
+            "verify_firebase_session",
+            side_effect=ValueError("invalid session"),
+        ):
+            response = self.client.get(
+                "/api/auth/me", cookies={"ai_session": "forged"}
+            )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "로그인 세션이 만료되었습니다.")
+
+    def test_protected_api_rejects_unapproved_user(self):
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ), patch.object(
+            auth_module,
+            "verify_firebase_session",
+            return_value={"uid": "blocked", "email": "blocked@example.com"},
+        ), patch.object(
+            auth_module,
+            "get_user_by_uid",
+            return_value={
+                "uid": "blocked",
+                "email": "blocked@example.com",
+                "approved": False,
+                "role": "member",
+            },
+        ):
+            response = self.client.get(
+                "/api/auth/me", cookies={"ai_session": "valid"}
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "승인되지 않은 사용자입니다.")
+
+    def test_member_cannot_access_admin_api(self):
+        user = {
+            "uid": "member-1",
+            "email": "member@example.com",
+            "approved": True,
+            "role": "member",
+        }
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ), patch.object(
+            auth_module,
+            "verify_firebase_session",
+            return_value={"uid": "member-1", "email": "member@example.com"},
+        ), patch.object(auth_module, "get_user_by_uid", return_value=user):
+            response = self.client.get(
+                "/api/validation/logs", cookies={"ai_session": "valid"}
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "관리자 권한이 필요합니다.")
+
+    def test_state_changing_api_rejects_missing_csrf_token(self):
+        user = {
+            "uid": "member-1",
+            "email": "member@example.com",
+            "approved": True,
+            "role": "member",
+        }
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ), patch.object(
+            auth_module,
+            "verify_firebase_session",
+            return_value={"uid": "member-1", "email": "member@example.com"},
+        ), patch.object(auth_module, "get_user_by_uid", return_value=user):
+            response = self.client.post(
+                "/api/chat",
+                cookies={"ai_session": "valid", "ai_csrf": "cookie-token"},
+                json={
+                    "modelId": "test-model",
+                    "messages": [{"role": "user", "content": "테스트"}],
+                },
+            )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "요청 보안 토큰이 올바르지 않습니다.")
+
 
 if __name__ == "__main__":
     unittest.main()

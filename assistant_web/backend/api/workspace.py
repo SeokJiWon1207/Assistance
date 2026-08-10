@@ -6,10 +6,12 @@ import re
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.auth import current_request_user, list_users
+from backend.schemas import ConversationMessage
 from backend.workspace import (
+    ConversationQuotaError,
     build_my_workspace,
     build_team_dashboard,
     delete_conversation,
@@ -25,9 +27,15 @@ ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 class ConversationWriteRequest(BaseModel):
     title: str = Field(default="새 대화", max_length=120)
-    messages: List[Dict[str, Any]] = Field(default_factory=list, max_length=80)
+    messages: List[ConversationMessage] = Field(default_factory=list, max_length=80)
     favorite: bool = False
     createdAt: str = Field(default="", max_length=40)
+
+    @model_validator(mode="after")
+    def cap_serialized_size(self):
+        if len(self.model_dump_json().encode("utf-8")) > 1_000_000:
+            raise ValueError("대화 저장 요청은 1MB를 넘을 수 없습니다.")
+        return self
 
 
 def _user(request: Request) -> Dict[str, Any]:
@@ -60,16 +68,18 @@ def put_conversation(
     request: Request,
 ) -> Dict[str, Any]:
     user = _user(request)
-    return {
-        "conversation": save_conversation(
+    try:
+        conversation = save_conversation(
             user["uid"],
             _valid_id(conversation_id, "대화 ID"),
             payload.title,
-            payload.messages,
+            [message.model_dump(exclude_none=True) for message in payload.messages],
             payload.favorite,
             payload.createdAt,
         )
-    }
+    except ConversationQuotaError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    return {"conversation": conversation}
 
 
 @router.delete("/conversations/{conversation_id}")

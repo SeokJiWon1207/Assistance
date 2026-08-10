@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from contextlib import closing
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -35,7 +36,6 @@ from backend.audit import (
 from backend.common import (
     clamp_int,
     normalize_for_match,
-    text_matches_any_alias,
     text_matches_customer_aliases,
 )
 from backend.config import AUDIT_DB_PATH, CONFIG_DIR
@@ -897,6 +897,7 @@ def finalize_chat_response(
     request: ChatRequest,
     question: str,
     response: Dict[str, Any],
+    user_uid: str = "",
 ) -> Dict[str, Any]:
     sources = response.get("sources") or []
     # sourcesForFollowUps는 화면 출처 표시 여부(showSources)와 무관하게 항상 채워지는
@@ -991,6 +992,7 @@ def finalize_chat_response(
     answered_model_id = response.get("modelId") or request.modelId
     payload = {
         "question": question,
+        "userUid": str(user_uid or "").strip(),
         "answer": response.get("content", ""),
         "modelId": answered_model_id,
         "mode": mode,
@@ -1016,9 +1018,14 @@ def finalize_chat_response(
         "abTest": response.get("abTest"),
     }
     init_audit_db()
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.execute(
-            "INSERT INTO validation_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO validation_logs (
+                id, created_at, question, model_id, mode, score, status, payload,
+                user_uid, failed_checks_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
             (
                 log_id,
                 verification["verifiedAt"],
@@ -1028,6 +1035,18 @@ def finalize_chat_response(
                 verification["score"],
                 verification["status"],
                 json.dumps(payload, ensure_ascii=False),
+                str(user_uid or "").strip(),
+                json.dumps(
+                    [
+                        {
+                            "id": str(check.get("id") or "unknown")[:128],
+                            "label": str(check.get("label") or check.get("id") or "unknown")[:256],
+                        }
+                        for check in verification.get("checks", [])
+                        if check.get("status") == "fail"
+                    ],
+                    ensure_ascii=False,
+                ),
             ),
         )
     response["verification"] = verification
@@ -1243,7 +1262,7 @@ def build_evaluation_summary(results: List[Dict[str, Any]], duration_ms: int) ->
 def save_evaluation_run(summary: Dict[str, Any], results: List[Dict[str, Any]]) -> str:
     run_id = uuid.uuid4().hex[:12]
     init_audit_db()
-    with sqlite3.connect(AUDIT_DB_PATH) as connection:
+    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.execute(
             "INSERT INTO evaluation_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (

@@ -9,7 +9,7 @@ Mantis 이슈의 공수 커스텀필드를 파싱해 기간·고객사·매체·
 import calendar
 import re
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from backend.common import (
     is_valid_person_name,

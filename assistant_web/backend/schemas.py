@@ -5,7 +5,7 @@ pydantic 외의 backend 모듈을 참조하지 않는다(순환 방지).
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "ChatMessage",
@@ -19,6 +19,7 @@ __all__ = [
     "FilterClause",
     "SortClause",
     "StructuredQueryPlan",
+    "ConversationMessage",
 ]
 
 
@@ -66,13 +67,13 @@ class StructuredQueryPlan(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    role: str = Field(pattern="^(system|user|assistant)$")
-    content: str
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(max_length=30000)
 
 
 class ChatRequest(BaseModel):
-    modelId: str
-    messages: List[ChatMessage]
+    modelId: str = Field(min_length=1, max_length=128)
+    messages: List[ChatMessage] = Field(min_length=1, max_length=80)
     temperature: float = 0.3
     topP: Optional[float] = None
     topK: Optional[int] = None
@@ -82,7 +83,7 @@ class ChatRequest(BaseModel):
     frequencyPenalty: Optional[float] = None
     repetitionPenalty: Optional[float] = None
     seed: Optional[int] = None
-    stop: Optional[List[str]] = None
+    stop: Optional[List[str]] = Field(default=None, max_length=10)
     responseFormat: str = "text"
     answerStyle: str = "normal"
     searchLimit: Optional[int] = None
@@ -97,10 +98,86 @@ class ChatRequest(BaseModel):
     # 그 답변에서 실제로 표시한 결과 목록으로 해석하는 데 사용한다(선택).
     contextAuditId: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_total_message_size(self):
+        if sum(len(message.content) for message in self.messages) > 120000:
+            raise ValueError("메시지 전체 길이는 120,000자를 넘을 수 없습니다.")
+        if self.stop and any(len(item) > 200 for item in self.stop):
+            raise ValueError("중단 문자열은 항목당 200자를 넘을 수 없습니다.")
+        return self
+
+
+class ConversationSourceDetail(BaseModel):
+    screen_number: str = Field(default="", max_length=128)
+    work_subject: str = Field(default="", max_length=256)
+    description: str = Field(default="", max_length=4000)
+    content: str = Field(default="", max_length=4000)
+    database_label: str = Field(default="", max_length=256)
+    status: str = Field(default="", max_length=256)
+    owner: str = Field(default="", max_length=256)
+    due_date: str = Field(default="", max_length=64)
+    last_edited_time: str = Field(default="", max_length=64)
+    url: str = Field(default="", max_length=2000)
+    effort_fields: Dict[str, Any] = Field(default_factory=dict)
+    date_fields: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def cap_dynamic_fields(self):
+        self.effort_fields = {
+            str(key)[:128]: str(value)[:500]
+            for key, value in list(self.effort_fields.items())[:30]
+        }
+        self.date_fields = {
+            str(key)[:128]: str(value)[:500]
+            for key, value in list(self.date_fields.items())[:30]
+        }
+        return self
+
+
+class ConversationSource(BaseModel):
+    type: str = Field(default="", max_length=32)
+    source: str = Field(default="", max_length=64)
+    issue_id: Optional[int] = None
+    page_id: str = Field(default="", max_length=128)
+    title: str = Field(default="", max_length=1000)
+    summary: str = Field(default="", max_length=1200)
+    project: str = Field(default="", max_length=500)
+    status: str = Field(default="", max_length=256)
+    handler: str = Field(default="", max_length=256)
+    owner: str = Field(default="", max_length=256)
+    created_at: str = Field(default="", max_length=64)
+    updated_at: str = Field(default="", max_length=64)
+    due_date: str = Field(default="", max_length=64)
+    database_label: str = Field(default="", max_length=256)
+    preview: str = Field(default="", max_length=4000)
+    content: str = Field(default="", max_length=4000)
+    document: str = Field(default="", max_length=4000)
+    url: str = Field(default="", max_length=2000)
+    detail: Optional[ConversationSourceDetail] = None
+
+
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(default="", max_length=30000)
+    sources: List[ConversationSource] = Field(default_factory=list, max_length=20)
+    followUps: List[str] = Field(default_factory=list, max_length=10)
+    verification: Optional[Dict[str, Any]] = None
+    auditId: str = Field(default="", max_length=64)
+    templateId: str = Field(default="", max_length=64)
+    feedback: Optional[Dict[str, Any]] = None
+    abTest: Optional[Dict[str, Any]] = None
+    createdAt: str = Field(default="", max_length=64)
+    questionAskedAt: str = Field(default="", max_length=64)
+
+    @model_validator(mode="after")
+    def cap_follow_ups(self):
+        self.followUps = [str(item)[:1000] for item in self.followUps]
+        return self
+
 
 class ChromaSearchRequest(BaseModel):
-    query: str
-    limit: int = 5
+    query: str = Field(min_length=1, max_length=4000)
+    limit: int = Field(default=5, ge=1, le=100)
 
 
 class NotionPageWriteRequest(BaseModel):

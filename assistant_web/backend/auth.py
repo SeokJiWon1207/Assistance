@@ -11,7 +11,9 @@ import json
 import os
 import secrets
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +22,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from backend.config import RUNTIME_DIR
+from backend.db_migrations import run_sqlite_migrations
 
 
 VALID_ROLES = {"member", "manager", "admin"}
@@ -105,11 +108,8 @@ def _normalize_email(value: str) -> str:
     return str(value or "").strip().casefold()
 
 
-def init_users_db() -> None:
-    path = users_db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as connection:
-        connection.execute(
+def _create_users_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
                 firebase_uid TEXT PRIMARY KEY,
@@ -126,7 +126,20 @@ def init_users_db() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+
+@lru_cache(maxsize=8)
+def _init_users_db_at(database_path: str) -> None:
+    run_sqlite_migrations(
+        Path(database_path),
+        [_create_users_schema],
+        database_name="users",
+    )
+
+
+def init_users_db() -> None:
+    _init_users_db_at(str(users_db_path().resolve()))
 
 
 def _row_to_user(row: sqlite3.Row) -> Dict[str, Any]:
@@ -147,7 +160,7 @@ def _row_to_user(row: sqlite3.Row) -> Dict[str, Any]:
 
 def get_user_by_uid(uid: str) -> Optional[Dict[str, Any]]:
     init_users_db()
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             "SELECT * FROM users WHERE firebase_uid = ?",
@@ -158,7 +171,7 @@ def get_user_by_uid(uid: str) -> Optional[Dict[str, Any]]:
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     init_users_db()
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             "SELECT * FROM users WHERE email = ?",
@@ -169,7 +182,7 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 
 def list_users() -> List[Dict[str, Any]]:
     init_users_db()
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             "SELECT * FROM users ORDER BY approved DESC, display_name, email"
@@ -190,7 +203,7 @@ def upsert_invited_user(
     normalized_role = role if role in VALID_ROLES else "member"
     now = _now()
     init_users_db()
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         # 같은 이메일의 Firebase UID가 바뀐 경우에도 관리자의 새 초대로 명시적으로
         # 연결을 갱신한다. 이메일 UNIQUE 충돌을 피하기 위해 이전 행을 먼저 제거한다.
         connection.execute(
@@ -244,7 +257,7 @@ def update_user_access(
         return None
     next_role = role if role in VALID_ROLES else current["role"]
     next_approved = current["approved"] if approved is None else bool(approved)
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         connection.execute(
             """
             UPDATE users SET role = ?, approved = ?, display_name = ?,
@@ -284,7 +297,7 @@ def approve_login_claims(claims: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not user or not user["approved"] or user["email"] != email:
         return None
 
-    with sqlite3.connect(users_db_path()) as connection:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
         connection.execute(
             "UPDATE users SET last_login_at = ?, updated_at = ? WHERE firebase_uid = ?",
             (_now(), _now(), uid),

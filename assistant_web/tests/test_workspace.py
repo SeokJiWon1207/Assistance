@@ -31,6 +31,67 @@ class ConversationWorkspaceTests(unittest.TestCase):
             self.assertTrue(workspace.delete_conversation("user-a", "chat-1"))
             self.assertFalse(workspace.delete_conversation("user-b", "chat-1"))
 
+    def test_non_favorite_save_is_returned_after_forty_favorites(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")},
+        ):
+            for index in range(40):
+                workspace.save_conversation(
+                    "user-a", f"favorite-{index}", f"즐겨찾기 {index}", [], True
+                )
+
+            saved = workspace.save_conversation(
+                "user-a", "ordinary", "일반 대화", [], False
+            )
+
+        self.assertEqual(saved["id"], "ordinary")
+        self.assertFalse(saved["favorite"])
+
+    def test_legacy_message_rows_remain_readable_and_are_sanitized(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")},
+        ):
+            workspace.init_workspace_db()
+            with workspace.closing(workspace.sqlite3.connect(workspace.workspace_db_path())) as connection, connection:
+                connection.execute(
+                    """
+                    INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "user-a",
+                        "legacy",
+                        "예전 대화",
+                        '[{"role":"assistant","content":"답변","unknown":"kept-before",'
+                        '"sources":[{"type":"mantis","issue_id":30072,"title":"이슈",'
+                        '"detail":{"description":"설명","private_blob":"drop"}}]}]',
+                        0,
+                        "2026-01-01",
+                        "2026-01-01",
+                    ),
+                )
+            loaded = workspace.list_conversations("user-a")
+
+        self.assertEqual(loaded[0]["messages"][0]["content"], "답변")
+        self.assertEqual(loaded[0]["messages"][0]["sources"][0]["issue_id"], 30072)
+        self.assertNotIn("unknown", loaded[0]["messages"][0])
+        self.assertNotIn("private_blob", loaded[0]["messages"][0]["sources"][0]["detail"])
+
+    def test_user_conversation_count_quota_rejects_new_rows_but_allows_updates(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3"),
+                "CONVERSATION_MAX_PER_USER": "2",
+            },
+        ):
+            workspace.save_conversation("user-a", "one", "대화 1", [], False)
+            workspace.save_conversation("user-a", "two", "대화 2", [], False)
+            workspace.save_conversation("user-a", "one", "수정", [], True)
+            with self.assertRaises(workspace.ConversationQuotaError):
+                workspace.save_conversation("user-a", "three", "대화 3", [], False)
+
 
 class PersonalWorkspaceTests(unittest.TestCase):
     def test_my_workspace_builds_summary_notifications_and_weekly_brief(self):
