@@ -3598,7 +3598,14 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.detail || "모델 응답 중 오류가 발생했습니다.");
+    const retryAfter = response.headers.get("Retry-After");
+    const suffix = response.status === 429 && retryAfter
+      ? ` (${retryAfter}초 후 다시 시도)`
+      : "";
+    const error = new Error(`${data.detail || "모델 응답 중 오류가 발생했습니다."}${suffix}`);
+    error.status = response.status;
+    error.retryAfter = retryAfter;
+    throw error;
   }
 
   const reader = response.body?.getReader();
@@ -3614,7 +3621,11 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
     for (const event of parsed.events) {
       onEvent(event);
       if (event.type === "result") result = event.data;
-      if (event.type === "error") throw new Error(event.message || "응답 중 오류가 발생했습니다.");
+      if (event.type === "error") {
+        const error = new Error(event.message || "응답 중 오류가 발생했습니다.");
+        error.status = event.status;
+        throw error;
+      }
     }
     if (done) break;
   }

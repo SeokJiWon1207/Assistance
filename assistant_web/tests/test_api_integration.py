@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -41,6 +42,18 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(core.status_code, 200)
         self.assertIn("AssistantFrontendCore", core.text)
         self.assertEqual(app_js.status_code, 200)
+
+    def test_readiness_reports_missing_dependency_without_affecting_liveness(self):
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "backend.api.operations.CHROMA_DB_PATH",
+            Path(directory) / "missing.sqlite3",
+        ):
+            response = self.client.get("/ready")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["status"], "not_ready")
+        self.assertEqual(response.json()["checks"]["snapshotDb"]["reason"], "missing")
+        self.assertEqual(self.client.get("/health").status_code, 200)
 
     @patch.object(search_api, "get_model_registry")
     def test_models_endpoint_exposes_only_public_fields(self, registry):
@@ -85,7 +98,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertNotIn("token", payload)
         self.assertNotIn("1234567890abcdef1234567890abcdef", response.text)
 
-    @patch.object(chat_api.chat_service, "build_response")
+    @patch.object(chat_api.chat_service, "build_admitted_response")
     def test_non_stream_chat_returns_the_application_response(self, build_response):
         build_response.return_value = {
             "modelId": "test-model",
@@ -106,7 +119,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["content"], "통합 테스트 응답")
         self.assertFalse(build_response.call_args.args[0].stream)
 
-    @patch.object(chat_api.chat_service, "build_response")
+    @patch.object(chat_api.chat_service, "build_admitted_response")
     def test_stream_chat_uses_the_sse_contract(self, build_response):
         build_response.return_value = {
             "modelId": "test-model",
@@ -129,7 +142,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("스트리밍 완료", response.text)
 
     @patch.object(chat_api, "current_request_user")
-    @patch.object(chat_api.chat_service, "build_response")
+    @patch.object(chat_api.chat_service, "build_admitted_response")
     def test_chat_passes_authenticated_user_context(self, build_response, current_user):
         current_user.return_value = {
             "uid": "uid-1",
@@ -154,6 +167,36 @@ class ApiIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(build_response.call_args.kwargs["user"]["uid"], "uid-1")
+
+    @patch.object(chat_api.chat_service, "build_admitted_response")
+    def test_stream_rate_limit_is_real_http_429_with_retry_after(self, build_response):
+        build_response.return_value = {
+            "modelId": "test-model",
+            "content": "완료",
+            "sources": [],
+        }
+        chat_api.CHAT_ADMISSION.reset()
+        request_body = {
+            "modelId": "test-model",
+            "messages": [{"role": "user", "content": "테스트"}],
+            "stream": True,
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "CHAT_MAX_CONCURRENT_PER_USER": "1",
+                "CHAT_MAX_CONCURRENT_TOTAL": "2",
+                "CHAT_RATE_LIMIT_PER_MINUTE": "1",
+            },
+        ):
+            first = self.client.post("/api/chat", json=request_body)
+            second = self.client.post("/api/chat", json=request_body)
+        chat_api.CHAT_ADMISSION.reset()
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 429)
+        self.assertIsNotNone(second.headers.get("Retry-After"))
+        self.assertNotIn('"type":"error"', second.text.replace(" ", ""))
 
     def test_chat_rejects_an_invalid_message_role(self):
         response = self.client.post(
@@ -201,9 +244,13 @@ class ApiIntegrationTests(unittest.TestCase):
             ):
                 audit_module.init_audit_db()
                 audit_id = "a" * 32
-                with sqlite3.connect(audit_path) as connection:
+                with closing(sqlite3.connect(audit_path)) as connection, connection:
                     connection.execute(
-                        "INSERT INTO validation_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                """
+                INSERT INTO validation_logs (
+                    id, created_at, question, model_id, mode, score, status, payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                         (audit_id, "2026-07-24T12:00:00+09:00", "테스트 질문", "test-model", "model", 95, "pass", "{}"),
                     )
 
@@ -275,6 +322,22 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("--follow-up-scenarios", command)
         self.assertEqual(command[command.index("--follow-up-scenarios") + 1], "4")
         self.assertTrue(any('"total": 14' in frame for frame in frames))
+
+    @patch.object(quality_api.subprocess, "Popen")
+    def test_accuracy_runner_terminates_child_when_stream_closes(self, popen):
+        process = Mock()
+        process.stdout = iter(['PROGRESS {"type":"run_start","total":1}\n'])
+        process.poll.return_value = None
+        process.wait.return_value = 0
+        popen.return_value = process
+        stream = quality_api.stream_accuracy_run(1, 0)
+
+        self.assertIn('"run_start"', next(stream))
+        stream.close()
+
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=3)
+        self.assertFalse(quality_api.ACCURACY_RUN_LOCK.locked())
 
 
 if __name__ == "__main__":

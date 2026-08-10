@@ -26,6 +26,7 @@ from backend.answers import (
     select_grouped_issue_rows,
     should_return_deterministic_issue_list,
 )
+from backend.admission import CHAT_ADMISSION
 from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status
 from backend.common import clamp_int
 from backend.llm import (
@@ -43,7 +44,7 @@ from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
 )
-from backend.reports.evaluation import finalize_chat_response
+from backend.reports.evaluation import finalize_chat_response as persist_chat_response
 from backend.reports.similar import build_similar_resolution_report
 from backend.reports.sla import build_sla_report
 from backend.retrieval import (
@@ -151,6 +152,35 @@ class ChatService:
         request: ChatRequest,
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        user_key = str((user or {}).get("uid") or "anonymous").strip()
+        with CHAT_ADMISSION.admit(user_key):
+            return self._build_response(request, user=user)
+
+    def build_admitted_response(
+        self,
+        request: ChatRequest,
+        user: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """라우터가 admission lease를 이미 보유한 요청을 실행한다."""
+        return self._build_response(request, user=user)
+
+    def _build_response(
+        self,
+        request: ChatRequest,
+        user: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        def finalize_chat_response(
+            current_request: ChatRequest,
+            question: str,
+            response: Dict[str, Any],
+        ) -> Dict[str, Any]:
+            return persist_chat_response(
+                current_request,
+                question,
+                response,
+                user_uid=str((user or {}).get("uid") or "").strip(),
+            )
+
         emit_chat_status("질문과 대화 맥락을 분석하고 있습니다", "analysis")
         latest_user_text = get_latest_user_text(request.messages)
         if is_identity_question(latest_user_text):
@@ -195,7 +225,11 @@ class ChatService:
         # "그중 3번째" 같은 서수 참조는 직전 답변이 실제로 보여준 결과 목록(감사 로그)에서
         # 해당 항목을 직접 찾는다. 재검색 결과가 달라져 다른 항목을 가리키는 문제가 없고
         # LLM 재작성보다 빠르고 정확하므로 최우선으로 시도한다.
-        resolved_reference = resolve_reference_from_context(latest_user_text, request.contextAuditId)
+        resolved_reference = resolve_reference_from_context(
+            latest_user_text,
+            request.contextAuditId,
+            user_uid=str((user or {}).get("uid") or "").strip(),
+        )
         if resolved_reference:
             retrieval_text = resolved_reference
             needs_follow_up_rewrite = False
@@ -324,7 +358,11 @@ class ChatService:
                     )
 
         if latest_user_text and enabled_tools.get("notion"):
-            notion_write_result = run_notion_write_command(latest_user_text, request.messages)
+            notion_write_result = run_notion_write_command(
+                latest_user_text,
+                request.messages,
+                allow_write=not user or user.get("role") in {"manager", "admin"},
+            )
             if notion_write_result:
                 return finalize_chat_response(
                     request,
@@ -500,7 +538,7 @@ class ChatService:
 
         response = None
         final_model = model
-        timeout_exc: Optional[requests.ReadTimeout] = None
+        timeout_exc: Optional[requests.Timeout] = None
         request_exc: Optional[requests.RequestException] = None
         emit_chat_status("답변을 생성하고 있습니다", "generation")
 
@@ -517,6 +555,7 @@ class ChatService:
                 "stream": bool(request.stream),
             }
             candidate_payload.update(build_generation_options(request))
+            final_model = candidate
 
             try:
                 model_timeout = clamp_int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"), 30, 300) or 180
@@ -527,7 +566,7 @@ class ChatService:
                     timeout=model_timeout,
                     stream=bool(request.stream),
                 )
-            except requests.ReadTimeout as exc:
+            except requests.Timeout as exc:
                 timeout_exc = exc
                 if is_last_candidate:
                     break
@@ -552,23 +591,26 @@ class ChatService:
             break
 
         if response is None:
-            if timeout_exc is not None:
-                if retrieval_result:
-                    fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
-                    return finalize_chat_response(request, latest_user_text, {
-                        "modelId": final_model["id"],
-                        "content": format_model_timeout_fallback(
-                            query_constraints,
-                            retrieval_result,
-                            active_limit,
-                        ),
-                        "sources": fallback_sources if request.showSources else [],
-                        "sourcesForFollowUps": fallback_sources,
-                        "retrieval": retrieval_result,
-                        "raw": {"mode": "model_timeout_fallback", "error": str(timeout_exc)},
-                    })
-                raise HTTPException(status_code=502, detail=f"Model connection failed: {timeout_exc}")
-            raise HTTPException(status_code=502, detail=f"Model connection failed: {request_exc}")
+            connection_exc = timeout_exc or request_exc
+            if retrieval_result and connection_exc is not None:
+                fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
+                return finalize_chat_response(request, latest_user_text, {
+                    "modelId": final_model["id"],
+                    "content": format_model_timeout_fallback(
+                        query_constraints,
+                        retrieval_result,
+                        active_limit,
+                    ),
+                    "sources": fallback_sources if request.showSources else [],
+                    "sourcesForFollowUps": fallback_sources,
+                    "retrieval": retrieval_result,
+                    "raw": {
+                        "mode": "model_timeout_fallback",
+                        "error": str(connection_exc),
+                        "errorType": type(connection_exc).__name__,
+                    },
+                })
+            raise HTTPException(status_code=502, detail=f"Model connection failed: {connection_exc}")
 
         if response.status_code >= 400:
             unsupported_hint = ""

@@ -12,6 +12,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
             messages=[{"role": "user", "content": "내가 누구야?"}],
         )
         user = {
+            "uid": "firebase-user-1",
             "displayName": "석지원",
             "email": "user@example.com",
             "role": "admin",
@@ -21,8 +22,11 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
         with patch.object(
             chat_service_module,
-            "finalize_chat_response",
-            side_effect=lambda _request, _question, response: response,
+            "persist_chat_response",
+            side_effect=lambda _request, _question, response, user_uid="": {
+                **response,
+                "capturedUserUid": user_uid,
+            },
         ), patch.object(chat_service_module, "get_private_model") as get_model:
             response = chat_service_module.chat_service.build_response(request, user=user)
 
@@ -30,6 +34,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
         self.assertIn("석지원님으로 로그인", response["content"])
         self.assertIn("Mantis 담당자: 석지원", response["content"])
         self.assertEqual(response["raw"]["mode"], "authenticated_identity")
+        self.assertEqual(response["capturedUserUid"], "firebase-user-1")
 
     def test_non_identity_question_does_not_match(self):
         self.assertFalse(chat_service_module.is_identity_question("이 이슈 담당자는 누구야?"))
