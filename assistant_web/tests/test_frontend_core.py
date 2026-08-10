@@ -97,6 +97,13 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('confirmButton?.addEventListener("click", async () =>', auth_js)
         self.assertIn('apiFetch("/api/auth/logout", { method: "POST" })', auth_js)
 
+    def test_chat_rate_limit_uses_retry_after_message(self):
+        app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn('response.headers.get("Retry-After")', app_js)
+        self.assertIn("response.status === 429", app_js)
+        self.assertIn("초 후 다시 시도", app_js)
+
 
 if __name__ == "__main__":
     unittest.main()
