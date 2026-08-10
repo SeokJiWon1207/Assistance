@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: assistant_web/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Python dependencies
+        run: python -m pip install --disable-pip-version-check -r assistant_web/requirements-dev.txt
+
+      - name: Run deterministic test suite
+        env:
+          PYTHONWARNINGS: error::ResourceWarning
+        run: coverage run assistant_web/tests/run_test_suite.py
+
+      - name: Report coverage
+        run: coverage report --show-missing
+
+      - name: Compile Python sources
+        run: python -m compileall -q assistant_web/backend assistant_web/scripts assistant_web/tests
+
+      - name: Validate deployment shell scripts
+        run: |
+          bash -n assistant_web/deploy/aws/deploy_to_ec2.sh
+          bash -n assistant_web/deploy/aws/setup_server.sh
+          bash -n assistant_web/deploy/aws/rollback_release.sh
+
+      - name: Ruff
+        run: ruff check assistant_web/backend assistant_web/tests scripts
+
+      - name: mypy (non-blocking baseline)
+        continue-on-error: true
+        run: mypy
+
+      - name: Dependency audit (non-blocking baseline)
+        continue-on-error: true
+        run: pip-audit -r assistant_web/requirements.txt
