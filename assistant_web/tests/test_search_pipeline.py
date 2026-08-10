@@ -16,7 +16,6 @@ from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
-    extract_effort_query,
     wants_full_effort_roster,
     wants_effort_ranking,
 )
@@ -819,6 +818,7 @@ class CountGroupingTests(unittest.TestCase):
         with patch("backend.tools.mantis_snapshot.sqlite3.connect") as connect:
             connection = connect.return_value.__enter__.return_value
             connection.execute.return_value = [(content,) for content in documents]
+            connect.return_value.execute.return_value = [(content,) for content in documents]
             result = scan_mantis_documents(
                 Path(__file__),
                 lambda content: True,

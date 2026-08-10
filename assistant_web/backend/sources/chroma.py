@@ -9,18 +9,15 @@ where 필터 구성, 의미 유사도 스코어링·재랭킹, 이슈 문서 정
 import os
 import re
 import sqlite3
+from contextlib import closing
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from backend.common import (
     clamp_int,
-    extract_chroma_date,
-    extract_chroma_field,
     extract_issue_id_from_text,
-    extract_project_from_chroma_text,
     extract_title_from_chroma_text,
-    normalize_chroma_issue_document,
     normalize_for_match,
 )
 from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR, STATUS_MATCH_ALIASES
@@ -149,12 +146,14 @@ def rank_chroma_documents_semantically(
                 "distance": float(distance),
                 "similarity_rank": index,
             }
-            for index, (content, distance) in enumerate(zip(documents, distances), start=1)
+            for index, (content, distance) in enumerate(
+                zip(documents, distances, strict=False), start=1
+            )
         ]
         ranking_meta = {"ranking": "semantic_vector", "embedding_model": embedding_model}
     except Exception as exc:  # The fallback is intentional for deployments without Ollama/Chroma.
         ranking_error = f"{type(exc).__name__}: {exc}"[:300]
-        with sqlite3.connect(CHROMA_DB_PATH) as connection:
+        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
             rows = connection.execute(
                 "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
             ).fetchall()
@@ -260,7 +259,7 @@ def execute_chroma_search(
         where, params = build_chroma_where(terms, constraints, include_terms=True)
         sql = f"SELECT string_value FROM embedding_metadata WHERE {where} LIMIT 500"
         try:
-            with sqlite3.connect(CHROMA_DB_PATH) as connection:
+            with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
                 rows = connection.execute(sql, params).fetchall()
                 if not rows and has_constraint(constraints):
                     relaxed_where, relaxed_params = build_chroma_where(terms, constraints, include_terms=False)
@@ -333,7 +332,7 @@ def get_chroma_document(issue_id: int) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with sqlite3.connect(CHROMA_DB_PATH) as connection:
+        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
             row = connection.execute(
                 """
                 SELECT doc.string_value

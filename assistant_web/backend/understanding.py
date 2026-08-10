@@ -13,8 +13,10 @@ import os
 import calendar
 import re
 import sqlite3
+from contextlib import closing
 from datetime import date
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -288,13 +290,26 @@ def extract_mantis_keyword(text: str) -> str:
     return " ".join(tokens[:4]) or text
 
 
-@lru_cache(maxsize=1)
-def load_known_people() -> tuple[tuple[str, ...], tuple[str, ...]]:
-    if not CHROMA_DB_PATH.exists():
+def _snapshot_cache_key() -> tuple[str, int, int]:
+    try:
+        stat = CHROMA_DB_PATH.stat()
+        return str(CHROMA_DB_PATH.resolve()), stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return str(CHROMA_DB_PATH.resolve()), 0, 0
+
+
+@lru_cache(maxsize=8)
+def _load_known_people_cached(
+    database_path: str,
+    _mtime_ns: int,
+    _size: int,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    path = Path(database_path)
+    if not path.exists():
         return tuple(), tuple()
 
     try:
-        with sqlite3.connect(CHROMA_DB_PATH) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             handlers = set(_distinct_chroma_header_values(connection, "담당자"))
             reporters = set(_distinct_chroma_header_values(connection, "요청자"))
     except sqlite3.Error:
@@ -308,6 +323,10 @@ def load_known_people() -> tuple[tuple[str, ...], tuple[str, ...]]:
     reporters = {name for name in reporters if name != "미상" and is_valid_person_name(name)}
 
     return tuple(sorted(handlers)), tuple(sorted(reporters))
+
+
+def load_known_people() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return _load_known_people_cached(*_snapshot_cache_key())
 
 
 def _distinct_chroma_header_values(
@@ -338,13 +357,18 @@ def _distinct_chroma_header_values(
     return [str(row[0]).strip() for row in rows if row[0]]
 
 
-@lru_cache(maxsize=1)
-def load_project_alias_groups() -> tuple[tuple[str, ...], ...]:
-    if not CHROMA_DB_PATH.exists():
+@lru_cache(maxsize=8)
+def _load_project_alias_groups_cached(
+    database_path: str,
+    _mtime_ns: int,
+    _size: int,
+) -> tuple[tuple[str, ...], ...]:
+    path = Path(database_path)
+    if not path.exists():
         return tuple()
 
     try:
-        with sqlite3.connect(CHROMA_DB_PATH) as connection:
+        with closing(sqlite3.connect(path)) as connection, connection:
             projects = set(_distinct_chroma_header_values(connection, "프로젝트(고객사)"))
     except sqlite3.Error:
         return tuple()
@@ -352,14 +376,22 @@ def load_project_alias_groups() -> tuple[tuple[str, ...], ...]:
     return tuple(tuple(derive_customer_aliases_from_project(project)) for project in projects)
 
 
-@lru_cache(maxsize=1)
-def get_customer_alias_groups() -> List[List[str]]:
+def load_project_alias_groups() -> tuple[tuple[str, ...], ...]:
+    return _load_project_alias_groups_cached(*_snapshot_cache_key())
+
+
+@lru_cache(maxsize=8)
+def _get_customer_alias_groups_cached(
+    database_path: str,
+    mtime_ns: int,
+    size: int,
+) -> tuple[tuple[str, ...], ...]:
     groups = [
         list(dict.fromkeys([key, *aliases]))
         for key, aliases in CUSTOMER_ALIASES.items()
     ]
 
-    for dynamic_aliases in load_project_alias_groups():
+    for dynamic_aliases in _load_project_alias_groups_cached(database_path, mtime_ns, size):
         normalized_dynamic = {normalize_for_match(alias) for alias in dynamic_aliases}
         merged = False
         for group in groups:
@@ -371,7 +403,11 @@ def get_customer_alias_groups() -> List[List[str]]:
         if not merged:
             groups.append(list(dynamic_aliases))
 
-    return [list(dict.fromkeys(group)) for group in groups]
+    return tuple(tuple(dict.fromkeys(group)) for group in groups)
+
+
+def get_customer_alias_groups() -> List[List[str]]:
+    return [list(group) for group in _get_customer_alias_groups_cached(*_snapshot_cache_key())]
 
 
 def extract_date_field_constraints(text: str) -> Dict[str, str]:
@@ -1727,7 +1763,11 @@ def has_demonstrative_issue_reference(text: str) -> bool:
     return bool(DEMONSTRATIVE_ISSUE_PATTERN.search(str(text or "")))
 
 
-def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Optional[str]:
+def resolve_reference_from_context(
+    text: str,
+    audit_id: Optional[str],
+    user_uid: str = "",
+) -> Optional[str]:
     """서수 참조 후속 질문을 직전 답변의 실제 결과 목록으로 해석한 라우팅 텍스트.
 
     "그중 3번째 자세히"는 재검색으로 같은 목록이 다시 나오길 기대하는 대신,
@@ -1749,7 +1789,7 @@ def resolve_reference_from_context(text: str, audit_id: Optional[str]) -> Option
     ):
         # 자체 조건을 가진 독립 질문이면 서수는 목록 참조가 아닐 가능성이 크다.
         return None
-    sources = load_audit_sources(audit_id)
+    sources = load_audit_sources(audit_id, user_uid=user_uid)
     if not sources:
         return None
     if demonstrative:

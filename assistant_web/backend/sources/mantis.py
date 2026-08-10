@@ -11,6 +11,7 @@ import json
 import re
 import sqlite3
 import time
+from contextlib import closing
 from datetime import date, datetime
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
@@ -605,18 +606,28 @@ def execute_mantis_id_lookup(
 
 
 @lru_cache(maxsize=4)
-def _snapshot_freshness_for_mtime(_mtime: float) -> str:
+def _snapshot_freshness_for_mtime(_mtime: float, _metadata_mtime: float) -> str:
     """스냅샷 문서의 최신 등록일을 SQLite 내부에서 집계한다.
 
     문서 본문 전체를 Python으로 전송하던 방식은 데이터가 커질수록 첫 요청이 수십 초
     지연됐다. 최신 포맷의 ``등록일: YYYY-MM-DD`` 헤더를 SQL에서 잘라 MAX로 계산하고,
     파일 mtime을 캐시 키로 사용해 재구축 전까지 재계산하지 않는다.
     """
+    metadata_path = CHROMA_DB_PATH.parent / "freshness.json"
+    if metadata_path.exists():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            as_of = str(metadata.get("asOf") or "")
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of) and as_of <= date.today().isoformat():
+                return as_of
+        except (OSError, json.JSONDecodeError):
+            pass
+
     # 과거 이슈 본문에 "2032-07-27 메일 수신" 같은 오타 날짜가 실존한다.
     # 미래 날짜는 데이터 기준일이 될 수 없으므로 오늘 이후 값은 무시한다.
     today = date.today().isoformat()
     try:
-        with sqlite3.connect(CHROMA_DB_PATH) as connection:
+        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
             row = connection.execute(
                 """
                 SELECT MAX(candidate)
@@ -644,7 +655,12 @@ def get_mantis_snapshot_freshness() -> str:
     """로컬 Mantis 스냅샷의 데이터 기준일(YYYY-MM-DD). 없으면 빈 문자열."""
     if not CHROMA_DB_PATH.exists():
         return ""
-    return _snapshot_freshness_for_mtime(CHROMA_DB_PATH.stat().st_mtime)
+    metadata_path = CHROMA_DB_PATH.parent / "freshness.json"
+    metadata_mtime = metadata_path.stat().st_mtime if metadata_path.exists() else -1.0
+    return _snapshot_freshness_for_mtime(
+        CHROMA_DB_PATH.stat().st_mtime,
+        metadata_mtime,
+    )
 
 
 def get_mantis_snapshot_freshness_status() -> Dict[str, Any]:
@@ -822,7 +838,7 @@ def execute_mantis_page_scan(
     except HTTPException:
         raise
     except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Mantis connection failed: {exc}")
+        raise HTTPException(status_code=502, detail=f"Mantis connection failed: {exc}") from exc
 
     if not filtered_issues and len(keywords) > 1 and not (constraints and has_constraint(constraints)):
         fallback_keyword = keywords[0]

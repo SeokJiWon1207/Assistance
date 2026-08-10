@@ -20,18 +20,22 @@ extract_chroma_field / extract_chroma_date 파서와 맞춰져 있다. 필드명
 from __future__ import annotations
 
 import argparse
+import gc
+import json
 import os
 import re
 import shutil
 import sqlite3
 import sys
+import tempfile
+import time
+import uuid
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
-from langchain.schema import Document
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_community.vectorstores import Chroma
+import chromadb
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
@@ -41,15 +45,83 @@ CHROMA_SQLITE = CHROMA_DIR / "chroma.sqlite3"
 EMBEDDING_MODEL = "bge-m3:latest"
 MAX_CHAR_LIMIT = 2500  # Ollama embedding wrapper adds prompt overhead; keep below bge-m3 context.
 EMBED_BATCH_SIZE = 50
+FRESHNESS_METADATA_FILENAME = "freshness.json"
 
-DATE_CUSTOM_FIELDS = {
+DATE_CUSTOM_FIELDS = (
     "고객사요청일",
     "고객사전달 목표일",
     "고객사전달일",
     "개발완료 목표일",
     "QC 완료 목표일",
     "버전반영일",
-}
+)
+DATE_CUSTOM_FIELD_NAMES = set(DATE_CUSTOM_FIELDS)
+
+
+class SnapshotBuildError(RuntimeError):
+    """A full snapshot could not be fetched, built, or validated safely."""
+
+
+class Document:
+    def __init__(self, page_content: str, metadata: dict) -> None:
+        self.page_content = page_content
+        self.metadata = metadata
+
+
+class OllamaEmbeddingFunction:
+    def __init__(self, url: str, model_name: str, timeout: int = 60) -> None:
+        self.url = url.rstrip("/")
+        self.model_name = model_name
+        self.timeout = timeout
+
+    @staticmethod
+    def name() -> str:
+        return "assistant-ollama"
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        response = requests.post(
+            f"{self.url}/api/embed",
+            json={"model": self.model_name, "input": input},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        embeddings = response.json().get("embeddings")
+        if not isinstance(embeddings, list) or len(embeddings) != len(input):
+            raise SnapshotBuildError("Ollama 임베딩 응답 건수가 요청과 일치하지 않습니다.")
+        return embeddings
+
+
+class Chroma:
+    """Small compatibility adapter over the official Chroma client API."""
+
+    def __init__(self, persist_directory: str, embedding_function=None) -> None:
+        if embedding_function is None:
+            embedding_function = OllamaEmbeddingFunction(
+                url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
+                model_name=EMBEDDING_MODEL,
+                timeout=60,
+            )
+        self._client = chromadb.PersistentClient(path=persist_directory)
+        self._collection = self._client.get_or_create_collection(
+            name="langchain",
+            embedding_function=embedding_function,
+        )
+
+    def add_documents(
+        self,
+        documents: list[Document],
+        embeddings: list[list[float]] | None = None,
+    ) -> None:
+        add_arguments = {
+            "ids": [uuid.uuid4().hex for _ in documents],
+            "documents": [document.page_content for document in documents],
+            "metadatas": [document.metadata for document in documents],
+        }
+        if embeddings is not None:
+            add_arguments["embeddings"] = embeddings
+        self._collection.add(
+            **add_arguments,
+        )
 
 
 def load_dotenv() -> None:
@@ -134,7 +206,7 @@ def build_issue_document(issue: dict) -> Document:
             screen_number = field_value
         elif field_name == "작업주체" and field_value:
             work_subject = field_value
-        elif field_name in DATE_CUSTOM_FIELDS:
+        elif field_name in DATE_CUSTOM_FIELD_NAMES:
             date_fields[field_name] = format_custom_date(field_value)
         elif field_name and "공수" in field_name and str(field_value).strip():
             effort_pieces.append(f"- {field_name}: {field_value}")
@@ -186,7 +258,7 @@ def load_existing_issue_ids() -> set[int]:
     if not CHROMA_SQLITE.exists():
         return set()
     issue_ids: set[int] = set()
-    with sqlite3.connect(CHROMA_SQLITE) as connection:
+    with closing(sqlite3.connect(CHROMA_SQLITE)) as connection:
         rows = connection.execute(
             "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
         )
@@ -200,20 +272,49 @@ def load_existing_issue_ids() -> set[int]:
 def fetch_issue_pages(url: str, headers: dict, page_size: int = 200, max_pages: int = 200):
     page = 1
     while page <= max_pages:
-        response = requests.get(
-            url,
-            headers=headers,
-            params={"page_size": page_size, "page": page},
-            timeout=60,
-        )
+        response = None
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                candidate = requests.get(
+                    url,
+                    headers=headers,
+                    params={"page_size": page_size, "page": page},
+                    timeout=60,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+            else:
+                if candidate.status_code < 500:
+                    response = candidate
+                    break
+                last_error = SnapshotBuildError(
+                    f"Mantis API 일시 오류: Status {candidate.status_code}"
+                )
+            if attempt < 3:
+                delay = 2 ** (attempt - 1)
+                print(
+                    f"⚠️ {page}페이지 수집 실패, {delay}초 후 재시도 "
+                    f"({attempt}/3): {type(last_error).__name__}",
+                    file=sys.stderr,
+                )
+                time.sleep(delay)
+        if response is None:
+            raise SnapshotBuildError(
+                f"Mantis {page}페이지를 3회 시도했지만 수집하지 못했습니다: {last_error}"
+            ) from last_error
         if response.status_code != 200:
-            print(f"❌ Mantis API 오류: Status {response.status_code}", file=sys.stderr)
-            return
+            raise SnapshotBuildError(f"Mantis API 오류: Status {response.status_code}")
         issues = response.json().get("issues", [])
         if not issues:
             return
         yield page, issues
+        if len(issues) < page_size:
+            return
         page += 1
+    raise SnapshotBuildError(
+        f"최대 {max_pages}페이지에 도달해 전체 수집 완료를 확인하지 못했습니다."
+    )
 
 
 def delete_documents_for_issue(vector_db: Chroma, issue_id: int) -> int:
@@ -232,6 +333,146 @@ def add_documents_batched(vector_db: Chroma, documents: list[Document]) -> None:
         print(f"  🧠 임베딩 진행 {min(start + EMBED_BATCH_SIZE, len(documents))}/{len(documents)}")
 
 
+def canonical_document_for_reuse(document: str) -> str:
+    """순서 의미가 없는 사용자 정의 필드 구간만 정렬해 과거 문서와 비교한다."""
+    lines = document.splitlines()
+    for section_name in ("[일정/전달일]", "[공수]"):
+        try:
+            section_start = lines.index(section_name) + 1
+        except ValueError:
+            continue
+        section_end = section_start
+        while section_end < len(lines) and lines[section_end]:
+            section_end += 1
+        lines[section_start:section_end] = sorted(lines[section_start:section_end])
+    return "\n".join(lines)
+
+
+def write_snapshot_freshness_metadata(
+    snapshot_dir: Path,
+    documents: list[Document],
+    document_count: int,
+    *,
+    merge_existing: bool = False,
+) -> None:
+    today = datetime.now().date().isoformat()
+    candidates = []
+    for document in documents:
+        match = re.search(r"(?m)^- 등록일:\s*(\d{4}-\d{2}-\d{2})$", document.page_content)
+        if match and match.group(1) <= today:
+            candidates.append(match.group(1))
+
+    metadata_path = snapshot_dir / FRESHNESS_METADATA_FILENAME
+    if merge_existing and metadata_path.exists():
+        try:
+            existing = json.loads(metadata_path.read_text(encoding="utf-8"))
+            existing_as_of = str(existing.get("asOf") or "")
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", existing_as_of):
+                candidates.append(existing_as_of)
+        except (OSError, json.JSONDecodeError):
+            pass
+    if not candidates:
+        raise SnapshotBuildError("스냅샷 등록일 메타데이터를 계산할 수 없습니다.")
+
+    payload = {
+        "asOf": max(candidates),
+        "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "documentCount": document_count,
+    }
+    temporary_path = metadata_path.with_suffix(".json.tmp")
+    temporary_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary_path, metadata_path)
+
+
+def reuse_unchanged_embeddings(
+    vector_db: Chroma,
+    documents: list[Document],
+) -> list[Document]:
+    """내용이 완전히 같은 기존 문서의 임베딩만 새 스냅샷에서 재사용한다."""
+    if not (CHROMA_DIR / "chroma.sqlite3").exists():
+        return documents
+
+    desired_by_id = {
+        int(document.metadata["id"]): document
+        for document in documents
+        if document.metadata.get("id") is not None
+    }
+    try:
+        source_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+        source_collection = source_client.get_collection(name="langchain")
+        source_count = source_collection.count()
+    except Exception as exc:
+        print(
+            f"⚠️ 기존 임베딩을 읽을 수 없어 전체를 다시 계산합니다: {type(exc).__name__}",
+            file=sys.stderr,
+        )
+        return documents
+
+    reused_ids: set[int] = set()
+    read_batch_size = 500
+    try:
+        for offset in range(0, source_count, read_batch_size):
+            result = source_collection.get(
+                limit=read_batch_size,
+                offset=offset,
+                include=["documents", "metadatas", "embeddings"],
+            )
+            source_documents = result.get("documents") or []
+            source_metadatas = result.get("metadatas") or []
+            source_embeddings = result.get("embeddings")
+            if source_embeddings is None:
+                raise SnapshotBuildError("기존 스냅샷에 임베딩 값이 없습니다.")
+
+            reusable_documents: list[Document] = []
+            reusable_embeddings: list[list[float]] = []
+            for source_document, metadata, embedding in zip(
+                source_documents,
+                source_metadatas,
+                source_embeddings,
+                strict=True,
+            ):
+                if not metadata or metadata.get("id") is None:
+                    continue
+                issue_id = int(metadata["id"])
+                desired = desired_by_id.get(issue_id)
+                if (
+                    desired is None
+                    or issue_id in reused_ids
+                    or canonical_document_for_reuse(source_document)
+                    != canonical_document_for_reuse(desired.page_content)
+                ):
+                    continue
+                reusable_documents.append(desired)
+                reusable_embeddings.append(
+                    embedding.tolist() if hasattr(embedding, "tolist") else list(embedding)
+                )
+                reused_ids.add(issue_id)
+
+            if reusable_documents:
+                vector_db.add_documents(reusable_documents, reusable_embeddings)
+            print(
+                f"  ♻️ 기존 임베딩 검증 {min(offset + read_batch_size, source_count)}/"
+                f"{source_count} (재사용 {len(reused_ids)})"
+            )
+    except Exception as exc:
+        raise SnapshotBuildError(
+            f"기존 임베딩 재사용 중 오류가 발생해 새 임시 DB를 폐기합니다: {exc}"
+        ) from exc
+
+    print(
+        f"♻️ 내용이 동일한 {len(reused_ids)}건은 기존 임베딩을 재사용하고 "
+        f"{len(documents) - len(reused_ids)}건만 다시 계산합니다."
+    )
+    return [
+        document
+        for document in documents
+        if int(document.metadata.get("id", -1)) not in reused_ids
+    ]
+
+
 def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) -> None:
     existing_ids = load_existing_issue_ids()
     print(f"📦 기존 스냅샷 이슈 수: {len(existing_ids)}")
@@ -244,10 +485,10 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
         if refresh_days > 0
         else None
     )
-    embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)
-    vector_db = Chroma(persist_directory=str(CHROMA_DIR), embedding_function=embeddings)
+    vector_db = Chroma(persist_directory=str(CHROMA_DIR))
 
     new_documents: list[Document] = []
+    refreshed_documents: list[Document] = []
     refreshed_count = 0
     # Mantis가 최신순으로 반환하므로, "새 이슈도 refresh 대상도 전혀 없는 페이지"가
     # 연속으로 나오면 그 뒤로는 전부 기존 데이터라고 보고 조기 종료한다.
@@ -266,7 +507,9 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
             elif refresh_cutoff and issue_date(issue.get("updated_at")) >= refresh_cutoff:
                 deleted = delete_documents_for_issue(vector_db, issue_id)
                 if deleted:
-                    add_documents_batched(vector_db, [build_issue_document(issue)])
+                    refreshed_document = build_issue_document(issue)
+                    add_documents_batched(vector_db, [refreshed_document])
+                    refreshed_documents.append(refreshed_document)
                     refreshed_count += 1
                     page_has_work = True
         print(f"✅ {page}페이지 검토 완료 (신규 누적 {len(new_documents)}건, 갱신 {refreshed_count}건)")
@@ -281,27 +524,113 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
     if new_documents:
         print(f"🧠 신규 이슈 {len(new_documents)}건 임베딩 중...")
         add_documents_batched(vector_db, new_documents)
+    changed_documents = new_documents + refreshed_documents
+    if changed_documents:
+        write_snapshot_freshness_metadata(
+            CHROMA_DIR,
+            changed_documents,
+            vector_db._collection.count(),
+            merge_existing=True,
+        )
     print(f"🏁 증분 갱신 완료: 신규 {len(new_documents)}건 추가, {refreshed_count}건 재임베딩")
 
 
-def run_full(url: str, headers: dict, max_pages: int) -> None:
-    if CHROMA_DIR.exists():
-        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        backup = BACKUP_DIR / f"{CHROMA_DIR.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        shutil.move(str(CHROMA_DIR), str(backup))
-        print(f"🗄️ 기존 스냅샷을 백업했습니다: {backup}")
+def validate_snapshot(snapshot_dir: Path, expected_documents: int) -> None:
+    database_path = snapshot_dir / "chroma.sqlite3"
+    if not database_path.exists():
+        raise SnapshotBuildError("새 스냅샷에 chroma.sqlite3가 없습니다.")
+    with closing(sqlite3.connect(database_path)) as connection:
+        integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
+        if integrity != "ok":
+            raise SnapshotBuildError(f"새 스냅샷 무결성 검사 실패: {integrity}")
+        try:
+            stored_documents = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM embedding_metadata WHERE key = 'chroma:document'"
+                ).fetchone()[0]
+            )
+        except sqlite3.Error as exc:
+            raise SnapshotBuildError(f"새 스냅샷 스키마 검사 실패: {exc}") from exc
+    try:
+        minimum_documents = max(1, int(os.getenv("SNAPSHOT_MIN_DOCUMENTS", "1")))
+    except ValueError:
+        minimum_documents = 1
+    if expected_documents < minimum_documents:
+        raise SnapshotBuildError(
+            f"수집 문서 {expected_documents}건이 최소 기준 {minimum_documents}건보다 적습니다."
+        )
+    if stored_documents != expected_documents:
+        raise SnapshotBuildError(
+            f"문서 건수 불일치: collected={expected_documents}, stored={stored_documents}"
+        )
+    metadata_path = snapshot_dir / FRESHNESS_METADATA_FILENAME
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SnapshotBuildError(f"신선도 메타데이터 검사 실패: {exc}") from exc
+    if metadata.get("documentCount") != expected_documents or not re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}", str(metadata.get("asOf") or "")
+    ):
+        raise SnapshotBuildError("신선도 메타데이터 내용이 스냅샷과 일치하지 않습니다.")
 
+
+def prune_snapshot_backups() -> None:
+    try:
+        keep = max(1, min(int(os.getenv("SNAPSHOT_BACKUP_KEEP", "3")), 20))
+    except ValueError:
+        keep = 3
+    backups = sorted(
+        (path for path in BACKUP_DIR.glob(f"{CHROMA_DIR.name}-*") if path.is_dir()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for expired in backups[keep:]:
+        shutil.rmtree(expired)
+
+
+def run_full(url: str, headers: dict, max_pages: int) -> None:
     documents: list[Document] = []
     for page, issues in fetch_issue_pages(url, headers, max_pages=max_pages):
         documents.extend(build_issue_document(issue) for issue in issues)
         print(f"✅ {len(documents)}개 이슈 누적 추출 (현재 {page}페이지)")
 
+    if not documents:
+        raise SnapshotBuildError("Mantis에서 수집된 이슈가 0건이라 기존 스냅샷을 유지합니다.")
+
     print(f"🎉 총 {len(documents)}개 이슈 파싱 완료. 임베딩을 시작합니다...")
-    embeddings = OllamaEmbeddings(model=EMBEDDING_MODEL)
     CHROMA_DIR.parent.mkdir(parents=True, exist_ok=True)
-    vector_db = Chroma(persist_directory=str(CHROMA_DIR), embedding_function=embeddings)
-    add_documents_batched(vector_db, documents)
-    print("🏆 전체 재구축이 완료되었습니다.")
+    temporary_dir = Path(
+        tempfile.mkdtemp(prefix=f".{CHROMA_DIR.name}-build-", dir=CHROMA_DIR.parent)
+    )
+    backup = None
+    try:
+        vector_db = Chroma(persist_directory=str(temporary_dir))
+        documents_to_embed = reuse_unchanged_embeddings(vector_db, documents)
+        add_documents_batched(vector_db, documents_to_embed)
+        write_snapshot_freshness_metadata(temporary_dir, documents, len(documents))
+        del vector_db
+        gc.collect()
+        validate_snapshot(temporary_dir, len(documents))
+
+        if CHROMA_DIR.exists():
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            backup = BACKUP_DIR / (
+                f"{CHROMA_DIR.name}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+            )
+            os.replace(CHROMA_DIR, backup)
+        try:
+            os.replace(temporary_dir, CHROMA_DIR)
+        except Exception:
+            if backup is not None and backup.exists() and not CHROMA_DIR.exists():
+                os.replace(backup, CHROMA_DIR)
+            raise
+        if backup is not None:
+            print(f"🗄️ 기존 스냅샷을 백업했습니다: {backup}")
+        prune_snapshot_backups()
+        print("🏆 전체 재구축 검증 및 원자 교체가 완료되었습니다.")
+    finally:
+        if temporary_dir.exists():
+            shutil.rmtree(temporary_dir)
 
 
 def main() -> None:

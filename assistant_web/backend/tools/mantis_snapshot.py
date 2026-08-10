@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import heapq
+from contextlib import closing
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -46,7 +47,7 @@ def scan_mantis_documents(
 
     newest_documents = []
     try:
-        with sqlite3.connect(database_path) as connection:
+        with closing(sqlite3.connect(database_path)) as connection, connection:
             cursor = connection.execute(
                 "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
             )
