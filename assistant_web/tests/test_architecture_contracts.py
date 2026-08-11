@@ -113,6 +113,17 @@ class PythonArchitectureContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(getattr(evaluation, name).__module__, expected_module)
 
+    def test_intent_facade_uses_extracted_date_and_matching_modules(self):
+        expected_modules = {
+            "extract_date_field_constraints": "backend.intent.dates",
+            "remove_date_field_phrases": "backend.intent.dates",
+            "chroma_text_matches_constraints": "backend.intent.matching",
+            "text_matches_constraints": "backend.intent.matching",
+        }
+        for name, expected_module in expected_modules.items():
+            with self.subTest(name=name):
+                self.assertEqual(getattr(understanding, name).__module__, expected_module)
+
     def test_query_plan_golden_cases(self):
         for case in FIXTURE["queryPlans"]:
             question = case["question"]
