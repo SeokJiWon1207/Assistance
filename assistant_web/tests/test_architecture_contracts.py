@@ -180,6 +180,24 @@ class PythonArchitectureContractTests(unittest.TestCase):
 
 
 class FrontendArchitectureContractTests(unittest.TestCase):
+    def test_bootstrap_only_initializes_functional_modules(self):
+        modules_dir = APP_DIR / "backend" / "static" / "modules"
+        bootstrap = (modules_dir / "bootstrap.js").read_text(encoding="utf-8")
+        self.assertLessEqual(len(bootstrap.splitlines()), 300)
+        expected_owners = {
+            "workspace.js": "function renderWorkspace()",
+            "chat.js": "async function requestAssistant(",
+            "notion.js": "function renderNotionAnswer(",
+            "admin.js": "function renderEvaluationContent()",
+            "events.js": 'els.form.addEventListener("submit"',
+            "runtime.js": "export const state =",
+        }
+        for filename, marker in expected_owners.items():
+            with self.subTest(filename=filename):
+                content = (modules_dir / filename).read_text(encoding="utf-8")
+                self.assertIn(marker, content)
+                self.assertNotIn(marker, bootstrap)
+
     def test_dom_and_api_contracts_are_present(self):
         static_dir = APP_DIR / "backend" / "static"
         html = (static_dir / "index.html").read_text(encoding="utf-8")
