@@ -17,7 +17,7 @@
 ## 진행 상태 (2026-08-11)
 
 - 1단계 계약 테스트를 추가해 공개 심볼, query plan, Notion 응답, 프런트엔드 DOM/API 계약을 고정했다.
-- 2단계 intent는 날짜 필드 추출과 문서·Chroma 제약 매칭 구현을 기능별 파일로 실제 이동했다. 나머지 엔티티·제약 병합·대화 문맥 구현은 `core.py`에 남아 있다.
+- 2단계 intent는 엔티티·날짜·제약 병합·문서 매칭·대화 문맥 구현을 기능별 파일로 실제 이동했다. `backend/intent/core.py`는 82줄 호환 파사드만 유지한다.
 - 3단계 Notion은 기존 import와 monkeypatch 계약을 유지하는 호환 파사드와 기능별 패키지를 추가했다. 실제 구현은 `core.py`에 남아 있다.
 - 4단계 평가 모듈은 검증·비교·케이스·분석·최종화 구현을 기능별 파일로 실제 이동했다. `backend/reports/evaluation.py` 31줄과 `backend/evaluation/core.py` 53줄은 기존 import 및 monkeypatch 경로만 유지한다.
 - 5단계는 `app.js`를 ES 모듈 진입점으로 전환하고 기능별 모듈 경계를 추가했다. 기존 UI 구현은 `modules/bootstrap.js`에 보존했으며, 각 기능 구현을 해당 모듈로 옮기는 2차 분리가 남아 있다.
@@ -28,7 +28,7 @@
 - 증분 갱신도 임시 스냅샷 복제본에서 Chroma와 보조 인덱스를 함께 갱신·검증한 뒤 디렉터리를 원자 교체한다.
 - pip-audit 예외 만료와 신규 취약점은 코드 변경이 없어도 매주 월요일 GitHub Actions에서 확인한다. 회사 모델 HTTP 예외는 `/ready`의 D-30 상태를 운영 모니터링에 연결해야 하며, IAM 키 교체는 별도 운영 권한으로 수행한다.
 
-따라서 구조화 인덱스의 생성·shadow 관찰·기본 전환·폴백·원자 갱신과 evaluation 실제 분리는 완료됐다. 다음 작업은 intent·Notion의 `core.py`와 `bootstrap.js` 구현을 기능별 모듈로 이동하는 것이다.
+따라서 구조화 인덱스의 생성·shadow 관찰·기본 전환·폴백·원자 갱신과 intent·evaluation 실제 분리는 완료됐다. 다음 작업은 Notion `core.py`와 프런트엔드 `bootstrap.js` 구현을 기능별 모듈로 이동하는 것이다.
 
 ## 변경 원칙
 
@@ -61,6 +61,8 @@
 기존 `backend/understanding.py`는 위 모듈을 재노출하는 파사드로 유지한다. 호출부 import 변경은 다음 커밋에서 기능군별로 수행한다.
 
 완료 조건: 파사드가 250줄 이하이고 공개 심볼 및 query plan 출력이 동일하다.
+
+상태: 완료. 내부 호환 파사드는 82줄이며 공개 `backend/understanding.py` 경로와 monkeypatch 계약을 유지한다.
 
 ### 3. `sources/notion.py` 분리
 
