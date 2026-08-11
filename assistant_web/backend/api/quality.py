@@ -262,7 +262,7 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
             {"id": check_id, "label": check_labels.get(check_id, check_id), "count": count}
             for check_id, count in check_fail_counts.items()
         ),
-        key=lambda item: item["count"],
+        key=lambda item: int(str(item["count"])),
         reverse=True,
     )[:10]
 

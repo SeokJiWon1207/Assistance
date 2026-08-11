@@ -980,7 +980,7 @@ def merge_query_plan_constraints(
                 "role": "handler" if field == "owner" else "reporter",
             }
         elif field == "issue_id":
-            numeric_values = [int(item) for item in values if str(item).isdigit()]
+            numeric_values = [int(str(item)) for item in values if str(item).isdigit()]
             if operator in {"not_equals", "not_in"}:
                 merged["exclude_issue_ids"].extend(numeric_values)
             elif operator in {"equals", "in"}:
@@ -1321,8 +1321,9 @@ def text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
     for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
         if clause["field"] not in {"title", "keyword"}:
             continue
-        values = clause.get("value") if isinstance(clause.get("value"), list) else [clause.get("value")]
-        normalized_values = [normalize_for_match(value) for value in values]
+        raw_value = clause.get("value")
+        values = raw_value if isinstance(raw_value, list) else [raw_value]
+        normalized_values = [normalize_for_match(str(value or "")) for value in values]
         if clause["operator"] == "contains" and not any(value in normalized_text for value in normalized_values):
             return False
         if clause["operator"] == "not_contains" and any(value in normalized_text for value in normalized_values):
@@ -1800,6 +1801,7 @@ def resolve_reference_from_context(
         if len(unique_ids) != 1:
             return None
         return f"{unique_ids.pop():07d} {text}"
+    assert ordinal is not None
     index = len(sources) - 1 if ordinal == -1 else ordinal - 1
     if index < 0 or index >= len(sources):
         return None

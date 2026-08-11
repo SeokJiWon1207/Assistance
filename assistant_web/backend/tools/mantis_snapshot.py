@@ -37,7 +37,7 @@ def scan_mantis_documents(
     matched_ids: set[int] = set()
     matched_count = 0
     group_counts: Dict[str, int] = {}
-    examples = []
+    examples: list[Dict[str, Any]] = []
 
     def record_group(issue: Dict[str, Any]) -> None:
         if not group_key:
@@ -45,7 +45,7 @@ def scan_mantis_documents(
         label = str(group_key(issue) or "").strip() or "미지정"
         group_counts[label] = group_counts.get(label, 0) + 1
 
-    newest_documents = []
+    newest_documents: list[tuple[int, Dict[str, Any], str]] = []
     try:
         with closing(sqlite3.connect(database_path)) as connection, connection:
             cursor = connection.execute(

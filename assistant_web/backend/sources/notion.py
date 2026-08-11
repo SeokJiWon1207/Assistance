@@ -107,6 +107,8 @@ def notion_property_to_text(prop: Dict[str, Any]) -> str:
         return notion_user_name(value or {})
     if prop_type == "formula":
         formula_type = (value or {}).get("type")
+        if not isinstance(formula_type, str):
+            return ""
         return notion_property_to_text({"type": formula_type, formula_type: (value or {}).get(formula_type)})
     if prop_type == "rollup":
         rollup_type = (value or {}).get("type")
@@ -414,7 +416,7 @@ def fetch_notion_page_blocks(page_id: str, max_blocks: int = 30) -> str:
     if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
         return ""
 
-    blocks = []
+    blocks: List[Dict[str, Any]] = []
     cursor = None
     while len(blocks) < max_blocks:
         params = {"page_size": min(100, max_blocks - len(blocks))}
@@ -583,7 +585,8 @@ def find_notion_option_property(
         if name_score is None:
             continue
         mapped = notion_option_name(prop, value)
-        options = (prop.get(prop.get("type"), {}) or {}).get("options", [])
+        prop_type = prop.get("type")
+        options = (prop.get(prop_type, {}) or {}).get("options", []) if isinstance(prop_type, str) else []
         option_names = {normalize_for_match(option.get("name", "")) for option in options}
         option_score = 0 if normalize_for_match(mapped) in option_names else 1
         candidates.append((option_score, name_score, prop_name, prop))
@@ -605,7 +608,7 @@ def notion_option_name(prop: Dict[str, Any], value: str) -> str:
     if not requested:
         return requested
     prop_type = prop.get("type")
-    options = (prop.get(prop_type, {}) or {}).get("options", [])
+    options = (prop.get(prop_type, {}) or {}).get("options", []) if isinstance(prop_type, str) else []
     for option in options:
         if normalize_for_match(option.get("name", "")) == normalize_for_match(requested):
             return option.get("name", requested)
@@ -761,10 +764,10 @@ def build_notion_write_properties(
             payload[prop_name] = property_payload
 
     for prop_name, value in (request_data.get("properties") or {}).items():
-        prop = properties.get(prop_name)
-        if not prop:
+        custom_prop = properties.get(prop_name)
+        if not custom_prop:
             continue
-        property_payload = notion_property_payload(prop, value)
+        property_payload = notion_property_payload(custom_prop, value)
         if property_payload:
             payload[prop_name] = property_payload
 
@@ -2105,7 +2108,7 @@ def format_deterministic_notion_answer(
     limit: int,
 ) -> str:
     pages = collect_retrieved_notion_pages(retrieval_result, limit)
-    notion_stage = next(
+    notion_stage: Dict[str, Any] = next(
         (stage for stage in retrieval_result.get("stages", []) if stage.get("source") == "notion"),
         {},
     )

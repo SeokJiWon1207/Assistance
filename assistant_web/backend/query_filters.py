@@ -147,7 +147,7 @@ def filter_audit_for_source(source: str, clauses: Iterable[Dict[str, Any]]) -> D
     family = "chroma" if "chroma" in source else "notion" if "notion" in source else "mantis"
     applied, unapplied = partition_supported_clauses(
         clauses,
-        SOURCE_FILTER_FIELDS.get(family, ()),
+        tuple(SOURCE_FILTER_FIELDS.get(family, ())),
     )
     return {
         "source_family": family,

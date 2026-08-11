@@ -224,7 +224,7 @@ def run_retrieval_pipeline(
                 )
 
         if similar_issue_search and tools.get("vectorDb"):
-            reference_issues = []
+            reference_issues: List[Dict[str, Any]] = []
             for stage in stages:
                 reference_issues.extend(stage.get("meta", {}).get("reference_issues") or [])
             if reference_issues:

@@ -114,6 +114,7 @@ def rank_chroma_documents_semantically(
     multiplier = 80 if has_constraint(constraints) else 20
     candidate_limit = min(max(limit * multiplier, 100), 400)
     ranking_error = ""
+    ranked: List[Dict[str, Any]]
     try:
         import chromadb  # Optional at runtime; lexical fallback keeps the app usable without it.
 
@@ -175,7 +176,7 @@ def rank_chroma_documents_semantically(
         ]
         ranking_meta = {"ranking": "semantic_lexical_fallback", "ranking_fallback_reason": ranking_error}
 
-    filtered = []
+    filtered: List[Dict[str, Any]] = []
     seen_ids = set()
     for document in ranked:
         issue_id = int(document.get("issue_id") or 0)
@@ -238,6 +239,7 @@ def execute_chroma_search(
     constraints = constraints or {}
     terms = build_keyword_terms(search_keyword, constraints)
     ranking_meta: Dict[str, Any] = {"ranking": "latest_issue_id"}
+    candidate_documents: List[Dict[str, Any]]
     if semantic:
         try:
             candidate_documents, ranking_meta = rank_chroma_documents_semantically(
@@ -290,12 +292,14 @@ def execute_chroma_search(
             candidate_documents.append({"issue_id": extract_issue_id_from_text(content), "content": content[:1600]})
         candidate_documents.sort(key=lambda item: item["issue_id"], reverse=True)
 
-    documents = []
+    documents: List[Dict[str, Any]] = []
     refreshed_count = 0
     skipped_after_refresh = 0
     candidate_window = max(limit * 3, 30)
     for document in candidate_documents[:candidate_window]:
-        issue_id = document.get("issue_id")
+        issue_id = int(document.get("issue_id") or 0)
+        if not issue_id:
+            continue
         latest_issue = fetch_mantis_issue_by_id(issue_id)
         if latest_issue:
             refreshed_count += 1

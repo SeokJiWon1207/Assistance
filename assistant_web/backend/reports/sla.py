@@ -255,10 +255,10 @@ def _build_duration_report(
 ) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     for issue in issues:
-        if not _is_closed(issue.get("status")):
+        if not _is_closed(str(issue.get("status") or "")):
             continue
-        created = _parse_date(issue.get("created_at"))
-        updated = _parse_date(issue.get("updated_at"))
+        created = _parse_date(str(issue.get("created_at") or ""))
+        updated = _parse_date(str(issue.get("updated_at") or ""))
         if not created or not updated:
             continue
         days = (updated - created).days
@@ -328,9 +328,9 @@ def _build_aging_report(
     today = date.today()
     rows: List[Dict[str, Any]] = []
     for issue in issues:
-        if _is_closed(issue.get("status")):
+        if _is_closed(str(issue.get("status") or "")):
             continue
-        created = _parse_date(issue.get("created_at"))
+        created = _parse_date(str(issue.get("created_at") or ""))
         if not created:
             continue
         age = (today - created).days

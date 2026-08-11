@@ -386,7 +386,7 @@ def run_person_effort_report(
             issue_date = mantis_issue_effort_date(issue)
             if not issue_date or issue_date < start_date or issue_date > end_date:
                 continue
-            effort_items = []
+            effort_items: List[Dict[str, Any]] = []
             for custom_field in issue.get("custom_fields", []):
                 field_name = str(custom_field.get("field", {}).get("name", ""))
                 if field_name not in EFFORT_FIELD_LABELS:

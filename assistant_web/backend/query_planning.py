@@ -214,9 +214,9 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
             "precision": "year",
         }
 
-    relative_year = extract_relative_year_range(question)
-    if relative_year:
-        return relative_year
+    relative_year_range = extract_relative_year_range(question)
+    if relative_year_range:
+        return relative_year_range
 
     relative = extract_relative_created_at_range(question)
     if relative:
@@ -246,14 +246,12 @@ def extract_relative_created_at_range(question: str, today: Optional[date] = Non
     항상 date.today()를 쓴다(자정을 넘기면 "오늘"의 의미도 바뀌어야 하므로)."""
     base = today or date.today()
 
-    if re.search(r"최근\s*(\d{1,3})\s*일", question):
-        match = re.search(r"최근\s*(\d{1,3})\s*일", question)
+    if match := re.search(r"최근\s*(\d{1,3})\s*일", question):
         days = int(match.group(1))
         start = base - timedelta(days=max(days - 1, 0))
         return {"from": start.isoformat(), "to": base.isoformat(), "precision": "recent_days"}
 
-    if re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question):
-        match = re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question)
+    if match := re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question):
         months = max(int(match.group(1)), 1)
         start_year, start_month = base.year, base.month - (months - 1)
         while start_month <= 0:
@@ -332,7 +330,9 @@ def _clause_contradicts_filters(clause: Dict[str, Any], filters: Dict[str, Any])
     """규칙이 잡은 긍정 조건을 그대로 다시 제외하는 절인지 판별한다."""
     if clause.get("operator") not in NEGATIVE_OPERATORS:
         return False
-    positive = filters.get({"platform": "platform", "customer": "customer"}.get(clause.get("field"), ""))
+    field = clause.get("field")
+    positive_key = {"platform": "platform", "customer": "customer"}.get(field) if isinstance(field, str) else None
+    positive = filters.get(positive_key) if positive_key else None
     if not positive:
         return False
     values = clause.get("value")
@@ -350,7 +350,8 @@ def build_query_plan(
     source_plan = source_plan or {}
     constraints = constraints or {}
     model_plan = model_plan or {}
-    model_filters = model_plan.get("filters") if isinstance(model_plan.get("filters"), dict) else {}
+    raw_model_filters = model_plan.get("filters")
+    model_filters: Dict[str, Any] = raw_model_filters if isinstance(raw_model_filters, dict) else {}
     model_filter_clauses = normalize_filter_clauses(
         model_plan.get("filter_clauses")
         or (model_plan.get("filters") if isinstance(model_plan.get("filters"), list) else [])
@@ -459,8 +460,10 @@ def build_query_plan(
 
 def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     checks: List[Dict[str, str]] = []
-    filters = plan.get("filters") if isinstance(plan.get("filters"), dict) else {}
-    created_at = filters.get("created_at") if isinstance(filters.get("created_at"), dict) else None
+    raw_filters = plan.get("filters")
+    filters: Dict[str, Any] = raw_filters if isinstance(raw_filters, dict) else {}
+    raw_created_at = filters.get("created_at")
+    created_at = raw_created_at if isinstance(raw_created_at, dict) else None
 
     expected_date = extract_created_at_range(question)
     if expected_date:

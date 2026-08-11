@@ -34,7 +34,7 @@ def clamp_float(value: Optional[float], minimum: float, maximum: float) -> Optio
     return max(minimum, min(float(value), maximum))
 
 
-def clamp_int(value: Optional[int], minimum: int, maximum: int) -> Optional[int]:
+def clamp_int(value: Optional[int | str], minimum: int, maximum: int) -> Optional[int]:
     if value is None:
         return None
     return max(minimum, min(int(value), maximum))

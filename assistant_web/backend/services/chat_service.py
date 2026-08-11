@@ -626,7 +626,7 @@ class ChatService:
 
         if request.stream and is_ollama_model(final_model):
             streamed_content = ""
-            stream_chunks: List[Dict[str, Any]] = []
+            ollama_stream_chunks: List[Dict[str, Any]] = []
             for raw_line in response.iter_lines(decode_unicode=True):
                 if isinstance(raw_line, bytes):
                     line = raw_line.decode("utf-8", errors="replace").strip()
@@ -638,7 +638,7 @@ class ChatService:
                     chunk = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                stream_chunks.append(chunk)
+                ollama_stream_chunks.append(chunk)
                 delta = chunk.get("message", {}).get("content", "")
                 if delta:
                     streamed_content += delta
@@ -646,12 +646,12 @@ class ChatService:
                     emit_chat_event("delta", content=delta)
             data = {
                 "choices": [{"message": {"content": streamed_content}}],
-                "streamChunks": len(stream_chunks),
+                "streamChunks": len(ollama_stream_chunks),
                 "provider": "ollama",
             }
         elif request.stream and "text/event-stream" in response.headers.get("content-type", "").lower():
             streamed_content = ""
-            stream_chunks: List[Dict[str, Any]] = []
+            sse_stream_chunks: List[Dict[str, Any]] = []
             for raw_line in response.iter_lines(decode_unicode=True):
                 line = str(raw_line or "").strip()
                 if not line or not line.startswith("data:"):
@@ -663,7 +663,7 @@ class ChatService:
                     chunk = json.loads(body)
                 except json.JSONDecodeError:
                     continue
-                stream_chunks.append(chunk)
+                sse_stream_chunks.append(chunk)
                 delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                 if delta:
                     streamed_content += delta
@@ -671,7 +671,7 @@ class ChatService:
                     emit_chat_event("delta", content=delta)
             data = {
                 "choices": [{"message": {"content": streamed_content}}],
-                "streamChunks": len(stream_chunks),
+                "streamChunks": len(sse_stream_chunks),
             }
         else:
             data = response.json()

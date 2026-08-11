@@ -16,7 +16,7 @@ import time
 import uuid
 from contextlib import closing
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import requests
 from fastapi import HTTPException
@@ -326,7 +326,7 @@ def build_verification_report(
 
     retrieval_score, retrieval_status = score_checks(retrieval_checks)
     intent_validation = validate_query_plan(question, query_plan) if retrieval_used else {"valid": True, "checks": []}
-    intent_checks = intent_validation["checks"]
+    intent_checks = cast(List[Dict[str, str]], intent_validation["checks"])
     intent_score, intent_status = score_checks(intent_checks) if intent_checks else (None, "na")
     dimensions: List[Dict[str, Any]] = []
     if intent_checks:
@@ -352,7 +352,7 @@ def build_verification_report(
     )
 
     if mode == "deterministic_effort_report":
-        effort_stage = next(
+        effort_stage: Dict[str, Any] = next(
             (stage for stage in (retrieval_result or {}).get("stages", []) if stage.get("source") == "mantis_effort"),
             {},
         )
@@ -413,7 +413,7 @@ def build_verification_report(
             }
         )
     elif mode == "deterministic_mantis_count":
-        count_stage = next(
+        count_stage: Dict[str, Any] = next(
             (
                 stage for stage in (retrieval_result or {}).get("stages", [])
                 if stage.get("meta", {}).get("operation") == "count"
@@ -950,11 +950,11 @@ def finalize_chat_response(
             generate_candidate_model_answer(
                 request,
                 question,
-                retrieval_result,
+                retrieval_result or {},
                 candidate_model_id,
             )
             if comparing_models
-            else generate_basic_grounded_baseline(request, question, retrieval_result)
+            else generate_basic_grounded_baseline(request, question, retrieval_result or {})
         )
         variant_a_evaluation_input = {
             "status": "ok",
@@ -1178,7 +1178,7 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
             "모두 포함" if not missing_ids else f"누락: {', '.join(map(str, missing_ids))}",
         )
     if expected.get("source"):
-        actual_types = {source.get("type") for source in sources}
+        actual_types = {str(source.get("type")) for source in sources if source.get("type")}
         add_check("데이터 소스", expected["source"] in actual_types, ", ".join(sorted(actual_types)) or "조회 없음")
     if expected.get("titleContains"):
         titles = [source.get("title", "") for source in sources]
@@ -1199,7 +1199,9 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
         )
         add_check("Notion DB", bool(matched_database), matched_database or "일치 DB 없음")
     if expected.get("effortTotal") is not None:
-        effort_meta = (retrieval_result.get("stages") or [{}])[0].get("meta", {})
+        effort_stages = (retrieval_result or {}).get("stages") or []
+        effort_stage = effort_stages[0] if effort_stages and isinstance(effort_stages[0], dict) else {}
+        effort_meta = effort_stage.get("meta", {})
         actual_total = float(effort_meta.get("total_effort", 0))
         add_check(
             "공수 합계",
@@ -1213,7 +1215,9 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
             f"{len(sources)}건",
         )
     if expected.get("totalCount") is not None:
-        total_count = int((retrieval_result.get("stages") or [{}])[0].get("meta", {}).get("total_count", -1))
+        count_stages = (retrieval_result or {}).get("stages") or []
+        count_stage = count_stages[0] if count_stages and isinstance(count_stages[0], dict) else {}
+        total_count = int(count_stage.get("meta", {}).get("total_count", -1))
         add_check(
             "전체 건수",
             total_count == int(expected["totalCount"]),
@@ -1283,33 +1287,24 @@ def build_accuracy_analytics(report_data: List[Dict[str, Any]]) -> Dict[str, Any
     """Summarize score movement and recurring failure categories (newest first)."""
     if not report_data:
         return {"trend": [], "latestDelta": None, "failureCounts": []}
-    trend = [
-        {
+    def summary_for(data: Dict[str, Any]) -> Dict[str, Any]:
+        summary = data.get("summary")
+        return summary if isinstance(summary, dict) else {}
+
+    trend: List[Dict[str, Any]] = []
+    for data in reversed(report_data):
+        summary = summary_for(data)
+        score = summary.get("score")
+        trend.append({
             "runAt": data.get("run_at"),
-            "score": (
-                int((data.get("summary") or {}).get("score"))
-                if (data.get("summary") or {}).get("score") is not None
-                else None
-            ),
-            "passed": int((data.get("summary") or {}).get("passed") or 0),
-            "total": int((data.get("summary") or {}).get("total") or 0),
-            "status": (data.get("summary") or {}).get("status", "unknown"),
-        }
-        for data in reversed(report_data)
-    ]
-    scored_reports = [
-        data for data in report_data if (data.get("summary") or {}).get("score") is not None
-    ]
-    latest_score = (
-        int((scored_reports[0].get("summary") or {}).get("score"))
-        if scored_reports
-        else None
-    )
-    previous_score = (
-        int((scored_reports[1].get("summary") or {}).get("score"))
-        if len(scored_reports) > 1
-        else None
-    )
+            "score": int(score) if score is not None else None,
+            "passed": int(summary.get("passed") or 0),
+            "total": int(summary.get("total") or 0),
+            "status": summary.get("status", "unknown"),
+        })
+    scored_summaries = [summary_for(data) for data in report_data if summary_for(data).get("score") is not None]
+    latest_score = int(scored_summaries[0]["score"]) if scored_summaries else None
+    previous_score = int(scored_summaries[1]["score"]) if len(scored_summaries) > 1 else None
     failure_counts: Dict[str, int] = {}
     for data in report_data:
         for result in data.get("results") or []:
