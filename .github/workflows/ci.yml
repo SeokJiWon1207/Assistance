@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # 코드 변경이 없어도 보안 예외 만료와 새 취약점을 매주 확인한다.
+    - cron: "17 0 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
