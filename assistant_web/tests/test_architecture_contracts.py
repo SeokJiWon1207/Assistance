@@ -1,0 +1,178 @@
+import json
+import unittest
+from pathlib import Path
+
+from backend import understanding
+from backend.query_planning import build_query_plan
+from backend.reports import evaluation
+from backend.sources import notion
+
+
+APP_DIR = Path(__file__).resolve().parents[1]
+FIXTURE = json.loads(
+    (APP_DIR / "tests" / "fixtures" / "architecture_contracts.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+PUBLIC_SYMBOLS = {
+    understanding: {
+        "COMBINED_SOURCE_MARKERS",
+        "EXPLICIT_MANTIS_MARKERS",
+        "EXPLICIT_NOTION_MARKERS",
+        "ISSUE_ANALYSIS_INTENT_KEYWORDS",
+        "ISSUE_LIST_INTENT_KEYWORDS",
+        "NOTION_QUERY_STOPWORDS",
+        "build_contextual_retrieval_text",
+        "build_keyword_terms",
+        "build_similar_issue_search_text",
+        "chroma_text_matches_constraints",
+        "extract_query_constraints",
+        "extract_requested_limit",
+        "field_matches_screen_number",
+        "get_latest_user_text",
+        "get_recent_user_texts",
+        "has_constraint",
+        "is_follow_up_question",
+        "load_known_people",
+        "merge_query_plan_constraints",
+        "plan_search_intent_with_model",
+        "resolve_reference_from_context",
+        "resolve_result_limit",
+        "rewrite_follow_up_query_with_model",
+        "rule_based_search_intent",
+        "should_run_notion_search",
+        "should_run_retrieval",
+        "text_matches_constraints",
+        "text_matches_people",
+        "text_matches_screen_numbers",
+        "text_matches_status",
+        "title_has_screen_number",
+        "wants_all_results",
+        "wants_similar_issue_search",
+    },
+    notion: {
+        "build_notion_terms",
+        "build_sources_from_notion_pages",
+        "build_sources_from_single_notion_page",
+        "collect_retrieved_notion_pages",
+        "create_notion_page",
+        "deduplicate_notion_pages_by_id",
+        "ensure_configured_notion_database",
+        "execute_notion_search",
+        "extract_notion_constraints",
+        "fetch_notion_database_schema",
+        "fetch_notion_database_title",
+        "fetch_notion_users",
+        "format_deterministic_notion_answer",
+        "format_grouped_notion_answer",
+        "inherit_notion_context",
+        "merge_common_notion_constraints",
+        "normalize_notion_page",
+        "notion_database_status_filter",
+        "notion_page_matches_constraints",
+        "notion_properties_to_text",
+        "notion_search_max_pages",
+        "resolve_notion_page_owner",
+        "run_notion_write_command",
+        "should_return_deterministic_notion_list",
+        "update_notion_page",
+        "validate_notion_page_id",
+    },
+    evaluation: {
+        "EVALUATION_CASES",
+        "build_accuracy_analytics",
+        "build_evaluation_summary",
+        "build_verification_report",
+        "evaluate_ab_comparison",
+        "finalize_chat_response",
+        "generate_candidate_model_answer",
+        "run_evaluation_case_safely",
+        "save_evaluation_run",
+    },
+}
+
+
+class PythonArchitectureContractTests(unittest.TestCase):
+    def test_public_import_contract_is_available(self):
+        for module, names in PUBLIC_SYMBOLS.items():
+            with self.subTest(module=module.__name__):
+                missing = sorted(name for name in names if not hasattr(module, name))
+                self.assertEqual(missing, [])
+
+    def test_query_plan_golden_cases(self):
+        for case in FIXTURE["queryPlans"]:
+            question = case["question"]
+            constraints = understanding.extract_query_constraints(question)
+            source_plan = understanding.rule_based_search_intent(question, constraints)
+            plan = build_query_plan(question, source_plan, constraints)
+            with self.subTest(question=question):
+                self.assertEqual(plan["source"], case["source"])
+                self.assertEqual(plan["operation"], case["operation"])
+                for key, expected in case["filters"].items():
+                    self.assertEqual(plan["filters"][key], expected)
+
+    def test_notion_source_and_final_answer_golden_case(self):
+        pages = FIXTURE["notionPages"]
+        sources = notion.build_sources_from_notion_pages(pages)
+        self.assertEqual(sources[0]["page_id"], "page-1")
+        self.assertEqual(sources[0]["preview"], "배포 전 체크리스트")
+        retrieval_result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [
+                {
+                    "source": "notion",
+                    "status": "ok",
+                    "notion_pages": pages,
+                    "meta": {
+                        "candidate_count": 1,
+                        "terms": ["배포"],
+                        "databases": [{"database_label": "업무 DB"}],
+                        "constraints": {},
+                    },
+                }
+            ],
+        }
+        answer = notion.format_deterministic_notion_answer(
+            "노션에서 배포 문서 보여줘", retrieval_result, 5
+        )
+        self.assertEqual(answer, FIXTURE["notionAnswer"])
+
+
+class FrontendArchitectureContractTests(unittest.TestCase):
+    def test_dom_and_api_contracts_are_present(self):
+        static_dir = APP_DIR / "backend" / "static"
+        html = (static_dir / "index.html").read_text(encoding="utf-8")
+        javascript = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(static_dir.rglob("*.js"))
+        )
+        for element_id in (
+            "chatForm",
+            "promptInput",
+            "messages",
+            "signedInUser",
+            "evaluationModal",
+            "workspaceModal",
+            "inviteModal",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        for endpoint in (
+            "/api/chat",
+            "/api/models",
+            "/api/workspace/me",
+            "/api/workspace/team",
+            "/api/evaluation/run",
+        ):
+            self.assertIn(endpoint, javascript)
+        for event_contract in (
+            'addEventListener("submit"',
+            'addEventListener("click"',
+            'addEventListener("keydown"',
+        ):
+            self.assertIn(event_contract, javascript)
+
+
+if __name__ == "__main__":
+    unittest.main()
