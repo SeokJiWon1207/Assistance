@@ -39,7 +39,7 @@ jobs:
         run: coverage run assistant_web/tests/run_test_suite.py
 
       - name: Report coverage
-        run: coverage report --show-missing --fail-under=68
+        run: coverage report --show-missing --fail-under=70
 
       - name: Compile Python sources
         run: python -m compileall -q assistant_web/backend assistant_web/scripts assistant_web/tests
