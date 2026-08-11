@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 EC2_HOST="43.202.45.113"
-SSH_KEY="$SCRIPT_DIR/Assistance_Key.pem"
+SSH_KEY="${ASSISTANCE_SSH_KEY:-$HOME/.ssh/Assistance_Key.pem}"
 
 cd "$PROJECT_DIR"
 
