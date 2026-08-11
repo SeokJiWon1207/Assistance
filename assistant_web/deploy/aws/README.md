@@ -39,6 +39,22 @@ FIREBASE_CREDENTIALS=~/.config/ai-assistant/firebase-service-account.json \
 `current` 심볼릭 링크를 원자적으로 전환합니다. 활성화나 readiness가 실패하면 이전
 `current`, systemd, nginx 설정을 자동 복구합니다.
 
+### AWS CLI 권한
+
+SSH 기반 애플리케이션 배포에는 AWS API 자격 증명이 필요하지 않습니다. 보안 그룹을
+조회하거나 HTTPS 인바운드 규칙을 관리할 때만 `assistance-deploy` 프로필을 사용합니다.
+이 프로필은 `iam-deploy-policy.json`에 정의된 대로 배포 인스턴스의 보안 그룹 하나만
+변경할 수 있어야 하며, 루트 계정으로 일상적인 AWS CLI 작업을 하지 않습니다.
+
+```bash
+AWS_PROFILE=assistance-deploy aws ec2 describe-security-groups \
+  --group-ids sg-09cd9dc0099cb116c
+```
+
+독립 AWS 계정에서 IAM Identity Center의 계정 인스턴스는 AWS 계정 접근용 permission
+set을 지원하지 않습니다. 조직 인스턴스를 도입하기 전까지는 콘솔 로그인이 없는
+최소 권한 IAM 사용자를 사용하고, 액세스 키를 로컬 AWS 프로필에만 저장·정기 교체합니다.
+
 ## 3. 접속
 
 배포가 끝나면 아래 주소로 접속합니다.
