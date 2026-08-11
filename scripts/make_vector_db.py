@@ -268,12 +268,13 @@ def build_issue_document(issue: dict) -> Document:
     return Document(page_content=text, metadata={"id": issue_id})
 
 
-def load_existing_issue_ids() -> set[int]:
+def load_existing_issue_ids(database_path: Path | None = None) -> set[int]:
     """기존 스냅샷에 이미 들어있는 이슈 ID 집합."""
-    if not CHROMA_SQLITE.exists():
+    database_path = database_path or CHROMA_SQLITE
+    if not database_path.exists():
         return set()
     issue_ids: set[int] = set()
-    with closing(sqlite3.connect(CHROMA_SQLITE)) as connection:
+    with closing(sqlite3.connect(database_path)) as connection:
         rows = connection.execute(
             "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
         )
@@ -500,11 +501,8 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
         if refresh_days > 0
         else None
     )
-    vector_db = Chroma(persist_directory=str(CHROMA_DIR))
-
     new_documents: list[Document] = []
     refreshed_documents: list[Document] = []
-    refreshed_count = 0
     # Mantis가 최신순으로 반환하므로, "새 이슈도 refresh 대상도 전혀 없는 페이지"가
     # 연속으로 나오면 그 뒤로는 전부 기존 데이터라고 보고 조기 종료한다.
     stale_page_streak = 0
@@ -520,14 +518,12 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
                 existing_ids.add(issue_id)
                 page_has_work = True
             elif refresh_cutoff and issue_date(issue.get("updated_at")) >= refresh_cutoff:
-                deleted = delete_documents_for_issue(vector_db, issue_id)
-                if deleted:
-                    refreshed_document = build_issue_document(issue)
-                    add_documents_batched(vector_db, [refreshed_document])
-                    refreshed_documents.append(refreshed_document)
-                    refreshed_count += 1
-                    page_has_work = True
-        print(f"✅ {page}페이지 검토 완료 (신규 누적 {len(new_documents)}건, 갱신 {refreshed_count}건)")
+                refreshed_documents.append(build_issue_document(issue))
+                page_has_work = True
+        print(
+            f"✅ {page}페이지 검토 완료 "
+            f"(신규 누적 {len(new_documents)}건, 갱신 후보 {len(refreshed_documents)}건)"
+        )
         if page_has_work:
             stale_page_streak = 0
         else:
@@ -536,27 +532,51 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
                 print("⏹️ 새 이슈/갱신 대상 없는 페이지가 이어져 조기 종료합니다.")
                 break
 
-    if new_documents:
-        print(f"🧠 신규 이슈 {len(new_documents)}건 임베딩 중...")
-        add_documents_batched(vector_db, new_documents)
     changed_documents = new_documents + refreshed_documents
-    if changed_documents or not MANTIS_INDEX_SQLITE.exists():
+    if not changed_documents and MANTIS_INDEX_SQLITE.exists():
+        print("🏁 증분 갱신 완료: 변경 사항이 없습니다.")
+        return
+
+    CHROMA_DIR.parent.mkdir(parents=True, exist_ok=True)
+    temporary_dir = CHROMA_DIR.parent / f".{CHROMA_DIR.name}-incremental-{uuid.uuid4().hex}"
+    try:
+        shutil.copytree(CHROMA_DIR, temporary_dir)
+        temporary_chroma = temporary_dir / "chroma.sqlite3"
+        temporary_index = temporary_dir / INDEX_FILENAME
+        vector_db = Chroma(persist_directory=str(temporary_dir))
+        for document in refreshed_documents:
+            deleted = delete_documents_for_issue(vector_db, int(document.metadata["id"]))
+            if deleted != 1:
+                raise SnapshotBuildError(
+                    f"갱신 대상 #{document.metadata['id']}의 기존 문서가 {deleted}건입니다."
+                )
+        if changed_documents:
+            print(f"🧠 신규·갱신 이슈 {len(changed_documents)}건 임베딩 중...")
+            add_documents_batched(vector_db, changed_documents)
         document_count = vector_db._collection.count()
         if changed_documents:
             write_snapshot_freshness_metadata(
-                CHROMA_DIR,
+                temporary_dir,
                 changed_documents,
                 document_count,
                 merge_existing=True,
             )
         del vector_db
         gc.collect()
-        index_stats = rebuild_mantis_index(CHROMA_SQLITE, MANTIS_INDEX_SQLITE)
-        validate_snapshot(CHROMA_DIR, document_count)
+        index_stats = rebuild_mantis_index(temporary_chroma, temporary_index)
+        validate_snapshot(temporary_dir, document_count)
+        backup = activate_snapshot(temporary_dir)
         print(
-            f"🗂️ 구조화 인덱스 {index_stats['document_count']}건을 원자적으로 갱신했습니다."
+            f"🗂️ Chroma와 구조화 인덱스 {index_stats['document_count']}건을 "
+            f"원자적으로 갱신했습니다. 이전 스냅샷: {backup}"
         )
-    print(f"🏁 증분 갱신 완료: 신규 {len(new_documents)}건 추가, {refreshed_count}건 재임베딩")
+    finally:
+        if temporary_dir.exists():
+            shutil.rmtree(temporary_dir)
+    print(
+        f"🏁 증분 갱신 완료: 신규 {len(new_documents)}건 추가, "
+        f"{len(refreshed_documents)}건 재임베딩"
+    )
 
 
 def validate_snapshot(snapshot_dir: Path, expected_documents: int) -> None:
@@ -621,6 +641,25 @@ def prune_snapshot_backups() -> None:
         shutil.rmtree(expired)
 
 
+def activate_snapshot(temporary_dir: Path) -> Path | None:
+    """Atomically activate a validated snapshot directory with rollback."""
+    backup = None
+    if CHROMA_DIR.exists():
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        backup = BACKUP_DIR / (
+            f"{CHROMA_DIR.name}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
+        )
+        os.replace(CHROMA_DIR, backup)
+    try:
+        os.replace(temporary_dir, CHROMA_DIR)
+    except Exception:
+        if backup is not None and backup.exists() and not CHROMA_DIR.exists():
+            os.replace(backup, CHROMA_DIR)
+        raise
+    prune_snapshot_backups()
+    return backup
+
+
 def run_full(url: str, headers: dict, max_pages: int) -> None:
     documents: list[Document] = []
     for page, issues in fetch_issue_pages(url, headers, max_pages=max_pages):
@@ -635,7 +674,6 @@ def run_full(url: str, headers: dict, max_pages: int) -> None:
     temporary_dir = Path(
         tempfile.mkdtemp(prefix=f".{CHROMA_DIR.name}-build-", dir=CHROMA_DIR.parent)
     )
-    backup = None
     try:
         vector_db = Chroma(persist_directory=str(temporary_dir))
         documents_to_embed = reuse_unchanged_embeddings(vector_db, documents)
@@ -653,21 +691,9 @@ def run_full(url: str, headers: dict, max_pages: int) -> None:
             f"최대 이슈 #{index_stats['max_issue_id']}"
         )
 
-        if CHROMA_DIR.exists():
-            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-            backup = BACKUP_DIR / (
-                f"{CHROMA_DIR.name}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}"
-            )
-            os.replace(CHROMA_DIR, backup)
-        try:
-            os.replace(temporary_dir, CHROMA_DIR)
-        except Exception:
-            if backup is not None and backup.exists() and not CHROMA_DIR.exists():
-                os.replace(backup, CHROMA_DIR)
-            raise
+        backup = activate_snapshot(temporary_dir)
         if backup is not None:
             print(f"🗄️ 기존 스냅샷을 백업했습니다: {backup}")
-        prune_snapshot_backups()
         print("🏆 전체 재구축 검증 및 원자 교체가 완료되었습니다.")
     finally:
         if temporary_dir.exists():
