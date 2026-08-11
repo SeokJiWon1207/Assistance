@@ -39,6 +39,24 @@ FIREBASE_CREDENTIALS=~/.config/ai-assistant/firebase-service-account.json \
 `current` 심볼릭 링크를 원자적으로 전환합니다. 활성화나 readiness가 실패하면 이전
 `current`, systemd, nginx 설정을 자동 복구합니다.
 
+배포 전 로컬 Chroma 스냅샷에 구조화 보조 인덱스가 있어야 합니다. 전체 임베딩을 다시
+계산하지 않고 현재 문서에서 인덱스만 만들려면 다음 명령을 실행합니다.
+
+```bash
+assistant_web/.venv/bin/python scripts/make_vector_db.py --rebuild-index-only
+```
+
+배포 검증은 `chroma.sqlite3`, `mantis_index.sqlite3`, `freshness.json`의 문서 건수와
+SQLite 무결성을 함께 확인합니다. 운영 서비스는 먼저 `MANTIS_INDEX_MODE=shadow`로
+실행되어 기존 결과를 반환하고, 결과가 다르면 systemd 로그에 경고를 남깁니다.
+
+```bash
+sudo journalctl -u content-ai-assistant | grep 'shadow 결과 불일치'
+```
+
+충분한 운영 비교 기간 동안 불일치가 없을 때만 systemd의 값을 `primary`로 바꿉니다.
+보조 인덱스가 누락되거나 손상되면 애플리케이션은 기존 Chroma 순회로 자동 폴백합니다.
+
 ### AWS CLI 권한
 
 SSH 기반 애플리케이션 배포에는 AWS API 자격 증명이 필요하지 않습니다. 보안 그룹을
@@ -145,7 +163,7 @@ ssh -i KEY ubuntu@EC2_PUBLIC_IP "rm -f /opt/content-ai-assistant/maintenance.on"
   `MODEL_ENDPOINT_INSECURE_ALLOWLIST`로 등록하고 만료일
   `MODEL_ENDPOINT_INSECURE_ALLOWLIST_EXPIRES_AT`도 함께 지정해야 합니다. 회사 모델에 TLS가
   적용되면 두 예외 값을 제거합니다.
-- 배포 후 `/ready`에서 세 SQLite DB, 스냅샷 DB와 데이터 신선도를 확인하세요.
+- 배포 후 `/ready`에서 세 SQLite DB, 스냅샷 DB, `structuredIndexDb`와 데이터 신선도를 확인하세요.
 - `/ready`의 `security.modelTransport`에는 HTTP 모델 예외 만료일과 잔여 일수가 포함됩니다.
   기본적으로 D-30부터 `warning` 상태와 기동 경고 로그가 발생합니다.
 - 로컬 스냅샷(`data/mantis_chroma_db`)도 함께 업로드하므로 로컬과 유사한 검색 결과가 나옵니다.
