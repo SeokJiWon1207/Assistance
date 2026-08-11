@@ -57,7 +57,7 @@ cd "$APP_DIR"
 python3 -m venv .venv
 . .venv/bin/activate
 pip install --no-cache-dir --upgrade pip
-pip install --no-cache-dir -r requirements.txt
+pip install --no-cache-dir -r requirements.lock
 
 # nginx/systemd를 건드리기 전에 신릴리스의 운영 보안 설정과 DB 마이그레이션을 검증한다.
 APP_ENV=production \

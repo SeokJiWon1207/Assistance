@@ -1,0 +1,10 @@
+{
+  "exceptions": [
+    {
+      "id": "PYSEC-2026-311",
+      "expiresAt": "2026-09-30",
+      "reason": "ChromaDB의 취약한 HTTP 서버를 노출하지 않고 로컬 PersistentClient만 사용합니다. 패치 버전이 출시되면 즉시 업그레이드합니다.",
+      "tracking": "https://github.com/advisories/GHSA-f4j7-r4q5-qw2c"
+    }
+  ]
+}
