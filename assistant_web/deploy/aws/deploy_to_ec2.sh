@@ -163,7 +163,7 @@ fi
 
 echo "Validating uploaded snapshot before activation..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
-  "SNAPSHOT_DIR='$REMOTE_SNAPSHOT' python3 -c \"import json, os, sqlite3; from pathlib import Path; root=Path(os.environ['SNAPSHOT_DIR'])/'mantis_chroma_db'; db=root/'chroma.sqlite3'; con=sqlite3.connect(db); integrity=con.execute('PRAGMA integrity_check').fetchone()[0]; count=con.execute(\\\"SELECT COUNT(*) FROM embedding_metadata WHERE key='chroma:document'\\\").fetchone()[0]; con.close(); metadata=json.loads((root/'freshness.json').read_text()); assert integrity=='ok' and count>0 and metadata.get('documentCount')==count, (integrity,count,metadata); print(f'Snapshot validated: {count} documents')\""
+  "SNAPSHOT_DIR='$REMOTE_SNAPSHOT' python3 -c \"import json, os, sqlite3; from pathlib import Path; root=Path(os.environ['SNAPSHOT_DIR'])/'mantis_chroma_db'; db=root/'chroma.sqlite3'; con=sqlite3.connect(db); integrity=con.execute('PRAGMA integrity_check').fetchone()[0]; count=con.execute(\\\"SELECT COUNT(*) FROM embedding_metadata WHERE key='chroma:document'\\\").fetchone()[0]; con.close(); index_db=root/'mantis_index.sqlite3'; icon=sqlite3.connect(index_db); index_integrity=icon.execute('PRAGMA quick_check').fetchone()[0]; index_count=icon.execute('SELECT COUNT(*) FROM issues').fetchone()[0]; icon.close(); metadata=json.loads((root/'freshness.json').read_text()); assert integrity=='ok' and index_integrity=='ok' and count>0 and index_count==count and metadata.get('documentCount')==count, (integrity,index_integrity,count,index_count,metadata); print(f'Snapshot validated: {count} documents + structured index')\""
 
 echo "Installing and atomically activating release $RELEASE_ID..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" \

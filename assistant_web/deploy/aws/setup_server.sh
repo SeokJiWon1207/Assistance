@@ -68,6 +68,7 @@ AUTH_USERS_DB_PATH="$STATE_DIR/users.sqlite3" \
 WORKSPACE_DB_PATH="$STATE_DIR/workspace.sqlite3" \
 AUDIT_DB_PATH="$STATE_DIR/assistant_audit.sqlite3" \
 CHROMA_DB_PATH="$RELEASE_DIR/data/mantis_chroma_db/chroma.sqlite3" \
+MANTIS_INDEX_DB_PATH="$RELEASE_DIR/data/mantis_chroma_db/mantis_index.sqlite3" \
 FIREBASE_SERVICE_ACCOUNT_PATH="$STATE_DIR/firebase-service-account.json" \
   .venv/bin/python - <<'PY'
 from pathlib import Path
@@ -271,6 +272,8 @@ Environment=AUTH_USERS_DB_PATH=$STATE_DIR/users.sqlite3
 Environment=WORKSPACE_DB_PATH=$STATE_DIR/workspace.sqlite3
 Environment=AUDIT_DB_PATH=$STATE_DIR/assistant_audit.sqlite3
 Environment=CHROMA_DB_PATH=$CURRENT_LINK/data/mantis_chroma_db/chroma.sqlite3
+Environment=MANTIS_INDEX_DB_PATH=$CURRENT_LINK/data/mantis_chroma_db/mantis_index.sqlite3
+Environment=MANTIS_INDEX_MODE=shadow
 Environment=FIREBASE_SERVICE_ACCOUNT_PATH=$STATE_DIR/firebase-service-account.json
 UMask=0077
 ExecStart=$CURRENT_LINK/assistant_web/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port $APP_PORT
