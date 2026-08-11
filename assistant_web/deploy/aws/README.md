@@ -54,8 +54,17 @@ SQLite 무결성을 함께 확인합니다. 운영 서비스는 먼저 `MANTIS_I
 sudo journalctl -u content-ai-assistant | grep 'shadow 결과 불일치'
 ```
 
-충분한 운영 비교 기간 동안 불일치가 없을 때만 systemd의 값을 `primary`로 바꿉니다.
+충분한 운영 비교 기간 동안 불일치가 없을 때만 다음 배포부터 `primary`를 명시합니다.
 보조 인덱스가 누락되거나 손상되면 애플리케이션은 기존 Chroma 순회로 자동 폴백합니다.
+
+```bash
+MANTIS_INDEX_MODE=primary \
+EC2_HOST=EC2_PUBLIC_IP \
+SSH_KEY=~/.ssh/your-key.pem \
+SERVER_NAME=EC2_PUBLIC_IP \
+INCLUDE_ENV=1 \
+./assistant_web/deploy/aws/deploy_to_ec2.sh
+```
 
 ### AWS CLI 권한
 

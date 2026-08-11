@@ -13,6 +13,7 @@ Optional:
   INCLUDE_ENV=1
   FIREBASE_CREDENTIALS=/secure/path/service-account.json
   RELEASE_KEEP=2
+  MANTIS_INDEX_MODE=shadow
 USAGE
   exit 1
 fi
@@ -21,6 +22,7 @@ EC2_USER="${EC2_USER:-ubuntu}"
 APP_ROOT="${APP_ROOT:-/opt/content-ai-assistant}"
 SERVER_NAME="${SERVER_NAME:-$EC2_HOST}"
 RELEASE_KEEP="${RELEASE_KEEP:-2}"
+MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-shadow}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
@@ -30,6 +32,10 @@ if [[ ! "$RELEASE_ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
 fi
 if [[ ! "$RELEASE_KEEP" =~ ^[1-9][0-9]*$ ]]; then
   echo "RELEASE_KEEP must be a positive integer." >&2
+  exit 1
+fi
+if [[ "$MANTIS_INDEX_MODE" != "off" && "$MANTIS_INDEX_MODE" != "shadow" && "$MANTIS_INDEX_MODE" != "primary" ]]; then
+  echo "MANTIS_INDEX_MODE must be off, shadow, or primary: $MANTIS_INDEX_MODE" >&2
   exit 1
 fi
 
@@ -169,6 +175,7 @@ echo "Installing and atomically activating release $RELEASE_ID..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
   "APP_ROOT='$APP_ROOT' APP_USER='$EC2_USER' SERVER_NAME='$SERVER_NAME' \
    RELEASE_DIR='$REMOTE_RELEASE' RELEASE_ID='$RELEASE_ID' RELEASE_KEEP='$RELEASE_KEEP' \
+   MANTIS_INDEX_MODE='$MANTIS_INDEX_MODE' \
    LETSENCRYPT_EMAIL='${LETSENCRYPT_EMAIL:-}' \
    bash '$REMOTE_RELEASE/assistant_web/deploy/aws/setup_server.sh'"
 

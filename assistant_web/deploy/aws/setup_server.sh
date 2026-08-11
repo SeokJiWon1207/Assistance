@@ -10,6 +10,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/content-ai-assistant}"
 RELEASE_DIR="${RELEASE_DIR:-}"
 RELEASE_ID="${RELEASE_ID:-}"
 RELEASE_KEEP="${RELEASE_KEEP:-2}"
+MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-shadow}"
 RELEASES_DIR="$APP_ROOT/releases"
 CURRENT_LINK="$APP_ROOT/current"
 SERVICE_FILE="/etc/systemd/system/content-ai-assistant.service"
@@ -25,6 +26,10 @@ if [[ -z "$RELEASE_DIR" || -z "$RELEASE_ID" ]]; then
 fi
 if [[ "$RELEASE_DIR" != "$RELEASES_DIR/$RELEASE_ID" || ! "$RELEASE_ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
   echo "Release path is outside the managed releases directory: $RELEASE_DIR" >&2
+  exit 1
+fi
+if [[ "$MANTIS_INDEX_MODE" != "off" && "$MANTIS_INDEX_MODE" != "shadow" && "$MANTIS_INDEX_MODE" != "primary" ]]; then
+  echo "MANTIS_INDEX_MODE must be off, shadow, or primary: $MANTIS_INDEX_MODE" >&2
   exit 1
 fi
 if [[ ! -d "$RELEASE_DIR/assistant_web" || ! -L "$RELEASE_DIR/data" ]]; then
@@ -273,7 +278,7 @@ Environment=WORKSPACE_DB_PATH=$STATE_DIR/workspace.sqlite3
 Environment=AUDIT_DB_PATH=$STATE_DIR/assistant_audit.sqlite3
 Environment=CHROMA_DB_PATH=$CURRENT_LINK/data/mantis_chroma_db/chroma.sqlite3
 Environment=MANTIS_INDEX_DB_PATH=$CURRENT_LINK/data/mantis_chroma_db/mantis_index.sqlite3
-Environment=MANTIS_INDEX_MODE=shadow
+Environment=MANTIS_INDEX_MODE=$MANTIS_INDEX_MODE
 Environment=FIREBASE_SERVICE_ACCOUNT_PATH=$STATE_DIR/firebase-service-account.json
 UMask=0077
 ExecStart=$CURRENT_LINK/assistant_web/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port $APP_PORT

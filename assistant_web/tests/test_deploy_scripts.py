@@ -25,10 +25,17 @@ class DeploymentScriptTests(unittest.TestCase):
         self.assertLess(trap_index, switch_index)
         self.assertIn("WorkingDirectory=$CURRENT_LINK/assistant_web", script)
         self.assertIn(
-            "Environment=MANTIS_INDEX_MODE=shadow",
+            "Environment=MANTIS_INDEX_MODE=$MANTIS_INDEX_MODE",
             script,
         )
         self.assertIn("Activation failed; rolling current back", script)
+
+    def test_deploy_passes_validated_index_mode_to_setup(self):
+        script = (DEPLOY_DIR / "deploy_to_ec2.sh").read_text(encoding="utf-8")
+
+        self.assertIn('MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-shadow}"', script)
+        self.assertIn("MANTIS_INDEX_MODE='$MANTIS_INDEX_MODE'", script)
+        self.assertIn("MANTIS_INDEX_MODE must be off, shadow, or primary", script)
 
     def test_manual_rollback_restores_previous_release_on_failed_readiness(self):
         script = (DEPLOY_DIR / "rollback_release.sh").read_text(encoding="utf-8")
