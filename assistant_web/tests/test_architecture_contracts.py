@@ -127,6 +127,19 @@ class PythonArchitectureContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(getattr(understanding, name).__module__, expected_module)
 
+    def test_notion_facade_uses_functional_modules(self):
+        expected_modules = {
+            "fetch_notion_database_schema": "backend.notion.client",
+            "validate_notion_page_id": "backend.notion.schema",
+            "normalize_notion_page": "backend.notion.mapping",
+            "execute_notion_search": "backend.notion.search",
+            "run_notion_write_command": "backend.notion.write",
+            "format_deterministic_notion_answer": "backend.notion.formatting",
+        }
+        for name, expected_module in expected_modules.items():
+            with self.subTest(name=name):
+                self.assertEqual(getattr(notion, name).__module__, expected_module)
+
     def test_query_plan_golden_cases(self):
         for case in FIXTURE["queryPlans"]:
             question = case["question"]
