@@ -709,6 +709,7 @@ def execute_mantis_snapshot_search(
         lambda content: chroma_text_matches_constraints(content, constraints),
         normalize_chroma_issue_document,
         example_limit=limit,
+        constraints=constraints,
     )
     if not snapshot["available"]:
         return {

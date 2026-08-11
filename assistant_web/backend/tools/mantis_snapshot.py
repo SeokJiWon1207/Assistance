@@ -1,12 +1,188 @@
-"""Fast count scans over the local Mantis Chroma document snapshot."""
+"""Mantis snapshot scans with a structured-index shadow and safe fallback."""
 
 from __future__ import annotations
 
-import sqlite3
 import heapq
+import logging
+import os
+import sqlite3
 from contextlib import closing
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
+
+from backend.tools.mantis_index import (
+    INDEX_FILENAME,
+    MantisIndexError,
+    build_candidate_query,
+    validate_mantis_index,
+)
+
+
+LOGGER = logging.getLogger(__name__)
+VALID_INDEX_MODES = {"off", "shadow", "primary"}
+
+
+@lru_cache(maxsize=8)
+def _validate_index_signature(path: str, _mtime_ns: int, _size: int) -> None:
+    validate_mantis_index(Path(path))
+
+
+def _empty_result(reason: str, scanned_count: int = 0) -> Dict[str, Any]:
+    return {
+        "available": False,
+        "scanned_count": scanned_count,
+        "matched_count": 0,
+        "matched_ids": set(),
+        "issues": [],
+        "group_counts": {},
+        "reason": reason,
+    }
+
+
+def _scan_documents(
+    documents: Iterable[str],
+    matches: Callable[[str], bool],
+    normalize: Callable[[str], Optional[Dict[str, Any]]],
+    *,
+    example_limit: int,
+    scanned_count: int | None = None,
+    group_key: Optional[Callable[[Dict[str, Any]], str]] = None,
+) -> Dict[str, Any]:
+    scanned_ids: set[int] = set()
+    matched_ids: set[int] = set()
+    group_counts: Dict[str, int] = {}
+    examples: list[Dict[str, Any]] = []
+
+    for content in documents:
+        issue = normalize(str(content or ""))
+        if not issue or not issue.get("id"):
+            continue
+        issue_id = int(issue["id"])
+        if issue_id in scanned_ids:
+            continue
+        scanned_ids.add(issue_id)
+        if not matches(str(content or "")):
+            continue
+        matched_ids.add(issue_id)
+        if group_key:
+            label = str(group_key(issue) or "").strip() or "미지정"
+            group_counts[label] = group_counts.get(label, 0) + 1
+        if len(examples) < example_limit:
+            examples.append(issue)
+        elif issue_id > min(int(item.get("id") or 0) for item in examples):
+            oldest_index = min(
+                range(len(examples)),
+                key=lambda index: int(examples[index].get("id") or 0),
+            )
+            examples[oldest_index] = issue
+
+    examples.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
+    return {
+        "available": True,
+        "scanned_count": len(scanned_ids) if scanned_count is None else scanned_count,
+        "matched_count": len(matched_ids),
+        "matched_ids": matched_ids,
+        "issues": examples,
+        "group_counts": group_counts,
+        "reason": "",
+    }
+
+
+def _scan_chroma_documents(
+    database_path: Path,
+    matches: Callable[[str], bool],
+    normalize: Callable[[str], Optional[Dict[str, Any]]],
+    *,
+    example_limit: int,
+    scan_limit: Optional[int],
+    group_key: Optional[Callable[[Dict[str, Any]], str]],
+) -> Dict[str, Any]:
+    if not database_path.exists():
+        return _empty_result("Mantis 로컬 인덱스가 없습니다.")
+
+    try:
+        with closing(sqlite3.connect(database_path)) as connection:
+            cursor = connection.execute(
+                "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
+            )
+            if scan_limit:
+                newest_documents: list[tuple[int, str]] = []
+                scanned_ids: set[int] = set()
+                for (content,) in cursor:
+                    issue = normalize(str(content or ""))
+                    if not issue or not issue.get("id"):
+                        continue
+                    issue_id = int(issue["id"])
+                    if issue_id in scanned_ids:
+                        continue
+                    scanned_ids.add(issue_id)
+                    item = (issue_id, str(content or ""))
+                    if len(newest_documents) < scan_limit:
+                        heapq.heappush(newest_documents, item)
+                    elif issue_id > newest_documents[0][0]:
+                        heapq.heapreplace(newest_documents, item)
+                selected = [content for _, content in sorted(newest_documents, reverse=True)]
+                return _scan_documents(
+                    selected,
+                    matches,
+                    normalize,
+                    example_limit=example_limit,
+                    scanned_count=len(selected),
+                    group_key=group_key,
+                )
+            return _scan_documents(
+                (str(content or "") for (content,) in cursor),
+                matches,
+                normalize,
+                example_limit=example_limit,
+                group_key=group_key,
+            )
+    except sqlite3.Error as exc:
+        return _empty_result(f"Mantis 로컬 인덱스 조회 실패: {exc}")
+
+
+def _scan_structured_index(
+    index_path: Path,
+    matches: Callable[[str], bool],
+    normalize: Callable[[str], Optional[Dict[str, Any]]],
+    *,
+    constraints: Optional[Dict[str, Any]],
+    example_limit: int,
+    scan_limit: Optional[int],
+    group_key: Optional[Callable[[Dict[str, Any]], str]],
+) -> Dict[str, Any]:
+    try:
+        stat = index_path.stat()
+        _validate_index_signature(str(index_path), stat.st_mtime_ns, stat.st_size)
+        query, params = build_candidate_query(constraints, scan_limit)
+        with closing(
+            sqlite3.connect(f"file:{index_path}?mode=ro", uri=True)
+        ) as connection:
+            total_count = int(connection.execute("SELECT COUNT(*) FROM issues").fetchone()[0])
+            documents = [str(row[0] or "") for row in connection.execute(query, params)]
+        return _scan_documents(
+            documents,
+            matches,
+            normalize,
+            example_limit=example_limit,
+            scanned_count=min(total_count, scan_limit) if scan_limit else total_count,
+            group_key=group_key,
+        )
+    except (OSError, sqlite3.Error, MantisIndexError) as exc:
+        return _empty_result(f"Mantis 구조화 인덱스 조회 실패: {exc}")
+
+
+def _results_match(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    comparable_keys = (
+        "available",
+        "scanned_count",
+        "matched_count",
+        "matched_ids",
+        "issues",
+        "group_counts",
+    )
+    return all(left.get(key) == right.get(key) for key in comparable_keys)
 
 
 def scan_mantis_documents(
@@ -16,97 +192,71 @@ def scan_mantis_documents(
     example_limit: int = 10,
     scan_limit: Optional[int] = None,
     group_key: Optional[Callable[[Dict[str, Any]], str]] = None,
+    constraints: Optional[Dict[str, Any]] = None,
+    index_database_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """조건에 맞는 이슈를 세고 대표 예시를 모은다.
+    """Count and sample matching issues with shadow comparison and fallback.
 
-    group_key를 주면 매칭된 전체 이슈를 대상으로 그룹별 건수도 함께 센다.
-    예시는 example_limit개만 남으므로, 그룹 집계는 반드시 스캔 도중에 해야
-    일부 표시분이 아닌 전체 기준 건수가 나온다.
+    ``MANTIS_INDEX_MODE`` controls rollout: ``off`` always scans Chroma,
+    ``shadow`` (default) compares both engines but returns the legacy result,
+    and ``primary`` returns the structured result when it is healthy.
     """
-    if not database_path.exists():
-        return {
-            "available": False,
-            "scanned_count": 0,
-            "matched_count": 0,
-            "issues": [],
-            "group_counts": {},
-            "reason": "Mantis 로컬 인덱스가 없습니다.",
-        }
+    mode = os.getenv("MANTIS_INDEX_MODE", "shadow").strip().lower()
+    if mode not in VALID_INDEX_MODES:
+        LOGGER.warning("알 수 없는 MANTIS_INDEX_MODE=%s; shadow로 처리합니다.", mode)
+        mode = "shadow"
+    index_path = index_database_path or Path(
+        os.getenv("MANTIS_INDEX_DB_PATH", str(database_path.parent / INDEX_FILENAME))
+    ).expanduser()
 
-    scanned_ids = set()
-    matched_ids: set[int] = set()
-    matched_count = 0
-    group_counts: Dict[str, int] = {}
-    examples: list[Dict[str, Any]] = []
+    legacy_result: Dict[str, Any] | None = None
+    if mode in {"off", "shadow"}:
+        legacy_result = _scan_chroma_documents(
+            database_path,
+            matches,
+            normalize,
+            example_limit=example_limit,
+            scan_limit=scan_limit,
+            group_key=group_key,
+        )
+        if mode == "off":
+            return legacy_result
 
-    def record_group(issue: Dict[str, Any]) -> None:
-        if not group_key:
-            return
-        label = str(group_key(issue) or "").strip() or "미지정"
-        group_counts[label] = group_counts.get(label, 0) + 1
+    structured_result = _scan_structured_index(
+        index_path,
+        matches,
+        normalize,
+        constraints=constraints,
+        example_limit=example_limit,
+        scan_limit=scan_limit,
+        group_key=group_key,
+    )
+    if mode == "primary":
+        if structured_result["available"]:
+            return structured_result
+        LOGGER.warning("구조화 인덱스를 사용할 수 없어 Chroma 순회로 폴백합니다: %s", structured_result["reason"])
+        return _scan_chroma_documents(
+            database_path,
+            matches,
+            normalize,
+            example_limit=example_limit,
+            scan_limit=scan_limit,
+            group_key=group_key,
+        )
 
-    newest_documents: list[tuple[int, Dict[str, Any], str]] = []
-    try:
-        with closing(sqlite3.connect(database_path)) as connection, connection:
-            cursor = connection.execute(
-                "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
-            )
-            for (content,) in cursor:
-                issue = normalize(str(content or ""))
-                if not issue or not issue.get("id"):
-                    continue
-                issue_id = int(issue["id"])
-                if issue_id in scanned_ids:
-                    continue
-                scanned_ids.add(issue_id)
-                if scan_limit:
-                    item = (issue_id, issue, str(content or ""))
-                    if len(newest_documents) < scan_limit:
-                        heapq.heappush(newest_documents, item)
-                    elif issue_id > newest_documents[0][0]:
-                        heapq.heapreplace(newest_documents, item)
-                    continue
-                if not matches(str(content or "")):
-                    continue
-                matched_count += 1
-                matched_ids.add(issue_id)
-                record_group(issue)
-                if len(examples) < example_limit:
-                    examples.append(issue)
-                elif issue_id > min(int(item.get("id") or 0) for item in examples):
-                    oldest_index = min(range(len(examples)), key=lambda index: int(examples[index].get("id") or 0))
-                    examples[oldest_index] = issue
-    except sqlite3.Error as exc:
-        return {
-            "available": False,
-            "scanned_count": len(scanned_ids),
-            "matched_count": 0,
-            "matched_ids": set(),
-            "issues": [],
-            "group_counts": {},
-            "reason": f"Mantis 로컬 인덱스 조회 실패: {exc}",
-        }
-
-    if scan_limit:
-        selected = sorted(newest_documents, key=lambda item: item[0], reverse=True)
-        scanned_count = len(selected)
-        for _, issue, content in selected:
-            if not matches(content):
-                continue
-            matched_count += 1
-            matched_ids.add(int(issue["id"]))
-            record_group(issue)
-            if len(examples) < example_limit:
-                examples.append(issue)
-    else:
-        scanned_count = len(scanned_ids)
-    examples.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
-    return {
-        "available": True,
-        "scanned_count": scanned_count,
-        "matched_count": matched_count,
-        "matched_ids": matched_ids,
-        "issues": examples,
-        "group_counts": group_counts,
-        "reason": "",
-    }
+    assert legacy_result is not None
+    if structured_result["available"] and not _results_match(legacy_result, structured_result):
+        LOGGER.warning(
+            "Mantis 구조화 인덱스 shadow 결과 불일치: legacy=%s structured=%s",
+            {
+                "scanned_count": legacy_result.get("scanned_count"),
+                "matched_count": legacy_result.get("matched_count"),
+                "matched_ids": sorted(legacy_result.get("matched_ids") or set())[:20],
+            },
+            {
+                "scanned_count": structured_result.get("scanned_count"),
+                "matched_count": structured_result.get("matched_count"),
+                "matched_ids": sorted(structured_result.get("matched_ids") or set())[:20],
+            },
+        )
+    return legacy_result

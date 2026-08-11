@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse, JSONResponse
 
 from backend.auth import users_db_path
-from backend.config import AUDIT_DB_PATH, CHROMA_DB_PATH, STATIC_DIR
+from backend.config import AUDIT_DB_PATH, CHROMA_DB_PATH, MANTIS_INDEX_DB_PATH, STATIC_DIR
 from backend.sources.mantis import get_mantis_snapshot_freshness_status
 from backend.startup_validation import get_model_transport_security_status
 from backend.workspace import workspace_db_path
@@ -67,8 +67,16 @@ def readiness() -> JSONResponse:
             "embedding_metadata",
             verify_integrity=False,
         ),
+        # 보조 인덱스는 점진적으로 배포하며, 없거나 손상된 경우 Chroma 순회로
+        # 폴백하므로 readiness 자체를 막지는 않는다.
+        "structuredIndexDb": _sqlite_check(
+            MANTIS_INDEX_DB_PATH,
+            "issues",
+            verify_integrity=False,
+        ),
     }
-    ready = all(check["status"] == "ok" for check in checks.values()) and model_transport[
+    required_checks = ("usersDb", "workspaceDb", "auditDb", "snapshotDb")
+    ready = all(checks[name]["status"] == "ok" for name in required_checks) and model_transport[
         "status"
     ] not in {"error", "expired"}
     payload = {

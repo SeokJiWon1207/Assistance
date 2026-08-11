@@ -33,6 +33,12 @@ CHROMA_DB_PATH = Path(
     )
 ).expanduser()
 CHROMA_PERSIST_DIR = CHROMA_DB_PATH.parent
+MANTIS_INDEX_DB_PATH = Path(
+    os.getenv(
+        "MANTIS_INDEX_DB_PATH",
+        str(CHROMA_PERSIST_DIR / "mantis_index.sqlite3"),
+    )
+).expanduser()
 AUDIT_DB_PATH = Path(
     os.getenv("AUDIT_DB_PATH", str(RUNTIME_DIR / "assistant_audit.sqlite3"))
 ).expanduser()

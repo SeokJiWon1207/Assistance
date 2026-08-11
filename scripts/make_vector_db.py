@@ -39,9 +39,24 @@ import chromadb
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
+ASSISTANT_WEB_DIR = PROJECT_ROOT / "assistant_web"
+if str(ASSISTANT_WEB_DIR) not in sys.path:
+    sys.path.insert(0, str(ASSISTANT_WEB_DIR))
+
+from backend.tools.mantis_index import (  # noqa: E402
+    INDEX_FILENAME,
+    MantisIndexError,
+    build_mantis_index,
+    chroma_documents_digest,
+    read_chroma_documents,
+    rebuild_mantis_index,
+    validate_mantis_index,
+)
+
 CHROMA_DIR = PROJECT_ROOT / "data" / "mantis_chroma_db"
 BACKUP_DIR = PROJECT_ROOT / "data" / "backups"
 CHROMA_SQLITE = CHROMA_DIR / "chroma.sqlite3"
+MANTIS_INDEX_SQLITE = CHROMA_DIR / INDEX_FILENAME
 EMBEDDING_MODEL = "bge-m3:latest"
 MAX_CHAR_LIMIT = 2500  # Ollama embedding wrapper adds prompt overhead; keep below bge-m3 context.
 EMBED_BATCH_SIZE = 50
@@ -525,12 +540,21 @@ def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) 
         print(f"🧠 신규 이슈 {len(new_documents)}건 임베딩 중...")
         add_documents_batched(vector_db, new_documents)
     changed_documents = new_documents + refreshed_documents
-    if changed_documents:
-        write_snapshot_freshness_metadata(
-            CHROMA_DIR,
-            changed_documents,
-            vector_db._collection.count(),
-            merge_existing=True,
+    if changed_documents or not MANTIS_INDEX_SQLITE.exists():
+        document_count = vector_db._collection.count()
+        if changed_documents:
+            write_snapshot_freshness_metadata(
+                CHROMA_DIR,
+                changed_documents,
+                document_count,
+                merge_existing=True,
+            )
+        del vector_db
+        gc.collect()
+        index_stats = rebuild_mantis_index(CHROMA_SQLITE, MANTIS_INDEX_SQLITE)
+        validate_snapshot(CHROMA_DIR, document_count)
+        print(
+            f"🗂️ 구조화 인덱스 {index_stats['document_count']}건을 원자적으로 갱신했습니다."
         )
     print(f"🏁 증분 갱신 완료: 신규 {len(new_documents)}건 추가, {refreshed_count}건 재임베딩")
 
@@ -572,6 +596,15 @@ def validate_snapshot(snapshot_dir: Path, expected_documents: int) -> None:
         r"\d{4}-\d{2}-\d{2}", str(metadata.get("asOf") or "")
     ):
         raise SnapshotBuildError("신선도 메타데이터 내용이 스냅샷과 일치하지 않습니다.")
+    documents = read_chroma_documents(database_path)
+    try:
+        validate_mantis_index(
+            snapshot_dir / INDEX_FILENAME,
+            expected_documents=expected_documents,
+            expected_digest=chroma_documents_digest(documents),
+        )
+    except MantisIndexError as exc:
+        raise SnapshotBuildError(f"구조화 인덱스 검사 실패: {exc}") from exc
 
 
 def prune_snapshot_backups() -> None:
@@ -607,10 +640,18 @@ def run_full(url: str, headers: dict, max_pages: int) -> None:
         vector_db = Chroma(persist_directory=str(temporary_dir))
         documents_to_embed = reuse_unchanged_embeddings(vector_db, documents)
         add_documents_batched(vector_db, documents_to_embed)
+        index_stats = build_mantis_index(
+            temporary_dir / INDEX_FILENAME,
+            (document.page_content for document in documents),
+        )
         write_snapshot_freshness_metadata(temporary_dir, documents, len(documents))
         del vector_db
         gc.collect()
         validate_snapshot(temporary_dir, len(documents))
+        print(
+            f"🗂️ 구조화 인덱스 검증 완료: {index_stats['document_count']}건, "
+            f"최대 이슈 #{index_stats['max_issue_id']}"
+        )
 
         if CHROMA_DIR.exists():
             BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -637,6 +678,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--full", action="store_true", help="전체 재구축(기존 DB 백업 후 새로 생성)")
     parser.add_argument(
+        "--rebuild-index-only",
+        action="store_true",
+        help="기존 Chroma 문서에서 구조화 보조 인덱스만 원자적으로 재구축",
+    )
+    parser.add_argument(
         "--refresh-days",
         type=int,
         default=0,
@@ -644,6 +690,17 @@ def main() -> None:
     )
     parser.add_argument("--max-pages", type=int, default=200, help="Mantis 조회 최대 페이지 수")
     args = parser.parse_args()
+
+    if args.rebuild_index_only:
+        if not CHROMA_SQLITE.exists():
+            raise SnapshotBuildError(f"Chroma DB가 없습니다: {CHROMA_SQLITE}")
+        stats = rebuild_mantis_index(CHROMA_SQLITE, MANTIS_INDEX_SQLITE)
+        validate_snapshot(CHROMA_DIR, int(stats["document_count"]))
+        print(
+            f"🏆 구조화 인덱스 재구축 완료: {stats['document_count']}건, "
+            f"기간 {stats['min_created_at'] or '미상'}~{stats['max_created_at'] or '미상'}"
+        )
+        return
 
     load_dotenv()
     url, headers = get_mantis_settings()
