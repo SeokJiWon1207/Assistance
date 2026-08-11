@@ -1,0 +1,4153 @@
+import { ADMIN_ENDPOINTS } from "./admin.js";
+import { apiFetch } from "./api.js";
+import { initialCurrentUser } from "./auth.js";
+import { createConversationRecord } from "./chat.js";
+import { automaticSourceTools } from "./notion.js";
+import { scopedStorageKey, WORKSPACE_ENDPOINTS } from "./workspace.js";
+
+const {
+  storageSafeMessages,
+  deriveConversationTitle,
+  buildChatMessages,
+  buildTeamTemplateQuestion,
+  parseSseBuffer,
+} = globalThis.AssistantFrontendCore;
+
+const state = {
+  models: [],
+  messages: [],
+  busy: false,
+  sourceMap: new Map(),
+  evaluationCases: [],
+  evaluationResults: new Map(),
+  evaluationHistory: [],
+  evaluationRunning: false,
+  evaluationRunningCaseId: null,
+  evaluationRunProgress: null,
+  accuracyReports: [],
+  accuracyReport: null,
+  accuracyAnalytics: null,
+  dataFreshness: null,
+  accuracyLive: [],
+  accuracyRunning: false,
+  accuracyProgress: null,
+  accuracyStatusMessage: "",
+  validationLogs: [],
+  validationSummary: null,
+  feedbackSummary: null,
+  evaluationTab: "cases",
+  conversations: [],
+  activeConversationId: null,
+  editingMessageIndex: null,
+  chatAbortController: null,
+  activeTemplateId: null,
+  pendingTemplateId: null,
+  feedbackMessageIndex: null,
+  currentUser: initialCurrentUser(),
+  myWorkspace: null,
+  teamDashboard: null,
+  workspaceMode: "personal",
+  workspaceTab: "overview",
+};
+
+const els = {
+  modelSelect: document.querySelector("#modelSelect"),
+  modelMeta: document.querySelector("#modelMeta"),
+  statusLine: document.querySelector("#statusLine"),
+  darkModeToggle: document.querySelector("#darkModeToggle"),
+  themeModeLabel: document.querySelector("#themeModeLabel"),
+  messages: document.querySelector("#messages"),
+  scrollToTopBtn: document.querySelector("#scrollToTopBtn"),
+  form: document.querySelector("#chatForm"),
+  input: document.querySelector("#promptInput"),
+  sendBtn: document.querySelector("#sendBtn"),
+  temperature: document.querySelector("#temperature"),
+  temperatureValue: document.querySelector("#temperatureValue"),
+  answerStyle: document.querySelector("#answerStyle"),
+  topP: document.querySelector("#topP"),
+  topK: document.querySelector("#topK"),
+  minP: document.querySelector("#minP"),
+  maxTokens: document.querySelector("#maxTokens"),
+  presencePenalty: document.querySelector("#presencePenalty"),
+  frequencyPenalty: document.querySelector("#frequencyPenalty"),
+  repetitionPenalty: document.querySelector("#repetitionPenalty"),
+  seed: document.querySelector("#seed"),
+  stop: document.querySelector("#stop"),
+  showSources: document.querySelector("#showSources"),
+  sourceDisplayLabel: document.querySelector("#sourceDisplayLabel"),
+  abTestToggle: document.querySelector("#abTestToggle"),
+  abTestLabel: document.querySelector("#abTestLabel"),
+  searchLimit: document.querySelector("#searchLimit"),
+  searchLimitValue: document.querySelector("#searchLimitValue"),
+  resetOptionsBtn: document.querySelector("#resetOptionsBtn"),
+  newChatBtn: document.querySelector("#newChatBtn"),
+  brandHome: document.querySelector("#brandHome"),
+  sidebar: document.querySelector(".sidebar"),
+  sidebarMenuToggle: document.querySelector("#sidebarMenuToggle"),
+  conversationList: document.querySelector("#conversationList"),
+  activeConversationTitle: document.querySelector("#activeConversationTitle"),
+  editNotice: document.querySelector("#editNotice"),
+  cancelEditBtn: document.querySelector("#cancelEditBtn"),
+  sourceModeSelect: document.querySelector("#sourceModeSelect"),
+  sourceModeHint: document.querySelector("#sourceModeHint"),
+  manualSourceControls: document.querySelector("#manualSourceControls"),
+  mantisToggle: document.querySelector("#mantisToggle"),
+  vectorToggle: document.querySelector("#vectorToggle"),
+  evaluationBtn: document.querySelector("#evaluationBtn"),
+  evaluationModal: document.querySelector("#evaluationModal"),
+  evaluationModalClose: document.querySelector("#evaluationModalClose"),
+  evaluationSummary: document.querySelector("#evaluationSummary"),
+  evaluationContent: document.querySelector("#evaluationContent"),
+  runEvaluationBtn: document.querySelector("#runEvaluationBtn"),
+  chromaModal: document.querySelector("#chromaModal"),
+  chromaModalMeta: document.querySelector("#chromaModalMeta"),
+  chromaModalTitle: document.querySelector("#chromaModalTitle"),
+  chromaModalContent: document.querySelector("#chromaModalContent"),
+  chromaModalClose: document.querySelector("#chromaModalClose"),
+  templateModal: document.querySelector("#templateModal"),
+  templateModalTitle: document.querySelector("#templateModalTitle"),
+  templateModalDescription: document.querySelector("#templateModalDescription"),
+  templateModalClose: document.querySelector("#templateModalClose"),
+  templateForm: document.querySelector("#templateForm"),
+  templateFields: document.querySelector("#templateFields"),
+  templateQuestionPreview: document.querySelector("#templateQuestionPreview"),
+  templateCancelBtn: document.querySelector("#templateCancelBtn"),
+  feedbackModal: document.querySelector("#feedbackModal"),
+  feedbackModalClose: document.querySelector("#feedbackModalClose"),
+  feedbackForm: document.querySelector("#feedbackForm"),
+  feedbackQuestion: document.querySelector("#feedbackQuestion"),
+  feedbackComment: document.querySelector("#feedbackComment"),
+  feedbackCancelBtn: document.querySelector("#feedbackCancelBtn"),
+  myWorkBtn: document.querySelector("#myWorkBtn"),
+  teamDashboardBtn: document.querySelector("#teamDashboardBtn"),
+  workspaceUnreadBadge: document.querySelector("#workspaceUnreadBadge"),
+  workspaceModal: document.querySelector("#workspaceModal"),
+  workspaceModalClose: document.querySelector("#workspaceModalClose"),
+  workspaceModalEyebrow: document.querySelector("#workspaceModalEyebrow"),
+  workspaceModalTitle: document.querySelector("#workspaceModalTitle"),
+  workspaceRefreshBtn: document.querySelector("#workspaceRefreshBtn"),
+  workspaceTabs: document.querySelector("#workspaceTabs"),
+  workspaceTabUnread: document.querySelector("#workspaceTabUnread"),
+  workspaceContent: document.querySelector("#workspaceContent"),
+};
+
+const defaultOptions = {
+  temperature: "0.3",
+  answerStyle: "normal",
+  topP: "",
+  topK: "",
+  minP: "",
+  maxTokens: "",
+  presencePenalty: "",
+  frequencyPenalty: "",
+  repetitionPenalty: "",
+  seed: "",
+  stop: "",
+  showSources: true,
+  abTest: false,
+  searchLimit: "5",
+  sourceMode: "auto",
+  mantis: true,
+  notion: true,
+  vectorDb: true,
+};
+
+const themeStorageKey = "team-ai-assistant-theme";
+const conversationsStorageKeyBase = "team-ai-assistant-conversations-v2";
+const activeConversationStorageKeyBase = "team-ai-assistant-active-conversation-v2";
+const maxStoredConversations = 20;
+const conversationSyncTimers = new Map();
+
+function userScopedStorageKey(base) {
+  return scopedStorageKey(base, state.currentUser?.uid);
+}
+
+function conversationsStorageKey() {
+  return userScopedStorageKey(conversationsStorageKeyBase);
+}
+
+function activeConversationStorageKey() {
+  return userScopedStorageKey(activeConversationStorageKeyBase);
+}
+
+function createConversation() {
+  return createConversationRecord();
+}
+
+let toastContainer = null;
+
+function showToast(message, tone = "default") {
+  if (!toastContainer) {
+    toastContainer = document.createElement("div");
+    toastContainer.className = "toast-stack";
+    document.body.appendChild(toastContainer);
+  }
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${tone}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("toast-visible"));
+  setTimeout(() => {
+    toast.classList.remove("toast-visible");
+    setTimeout(() => toast.remove(), 220);
+  }, 2400);
+}
+
+function persistConversations() {
+  const active = state.conversations.find((item) => item.id === state.activeConversationId);
+  if (active) {
+    active.messages = storageSafeMessages(state.messages);
+    active.title = deriveConversationTitle(active.messages);
+    active.updatedAt = new Date().toISOString();
+  }
+  state.conversations.sort((a, b) => (
+    Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
+    || String(b.updatedAt).localeCompare(String(a.updatedAt))
+  ));
+  state.conversations = state.conversations.slice(0, maxStoredConversations);
+  try {
+    localStorage.setItem(conversationsStorageKey(), JSON.stringify(state.conversations));
+    localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
+  } catch {
+    state.conversations = state.conversations.slice(0, 8);
+    try {
+      localStorage.setItem(conversationsStorageKey(), JSON.stringify(state.conversations));
+    } catch {
+      localStorage.removeItem(conversationsStorageKey());
+      showToast("대화 저장 공간이 가득 차 일부 기록을 정리했어요.", "warning");
+    }
+  }
+  if (active) scheduleConversationSync(active);
+  renderConversationList();
+}
+
+async function syncConversation(conversation) {
+  if (!state.currentUser?.uid || !conversation?.id) return;
+  const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: conversation.title || "새 대화",
+      messages: storageSafeMessages(conversation.messages || []),
+      favorite: Boolean(conversation.favorite),
+      createdAt: conversation.createdAt || "",
+    }),
+  });
+  if (!response.ok) throw new Error("대화 기록을 서버에 저장하지 못했습니다.");
+}
+
+function scheduleConversationSync(conversation) {
+  if (!state.currentUser?.uid || !conversation?.id) return;
+  clearTimeout(conversationSyncTimers.get(conversation.id));
+  conversationSyncTimers.set(conversation.id, setTimeout(() => {
+    syncConversation(conversation).catch(() => {});
+    conversationSyncTimers.delete(conversation.id);
+  }, 350));
+}
+
+async function loadConversations() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(conversationsStorageKey()) || "[]");
+    state.conversations = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    state.conversations = [];
+  }
+  if (state.currentUser?.uid) {
+    try {
+      const response = await apiFetch("/api/workspace/conversations?limit=40");
+      if (response.ok) {
+        const serverItems = (await response.json()).conversations || [];
+        if (serverItems.length) {
+          const localById = new Map(state.conversations.map((item) => [item.id, item]));
+          state.conversations = serverItems.map((item) => ({ ...localById.get(item.id), ...item }));
+        } else {
+          state.conversations.filter((item) => item.messages?.length).forEach(scheduleConversationSync);
+        }
+      }
+    } catch {
+      // 오프라인 또는 서버 오류 시 사용자별 로컬 기록으로 계속 동작한다.
+    }
+  }
+  let activeId = localStorage.getItem(activeConversationStorageKey());
+  if (!state.conversations.length) state.conversations.push(createConversation());
+  if (!state.conversations.some((item) => item.id === activeId)) activeId = state.conversations[0].id;
+  state.activeConversationId = activeId;
+  state.messages = [...(state.conversations.find((item) => item.id === activeId)?.messages || [])];
+  renderConversationList();
+}
+
+function updateActiveConversationTitle() {
+  if (!els.activeConversationTitle) return;
+  const active = state.conversations.find((item) => item.id === state.activeConversationId);
+  els.activeConversationTitle.textContent = active?.title || "새 대화";
+}
+
+function renderConversationList() {
+  updateActiveConversationTitle();
+  if (!els.conversationList) return;
+  els.conversationList.innerHTML = "";
+  state.conversations.slice(0, 8).forEach((conversation) => {
+    const row = document.createElement("div");
+    row.className = `conversation-row${conversation.id === state.activeConversationId ? " active" : ""}`;
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "conversation-open";
+    openButton.dataset.conversationId = conversation.id;
+    openButton.textContent = conversation.title || "새 대화";
+    openButton.title = conversation.title || "새 대화";
+    const favoriteButton = document.createElement("button");
+    favoriteButton.type = "button";
+    favoriteButton.className = `conversation-favorite${conversation.favorite ? " active" : ""}`;
+    favoriteButton.dataset.favoriteConversationId = conversation.id;
+    favoriteButton.setAttribute("aria-label", conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가");
+    favoriteButton.title = conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가";
+    favoriteButton.textContent = conversation.favorite ? "★" : "☆";
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "conversation-delete";
+    deleteButton.dataset.deleteConversationId = conversation.id;
+    deleteButton.setAttribute("aria-label", `${conversation.title || "대화"} 삭제`);
+    deleteButton.title = "대화 삭제";
+    deleteButton.textContent = "×";
+    row.append(openButton, favoriteButton, deleteButton);
+    els.conversationList.appendChild(row);
+  });
+}
+
+function startNewConversation() {
+  persistConversations();
+  const conversation = createConversation();
+  state.conversations.unshift(conversation);
+  state.activeConversationId = conversation.id;
+  state.messages = [];
+  cancelMessageEdit();
+  els.input.value = "";
+  autoResizeInput();
+  persistConversations();
+  renderMessages();
+  els.messages.scrollTop = 0;
+}
+
+function openConversation(conversationId) {
+  if (state.busy || conversationId === state.activeConversationId) return;
+  persistConversations();
+  const conversation = state.conversations.find((item) => item.id === conversationId);
+  if (!conversation) return;
+  state.activeConversationId = conversationId;
+  state.messages = [...(conversation.messages || [])];
+  cancelMessageEdit();
+  localStorage.setItem(activeConversationStorageKey(), conversationId);
+  renderConversationList();
+  renderMessages();
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function workspaceMetric(label, value, tone = "") {
+  return `<article class="workspace-metric ${tone}"><strong>${escapeHtml(String(value ?? 0))}</strong><span>${escapeHtml(label)}</span></article>`;
+}
+
+function workspaceEmpty(message) {
+  return `<div class="workspace-empty"><span aria-hidden="true">✓</span><p>${escapeHtml(message)}</p></div>`;
+}
+
+function issueWorkspaceRow(issue) {
+  const metadata = [issue.project, issue.status, issue.dueDate ? `예정 ${issue.dueDate}` : "", issue.ageDays ? `${issue.ageDays}일 경과` : ""]
+    .filter(Boolean).join(" · ");
+  return `
+    <article class="workspace-item ${issue.overdue ? "is-overdue" : ""}">
+      <div class="workspace-item-main">
+        <strong><span>#${escapeHtml(String(issue.id || ""))}</span> ${escapeHtml(issue.title || "제목 없음")}</strong>
+        <small>${escapeHtml(metadata)}</small>
+      </div>
+      <button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">AI에게 묻기</button>
+    </article>`;
+}
+
+function renderPersonalOverview(data) {
+  const summary = data.summary || {};
+  const issues = data.mantis?.issues || [];
+  const sourceLabel = data.mantis?.status === "snapshot" ? "로컬 스냅샷" : "실시간";
+  const mapping = data.user?.mantisUsername
+    ? `Mantis 담당자 '${data.user.mantisUsername}'(으)로 연결됨 · ${sourceLabel}`
+    : "Mantis 담당자명이 연결되지 않았습니다. 관리자에게 담당자명 등록을 요청해 주세요.";
+  return `
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "")}
+      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
+      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
+    </section>
+    <p class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">${escapeHtml(mapping)}</p>
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Mantis</span><h4>내 담당 이슈</h4></div><em>${issues.length}건</em></header>
+      <div class="workspace-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("최근 담당 이슈가 없습니다.")}</div>
+    </section>`;
+}
+
+function renderWeeklyBrief(data) {
+  const brief = data.weeklyBrief || {};
+  const highlights = brief.highlights || [];
+  return `
+    <section class="workspace-brief-hero">
+      <span>이번 주 업무 브리핑</span>
+      <h4>${escapeHtml(data.user?.displayName || "사용자")}님의 업무 요약</h4>
+      <p>${escapeHtml(brief.period || "")}</p>
+    </section>
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("신규 이슈", brief.newIssues)}
+      ${workspaceMetric("변경 이슈", brief.updatedIssues, "is-blue")}
+      ${workspaceMetric("현재 미종료", brief.openIssues)}
+      ${workspaceMetric("일정 지연", brief.overdueIssues, brief.overdueIssues ? "is-danger" : "")}
+    </section>
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Priority</span><h4>이번 주 확인할 항목</h4></div></header>
+      <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty("이번 주 우선 확인할 이슈가 없습니다.")}</div>
+    </section>
+    <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
+}
+
+function renderNotifications(data) {
+  const notifications = data.notifications || [];
+  return `
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Notifications</span><h4>업무 알림</h4></div><em>${notifications.filter((item) => !item.read).length}개 안 읽음</em></header>
+      <div class="workspace-list">${notifications.length ? notifications.map((item) => `
+        <article class="workspace-notification ${item.read ? "is-read" : ""}">
+          <span class="workspace-notification-dot" aria-hidden="true"></span>
+          <div><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.description)}</p><small>${escapeHtml(item.date || "")}</small></div>
+          ${item.read ? "" : `<button type="button" data-notification-read="${escapeHtml(item.id)}">읽음</button>`}
+        </article>`).join("") : workspaceEmpty("새 업무 알림이 없습니다.")}</div>
+    </section>`;
+}
+
+function renderFavoriteConversations() {
+  const favorites = state.conversations.filter((item) => item.favorite);
+  return `
+    <section class="workspace-section workspace-section-single">
+      <header><div><span>Saved</span><h4>즐겨찾는 대화</h4></div><em>${favorites.length}개</em></header>
+      <div class="workspace-list">${favorites.length ? favorites.map((conversation) => `
+        <article class="workspace-item">
+          <div class="workspace-item-main"><strong>${escapeHtml(conversation.title || "새 대화")}</strong><small>${escapeHtml(String(conversation.updatedAt || "").slice(0, 10))} · ${(conversation.messages || []).length}개 메시지</small></div>
+          <button type="button" class="workspace-item-action" data-open-favorite="${escapeHtml(conversation.id)}">대화 열기</button>
+        </article>`).join("") : workspaceEmpty("사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요.")}</div>
+    </section>`;
+}
+
+function renderTeamDashboard(data) {
+  const summary = data.summary || {};
+  const members = data.members || [];
+  const aging = data.agingIssues || [];
+  return `
+    <section class="workspace-summary-grid">
+      ${workspaceMetric("승인 사용자", summary.members)}
+      ${workspaceMetric("미종료 이슈", summary.open, "is-blue")}
+      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
+      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
+    </section>
+    <p class="workspace-connection ${data.source?.status === "live" ? "" : "is-warning"}">Mantis 데이터: ${data.source?.status === "live" ? "실시간" : data.source?.status === "snapshot" ? "로컬 스냅샷" : "연결 오류"}</p>
+    <div class="workspace-columns">
+      <section class="workspace-section">
+        <header><div><span>Workload</span><h4>담당자별 현황</h4></div></header>
+        <div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>담당자</th><th>미종료</th><th>지연</th><th>장기</th></tr></thead><tbody>
+          ${members.map((member) => `<tr><td><strong>${escapeHtml(member.displayName || "")}</strong><small>${escapeHtml(member.mantisUsername || "미연결")}</small></td><td>${member.open}</td><td class="${member.overdue ? "danger-text" : ""}">${member.overdue}</td><td>${member.aging}</td></tr>`).join("")}
+        </tbody></table></div>
+      </section>
+      <section class="workspace-section">
+        <header><div><span>Aging</span><h4>장기 미종료 이슈</h4></div><em>${aging.length}건 표시</em></header>
+        <div class="workspace-list">${aging.length ? aging.map(issueWorkspaceRow).join("") : workspaceEmpty("30일 이상 미종료 이슈가 없습니다.")}</div>
+      </section>
+    </div>`;
+}
+
+function updateWorkspaceUnread() {
+  const unread = state.myWorkspace?.summary?.unreadNotifications || 0;
+  if (els.workspaceUnreadBadge) {
+    els.workspaceUnreadBadge.textContent = String(unread);
+    els.workspaceUnreadBadge.hidden = unread < 1;
+  }
+  if (els.workspaceTabUnread) els.workspaceTabUnread.textContent = unread ? String(unread) : "";
+}
+
+function renderWorkspace() {
+  if (!els.workspaceContent) return;
+  if (state.workspaceMode === "team") {
+    els.workspaceModalEyebrow.textContent = "관리자 워크스페이스";
+    els.workspaceModalTitle.textContent = "팀 대시보드";
+    els.workspaceTabs.hidden = true;
+    els.workspaceContent.innerHTML = state.teamDashboard
+      ? renderTeamDashboard(state.teamDashboard)
+      : `<div class="workspace-loading">팀 현황을 불러오는 중입니다.</div>`;
+    return;
+  }
+  els.workspaceModalEyebrow.textContent = "개인 워크스페이스";
+  els.workspaceModalTitle.textContent = "내 업무";
+  els.workspaceTabs.hidden = false;
+  els.workspaceTabs.querySelectorAll("[data-workspace-tab]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.workspaceTab === state.workspaceTab);
+  });
+  if (!state.myWorkspace) {
+    els.workspaceContent.innerHTML = `<div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>`;
+    return;
+  }
+  const renderers = {
+    overview: () => renderPersonalOverview(state.myWorkspace),
+    brief: () => renderWeeklyBrief(state.myWorkspace),
+    notifications: () => renderNotifications(state.myWorkspace),
+    favorites: renderFavoriteConversations,
+  };
+  els.workspaceContent.innerHTML = (renderers[state.workspaceTab] || renderers.overview)();
+  updateWorkspaceUnread();
+}
+
+async function loadMyWorkspace(force = false) {
+  if (force) state.myWorkspace = null;
+  renderWorkspace();
+  const response = await apiFetch(WORKSPACE_ENDPOINTS.personal);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
+  state.myWorkspace = data;
+  updateWorkspaceUnread();
+  renderWorkspace();
+}
+
+async function loadTeamDashboard(force = false) {
+  if (force) state.teamDashboard = null;
+  renderWorkspace();
+  const response = await apiFetch(WORKSPACE_ENDPOINTS.team);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "팀 현황을 불러오지 못했습니다.");
+  state.teamDashboard = data;
+  renderWorkspace();
+}
+
+function closeWorkspaceModal() {
+  els.workspaceModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+async function openWorkspaceModal(mode = "personal") {
+  state.workspaceMode = mode;
+  if (mode === "personal" && !["overview", "brief", "notifications", "favorites"].includes(state.workspaceTab)) {
+    state.workspaceTab = "overview";
+  }
+  els.workspaceModal.hidden = false;
+  document.body.classList.add("modal-open");
+  renderWorkspace();
+  try {
+    if (mode === "team") await loadTeamDashboard();
+    else if (!state.myWorkspace) await loadMyWorkspace();
+  } catch (error) {
+    els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
+  }
+}
+
+function selectedModel() {
+  return state.models.find((model) => model.id === els.modelSelect.value);
+}
+
+function statusLabel(status) {
+  if (status === "active") return "사용 가능";
+  if (status === "missing_key") return "키 필요";
+  if (status === "expired") return "만료됨";
+  if (status === "disabled") return "비활성";
+  return status;
+}
+
+function updateModelMeta() {
+  const model = selectedModel();
+  if (!model) {
+    els.modelMeta.textContent = "";
+    els.statusLine.textContent = "사용 가능한 모델이 없습니다.";
+    els.statusLine.className = "status-danger";
+    return;
+  }
+
+  const expires = model.expiresAt ? `만료일 ${model.expiresAt}` : "만료일 미설정";
+  els.modelMeta.textContent = `${statusLabel(model.status)} · ${expires}`;
+  const modelControl = els.modelSelect.closest(".control-group");
+  modelControl?.setAttribute("hidden", "");
+  modelControl?.classList.add("model-control-hidden");
+  if (model.status !== "active") {
+    els.statusLine.textContent = statusLabel(model.status);
+    els.statusLine.className = model.status === "missing_key" ? "status-warning" : "status-danger";
+  }
+}
+
+function renderModels() {
+  els.modelSelect.innerHTML = "";
+  state.models.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = `${model.label} (${statusLabel(model.status)})`;
+    option.disabled = model.status === "expired" || model.status === "disabled";
+    els.modelSelect.appendChild(option);
+  });
+
+  const activeModel = state.models.find((model) => model.status === "active");
+  if (activeModel) els.modelSelect.value = activeModel.id;
+  globalThis.AssistantCustomSelect?.sync(els.modelSelect);
+  updateModelMeta();
+}
+
+function applyTheme(theme) {
+  const dark = theme === "dark";
+  document.body.classList.toggle("theme-dark", dark);
+  els.darkModeToggle.setAttribute("aria-pressed", String(dark));
+  els.darkModeToggle.setAttribute("aria-label", dark ? "라이트 모드로 변경" : "다크 모드로 변경");
+  els.themeModeLabel.textContent = dark ? "Dark" : "Light";
+}
+
+function loadTheme() {
+  const savedTheme = localStorage.getItem(themeStorageKey);
+  if (savedTheme === "dark" || savedTheme === "light") {
+    applyTheme(savedTheme);
+    return;
+  }
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  applyTheme(prefersDark ? "dark" : "light");
+}
+
+function saveTheme(dark) {
+  const theme = dark ? "dark" : "light";
+  localStorage.setItem(themeStorageKey, theme);
+  applyTheme(theme);
+}
+
+function setShowSources(enabled) {
+  els.showSources.setAttribute("aria-pressed", String(enabled));
+  els.showSources.setAttribute("aria-label", enabled ? "관련 이슈 숨기기" : "관련 이슈 표시하기");
+  els.sourceDisplayLabel.textContent = enabled ? "On" : "Off";
+}
+
+function showSourcesEnabled() {
+  return els.showSources.getAttribute("aria-pressed") === "true";
+}
+
+function setAbComparison(enabled) {
+  els.abTestToggle.setAttribute("aria-pressed", String(enabled));
+  els.abTestToggle.setAttribute("aria-label", enabled ? "A/B 비교 끄기" : "A/B 비교 켜기");
+  els.abTestLabel.textContent = enabled ? "On · A와 B 비교" : "Off · A 답변만";
+}
+
+function abComparisonEnabled() {
+  return els.abTestToggle?.getAttribute("aria-pressed") === "true";
+}
+
+function setToolToggle(element, enabled) {
+  element?.setAttribute("aria-pressed", String(enabled));
+}
+
+function toolToggleEnabled(element) {
+  return element?.getAttribute("aria-pressed") === "true";
+}
+
+function setSourceMode(mode) {
+  const selectedMode = mode === "manual" ? "manual" : "auto";
+  if (els.sourceModeSelect) els.sourceModeSelect.value = selectedMode;
+  globalThis.AssistantCustomSelect?.sync(els.sourceModeSelect);
+  if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
+  if (els.sourceModeHint) {
+    els.sourceModeHint.textContent = selectedMode === "auto"
+      ? "질문에 맞는 Mantis 이슈, Notion 자료와 유사 사례를 자동으로 찾습니다."
+      : "사용할 검색 소스를 하나 이상 선택해 주세요.";
+  }
+  if (selectedMode === "auto") {
+    setToolToggle(els.mantisToggle, true);
+    setToolToggle(els.vectorToggle, true);
+  }
+}
+
+function sourceToolsPayload() {
+  if (els.sourceModeSelect?.value !== "manual") {
+    return automaticSourceTools();
+  }
+  return {
+    mantis: toolToggleEnabled(els.mantisToggle),
+    notion: true,
+    vectorDb: toolToggleEnabled(els.vectorToggle),
+  };
+}
+
+const TEAM_TEMPLATES = [
+  {
+    id: "daily-operations",
+    category: "운영 현황",
+    title: "오늘의 운영 현황",
+    description: "기간과 상태를 골라 고객사별 주요 이슈를 확인합니다.",
+    icon: "today",
+    fields: [
+      { name: "period", label: "기간", type: "select", value: "오늘", options: ["오늘", "이번 주", "이번 달"] },
+      { name: "status", label: "상태", type: "select", value: "미종료", options: ["미종료", "종료", "전체"] },
+    ],
+  },
+  {
+    id: "customer-analysis",
+    category: "고객사 분석",
+    title: "고객사별 이슈 분석",
+    description: "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
+    icon: "customer",
+    fields: [
+      { name: "customer", label: "고객사", type: "text", required: true, placeholder: "예: 유진증권" },
+      { name: "period", label: "기간", type: "select", value: "이번 달", options: ["이번 주", "이번 달", "지난달", "올해"] },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+      { name: "status", label: "상태", type: "select", value: "전체", options: ["전체", "미종료", "종료"] },
+      { name: "format", label: "결과 형태", type: "select", value: "표", options: ["표", "목록", "요약"] },
+    ],
+  },
+  {
+    id: "aging-issues",
+    category: "장기 적체",
+    title: "장기 미종료 이슈",
+    description: "기준 일수를 넘긴 미종료 이슈를 오래된 순으로 찾습니다.",
+    icon: "aging",
+    fields: [
+      { name: "days", label: "기준 일수", type: "number", value: "30", required: true, min: 1, max: 365 },
+      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+    ],
+  },
+  {
+    id: "similar-issues",
+    category: "유사 사례",
+    title: "유사 사례 조사",
+    description: "기준 이슈와 유사한 과거 원인과 해결 내용을 비교합니다.",
+    icon: "similar",
+    fields: [
+      { name: "issueId", label: "기준 이슈 ID", type: "text", required: true, placeholder: "예: #30225" },
+    ],
+  },
+  {
+    id: "effort-sla",
+    category: "공수·SLA",
+    title: "공수 및 처리시간",
+    description: "기간별 공수와 평균 처리시간을 표로 비교합니다.",
+    icon: "effort",
+    fields: [
+      { name: "period", label: "기간", type: "select", value: "지난달", options: ["이번 달", "지난달", "올해"] },
+      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
+      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
+    ],
+  },
+  {
+    id: "weekly-report",
+    category: "보고서",
+    title: "주간 보고서 작성",
+    description: "신규·미종료·장기 적체·공수 현황을 보고서로 정리합니다.",
+    icon: "report",
+    fields: [
+      { name: "period", label: "보고 기간", type: "select", value: "지난주", options: ["지난주", "이번 주"] },
+      { name: "customer", label: "고객사", type: "text", placeholder: "전체 고객사" },
+    ],
+  },
+];
+
+const STARTER_ICONS = {
+  today: '<path d="M5 8h14M8 3v4M16 3v4M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z"/><path d="m8 14 2.2 2.2L16 10.5"/>',
+  customer: '<path d="M4 20v-2.2c0-2.1 1.8-3.8 4-3.8s4 1.7 4 3.8V20M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15 5h5M15 9h5M15 13h4"/>',
+  spike: '<path d="M4 18 9 12l3 3 7-9"/><path d="M14 6h5v5"/>',
+  aging: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>',
+  similar: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6M10 7v6"/>',
+  effort: '<path d="M5 20V10M12 20V4M19 20v-7"/><path d="M3 20h18"/>',
+  report: '<path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/>',
+};
+
+function renderTeamTemplates() {
+  return TEAM_TEMPLATES.map((item) => `
+    <button type="button" class="starter-card" data-template-id="${escapeHtml(item.id)}">
+      <span class="starter-card-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon]}</svg>
+      </span>
+      <span class="starter-card-copy">
+        <small>${escapeHtml(item.category)}</small>
+        <strong>${escapeHtml(item.title)}</strong>
+        <em>${escapeHtml(item.description)}</em>
+      </span>
+      <span class="starter-card-arrow" aria-hidden="true">→</span>
+    </button>
+  `).join("");
+}
+
+function selectedTeamTemplate() {
+  return TEAM_TEMPLATES.find((template) => template.id === state.activeTemplateId) || null;
+}
+
+function templateFormValues() {
+  if (!els.templateForm) return {};
+  return Object.fromEntries(new FormData(els.templateForm).entries());
+}
+
+function updateTemplatePreview() {
+  const template = selectedTeamTemplate();
+  if (!template || !els.templateQuestionPreview) return;
+  els.templateQuestionPreview.textContent = buildTeamTemplateQuestion(template.id, templateFormValues());
+}
+
+function renderTemplateFields(template) {
+  els.templateFields.innerHTML = template.fields.map((field) => {
+    const inputId = `templateField-${field.name}`;
+    const required = field.required ? "required" : "";
+    const requiredLabel = field.required ? '<small class="required-mark">필수</small>' : '<small>선택</small>';
+    const control = field.type === "select"
+      ? `<select id="${inputId}" name="${escapeHtml(field.name)}" ${required}>
+          ${field.options.map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+        </select>`
+      : `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
+    return `
+      <label class="template-field" for="${inputId}">
+        <span>${escapeHtml(field.label)} ${requiredLabel}</span>
+        ${control}
+      </label>
+    `;
+  }).join("");
+  globalThis.AssistantCustomSelect?.enhanceAll(els.templateFields);
+}
+
+function openTemplateModal(templateId) {
+  const template = TEAM_TEMPLATES.find((item) => item.id === templateId);
+  if (!template || !els.templateModal) return;
+  state.activeTemplateId = template.id;
+  els.templateModalTitle.textContent = template.title;
+  els.templateModalDescription.textContent = template.description;
+  renderTemplateFields(template);
+  updateTemplatePreview();
+  els.templateModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.templateFields.querySelector("input, .custom-select-trigger, select")?.focus();
+}
+
+function closeTemplateModal() {
+  if (!els.templateModal) return;
+  els.templateModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function formatQuestionAskedAt(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function renderQuestionTimestamp(message, messageIndex) {
+  const previousUserMessage = message.role === "assistant"
+    ? state.messages.slice(0, messageIndex).reverse().find((item) => item.role === "user")
+    : null;
+  const timestamp = message.role === "user"
+    ? message.createdAt
+    : message.questionAskedAt || previousUserMessage?.createdAt;
+  const label = formatQuestionAskedAt(timestamp);
+  if (!label) return null;
+
+  const time = document.createElement("time");
+  time.className = "message-question-time";
+  time.dateTime = timestamp;
+  time.textContent = `질문한 날짜 · ${label}`;
+  time.setAttribute("aria-label", `질문한 날짜 ${label}`);
+  return time;
+}
+
+function renderMessages() {
+  els.messages.innerHTML = "";
+  state.sourceMap.clear();
+
+  if (state.messages.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.innerHTML = `
+      <div>
+        <svg class="empty-state-illustration" viewBox="0 0 96 96" width="72" height="72" fill="none" aria-hidden="true">
+          <circle cx="40" cy="40" r="24" stroke="currentColor" stroke-width="4" opacity="0.35"/>
+          <path d="M58 58 L78 78" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <path d="M30 40h20M30 48h14" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
+        </svg>
+        <p class="empty-state-eyebrow">팀 공용 템플릿 6개</p>
+        <h3>조건만 고르면 업무 질문이 완성됩니다</h3>
+        <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요.</p>
+        <div class="starter-grid" aria-label="팀 공용 템플릿">
+          ${renderTeamTemplates()}
+        </div>
+      </div>
+    `;
+    els.messages.appendChild(empty);
+    updateComposerShadow();
+    return;
+  }
+
+  state.messages.forEach((message, messageIndex) => {
+    const row = document.createElement("article");
+    row.className = `message ${message.role}${message.loading || message.streaming ? " loading" : ""}`;
+    if (message.role === "assistant" && message.abTest?.enabled) row.classList.add("ab-layout");
+
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    if (message.role === "user") {
+      avatar.textContent = "YOU";
+    } else {
+      avatar.classList.add("assistant-avatar");
+      avatar.innerHTML = `<img src="/static/assets/company-logo.png" alt="회사 로고" />`;
+    }
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    if (message.loading && !message.content) {
+      bubble.innerHTML = `
+        <span class="loading-inline">
+          <span>${escapeHtml(message.progress || "요청을 준비하고 있습니다")}</span>
+          <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </span>
+      `;
+      // 자료를 찾거나 정리하는 단계에서는 결과 카드 자리에 뼈대(스켈레톤)를
+      // 보여줘 "곧 목록이 채워진다"는 걸 형태로 미리 알린다.
+      if (message.stage === "retrieval" || message.stage === "filtering") {
+        bubble.appendChild(renderIssueListSkeleton());
+      }
+    } else if (message.role === "assistant") {
+      const assistantContent = renderAssistantContent(message.content, message.sources || [], messageIndex);
+      bubble.appendChild(assistantContent);
+      if (assistantContent.querySelector(".issue-table-wrap")) {
+        row.classList.add("has-issue-table");
+        bubble.classList.add("bubble-wide");
+      }
+    } else {
+      bubble.textContent = message.content;
+    }
+
+    if (message.role === "user") {
+      const userContent = document.createElement("div");
+      userContent.className = "message-content user-message-content";
+      userContent.appendChild(bubble);
+      const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
+      if (questionTimestamp) userContent.appendChild(questionTimestamp);
+      userContent.appendChild(renderMessageActions(message, messageIndex));
+      row.append(userContent, avatar);
+    } else {
+      const content = document.createElement("div");
+      content.className = "message-content";
+      if (row.classList.contains("has-issue-table")) content.classList.add("wide-message-content");
+      const conditionBar = renderSearchConditionChips(message, messageIndex);
+      if (conditionBar) content.appendChild(conditionBar);
+      if (message.abTest?.enabled && abComparisonEnabled()) {
+        content.appendChild(renderAbComparison(message, bubble, messageIndex));
+      } else {
+        content.appendChild(bubble);
+        const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
+        if (questionTimestamp) content.appendChild(questionTimestamp);
+        appendAssistantExtras(content, message, messageIndex);
+      }
+      if (message.abTest?.enabled && abComparisonEnabled()) {
+        const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
+        if (questionTimestamp) content.appendChild(questionTimestamp);
+      }
+      if (message.streaming && message.progress) {
+        const progress = document.createElement("div");
+        progress.className = "stream-progress";
+        progress.innerHTML = `<span></span><em>${escapeHtml(message.progress)}</em>`;
+        content.appendChild(progress);
+      }
+      if (!message.loading && !message.streaming) {
+        content.appendChild(renderMessageActions(message, messageIndex));
+      }
+      row.append(avatar, content);
+    }
+    els.messages.appendChild(row);
+  });
+
+  els.messages.scrollTop = els.messages.scrollHeight;
+  updateComposerShadow();
+}
+
+// 스크롤 위치에 따라 입력창 경계 그림자와 "대화 처음으로" 버튼을 함께 갱신한다.
+// 모바일 레이아웃은 페이지 전체가 스크롤되므로 window.scrollY를 기준으로 삼는다.
+function updateComposerShadow() {
+  const el = els.messages;
+  if (!el) return;
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
+  el.classList.toggle("is-scrolled", !atBottom);
+  if (els.scrollToTopBtn) {
+    const pageScrolls = window.matchMedia?.("(max-width: 860px)").matches;
+    const scrollOffset = pageScrolls ? window.scrollY : el.scrollTop;
+    const visibleHeight = pageScrolls ? window.innerHeight : el.clientHeight;
+    const revealAfter = Math.max(320, visibleHeight * 0.6);
+    els.scrollToTopBtn.hidden = scrollOffset < revealAfter;
+  }
+}
+
+// 다른 생성형 AI 챗 UI처럼 텍스트 버튼 대신 아이콘+라벨 조합을 쓴다.
+// 외부 아이콘 폰트/라이브러리 의존성 없이 인라인 SVG(currentColor)로 구현해
+// 버튼 색상(hover 등)이 아이콘에도 그대로 적용되게 한다.
+const MESSAGE_ACTION_ICONS = {
+  copy: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8"/><path d="M4.5 12.5v-7a2 2 0 0 1 2-2h7"/></svg>',
+  check: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8 14l7.5-8"/></svg>',
+  regenerate: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 0 1 11.2-4.5M16.5 10a6.5 6.5 0 0 1-11.2 4.5"/><path d="M14.5 3v3h-3M5.5 17v-3h3"/></svg>',
+  edit: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5 15.5 8 7 16.5H3.5V13z"/></svg>',
+  helpful: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 8.5 9.5 3c1.2.2 2 1.3 1.7 2.5L10.8 8h4.1c1.2 0 2.1 1.1 1.8 2.3l-1.2 5A2.2 2.2 0 0 1 13.4 17H6.5z"/><path d="M3.5 8.5h3v8.5h-3z"/></svg>',
+  improve: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 11.5 3 5.5c1.2-.2 2-1.3 1.7-2.5l-.4-2.5h4.1c1.2 0 2.1-1.1 1.8-2.3l-1.2-5A2.2 2.2 0 0 0 13.4 3H6.5z"/><path d="M3.5 3h3v8.5h-3z"/></svg>',
+};
+
+function renderMessageActions(message, messageIndex) {
+  const actions = document.createElement("div");
+  actions.className = "message-actions";
+  if (message.role === "assistant") {
+    const helpfulSelected = message.feedback?.rating === "helpful";
+    const improveSelected = message.feedback?.rating === "needs_improvement";
+    const feedbackActions = message.auditId ? `
+      <span class="message-action-divider" aria-hidden="true"></span>
+      <span class="message-feedback-label">도움이 되었나요?</span>
+      <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="helpful" data-message-index="${messageIndex}" aria-label="도움됨" aria-pressed="${helpfulSelected}">
+        ${MESSAGE_ACTION_ICONS.helpful}<span>${helpfulSelected ? "도움됨 ✓" : "도움됨"}</span>
+      </button>
+      <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="needs_improvement" data-message-index="${messageIndex}" aria-label="개선 필요" aria-pressed="${improveSelected}">
+        ${MESSAGE_ACTION_ICONS.improve}<span>${improveSelected ? "의견 남김 ✓" : "개선 필요"}</span>
+      </button>
+    ` : "";
+    actions.innerHTML = `
+      <button type="button" class="message-action-btn" data-message-action="copy" data-message-index="${messageIndex}" aria-label="답변 복사">
+        ${MESSAGE_ACTION_ICONS.copy}<span>복사</span>
+      </button>
+      <button type="button" class="message-action-btn" data-message-action="regenerate" data-message-index="${messageIndex}" aria-label="답변 재생성">
+        ${MESSAGE_ACTION_ICONS.regenerate}<span>재생성</span>
+      </button>
+      ${feedbackActions}
+    `;
+  } else {
+    actions.innerHTML = `
+      <button type="button" class="message-action-btn" data-message-action="edit" data-message-index="${messageIndex}" aria-label="수정 후 재전송">
+        ${MESSAGE_ACTION_ICONS.edit}<span>수정 후 재전송</span>
+      </button>
+    `;
+  }
+  return actions;
+}
+
+function feedbackQuestionForMessage(messageIndex) {
+  return state.messages.slice(0, messageIndex).reverse().find((message) => message.role === "user")?.content || "";
+}
+
+function openFeedbackModal(messageIndex) {
+  const message = state.messages[messageIndex];
+  if (!message?.auditId || !els.feedbackModal) return;
+  state.feedbackMessageIndex = messageIndex;
+  els.feedbackForm.reset();
+  els.feedbackQuestion.textContent = feedbackQuestionForMessage(messageIndex);
+  els.feedbackComment.value = message.feedback?.comment || "";
+  if (message.feedback?.reason) {
+    const selectedReason = els.feedbackForm.querySelector(`[name="feedbackReason"][value="${message.feedback.reason}"]`);
+    if (selectedReason) selectedReason.checked = true;
+  }
+  els.feedbackModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.feedbackForm.querySelector('[name="feedbackReason"]')?.focus();
+}
+
+function closeFeedbackModal() {
+  if (!els.feedbackModal) return;
+  els.feedbackModal.hidden = true;
+  state.feedbackMessageIndex = null;
+  document.body.classList.remove("modal-open");
+}
+
+async function saveMessageFeedback(messageIndex, rating, reason = "", comment = "") {
+  const message = state.messages[messageIndex];
+  if (!message?.auditId) return;
+  const response = await apiFetch("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      auditId: message.auditId,
+      rating,
+      reason: reason || null,
+      comment,
+      templateId: message.templateId || null,
+    }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "피드백을 저장하지 못했습니다.");
+  }
+  const data = await response.json();
+  message.feedback = data.feedback;
+  persistConversations();
+  renderMessages();
+  refreshFeedbackSummary();
+  showToast(rating === "helpful" ? "도움이 되었다는 의견을 반영했어요." : "개선 의견을 저장했어요.", "success");
+}
+
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+];
+
+function truncateChartLabel(label, maxLength = 16) {
+  const text = String(label ?? "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+// 원형(도넛) 차트: 항목별 비중을 stroke-dasharray로 구간을 나눠 그린다.
+// 외부 차트 라이브러리 없이도 실제 원형 차트로 렌더링하기 위한 방식이다.
+function renderDonutChart(items, { centerLabel = "", valueFormatter = (v) => v.toFixed(2) } = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "donut-chart-row";
+  const total = items.reduce((sum, item) => sum + item.amount, 0) || 1;
+
+  const size = 120;
+  const radius = 42;
+  const strokeWidth = 18;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  const segments = items
+    .map((item, index) => {
+      const segLen = (item.amount / total) * circumference;
+      const circle = `<circle cx="${size / 2}" cy="${size / 2}" r="${radius}" fill="none" stroke="${CHART_COLORS[index % CHART_COLORS.length]}" stroke-width="${strokeWidth}" stroke-dasharray="${segLen} ${circumference - segLen}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${size / 2} ${size / 2})" />`;
+      offset += segLen;
+      return circle;
+    })
+    .join("");
+
+  const svg = document.createElement("div");
+  svg.className = "donut-chart-svg";
+  svg.innerHTML = `
+    <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="유형별 공수 비중 도넛 차트">
+      ${segments}
+      <text x="${size / 2}" y="${size / 2 - 4}" text-anchor="middle" class="donut-chart-total">${escapeHtml(valueFormatter(total))}</text>
+      <text x="${size / 2}" y="${size / 2 + 12}" text-anchor="middle" class="donut-chart-total-label">${escapeHtml(centerLabel)}</text>
+    </svg>
+  `;
+  wrap.appendChild(svg);
+
+  const legend = document.createElement("div");
+  legend.className = "chart-legend";
+  items.forEach((item, index) => {
+    const pct = Math.round((item.amount / total) * 100);
+    const row = document.createElement("div");
+    row.className = "chart-legend-row";
+    row.innerHTML = `
+      <span class="chart-legend-swatch" style="background:${CHART_COLORS[index % CHART_COLORS.length]}"></span>
+      <span>${escapeHtml(item.label)}</span>
+      <span class="chart-legend-pct">${pct}%</span>
+      <span class="chart-legend-value">${escapeHtml(valueFormatter(item.amount))}</span>
+    `;
+    legend.appendChild(row);
+  });
+  wrap.appendChild(legend);
+  return wrap;
+}
+
+// 가로 막대 차트: SVG로 축 기준선과 막대, 값 레이블을 함께 그린다.
+function renderBarChartSVG(items, { valueFormatter = (v) => v.toFixed(2) } = {}) {
+  const viewWidth = 760;
+  const labelWidth = 260;
+  const valueAreaWidth = 62;
+  const barAreaWidth = viewWidth - labelWidth - valueAreaWidth;
+  const rowHeight = 34;
+  const barHeight = 16;
+  const topPadding = 8;
+  const height = items.length * rowHeight + topPadding * 2;
+  const maxAmount = Math.max(1, ...items.map((item) => item.amount));
+
+  const rows = items
+    .map((item, index) => {
+      const y = topPadding + index * rowHeight + rowHeight / 2;
+      const barWidth = Math.max((item.amount / maxAmount) * barAreaWidth, item.amount > 0 ? 2 : 0);
+      const label = truncateChartLabel(item.label, 30);
+      return `
+        <text x="0" y="${y}" dominant-baseline="middle" class="bar-chart-axis-label"><title>${escapeHtml(item.label)}</title>${escapeHtml(label)}</text>
+        <rect x="${labelWidth}" y="${y - barHeight / 2}" width="${barWidth}" height="${barHeight}" rx="5" fill="${CHART_COLORS[index % CHART_COLORS.length]}" />
+        <text x="${labelWidth + barWidth + 8}" y="${y}" dominant-baseline="middle" class="bar-chart-value-label">${escapeHtml(valueFormatter(item.amount))}</text>
+      `;
+    })
+    .join("");
+
+  const svg = document.createElement("div");
+  svg.innerHTML = `
+    <svg class="bar-chart-svg" viewBox="0 0 ${viewWidth} ${height}" role="img" aria-label="항목별 공수 막대 차트">
+      <line x1="${labelWidth}" y1="0" x2="${labelWidth}" y2="${height}" stroke="var(--line)" stroke-width="1" />
+      ${rows}
+    </svg>
+  `;
+  return svg;
+}
+
+function renderEffortChart(chart) {
+  const wrap = document.createElement("div");
+  wrap.className = "effort-chart";
+
+  const statCards = document.createElement("div");
+  statCards.className = "summary-stat-grid effort-chart-stats";
+  [
+    { label: chart.periodLabel || `${chart.year}년 ${chart.month}월`, value: chart.person },
+    { label: "총 공수", value: chart.totalEffort.toFixed(2) },
+    { label: "반영 이슈", value: `${chart.issueCount}건` },
+  ].forEach(({ label, value }, index) => {
+    const card = document.createElement("div");
+    card.className = `summary-stat-card effort-stat-card effort-stat-${index + 1}`;
+    card.innerHTML = `<strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
+    statCards.appendChild(card);
+  });
+  wrap.appendChild(statCards);
+
+  const byType = chart.byType.filter((item) => item.amount > 0);
+  if (byType.length) {
+    const section = document.createElement("div");
+    section.className = "summary-section";
+    section.innerHTML = `<h4>유형별 공수</h4>`;
+    section.appendChild(renderDonutChart(byType, { centerLabel: "총 공수" }));
+    wrap.appendChild(section);
+  }
+
+  if (chart.topIssues?.length) {
+    const section = document.createElement("div");
+    section.className = "summary-section";
+    section.innerHTML = `<h4>공수가 큰 이슈</h4>`;
+    const items = chart.topIssues.map(({ id, summary, amount }) => ({
+      label: id ? `#${id} ${summary}` : summary,
+      amount,
+    }));
+    section.appendChild(renderBarChartSVG(items));
+    wrap.appendChild(section);
+  }
+
+  return wrap;
+}
+
+function renderEffortRankingChart(ranking) {
+  const wrap = document.createElement("div");
+  wrap.className = "effort-chart";
+
+  const statCards = document.createElement("div");
+  statCards.className = "summary-stat-grid effort-chart-stats";
+  [
+    { label: "기간", value: ranking.periodLabel },
+    { label: "공수 기록 이슈", value: `${ranking.issueCount}건` },
+    { label: "참여 인원", value: `${ranking.peopleCount}명` },
+  ].forEach(({ label, value }) => {
+    const card = document.createElement("div");
+    card.className = "summary-stat-card";
+    card.innerHTML = `<strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
+    statCards.appendChild(card);
+  });
+  wrap.appendChild(statCards);
+
+  if (ranking.topPeople?.length) {
+    const section = document.createElement("div");
+    section.className = "summary-section";
+    section.innerHTML = `<h4>공수 순위</h4>`;
+    section.appendChild(renderBarChartSVG(ranking.topPeople));
+    wrap.appendChild(section);
+  }
+
+  return wrap;
+}
+
+function appendAssistantExtras(container, message, messageIndex) {
+  if (message.effortChart) container.appendChild(renderEffortChart(message.effortChart));
+  if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking));
+  if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {
+    container.appendChild(renderSourceList(message.sources, messageIndex));
+  }
+  if (message.followUps?.length) {
+    container.appendChild(renderFollowUps(message.followUps));
+  }
+  if (message.verification) {
+    container.appendChild(renderVerificationPanel(message.verification, message.auditId));
+  }
+}
+
+function conditionId(condition = {}) {
+  if (condition.id) return condition.id;
+  return {
+    "고객사": "customer",
+    "플랫폼": "platform",
+    "담당자/인물": "people",
+    "상태": "status",
+    "이슈 ID": "issue",
+    "화면번호": "screen",
+  }[condition.label] || "date";
+}
+
+function renderSearchConditionChips(message, messageIndex) {
+  const conditions = message.verification?.constraints || [];
+  if (!conditions.length) return null;
+  const section = document.createElement("section");
+  section.className = "search-condition-bar";
+  const label = document.createElement("span");
+  label.className = "search-condition-label";
+  label.textContent = "검색 조건";
+  const list = document.createElement("div");
+  list.className = "search-condition-list";
+  conditions.forEach((condition) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "search-condition-chip";
+    button.dataset.removeCondition = encodeURIComponent(JSON.stringify(condition));
+    button.dataset.messageIndex = String(messageIndex);
+    button.setAttribute("aria-label", `${condition.label} ${condition.value} 조건을 제거하고 다시 검색`);
+    button.title = "이 조건을 제외하고 다시 검색";
+    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong><i aria-hidden="true">×</i>`;
+    list.appendChild(button);
+  });
+  section.append(label, list);
+  return section;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function questionWithoutCondition(question, condition) {
+  let cleaned = String(question || "");
+  const values = [...new Set([...(condition.values || []), condition.value].filter(Boolean))]
+    .sort((a, b) => String(b).length - String(a).length);
+  values.forEach((value) => {
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(value), "gi"), " ");
+  });
+  const cleanupPatterns = {
+    customer: /고객사\s*[:=]?/gi,
+    customer_exclude: /(?:고객사\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
+    platform: /플랫폼\s*[:=]?/gi,
+    platform_exclude: /(?:플랫폼\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
+    people: /(?:담당자|담당|에게|한테)\s*[:=]?/gi,
+    status: /상태(?:가|는|은|이)?\s*[:=]?/gi,
+    status_exclude: /(?:상태\s*)?(?:은|는|을|를)?\s*(?:빼고|제외(?:하고)?|말고|아닌|없이)/gi,
+    issue: /이슈\s*(?:ID)?\s*[:=#]?/gi,
+    screen: /화면(?:번호)?\s*[:=#]?/gi,
+    date: /(?:날짜|일자)\s*[:=]?/gi,
+  };
+  const pattern = cleanupPatterns[conditionId(condition)];
+  if (pattern) cleaned = cleaned.replace(pattern, " ");
+  cleaned = cleaned
+    .replace(/\[\s*\]|\(\s*\)/g, " ")
+    .replace(/\s+(에서|에게|한테|의)\b/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,·|\s]+|[,·|\s]+$/g, "")
+    .trim();
+  return cleaned || "관련 자료를 다시 검색해줘";
+}
+
+async function rerunWithoutCondition(messageIndex, condition) {
+  if (state.busy) return;
+  let userIndex = messageIndex - 1;
+  while (userIndex >= 0 && state.messages[userIndex].role !== "user") userIndex -= 1;
+  if (userIndex < 0) return;
+  const nextQuestion = questionWithoutCondition(state.messages[userIndex].content, condition);
+  const questionAskedAt = new Date().toISOString();
+  state.messages.push({ role: "user", content: nextQuestion, createdAt: questionAskedAt });
+  persistConversations();
+  await requestAssistant(nextQuestion, questionAskedAt);
+}
+
+function renderAbEvaluation(evaluation = {}) {
+  const section = document.createElement("section");
+  section.className = "ab-evaluation";
+  const winner = evaluation.winner;
+  const winnerText = winner === "tie" ? "두 답변 유사" : `${winner} 답변 우세`;
+  const header = document.createElement("div");
+  header.className = "ab-evaluation-header";
+  header.innerHTML = `<strong>자동 비교</strong><em>${escapeHtml(winnerText)}</em>`;
+
+  const scores = document.createElement("div");
+  scores.className = "ab-score-grid";
+  ["A", "B"].forEach((key) => {
+    const result = evaluation[`variant${key}`] || {};
+    const item = document.createElement("div");
+    item.className = `ab-score-item${winner === key ? " is-winner" : ""}`;
+    item.innerHTML = `<span>${key}</span><strong>${Number(result.score || 0)}점</strong>`;
+    scores.appendChild(item);
+  });
+
+  const details = document.createElement("details");
+  details.className = "ab-evaluation-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "평가 기준과 확인 사항";
+  const body = document.createElement("div");
+  body.className = "ab-evaluation-body";
+  ["A", "B"].forEach((key) => {
+    const result = evaluation[`variant${key}`] || {};
+    const metricLabels = evaluation.metricLabels || {};
+    const block = document.createElement("div");
+    block.className = "ab-evaluation-variant";
+    const metricText = Object.entries(result.metrics || {})
+      .map(([metric, score]) => `${metricLabels[metric] || metric} ${score}점`)
+      .join(" · ");
+    const failures = result.failureReasons || [];
+    block.innerHTML = `
+      <strong>${key} 답변</strong>
+      <p>${escapeHtml(metricText || "평가 데이터 없음")}</p>
+      <ul>${(failures.length ? failures : ["자동 검사에서 특이사항이 발견되지 않았습니다."])
+        .map((reason) => `<li>${escapeHtml(reason)}</li>`)
+        .join("")}</ul>
+    `;
+    body.appendChild(block);
+  });
+  details.append(summary, body);
+  section.append(header, scores, details);
+  return section;
+}
+
+function renderAbComparison(message, aBubble, messageIndex) {
+  const comparison = document.createElement("section");
+  comparison.className = "ab-comparison";
+
+  const tabs = document.createElement("div");
+  tabs.className = "ab-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "답변 처리 방식 비교");
+
+  const variantA = message.abTest.variantA || {};
+  const variantB = message.abTest.variantB || {};
+  const aTab = document.createElement("button");
+  const bTab = document.createElement("button");
+  aTab.type = "button";
+  bTab.type = "button";
+  aTab.className = "ab-tab";
+  bTab.className = "ab-tab";
+  aTab.setAttribute("role", "tab");
+  bTab.setAttribute("role", "tab");
+  aTab.setAttribute("aria-selected", "true");
+  bTab.setAttribute("aria-selected", "false");
+  aTab.textContent = `A · ${variantA.label || "전처리 적용"}`;
+  bTab.textContent = `B · ${variantB.label || "기본 검색 연동"}`;
+  tabs.append(aTab, bTab);
+
+  const aPanel = document.createElement("div");
+  const bPanel = document.createElement("div");
+  aPanel.className = "ab-panel";
+  bPanel.className = "ab-panel";
+  aPanel.setAttribute("role", "tabpanel");
+  bPanel.setAttribute("role", "tabpanel");
+  // hidden 속성은 브라우저 기본 스타일이 display:none !important로 걸어서 넓은 화면의
+  // 2단 비교 레이아웃(styles.css의 min-width:1100px)에서 CSS로 다시 펼 수 없다.
+  // 탭 전환은 클래스로 제어해 좁은 화면에서만 한쪽을 접는다.
+  bPanel.classList.add("is-collapsed");
+
+  const aTitle = document.createElement("h3");
+  const bTitle = document.createElement("h3");
+  aTitle.className = "ab-panel-title";
+  bTitle.className = "ab-panel-title";
+  aTitle.textContent = `A · ${variantA.label || "전처리 적용"}`;
+  bTitle.textContent = `B · ${variantB.label || "기본 검색 연동"}`;
+
+  const aNote = document.createElement("p");
+  aNote.className = "ab-method-note";
+  aNote.textContent = variantA.description || "사내 검색과 검증을 적용한 답변입니다.";
+  aPanel.append(aTitle, aNote, aBubble);
+
+  const bNote = document.createElement("p");
+  bNote.className = `ab-method-note${variantB.status === "error" ? " is-error" : ""}`;
+  bNote.textContent = variantB.description || "Mantis·Notion 기본 검색 결과만 모델에 전달한 답변입니다.";
+  const baselineSources = variantB.sources || [];
+  const bBubble = document.createElement("div");
+  bBubble.className = "bubble ab-baseline-bubble";
+  bBubble.appendChild(renderAssistantContent(
+    variantB.content || "비교 응답이 없습니다.",
+    baselineSources,
+    `${messageIndex}-baseline`,
+  ));
+  bPanel.append(bTitle, bNote, bBubble);
+  if (baselineSources.length && !baselineSources.every((source) => source.type === "notion")) {
+    bPanel.appendChild(renderSourceList(baselineSources, messageIndex, "baseline"));
+  }
+
+  const select = (selected) => {
+    const showA = selected === "a";
+    aTab.setAttribute("aria-selected", String(showA));
+    bTab.setAttribute("aria-selected", String(!showA));
+    aPanel.classList.toggle("is-collapsed", !showA);
+    bPanel.classList.toggle("is-collapsed", showA);
+  };
+  aTab.addEventListener("click", () => select("a"));
+  bTab.addEventListener("click", () => select("b"));
+
+  const panels = document.createElement("div");
+  panels.className = "ab-panels";
+  panels.append(aPanel, bPanel);
+  const sharedExtras = document.createElement("div");
+  sharedExtras.className = "ab-shared-extras";
+  appendAssistantExtras(sharedExtras, message, messageIndex);
+
+  comparison.append(tabs);
+  if (message.abTest.evaluation) {
+    comparison.appendChild(renderAbEvaluation(message.abTest.evaluation));
+  }
+  comparison.append(panels);
+  if (sharedExtras.childElementCount) comparison.append(sharedExtras);
+  return comparison;
+}
+
+function hasIssueSummaryList(content) {
+  return String(content || "")
+    .split("\n")
+    .some((line) => parseIssueSummaryLine(line));
+}
+
+function shouldHideSourceList(content, sources = []) {
+  const text = String(content || "");
+  if (sources.length && sources.every((source) => source.type === "notion")) return true;
+  if (hasIssueSummaryList(text)) return true;
+  return sources.some((source) => {
+    if (!source.issue_id) return false;
+    const issueIdPattern = new RegExp(`#?0*${String(source.issue_id)}\\b`);
+    return issueIdPattern.test(text);
+  });
+}
+
+// 상태 라벨을 색상 톤 클래스로 매핑한다. 부분 문자열 기준이라 "종료된 이슈",
+// "결재완료(팀장)"처럼 변형된 라벨도 자연스럽게 커버된다.
+function statusToneClass(label) {
+  const text = String(label || "");
+  if (/정보 ?부족/.test(text)) return "status-red";
+  if (/해결|개발완료|^완료|결재완료/.test(text)) return "status-green";
+  if (/할당/.test(text)) return "status-amber";
+  if (/확인|신규|진행|등록됨/.test(text)) return "status-blue";
+  if (/검토|결재요청/.test(text)) return "status-purple";
+  if (/종료|보관/.test(text)) return "status-neutral";
+  return "status-neutral";
+}
+
+const CALLOUT_ICONS = {
+  info: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.2M10 6.4v.2"/></svg>',
+  warning: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.2 17.4 16H2.6z"/><path d="M10 8.4v3.4M10 14.2v.2"/></svg>',
+};
+
+// "참고:"/"데이터 기준:" 같은 안내문을 일반 문단 대신 아이콘 콜아웃으로 그린다.
+function calloutToneFor(paragraphText) {
+  if (paragraphText.startsWith("참고:")) return "warning";
+  if (paragraphText.startsWith("데이터 기준:")) return "info";
+  if (paragraphText.startsWith("요청한 ") && paragraphText.includes("건입니다")) return "info";
+  return null;
+}
+
+// **굵게**, `코드` 인라인 마크다운을 벗겨내지 않고 실제 요소로 그린다.
+// innerHTML 대신 textContent 기반 노드 조립이라 XSS 걱정 없이 안전하다.
+function appendInlineMarkdown(target, text, sources = [], messageIndex = 0) {
+  const pattern = /(\*\*[^*\n]+\*\*|`[^`\n]+`|#\d{4,7}\b)/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text))) {
+    if (match.index > last) {
+      target.appendChild(document.createTextNode(text.slice(last, match.index)));
+    }
+    const token = match[0];
+    if (token.startsWith("**")) {
+      const strong = document.createElement("strong");
+      strong.textContent = token.slice(2, -2);
+      target.appendChild(strong);
+    } else if (token.startsWith("#")) {
+      // 답변에 언급된 이슈ID가 실제 근거 목록(sources)에 있을 때만 클릭 가능한
+      // 참조로 만든다. 무관한 숫자를 링크로 오인시키지 않기 위한 안전장치.
+      const issueId = Number(token.slice(1));
+      const source = sources.find((item) => Number(item.issue_id) === issueId);
+      if (source) {
+        const key = `inline-${messageIndex}-${issueId}`;
+        state.sourceMap.set(key, source);
+        const ref = document.createElement("button");
+        ref.type = "button";
+        ref.className = "inline-issue-ref";
+        ref.dataset.sourceKey = key;
+        ref.textContent = token;
+        target.appendChild(ref);
+      } else {
+        target.appendChild(document.createTextNode(token));
+      }
+    } else {
+      const code = document.createElement("code");
+      code.className = "inline-code";
+      code.textContent = token.slice(1, -1);
+      target.appendChild(code);
+    }
+    last = match.index + token.length;
+  }
+  if (last < text.length) {
+    target.appendChild(document.createTextNode(text.slice(last)));
+  }
+}
+
+// "검색 기준: 고객사=X, 플랫폼=Y, 정렬: ..." 줄을 태그 칩 목록으로 그린다.
+// "담당자=김a, 이b"처럼 값 안에 쉼표가 있는 경우, '='도 '정렬'도 없는 조각은
+// 직전 칩의 값에 이어 붙인다.
+function renderCriteriaChips(criteriaText) {
+  const wrap = document.createElement("div");
+  wrap.className = "criteria-chips";
+  const label = document.createElement("span");
+  label.className = "criteria-chips-label";
+  label.textContent = "검색 기준";
+  wrap.appendChild(label);
+
+  const body = criteriaText.replace(/^검색 기준:\s*/, "");
+  const chips = [];
+  body.split(/,\s*/).forEach((segment) => {
+    const trimmed = segment.trim();
+    if (!trimmed) return;
+    if (trimmed.includes("=") || trimmed.startsWith("정렬") || !chips.length) {
+      chips.push(trimmed);
+    } else {
+      chips[chips.length - 1] += `, ${trimmed}`;
+    }
+  });
+
+  chips.forEach((chipText) => {
+    const chip = document.createElement("span");
+    chip.className = "criteria-chip";
+    const eqIndex = chipText.indexOf("=");
+    const colonIndex = chipText.indexOf(":");
+    const splitIndex = eqIndex > 0 ? eqIndex : colonIndex;
+    if (splitIndex > 0) {
+      const small = document.createElement("small");
+      small.textContent = chipText.slice(0, splitIndex).trim();
+      chip.appendChild(small);
+      chip.appendChild(document.createTextNode(chipText.slice(splitIndex + 1).trim()));
+    } else {
+      chip.textContent = chipText;
+    }
+    wrap.appendChild(chip);
+  });
+  return wrap;
+}
+
+// 답변 텍스트 블록 하나를 콜아웃/검색기준 칩/제목/리스트/문단 중 알맞은
+// 형태로 그린다. 마크다운 표기를 벗겨서 버리는 대신 실제 스타일로 살린다.
+function appendAnswerParagraph(container, rawBlock, sources = [], messageIndex = 0) {
+  const cleaned = cleanMarkdown(rawBlock).trim();
+  if (!cleaned) return;
+
+  const tone = calloutToneFor(cleaned);
+  if (tone) {
+    const callout = document.createElement("div");
+    callout.className = `answer-callout callout-${tone}`;
+    callout.innerHTML = `${CALLOUT_ICONS[tone]}<span></span>`;
+    callout.querySelector("span").textContent = cleaned;
+    container.appendChild(callout);
+    return;
+  }
+
+  if (cleaned.startsWith("검색 기준:")) {
+    container.appendChild(renderCriteriaChips(cleaned));
+    return;
+  }
+
+  const rawLines = String(rawBlock)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let listBuffer = [];
+  let listTag = "ul";
+  let paragraphBuffer = [];
+
+  const flushList = () => {
+    if (!listBuffer.length) return;
+    const list = document.createElement(listTag);
+    list.className = "answer-list";
+    listBuffer.forEach((itemText) => {
+      const item = document.createElement("li");
+      appendInlineMarkdown(item, itemText, sources, messageIndex);
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+    listBuffer = [];
+  };
+
+  const flushParagraph = () => {
+    if (!paragraphBuffer.length) return;
+    const paragraph = document.createElement("p");
+    paragraphBuffer.forEach((lineText, lineIndex) => {
+      if (lineIndex > 0) paragraph.appendChild(document.createElement("br"));
+      appendInlineMarkdown(paragraph, lineText, sources, messageIndex);
+    });
+    container.appendChild(paragraph);
+    paragraphBuffer = [];
+  };
+
+  rawLines.forEach((line) => {
+    const headingMatch = line.match(/^#{1,6}\s+(.+)$/);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      const heading = document.createElement("h4");
+      heading.className = "answer-heading";
+      appendInlineMarkdown(heading, headingMatch[1], sources, messageIndex);
+      container.appendChild(heading);
+      return;
+    }
+    const bulletMatch = line.match(/^[-*•]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      if (listBuffer.length && listTag !== "ul") flushList();
+      listTag = "ul";
+      listBuffer.push(bulletMatch[1]);
+      return;
+    }
+    const numberedMatch = line.match(/^\d{1,2}\.\s+(.+)$/);
+    if (numberedMatch) {
+      flushParagraph();
+      if (listBuffer.length && listTag !== "ol") flushList();
+      listTag = "ol";
+      listBuffer.push(numberedMatch[1]);
+      return;
+    }
+    flushList();
+    paragraphBuffer.push(line);
+  });
+  flushParagraph();
+  flushList();
+}
+
+function renderAssistantContent(content, sources = [], messageIndex = 0) {
+  const wrap = document.createElement("div");
+  wrap.className = "assistant-answer";
+  if (sources.length && sources.every((source) => source.type === "notion")) {
+    wrap.appendChild(renderNotionAnswer(content, sources, messageIndex));
+    return wrap;
+  }
+
+  const issueDetail = parseIssueDetailContent(content);
+  if (issueDetail) {
+    wrap.appendChild(renderIssueDetailCard(issueDetail, sources, messageIndex));
+    return wrap;
+  }
+
+  const lines = String(content || "").split("\n");
+  let textBuffer = [];
+  let issueBuffer = [];
+
+  const flushText = () => {
+    const block = textBuffer.join("\n").trim();
+    textBuffer = [];
+    if (!block) return;
+
+    block.split(/\n{2,}/).forEach((part) => {
+      appendAnswerParagraph(wrap, part, sources, messageIndex);
+    });
+  };
+
+  const flushIssues = () => {
+    if (!issueBuffer.length) return;
+    wrap.appendChild(renderIssueSummaryList(issueBuffer, sources, messageIndex));
+    issueBuffer = [];
+  };
+
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+
+    // "답변 스타일: 표 중심"으로 모델이 GFM 마크다운 표를 낼 때, 이걸 그냥
+    // 문단으로 흘리면 "| a | b | |---|---|" 같은 파이프 문자가 그대로 노출된다.
+    // 헤더 행 다음에 구분선(---) 행이 오는 표준 패턴을 감지해 실제 <table>로 그린다.
+    if (
+      isMarkdownTableRow(line) &&
+      index + 1 < lines.length &&
+      isMarkdownTableSeparatorRow(lines[index + 1])
+    ) {
+      const issue = parseIssueSummaryLine(line);
+      if (!issue) {
+        flushText();
+        flushIssues();
+        const headerCells = splitMarkdownTableRow(line);
+        const bodyRows = [];
+        let cursor = index + 2;
+        while (cursor < lines.length && isMarkdownTableRow(lines[cursor])) {
+          bodyRows.push(splitMarkdownTableRow(lines[cursor]));
+          cursor += 1;
+        }
+        wrap.appendChild(renderMarkdownTable(headerCells, bodyRows));
+        index = cursor;
+        continue;
+      }
+    }
+
+    const issue = parseIssueSummaryLine(line);
+    if (issue) {
+      flushText();
+      issueBuffer.push(issue);
+      index += 1;
+      continue;
+    }
+    flushIssues();
+    textBuffer.push(line);
+    index += 1;
+  }
+
+  flushText();
+  flushIssues();
+
+  const hasTable = Array.from(wrap.children).some(
+    (child) => child.className === "markdown-table-wrap",
+  );
+  if (!hasTable) {
+    const inlineTable = extractInlineMarkdownTable(content);
+    if (inlineTable) {
+      wrap.innerHTML = "";
+      wrap.appendChild(renderMarkdownTable(inlineTable.headerCells, inlineTable.bodyRows));
+      if (inlineTable.trailingText) {
+        const paragraph = document.createElement("p");
+        paragraph.textContent = cleanMarkdown(inlineTable.trailingText).trim();
+        wrap.appendChild(paragraph);
+      }
+      return wrap;
+    }
+  }
+
+  if (!wrap.children.length) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = String(content || "");
+    wrap.appendChild(paragraph);
+  }
+  return wrap;
+}
+
+function isMarkdownTableRow(line) {
+  const trimmed = String(line || "").trim();
+  return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 1;
+}
+
+function isMarkdownTableSeparatorRow(line) {
+  const trimmed = String(line || "").trim();
+  if (!isMarkdownTableRow(trimmed)) return false;
+  const cells = splitMarkdownTableRow(trimmed);
+  if (!cells.length) return false;
+  return cells.every((cell) => /^:?-{1,}:?$/.test(cell.trim()));
+}
+
+function splitMarkdownTableRow(line) {
+  let trimmed = String(line || "").trim();
+  if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
+  if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
+  return trimmed.split("|").map((cell) => cleanMarkdown(cell).trim());
+}
+
+function renderMarkdownTable(headerCells, bodyRows) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "markdown-table-wrap";
+
+  const table = document.createElement("table");
+  table.className = "markdown-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  headerCells.forEach((cell) => {
+    const th = document.createElement("th");
+    th.textContent = cell;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  bodyRows.forEach((cells) => {
+    const tr = document.createElement("tr");
+    cells.forEach((cell) => {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+
+  wrapper.appendChild(table);
+  return wrapper;
+}
+
+function extractInlineMarkdownTable(content) {
+  // 모델이 "표 중심" 답변을 낼 때 줄바꿈 없이 한 줄로 이어붙이는 경우가 있다
+  // ("| a | b | |---|---| | c | d |"). 프롬프트를 강화해도 완전히 막긴 어려워서,
+  // 구분자 행(|---|---|...)의 컬럼 수를 기준으로 셀을 다시 묶어 표로 복원한다.
+  const text = String(content || "");
+  const separatorMatch = text.match(/\|(?:\s*:?-{1,}:?\s*\|){1,}/);
+  if (!separatorMatch) return null;
+
+  const columnCount = splitMarkdownTableRow(separatorMatch[0]).length;
+  if (columnCount < 1) return null;
+
+  const beforeSeparator = text.slice(0, separatorMatch.index).trim();
+  if (!beforeSeparator.endsWith("|")) return null;
+  const headerCells = splitMarkdownTableRow(beforeSeparator).slice(-columnCount);
+  if (headerCells.length !== columnCount) return null;
+
+  let rest = text.slice(separatorMatch.index + separatorMatch[0].length).trim();
+  if (rest.startsWith("|")) rest = rest.slice(1);
+  // 행 경계마다 "이전 행의 마지막 |"와 "다음 행의 시작 |"가 붙어 있어(예: "값 | | 다음값"),
+  // 그대로 나누면 빈 셀이 끼어 컬럼이 밀린다. 빈 셀은 실제 데이터가 아니라 이 경계
+  // 아티팩트이므로 제거한다.
+  const rawCells = rest.split("|").map((cell) => cell.trim()).filter((cell) => cell !== "");
+
+  const bodyRows = [];
+  let i = 0;
+  for (; i + columnCount <= rawCells.length; i += columnCount) {
+    bodyRows.push(rawCells.slice(i, i + columnCount).map((cell) => cleanMarkdown(cell).trim()));
+  }
+  if (!bodyRows.length) return null;
+
+  const trailingText = rawCells.slice(i).join(" ").trim();
+  return { headerCells, bodyRows, trailingText };
+}
+
+function extractNotionProseLines(content) {
+  // 결정형 포맷터가 만드는 "검색 기준:" 줄과 "N. **제목**" + 메타 불릿 줄은
+  // 카드 목록과 내용이 겹치므로 걸러내고, 그 외 모델이 실제로 작성한
+  // 설명 문장(예: 상세 내용 요청에 대한 답변)은 그대로 보존해 화면에 보여준다.
+  const rawLines = String(content || "").split("\n");
+  const prose = [];
+  for (let i = 0; i < rawLines.length; i += 1) {
+    const trimmed = rawLines[i].trim();
+    if (!trimmed) {
+      prose.push("");
+      continue;
+    }
+    if (trimmed.startsWith("검색 기준:")) continue;
+    if (/^\d+\.\s+\*\*.+\*\*$/.test(trimmed)) {
+      if (i + 1 < rawLines.length && /^\s*-\s/.test(rawLines[i + 1])) {
+        i += 1;
+      }
+      continue;
+    }
+    prose.push(rawLines[i]);
+  }
+  return prose.join("\n").trim();
+}
+
+function renderNotionAnswer(content, sources = [], messageIndex = 0) {
+  const section = document.createElement("section");
+  section.className = "notion-answer";
+
+  const criteriaLine = String(content || "")
+    .split("\n")
+    .map((line) => cleanMarkdown(line).trim())
+    .find((line) => line.startsWith("검색 기준:"));
+
+  const proseText = extractNotionProseLines(content);
+  if (proseText) {
+    proseText.split(/\n{2,}/).forEach((part) => {
+      appendAnswerParagraph(section, part, sources, messageIndex);
+    });
+  }
+
+  if (criteriaLine) {
+    section.appendChild(renderCriteriaChips(criteriaLine));
+  }
+
+  const list = document.createElement("div");
+  list.className = "notion-card-list";
+
+  sources.forEach((source, sourceIndex) => {
+    const key = `notion-${messageIndex}-${sourceIndex}`;
+    state.sourceMap.set(key, source);
+
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "notion-card";
+    card.dataset.sourceKey = key;
+
+    const metaItems = [
+      source.database_label || "Notion DB",
+      source.status || "상태 미상",
+      source.owner && source.owner !== "담당자 미지정" ? `담당 ${source.owner}` : "",
+      source.due_date ? `기한 ${source.due_date}` : "",
+      source.updated_at ? `수정 ${source.updated_at}` : "",
+    ].filter(Boolean);
+
+    card.innerHTML = `
+      <div class="notion-card-top">
+        <strong>${escapeHtml(source.database_label || "Notion")}</strong>
+        <em class="status-badge ${statusToneClass(source.status)}">${escapeHtml(source.status || "상태 미상")}</em>
+      </div>
+      <h4>${escapeHtml(source.title || "제목 없음")}</h4>
+      <div class="notion-card-meta">${escapeHtml(metaItems.join(" · "))}</div>
+    `;
+    list.appendChild(card);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function parseIssueDetailContent(content) {
+  const text = String(content || "").trim();
+  const titleMatch = text.match(/^\*\*#?(\d+)\s+(.+?)\*\*$/m) || text.match(/^#?(\d+)\s+(.+)$/m);
+  const contentMarker = text.match(/^\*\*내용\*\*$/m);
+  if (!titleMatch || !contentMarker) return null;
+
+  const beforeTitle = text.slice(0, titleMatch.index).trim();
+  const afterTitle = text.slice((titleMatch.index || 0) + titleMatch[0].length, contentMarker.index).trim();
+  const body = text.slice((contentMarker.index || 0) + contentMarker[0].length).trim();
+  const meta = {};
+
+  afterTitle.split("\n").forEach((line) => {
+    const match = line.match(/^-\s*([^:]+):\s*(.*)$/);
+    if (!match) return;
+    meta[match[1].trim()] = match[2].trim();
+  });
+
+  return {
+    criteria: cleanMarkdown(beforeTitle),
+    id: titleMatch[1],
+    title: cleanMarkdown(titleMatch[2]),
+    project: meta["프로젝트"] || "",
+    status: meta["상태"] || "",
+    handler: meta["담당자"] || "",
+    createdAt: meta["등록일"] || "",
+    screenNumber: meta["화면번호"] || "",
+    dateFields: Object.fromEntries(
+      Object.entries(meta).filter(([key]) => !["프로젝트", "상태", "담당자", "등록일", "화면번호"].includes(key)),
+    ),
+    body,
+  };
+}
+
+function renderIssueDetailCard(issue, sources = [], messageIndex = 0) {
+  const source = sources.find((item) => Number(item.issue_id) === Number(issue.id));
+  const card = document.createElement("article");
+  card.className = "issue-detail-card";
+
+  if (issue.criteria) {
+    // 도입 문장과 "검색 기준:" 줄이 섞여 있다. 줄 단위로 블록 렌더러에 태워
+    // 도입문은 문단으로, 검색 기준은 칩으로 각각 그린다.
+    issue.criteria.split("\n").forEach((line) => {
+      appendAnswerParagraph(card, line, sources, messageIndex);
+    });
+  }
+
+  const sectionLabel = document.createElement("div");
+  sectionLabel.className = "issue-section-label";
+  sectionLabel.textContent = "이슈 상세 정보";
+  card.appendChild(sectionLabel);
+
+  const header = document.createElement("header");
+  header.className = "issue-detail-header";
+  header.innerHTML = `
+    <div>
+      <span class="issue-detail-id">#${escapeHtml(issue.id)}</span>
+      <h3>${escapeHtml(issue.title)}</h3>
+    </div>
+    ${issue.status ? `<em class="status-badge ${statusToneClass(issue.status)}">${escapeHtml(issue.status)}</em>` : ""}
+  `;
+  card.appendChild(header);
+
+  const metaItems = [
+    ["프로젝트", issue.project],
+    ["담당자", issue.handler],
+    ["등록일", issue.createdAt],
+    ["화면번호", issue.screenNumber],
+    ...Object.entries(issue.dateFields || {}),
+  ].filter(([, value]) => value && value !== "미상");
+
+  if (metaItems.length) {
+    const metaGrid = document.createElement("dl");
+    metaGrid.className = "issue-detail-meta";
+    metaItems.forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.innerHTML = `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`;
+      metaGrid.appendChild(item);
+    });
+    card.appendChild(metaGrid);
+  }
+
+  const body = document.createElement("section");
+  body.className = "issue-detail-body";
+  const bodyTitle = document.createElement("h4");
+  bodyTitle.textContent = "요청 내용";
+  body.appendChild(bodyTitle);
+
+  const bodyText = document.createElement("div");
+  bodyText.className = "issue-detail-text";
+  issue.body.split(/\n{2,}/).forEach((part) => {
+    const paragraphText = part.trim();
+    if (!paragraphText) return;
+    const paragraph = document.createElement("p");
+    paragraph.textContent = paragraphText;
+    bodyText.appendChild(paragraph);
+  });
+  body.appendChild(bodyText);
+  card.appendChild(body);
+
+  const notes = buildIssueReferenceNotes(issue, source, sources);
+  if (notes.length) {
+    const noteSection = document.createElement("section");
+    noteSection.className = "issue-reference-notes";
+    noteSection.innerHTML = `<h4>참고 사항</h4>`;
+    const noteList = document.createElement("ul");
+    notes.forEach((note) => {
+      const item = document.createElement("li");
+      item.textContent = note;
+      noteList.appendChild(item);
+    });
+    noteSection.appendChild(noteList);
+    card.appendChild(noteSection);
+  }
+
+  if (source) {
+    const key = `detail-${messageIndex}-${issue.id}`;
+    state.sourceMap.set(key, source);
+    const action = document.createElement("button");
+    action.className = "issue-detail-action";
+    action.type = "button";
+    action.dataset.sourceKey = key;
+    action.textContent = "Mantis 상세 보기";
+    card.appendChild(action);
+  }
+
+  return card;
+}
+
+function buildIssueReferenceNotes(issue, source, sources = []) {
+  const notes = [];
+  const status = issue.status || source?.status || "";
+  if (status) {
+    notes.push(`현재 상태는 ${status}입니다.`);
+  }
+  if (issue.screenNumber && issue.screenNumber !== "미상") {
+    notes.push(`화면번호 ${issue.screenNumber} 기준으로 연관 이슈를 추가 조회할 수 있습니다.`);
+  }
+  const dateLabels = Object.keys(issue.dateFields || {});
+  if (dateLabels.length) {
+    notes.push(`${dateLabels.join(", ")} 일정 필드가 함께 확인되었습니다.`);
+  }
+  const relatedCount = sources.filter((item) => item.issue_id && Number(item.issue_id) !== Number(issue.id)).length;
+  if (relatedCount > 0) {
+    notes.push(`아래 관련 자료에서 함께 조회된 이슈 ${relatedCount}건을 확인할 수 있습니다.`);
+  }
+  return notes.slice(0, 3);
+}
+
+function renderFollowUps(followUps = []) {
+  const section = document.createElement("section");
+  section.className = "follow-up-panel";
+  section.innerHTML = `<h4>후속 질문</h4>`;
+  const list = document.createElement("div");
+  list.className = "follow-up-list";
+
+  followUps.forEach((question) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "follow-up-chip";
+    button.dataset.followUp = question;
+    button.textContent = question;
+    list.appendChild(button);
+  });
+
+  section.appendChild(list);
+  return section;
+}
+
+function cleanMarkdown(value) {
+  return String(value)
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[*-]\s+/gm, "• ")
+    .replace(/[ \t]+\n/g, "\n");
+}
+
+function parseIssueSummaryLine(line) {
+  const trimmed = String(line || "").trim();
+  if (!/^\d+\.\s/.test(trimmed) || !/\*?\*?ID\*?\*?\s*:/.test(trimmed)) {
+    return null;
+  }
+
+  const withoutNumber = trimmed.replace(/^\d+\.\s*/, "");
+  const parts = cleanMarkdown(withoutNumber).split("|");
+  const issue = {};
+
+  parts.forEach((part) => {
+    const [rawLabel, ...rawValue] = part.split(":");
+    if (!rawLabel || rawValue.length === 0) return;
+    const label = rawLabel.trim();
+    const value = rawValue.join(":").trim();
+    if (label === "ID") issue.id = value.replace(/^#/, "");
+    if (label === "프로젝트") issue.project = value;
+    if (label === "제목") issue.title = value;
+    if (label === "상태") issue.status = value;
+    if (label === "담당자") issue.handler = value;
+    if (label === "등록일") issue.createdAt = value;
+  });
+
+  return issue.id && issue.title ? issue : null;
+}
+
+function renderIssueListSkeleton(rows = 3) {
+  const list = document.createElement("div");
+  list.className = "issue-summary-list skeleton-list";
+  for (let i = 0; i < rows; i += 1) {
+    const row = document.createElement("div");
+    row.className = "issue-summary-row skeleton-row";
+    row.innerHTML = `
+      <div class="skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-line skeleton-line-meta"></div>
+    `;
+    list.appendChild(row);
+  }
+  return list;
+}
+
+function issueValue(issue, source, key, fallback = "") {
+  const sourceValue = source?.[key];
+  const localValue = issue?.[key];
+  return sourceValue || localValue || fallback;
+}
+
+function issuePriorityLabel(issue, source) {
+  return (
+    issueValue(issue, source, "priority") ||
+    issueValue(issue, source, "severity") ||
+    issueValue(issue?.detail || {}, source?.detail || {}, "priority") ||
+    issueValue(issue?.detail || {}, source?.detail || {}, "severity") ||
+    "-"
+  );
+}
+
+function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "issue-table-wrap";
+
+  const table = document.createElement("table");
+  table.className = "issue-table";
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["이슈 번호", "프로젝트", "제목", "상태", "중요도", "담당자", "등록일"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  issues.forEach((issue) => {
+    const source = sources.find((item) => Number(item.issue_id) === Number(issue.id));
+    const row = document.createElement("tr");
+    row.className = "issue-table-row";
+    if (source) {
+      const key = `answer-${messageIndex}-${issue.id}`;
+      state.sourceMap.set(key, source);
+      row.classList.add("issue-table-clickable");
+      row.dataset.sourceKey = key;
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `#${issue.id} 이슈 상세 보기`);
+    }
+
+    const idCell = document.createElement("td");
+    idCell.className = "issue-table-id";
+    idCell.textContent = `#${issue.id}`;
+
+    const projectCell = document.createElement("td");
+    projectCell.className = "issue-table-project";
+    projectCell.textContent = issueValue(issue, source, "project", "미상");
+
+    const titleCell = document.createElement("td");
+    titleCell.className = "issue-table-title";
+    titleCell.textContent = issueValue(issue, source, "title") || issue.summary || "제목 없음";
+
+    const statusCell = document.createElement("td");
+    const statusValue = issueValue(issue, source, "status", "상태 미상");
+    if (statusValue) {
+      const status = document.createElement("span");
+      status.className = `status-badge ${statusToneClass(statusValue)}`;
+      status.textContent = statusValue;
+      statusCell.appendChild(status);
+    }
+
+    const priorityCell = document.createElement("td");
+    priorityCell.className = "issue-table-priority";
+    priorityCell.textContent = issuePriorityLabel(issue, source);
+
+    const handlerCell = document.createElement("td");
+    handlerCell.textContent = issueValue(issue, source, "handler", "담당자 미지정");
+
+    const dateCell = document.createElement("td");
+    dateCell.className = "issue-table-date";
+    dateCell.textContent = issueValue(issue, source, "created_at") || issue.createdAt || "미상";
+
+    row.append(idCell, projectCell, titleCell, statusCell, priorityCell, handlerCell, dateCell);
+    tbody.appendChild(row);
+  });
+
+  table.appendChild(tbody);
+  wrapper.appendChild(table);
+  return wrapper;
+}
+
+function renderSourceList(sources, messageIndex, keyPrefix = "source") {
+  const wrap = document.createElement("div");
+  wrap.className = "source-list";
+  const isLongList = sources.length > 5;
+  const panelId = `${keyPrefix}-panel-${messageIndex}`;
+  const sourceLabel = sources.every((source) => source.type === "notion") ? "관련 Notion" : "관련 자료";
+  const toggle = document.createElement("button");
+  toggle.className = "source-list-toggle";
+  toggle.type = "button";
+  toggle.dataset.sourceToggle = panelId;
+  toggle.setAttribute("aria-expanded", String(!isLongList));
+  toggle.innerHTML = `
+    <span>${sourceLabel} <strong>${sources.length}</strong>건</span>
+    <em>${isLongList ? "펼치기" : "접기"}</em>
+  `;
+
+  const panel = document.createElement("div");
+  panel.id = panelId;
+  panel.className = "source-list-panel";
+  panel.hidden = isLongList;
+
+  wrap.appendChild(toggle);
+
+  sources.forEach((source, sourceIndex) => {
+    const key = `${keyPrefix}-${messageIndex}-${sourceIndex}`;
+    state.sourceMap.set(key, source);
+    const button = document.createElement("button");
+    button.className = "related-issue-item";
+    button.type = "button";
+    button.dataset.sourceKey = key;
+    const typeLabel = source.type === "notion" ? "Notion" : source.type === "chroma" ? "ChromaDB" : "Mantis";
+    const primaryId = source.type === "notion" ? (source.database_label || "Notion") : `#${source.issue_id || "-"}`;
+    const secondary = source.type === "notion"
+      ? [source.status, source.owner].filter(Boolean).join(" · ") || "Notion DB"
+      : source.project || "프로젝트 미상";
+    button.innerHTML = `
+      <div class="related-issue-main">
+        <div class="related-issue-top">
+          <strong>${escapeHtml(primaryId)}</strong>
+          <span>${escapeHtml(secondary)}</span>
+          <em>${escapeHtml(typeLabel)}</em>
+        </div>
+        <h4>${escapeHtml(source.title || "제목 없음")}</h4>
+      </div>
+      <span class="related-issue-action">상세</span>
+    `;
+    panel.appendChild(button);
+  });
+  wrap.appendChild(panel);
+  return wrap;
+}
+
+function verificationStatusLabel(status) {
+  if (status === "pass") return "통과";
+  if (status === "warning") return "확인 필요";
+  if (status === "review") return "검토 필요";
+  if (status === "na") return "해당 없음";
+  return "불일치";
+}
+
+function renderVerificationPanel(report, auditId = "") {
+  const details = document.createElement("details");
+  details.className = `verification-panel verification-${report.status || "warning"}`;
+  const completed = report.completedDimensions ?? 1;
+  const applicable = report.applicableDimensions ?? 1;
+  const summary = document.createElement("summary");
+  summary.innerHTML = `
+    <span class="verification-title">
+      <strong>검증 결과</strong>
+      <em>${escapeHtml(String(completed))}/${escapeHtml(String(applicable))} 영역 판정</em>
+    </span>
+    <span class="verification-state">${verificationStatusLabel(report.status)}</span>
+  `;
+  details.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "verification-body";
+  if (report.constraints?.length) {
+    const chips = document.createElement("div");
+    chips.className = "verification-chips";
+    report.constraints.forEach((item) => {
+      const chip = document.createElement("span");
+      chip.innerHTML = `<small>${escapeHtml(item.label)}</small>${escapeHtml(item.value)}`;
+      chips.appendChild(chip);
+    });
+    body.appendChild(chips);
+  }
+
+  const dimensions = report.dimensions?.length
+    ? report.dimensions
+    : [{ id: "retrieval", label: "검색·근거 일치", score: report.score, status: report.status, checks: report.checks || [] }];
+  const dimensionGrid = document.createElement("div");
+  dimensionGrid.className = "verification-dimensions";
+  dimensions.forEach((dimension) => {
+    const section = document.createElement("section");
+    section.className = `verification-dimension dimension-${dimension.status}`;
+    const scoreLabel = dimension.score === null || dimension.score === undefined
+      ? verificationStatusLabel(dimension.status)
+      : `${dimension.score}점`;
+    section.innerHTML = `
+      <header>
+        <div><strong>${escapeHtml(dimension.label)}</strong><small>${escapeHtml(dimension.description || "")}</small></div>
+        <em>${escapeHtml(scoreLabel)}</em>
+      </header>
+    `;
+    if (dimension.checks?.length) {
+      const checks = document.createElement("div");
+      checks.className = "verification-checks";
+      dimension.checks.forEach((check) => {
+        const row = document.createElement("div");
+        row.className = `verification-check check-${check.status}`;
+        row.innerHTML = `
+          <span class="check-mark" aria-hidden="true"></span>
+          <strong>${escapeHtml(check.label)}</strong>
+          <span>${escapeHtml(check.detail)}</span>
+        `;
+        checks.appendChild(row);
+      });
+      section.appendChild(checks);
+    }
+    dimensionGrid.appendChild(section);
+  });
+  body.appendChild(dimensionGrid);
+
+  if (report.trace?.length) {
+    const trace = document.createElement("div");
+    trace.className = "verification-trace";
+    trace.innerHTML = `<strong>조회 경로</strong>`;
+    report.trace.forEach((stage) => {
+      const item = document.createElement("span");
+      item.className = stage.status === "error" ? "trace-error" : "";
+      item.textContent = `${stage.label} ${stage.count}건`;
+      trace.appendChild(item);
+    });
+    body.appendChild(trace);
+  }
+
+  const footer = document.createElement("div");
+  footer.className = "verification-footer";
+  footer.innerHTML = `
+    <span>${escapeHtml(report.note || "")}</span>
+    <code>${escapeHtml(auditId ? `LOG ${auditId.slice(0, 8)}` : "")}</code>
+  `;
+  body.appendChild(footer);
+  details.appendChild(body);
+  return details;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function openChromaModal({ issueId, title, content, meta }) {
+  els.chromaModalMeta.textContent = meta || `이슈 상세 · #${issueId}`;
+  els.chromaModalTitle.textContent = title || "이슈 상세";
+  els.chromaModalContent.replaceChildren(renderDetailContent(content || "내용이 없습니다.", title || ""));
+  els.chromaModalContent.scrollTop = 0;
+  els.chromaModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.chromaModalClose.focus();
+}
+
+function parseDetailSections(text) {
+  const sections = [];
+  let current = { title: "", pairs: [], lines: [] };
+  const pushCurrent = () => {
+    while (current.lines.length && !current.lines[current.lines.length - 1]) current.lines.pop();
+    if (current.title || current.pairs.length || current.lines.length) sections.push(current);
+  };
+  String(text)
+    .split(/\n/)
+    .forEach((rawLine) => {
+      const line = rawLine.trim();
+      const sectionMatch = line.match(/^\[(.+)\]$/);
+      if (sectionMatch) {
+        pushCurrent();
+        current = { title: sectionMatch[1].trim(), pairs: [], lines: [] };
+        return;
+      }
+      const pairMatch = line.match(/^[-•]\s*([^:：]{1,30}?)\s*[:：]\s*(.*)$/);
+      if (pairMatch) {
+        current.pairs.push([pairMatch[1].trim(), pairMatch[2].trim() || "미상"]);
+        return;
+      }
+      if (line || current.lines.length) current.lines.push(line);
+    });
+  pushCurrent();
+  return sections;
+}
+
+function detailBadgeClass(value) {
+  if (/종료|해결|완료/.test(value)) return "detail-badge--positive";
+  if (/신규|확인|할당|진행/.test(value)) return "detail-badge--info";
+  if (/부족|피드백|보류|미상/.test(value)) return "detail-badge--warning";
+  return "detail-badge--neutral";
+}
+
+function buildDetailValue(key, value) {
+  const holder = document.createElement("dd");
+  holder.className = "detail-value";
+  if (/상태/.test(key)) {
+    const badge = document.createElement("span");
+    badge.className = `detail-badge ${detailBadgeClass(value)}`;
+    badge.textContent = value;
+    holder.appendChild(badge);
+  } else if (/^https?:\/\//.test(value)) {
+    const link = document.createElement("a");
+    link.className = "detail-link";
+    link.href = value;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = value;
+    holder.appendChild(link);
+  } else {
+    holder.textContent = value;
+  }
+  return holder;
+}
+
+function renderDetailContent(text, headerTitle) {
+  const fragment = document.createDocumentFragment();
+  const sections = parseDetailSections(text);
+  const hasStructure = sections.some((section) => section.title || section.pairs.length);
+
+  if (!hasStructure) {
+    const plain = document.createElement("pre");
+    plain.className = "detail-plain";
+    plain.textContent = String(text);
+    fragment.appendChild(plain);
+    return fragment;
+  }
+
+  const normalizedHeader = String(headerTitle).replace(/\s+/g, " ").trim();
+  sections.forEach((section) => {
+    const proseText = section.lines.join("\n").trim();
+    if (
+      section.title === "제목" &&
+      !section.pairs.length &&
+      proseText.replace(/\s+/g, " ") === normalizedHeader
+    ) {
+      return;
+    }
+
+    const block = document.createElement("section");
+    block.className = "detail-section";
+
+    if (section.title) {
+      const heading = document.createElement("h4");
+      heading.className = "detail-section-title";
+      heading.textContent = section.title;
+      block.appendChild(heading);
+    }
+
+    if (section.pairs.length) {
+      const grid = document.createElement("dl");
+      grid.className = "detail-grid";
+      section.pairs.forEach(([key, value]) => {
+        const item = document.createElement("div");
+        item.className = "detail-item";
+        const label = document.createElement("dt");
+        label.className = "detail-key";
+        label.textContent = key;
+        item.append(label, buildDetailValue(key, value));
+        grid.appendChild(item);
+      });
+      block.appendChild(grid);
+    }
+
+    if (proseText) {
+      const prose = document.createElement("div");
+      prose.className = "detail-prose";
+      prose.textContent = proseText;
+      block.appendChild(prose);
+    }
+
+    fragment.appendChild(block);
+  });
+  return fragment;
+}
+
+function closeChromaModal() {
+  els.chromaModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+function formatMantisDetail(source) {
+  const detail = source.detail || {};
+  const lines = [
+    `[Mantis 이슈 정보]`,
+    `- 이슈 ID: #${source.issue_id || ""}`,
+    `- 프로젝트(고객사): ${source.project || "미상"}`,
+    `- 현재 상태: ${displayIssueStatus(source.status)}`,
+    `- 담당자: ${source.handler || "담당자 미지정"}`,
+    `- 등록일: ${source.created_at || "미상"}`,
+    `- 화면번호: ${detail.screen_number || "미상"}`,
+    `- 작업주체: ${detail.work_subject || "미상"}`,
+  ];
+  const effortEntries = Object.entries(detail.effort_fields || {}).filter(([, value]) => value);
+  if (effortEntries.length) {
+    lines.push(``, `[공수]`);
+    effortEntries.forEach(([field, value]) => lines.push(`- ${field}: ${value}`));
+  }
+  const dateEntries = Object.entries(detail.date_fields || {}).filter(([, value]) => value);
+  if (dateEntries.length) {
+    lines.push(``, `[일정/전달일]`);
+    dateEntries.forEach(([field, value]) => lines.push(`- ${field}: ${value}`));
+  }
+  lines.push(
+    ``,
+    `[제목]`,
+    source.title || "제목 없음",
+    ``,
+    `[본문 미리보기]`,
+    source.preview || detail.description || "내용 없음",
+  );
+  return lines.join("\n");
+}
+
+function formatNotionDetail(source) {
+  const detail = source.detail || {};
+  const cleanContent = cleanNotionPreview(source.preview || detail.content || "");
+  const meta = [
+    `- DB: ${source.database_label || detail.database_label || "Notion DB"}`,
+    `- 상태: ${source.status || detail.status || "상태 미상"}`,
+    `- 담당자: ${source.owner || detail.owner || "담당자 미지정"}`,
+    `- 기한: ${source.due_date || detail.due_date || "미상"}`,
+    `- 최근 수정: ${source.updated_at || detail.last_edited_time || "미상"}`,
+  ];
+  if (source.url || detail.url) meta.push(`- URL: ${source.url || detail.url}`);
+
+  return [
+    `[Notion 항목]`,
+    ...meta,
+    ``,
+    `[제목]`,
+    source.title || "제목 없음",
+    ``,
+    `[내용]`,
+    cleanContent || "상세 내용은 Notion 원문에서 확인해 주세요.",
+  ].join("\n");
+}
+
+function cleanNotionPreview(value) {
+  const noisyPrefixes = /^(F_|PC_|QC|문의_|차주|금주|완료주차|고객사요청일|최종갱신|firstdayofmonth|이베스트VOC|OS|차주개발|차주전달|금주전달|금주차|완료|F_)/i;
+  return String(value || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && !noisyPrefixes.test(line))
+    .slice(0, 8)
+    .join("\n");
+}
+
+function displayIssueStatus(status) {
+  const statusMap = {
+    closed: "종료된 이슈",
+    confirmed: "확인된 이슈",
+    assigned: "할당된 이슈",
+    resolved: "해결된 이슈",
+    feedback: "정보 부족",
+    developed: "개발완료",
+    new: "신규",
+  };
+  const normalized = String(status || "").trim();
+  return statusMap[normalized.toLowerCase()] || normalized || "미상";
+}
+
+async function openSourceDetail(source) {
+  if (!source) return;
+
+  if (source.type === "notion") {
+    openChromaModal({
+      issueId: source.page_id || "",
+      title: source.title,
+      content: formatNotionDetail(source),
+      meta: "Notion DB 항목",
+    });
+    return;
+  }
+
+  if (source.type !== "chroma") {
+    openChromaModal({
+      issueId: source.issue_id,
+      title: source.title,
+      content: formatMantisDetail(source),
+      meta: `Mantis 이슈 · #${source.issue_id}`,
+    });
+    return;
+  }
+
+  openChromaModal({
+    issueId: source.issue_id,
+    title: "불러오는 중입니다",
+    content: "ChromaDB 원문을 불러오는 중입니다...",
+    meta: `ChromaDB 문서 · #${source.issue_id}`,
+  });
+
+  try {
+    const response = await apiFetch(`/api/chroma/documents/${encodeURIComponent(source.issue_id)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "문서를 불러오지 못했습니다.");
+    const titleMatch = data.content.match(/\[제목\]\s*([\s\S]*?)(\n\n|\[고객사 본문 요청 내용\])/);
+    openChromaModal({
+      issueId: source.issue_id,
+      title: titleMatch ? titleMatch[1].trim() : "이슈 상세",
+      content: data.content,
+      meta: `ChromaDB 문서 · #${source.issue_id}`,
+    });
+  } catch (error) {
+    openChromaModal({
+      issueId: source.issue_id,
+      title: "문서 조회 오류",
+      content: `오류: ${error.message}`,
+      meta: `ChromaDB 문서 · #${source.issue_id}`,
+    });
+  }
+}
+
+function setBusy(busy) {
+  state.busy = busy;
+  els.input.disabled = busy;
+  // 생성 중에는 전송 버튼이 중지 버튼으로 바뀐다(비활성화하지 않는다).
+  els.sendBtn.disabled = false;
+  els.sendBtn.classList.toggle("stop-mode", busy);
+  els.sendBtn.setAttribute("aria-label", busy ? "답변 생성 중지" : "전송");
+  const label = els.sendBtn.querySelector("span");
+  if (label) label.textContent = busy ? "중지" : "전송";
+}
+
+function autoResizeInput() {
+  els.input.style.height = "auto";
+  els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
+}
+
+function resetOptions() {
+  els.temperature.value = defaultOptions.temperature;
+  els.temperatureValue.textContent = defaultOptions.temperature;
+  els.answerStyle.value = defaultOptions.answerStyle;
+  els.topP.value = defaultOptions.topP;
+  els.topK.value = defaultOptions.topK;
+  els.minP.value = defaultOptions.minP;
+  els.maxTokens.value = defaultOptions.maxTokens;
+  els.presencePenalty.value = defaultOptions.presencePenalty;
+  els.frequencyPenalty.value = defaultOptions.frequencyPenalty;
+  els.repetitionPenalty.value = defaultOptions.repetitionPenalty;
+  els.seed.value = defaultOptions.seed;
+  els.stop.value = defaultOptions.stop;
+  setShowSources(defaultOptions.showSources);
+  setAbComparison(defaultOptions.abTest);
+  setSourceMode(defaultOptions.sourceMode);
+  setToolToggle(els.mantisToggle, defaultOptions.mantis);
+  setToolToggle(els.vectorToggle, defaultOptions.vectorDb);
+  els.searchLimit.value = defaultOptions.searchLimit;
+  els.searchLimitValue.textContent = `${defaultOptions.searchLimit}건`;
+  globalThis.AssistantCustomSelect?.syncAll();
+}
+
+function optionalNumber(element) {
+  if (!element) return null;
+  const value = element.value.trim();
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function stopValues() {
+  return els.stop.value
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function generationPayload() {
+  const payload = {
+    temperature: Number(els.temperature.value),
+    answerStyle: els.answerStyle.value,
+    responseFormat: "text",
+    showSources: showSourcesEnabled(),
+    searchLimit: Number(els.searchLimit.value),
+  };
+
+  const optionalFields = {
+    topP: optionalNumber(els.topP),
+    topK: optionalNumber(els.topK),
+    minP: optionalNumber(els.minP),
+    maxTokens: optionalNumber(els.maxTokens),
+    presencePenalty: optionalNumber(els.presencePenalty),
+    frequencyPenalty: optionalNumber(els.frequencyPenalty),
+    repetitionPenalty: optionalNumber(els.repetitionPenalty),
+    seed: optionalNumber(els.seed),
+  };
+
+  Object.entries(optionalFields).forEach(([key, value]) => {
+    if (value !== null) payload[key] = value;
+  });
+
+  const stops = stopValues();
+  if (stops.length) payload.stop = stops;
+  return payload;
+}
+
+async function loadModels() {
+  const response = await apiFetch("/api/models");
+  if (!response.ok) throw new Error("모델 목록을 불러오지 못했습니다.");
+  const data = await response.json();
+  state.models = data.models || [];
+  renderModels();
+}
+
+function formatFreshnessDate(value) {
+  if (!value) return "기준일 확인 필요";
+  const [year, month, day] = String(value).split("-");
+  if (!year || !month || !day) return String(value);
+  return `${Number(month)}월 ${Number(day)}일 기준`;
+}
+
+async function loadDataStatus() {
+  const [freshnessResult, notionResult] = await Promise.allSettled([
+    apiFetch("/api/data/freshness").then((response) => {
+      if (!response.ok) throw new Error("freshness");
+      return response.json();
+    }),
+    apiFetch("/api/notion/status").then((response) => {
+      if (!response.ok) throw new Error("notion");
+      return response.json();
+    }),
+  ]);
+
+  const freshness = freshnessResult.status === "fulfilled" ? freshnessResult.value?.mantis : null;
+  const notion = notionResult.status === "fulfilled" ? notionResult.value : null;
+  const model = selectedModel();
+  if (model && model.status !== "active") return;
+  const freshnessLabel = formatFreshnessDate(freshness?.asOf);
+  const notionLabel = notion?.configured ? "Notion 연결됨" : "Notion 설정 필요";
+  els.statusLine.textContent = ["Mantis 실시간", notionLabel, `Vector DB ${freshnessLabel}`].join(" · ");
+  els.statusLine.className = freshness?.status === "stale" || !notion?.configured
+    ? "status-warning data-status-line"
+    : "status-active data-status-line";
+  els.statusLine.title = freshness?.updatedAt
+    ? `Vector DB 마지막 갱신: ${formatQuestionAskedAt(freshness.updatedAt)}`
+    : "";
+}
+
+async function loadEvaluationData() {
+  const [casesResponse, logsResponse, summaryResponse, historyResponse, feedbackResponse] = await Promise.all([
+    apiFetch(ADMIN_ENDPOINTS.evaluationCases),
+    apiFetch(ADMIN_ENDPOINTS.validationLogs),
+    apiFetch(ADMIN_ENDPOINTS.validationSummary),
+    apiFetch(ADMIN_ENDPOINTS.evaluationHistory),
+    apiFetch(ADMIN_ENDPOINTS.feedbackSummary),
+  ]);
+  if (!casesResponse.ok || !logsResponse.ok || !summaryResponse.ok) {
+    throw new Error("검증 데이터를 불러오지 못했습니다.");
+  }
+  const casesData = await casesResponse.json();
+  const logsData = await logsResponse.json();
+  const summaryData = await summaryResponse.json();
+  state.evaluationCases = casesData.cases || [];
+  state.validationLogs = logsData.logs || [];
+  state.validationSummary = summaryData;
+  // 실행 이력은 부가 정보라 실패해도 모달 자체는 열리게 둔다.
+  state.evaluationHistory = historyResponse.ok ? (await historyResponse.json()).runs || [] : [];
+  state.feedbackSummary = feedbackResponse.ok ? await feedbackResponse.json() : null;
+  await refreshAccuracyReports();
+  renderEvaluationContent();
+}
+
+async function refreshFeedbackSummary() {
+  try {
+    const response = await apiFetch("/api/feedback/summary?limit=200");
+    if (!response.ok) return;
+    state.feedbackSummary = await response.json();
+    if (state.evaluationTab === "feedback") renderEvaluationContent();
+  } catch {
+    // 피드백 집계는 답변 사용을 막지 않는 부가 정보다.
+  }
+}
+
+async function refreshAccuracyReports() {
+  try {
+    const response = await apiFetch("/api/accuracy/reports?limit=8");
+    if (!response.ok) return;
+    const data = await response.json();
+    state.accuracyReports = data.reports || [];
+    state.accuracyAnalytics = data.analytics || null;
+    state.dataFreshness = data.freshness?.mantis || null;
+    // 실행 직후에는 라이브 결과를 그대로 보여주므로 최신 리포트 상세는
+    // 라이브 결과가 없을 때만 불러온다.
+    if (!state.accuracyLive.length && state.accuracyReports.length) {
+      const latest = state.accuracyReports[0];
+      const detail = await apiFetch(`/api/accuracy/reports/${encodeURIComponent(latest.name)}`);
+      if (detail.ok) state.accuracyReport = await detail.json();
+    }
+  } catch {
+    // 정확도 리포트는 부가 정보라 실패해도 무시한다.
+  }
+}
+
+async function refreshEvaluationHistory() {
+  try {
+    const response = await apiFetch("/api/evaluation/history?limit=8");
+    if (response.ok) state.evaluationHistory = (await response.json()).runs || [];
+  } catch {
+    // 이력 갱신 실패는 치명적이지 않다.
+  }
+}
+
+function renderEvaluationContent() {
+  document.querySelectorAll(".evaluation-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.evaluationTab === state.evaluationTab);
+  });
+  els.runEvaluationBtn.hidden = state.evaluationTab !== "cases";
+  els.evaluationContent.innerHTML = "";
+  if (state.evaluationTab === "logs") {
+    renderValidationLogs();
+    return;
+  }
+  if (state.evaluationTab === "summary") {
+    renderValidationSummary();
+    return;
+  }
+  if (state.evaluationTab === "accuracy") {
+    renderAccuracyTab();
+    return;
+  }
+  if (state.evaluationTab === "feedback") {
+    renderFeedbackTab();
+    return;
+  }
+  renderEvaluationCases();
+}
+
+function formatEvalDuration(ms) {
+  if (!Number.isFinite(ms)) return "";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}초`;
+}
+
+function renderEvaluationHistory() {
+  if (!state.evaluationHistory.length) return;
+  const history = document.createElement("div");
+  history.className = "evaluation-history";
+  const label = document.createElement("span");
+  label.className = "evaluation-history-label";
+  label.textContent = "최근 실행";
+  history.appendChild(label);
+  state.evaluationHistory.forEach((run) => {
+    const chip = document.createElement("span");
+    chip.className = `evaluation-history-chip ${run.failed ? "history-fail" : "history-pass"}`;
+    const when = String(run.run_at || "").replace("T", " ").slice(5, 16);
+    chip.title = `${when} · ${run.passed}/${run.total} 통과 · ${formatEvalDuration(run.duration_ms)}`;
+    chip.textContent = `${run.score}점 (${run.passed}/${run.total})`;
+    history.appendChild(chip);
+  });
+  els.evaluationContent.appendChild(history);
+}
+
+function renderEvaluationCases() {
+  if (!state.evaluationCases.length) {
+    els.evaluationContent.textContent = "등록된 검증 질문이 없습니다.";
+    return;
+  }
+  const passed = [...state.evaluationResults.values()].filter((result) => result.passed).length;
+  const totalRun = state.evaluationResults.size;
+  if (state.evaluationRunning) {
+    const done = state.evaluationRunProgress?.done ?? 0;
+    const total = state.evaluationRunProgress?.total ?? state.evaluationCases.length;
+    els.evaluationSummary.innerHTML = `<strong>${done}/${total}</strong> 검사 완료 · 실행 중입니다`;
+  } else if (totalRun) {
+    els.evaluationSummary.innerHTML = `<strong>${passed}/${totalRun}</strong> 통과 · 최근 실행 결과`;
+  } else {
+    els.evaluationSummary.innerHTML = `<strong>${state.evaluationCases.length}</strong>개 기준 질문 · 검색 조건과 원문 조회를 검사합니다.`;
+  }
+  renderEvaluationHistory();
+  state.evaluationCases.forEach((item) => {
+    const result = state.evaluationResults.get(item.id);
+    const running = state.evaluationRunningCaseId === item.id;
+    const card = document.createElement("article");
+    card.className = `evaluation-case ${running ? "case-running" : result ? (result.passed ? "case-pass" : "case-fail") : ""}`;
+    const expected = Object.entries(item.expected || {})
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(" · ");
+    const checks = result?.checks?.map((check) => `
+      <li class="${check.passed ? "passed" : "failed"}">
+        <strong>${escapeHtml(check.label)}</strong><span>${escapeHtml(check.actual)}</span>
+      </li>
+    `).join("") || "";
+    const statusText = running ? "실행 중" : result ? (result.passed ? "통과" : "실패") : "대기";
+    const duration = formatEvalDuration(result?.durationMs);
+    card.innerHTML = `
+      <div class="evaluation-case-top">
+        <span>${escapeHtml(item.category)}</span>
+        <span class="evaluation-case-tools">
+          ${duration ? `<small class="evaluation-case-duration">${escapeHtml(duration)}</small>` : ""}
+          <button type="button" class="evaluation-rerun" data-evaluation-rerun="${escapeHtml(item.id)}" ${state.evaluationRunning ? "disabled" : ""} title="이 질문만 다시 실행">재실행</button>
+          <em>${statusText}</em>
+        </span>
+      </div>
+      <h4>${escapeHtml(item.question)}</h4>
+      <p>${escapeHtml(expected)}</p>
+      ${checks ? `<ul>${checks}</ul>` : ""}
+    `;
+    els.evaluationContent.appendChild(card);
+  });
+}
+
+function accuracyValueLabel(value) {
+  if (value === null || value === undefined) return "없음";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function renderAccuracyInsights() {
+  const analytics = state.accuracyAnalytics || {};
+  const freshness = state.dataFreshness;
+  const trend = (analytics.trend || []).slice(-8);
+  const failures = (analytics.failureCounts || []).slice(0, 5);
+  if (!freshness && !trend.length && !failures.length) return;
+
+  const panel = document.createElement("section");
+  panel.className = "accuracy-insights";
+  const ageText = freshness?.ageDays === null || freshness?.ageDays === undefined
+    ? "기준일 미확인"
+    : freshness.ageDays === 0
+      ? "오늘 기준"
+      : `${freshness.ageDays}일 지연`;
+  const freshnessHtml = freshness
+    ? `<article class="accuracy-insight-card freshness-${escapeHtml(freshness.status || "unknown")}">
+        <span>데이터 신선도</span>
+        <strong>${escapeHtml(freshness.label || "확인 필요")}</strong>
+        <small>${escapeHtml(freshness.asOf || "기준일 없음")} · ${escapeHtml(ageText)}</small>
+      </article>`
+    : "";
+  const delta = analytics.latestDelta;
+  const deltaText = delta === null || delta === undefined
+    ? "비교 이력 없음"
+    : `직전 대비 ${delta > 0 ? "+" : ""}${delta}점`;
+  const trendHtml = trend.length
+    ? `<article class="accuracy-insight-card accuracy-trend-card">
+        <span>정확도 추세</span>
+        <strong>${escapeHtml(deltaText)}</strong>
+        <div class="accuracy-trend-bars" aria-label="최근 정확도 추세">
+          ${trend.map((item) => {
+            const available = item.score !== null && item.score !== undefined;
+            const score = available ? Number(item.score) || 0 : 0;
+            const label = available ? `${score}점` : "불완전";
+            return `<i style="--score:${Math.max(4, score)}%" title="${escapeHtml(String(item.runAt || ""))}: ${escapeHtml(label)}"><b>${available ? score : "N/A"}</b></i>`;
+          }).join("")}
+        </div>
+      </article>`
+    : "";
+  const failureHtml = `<article class="accuracy-insight-card accuracy-failure-card">
+      <span>반복 실패 유형</span>
+      ${failures.length
+        ? `<ol>${failures.map((item) => `<li><b>${escapeHtml(item.category)}</b><em>${Number(item.count) || 0}회</em></li>`).join("")}</ol>`
+        : "<strong>최근 실패 없음</strong><small>조회한 리포트 범위 기준</small>"}
+    </article>`;
+  panel.innerHTML = `${freshnessHtml}${trendHtml}${failureHtml}`;
+  els.evaluationContent.appendChild(panel);
+}
+
+function renderAccuracyTab() {
+  if (state.accuracyRunning) {
+    const done = state.accuracyProgress?.done ?? 0;
+    const total = state.accuracyProgress?.total;
+    els.evaluationSummary.innerHTML = total
+      ? `<strong>${done}/${total}</strong> 질문 검사 완료 · 실행 중입니다`
+      : escapeHtml(state.accuracyStatusMessage || "정확도 검증을 준비하고 있습니다");
+  } else if (state.accuracyLive.length || state.accuracyReport) {
+    const summary = state.accuracyLive.length
+      ? {
+          passed: state.accuracyLive.filter((result) => result.passed).length,
+          total: state.accuracyLive.filter((result) => !result.pending).length,
+          base: {
+            passed: state.accuracyLive.filter((result) => result.case_group === "base" && result.passed).length,
+            total: state.accuracyLive.filter((result) => result.case_group === "base" && !result.pending).length,
+          },
+          follow_up: {
+            passed: state.accuracyLive.filter((result) => result.case_group === "follow_up" && result.passed).length,
+            total: state.accuracyLive.filter((result) => result.case_group === "follow_up" && !result.pending).length,
+          },
+        }
+      : state.accuracyReport.summary || {};
+    const incomplete = summary.status === "incomplete";
+    const groupSummary = summary.base && summary.follow_up
+      ? ` · 기본 ${summary.base.passed ?? 0}/${summary.base.total ?? 0} · 후속 ${summary.follow_up.passed ?? 0}/${summary.follow_up.total ?? 0}`
+      : "";
+    els.evaluationSummary.innerHTML = `<strong>${summary.passed ?? 0}/${summary.total ?? 0}</strong> 통과${groupSummary} · ${incomplete ? "연동 오류로 일부 문항은 정확도에서 제외됨" : "실제 답변까지 채점한 결과"}`;
+  } else {
+    els.evaluationSummary.innerHTML = "실시간 데이터로 질문을 만들어 실제 답변까지 채점합니다.";
+  }
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "accuracy-toolbar";
+  const desc = document.createElement("p");
+  desc.className = "accuracy-desc";
+  desc.textContent =
+    "실시간 Mantis·Notion 데이터로 기본 질문 10개와 실제 대화 문맥을 잇는 후속 질문 4개를 채점합니다. 수 분이 걸릴 수 있습니다.";
+  const runButton = document.createElement("button");
+  runButton.type = "button";
+  runButton.className = "run-evaluation-button";
+  runButton.dataset.accuracyRun = "true";
+  runButton.textContent = state.accuracyRunning ? "정확도 검증 실행 중" : "정확도 검증 실행";
+  runButton.disabled = state.accuracyRunning;
+  toolbar.append(desc, runButton);
+  els.evaluationContent.appendChild(toolbar);
+
+  renderAccuracyInsights();
+
+  if (state.accuracyReports.length) {
+    const history = document.createElement("div");
+    history.className = "evaluation-history";
+    const label = document.createElement("span");
+    label.className = "evaluation-history-label";
+    label.textContent = "최근 리포트";
+    history.appendChild(label);
+    state.accuracyReports.forEach((report) => {
+      const summary = report.summary || {};
+      const chip = document.createElement("span");
+      const incomplete = summary.status === "incomplete" || (summary.dependency_errors ?? 0) > 0;
+      chip.className = `evaluation-history-chip ${summary.failed || incomplete || (report.errors || []).length ? "history-fail" : "history-pass"}`;
+      const when = String(report.runAt || "").replace("T", " ").slice(5, 16);
+      const scoreLabel = summary.score === null || summary.score === undefined ? "N/A" : `${summary.score}점`;
+      chip.title = `${when} · ${summary.passed ?? 0}/${summary.total ?? 0} 통과${incomplete || (report.errors || []).length ? " · 실행 불완전" : ""}`;
+      chip.textContent = `${scoreLabel} (${summary.passed ?? 0}/${summary.total ?? 0})`;
+      history.appendChild(chip);
+    });
+    els.evaluationContent.appendChild(history);
+  }
+
+  const results = state.accuracyLive.length ? state.accuracyLive : state.accuracyReport?.results || [];
+  if (!results.length && !state.accuracyRunning) {
+    const empty = document.createElement("p");
+    empty.className = "accuracy-empty";
+    empty.textContent = "아직 실행된 정확도 검증이 없습니다. 위 버튼으로 첫 검증을 실행해 보세요.";
+    els.evaluationContent.appendChild(empty);
+    return;
+  }
+  results.forEach((result) => {
+    const card = document.createElement("article");
+    card.className = `evaluation-case ${result.pending ? "case-running" : result.passed ? "case-pass" : "case-fail"}`;
+    const statusText = result.pending
+      ? "실행 중"
+      : result.passed
+        ? "통과"
+        : ["dependency_error", "execution_error"].includes(result.outcome)
+          ? "연동 오류"
+          : "실패";
+    const meta = [result.source, result.category].filter(Boolean).join(" · ");
+    const setup = result.setup_question
+      ? `<p class="accuracy-setup-question"><strong>1차 질문</strong> ${escapeHtml(result.setup_question)}</p>`
+      : "";
+    const detail = result.pending
+      ? ""
+      : result.error
+        ? `<li class="failed"><strong>오류</strong><span>${escapeHtml(String(result.error))}</span></li>`
+        : `
+          <li class="${result.passed ? "passed" : "failed"}">
+            <strong>기대 (${escapeHtml(String(result.expected_kind || ""))})</strong>
+            <span>${escapeHtml(accuracyValueLabel(result.expected))}</span>
+          </li>
+          <li class="${result.passed ? "passed" : "failed"}">
+            <strong>실제</strong>
+            <span>${escapeHtml(accuracyValueLabel(result.actual))}</span>
+          </li>
+        `;
+    card.innerHTML = `
+      <div class="evaluation-case-top">
+        <span>${escapeHtml(meta)}</span>
+        <em>${statusText}</em>
+      </div>
+      ${setup}
+      <h4>${escapeHtml(result.question || "")}</h4>
+      ${detail ? `<ul>${detail}</ul>` : ""}
+    `;
+    els.evaluationContent.appendChild(card);
+  });
+}
+
+async function runAccuracyCheck() {
+  if (state.accuracyRunning) return;
+  state.accuracyRunning = true;
+  state.accuracyLive = [];
+  state.accuracyProgress = { done: 0, total: null };
+  state.accuracyStatusMessage = "정확도 검증을 준비하고 있습니다";
+  if (state.evaluationTab === "accuracy") renderEvaluationContent();
+  try {
+    const response = await apiFetch("/api/accuracy/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions: 10, followUpScenarios: 4 }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "정확도 검증 실행에 실패했습니다.");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("스트리밍 응답을 읽을 수 없습니다.");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+      for (const frame of frames) {
+        const payload = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("");
+        if (!payload) continue;
+        const event = JSON.parse(payload);
+        if (event.type === "status") {
+          state.accuracyStatusMessage = event.message || "";
+        } else if (event.type === "run_start") {
+          state.accuracyProgress.total = event.total;
+        } else if (event.type === "case_start") {
+          state.accuracyLive.push({
+            pending: true,
+            question: event.question,
+            setup_question: event.setupQuestion,
+            source: event.source,
+            category: event.category,
+            case_group: event.caseGroup,
+          });
+        } else if (event.type === "case_result") {
+          const pendingIndex = state.accuracyLive.findIndex((entry) => entry.pending);
+          if (pendingIndex >= 0) state.accuracyLive[pendingIndex] = event.result;
+          else state.accuracyLive.push(event.result);
+          state.accuracyProgress.done += 1;
+        } else if (event.type === "error") {
+          throw new Error(event.message || "정확도 검증 중 오류가 발생했습니다.");
+        }
+        if (state.evaluationTab === "accuracy") renderEvaluationContent();
+      }
+      if (done) break;
+    }
+    state.accuracyRunning = false;
+    await refreshAccuracyReports();
+    if (state.evaluationTab === "accuracy") renderEvaluationContent();
+  } catch (error) {
+    state.accuracyRunning = false;
+    if (state.evaluationTab === "accuracy") renderEvaluationContent();
+    els.evaluationSummary.textContent = `오류: ${error.message}`;
+  } finally {
+    state.accuracyRunning = false;
+  }
+}
+
+function renderValidationLogs() {
+  els.evaluationSummary.innerHTML = `<strong>${state.validationLogs.length}</strong>개 최근 감사 로그`;
+  if (!state.validationLogs.length) {
+    els.evaluationContent.textContent = "아직 저장된 답변 로그가 없습니다.";
+    return;
+  }
+  state.validationLogs.forEach((log) => {
+    const row = document.createElement("article");
+    row.className = `validation-log log-${log.status}`;
+    row.innerHTML = `
+      <div>
+        <span>${escapeHtml(log.mode)}</span>
+        <time>${escapeHtml(String(log.created_at || "").replace("T", " ").slice(0, 19))}</time>
+      </div>
+      <h4>${escapeHtml(log.question)}</h4>
+      <strong>${escapeHtml(String(log.score))}점</strong>
+    `;
+    els.evaluationContent.appendChild(row);
+  });
+}
+
+function teamTemplateLabel(templateId) {
+  return TEAM_TEMPLATES.find((template) => template.id === templateId)?.title || templateId || "일반 질문";
+}
+
+function renderFeedbackTab() {
+  const summary = state.feedbackSummary || {
+    total: 0,
+    helpfulCount: 0,
+    needsImprovementCount: 0,
+    helpfulRate: 0,
+    reasonCounts: [],
+    templateCounts: [],
+    recent: [],
+  };
+  els.evaluationSummary.innerHTML = `<strong>${summary.total || 0}</strong>건 피드백 · 도움됨 <strong>${summary.helpfulRate || 0}%</strong>`;
+
+  const wrap = document.createElement("div");
+  wrap.className = "validation-summary feedback-dashboard";
+  const statCards = document.createElement("div");
+  statCards.className = "summary-stat-grid";
+  [
+    { label: "도움됨", value: summary.helpfulCount || 0, tone: "pass" },
+    { label: "개선 필요", value: summary.needsImprovementCount || 0, tone: "warning" },
+    { label: "도움됨 비율", value: `${summary.helpfulRate || 0}%`, tone: "neutral" },
+  ].forEach(({ label, value, tone }) => {
+    const card = document.createElement("div");
+    card.className = `summary-stat-card tone-${tone}`;
+    card.innerHTML = `<strong>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
+    statCards.appendChild(card);
+  });
+  wrap.appendChild(statCards);
+
+  if (!summary.total) {
+    const empty = document.createElement("p");
+    empty.className = "accuracy-empty";
+    empty.textContent = "아직 등록된 답변 피드백이 없습니다. 실제 답변 아래의 ‘도움됨’ 또는 ‘개선 필요’를 선택하면 여기에 집계됩니다.";
+    wrap.appendChild(empty);
+    els.evaluationContent.appendChild(wrap);
+    return;
+  }
+
+  const reasons = summary.reasonCounts || [];
+  const reasonSection = document.createElement("section");
+  reasonSection.className = "summary-section";
+  reasonSection.innerHTML = "<h4>개선 필요 사유 6개</h4>";
+  const reasonList = document.createElement("div");
+  reasonList.className = "summary-bar-list";
+  const maxReasonCount = Math.max(1, ...reasons.map((item) => item.count || 0));
+  reasons.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "summary-bar-row";
+    const width = Math.round(((item.count || 0) / maxReasonCount) * 100);
+    row.innerHTML = `
+      <span class="summary-bar-label">${escapeHtml(item.label)}</span>
+      <span class="summary-bar-track"><span class="summary-bar-fill" style="width:${width}%"></span></span>
+      <span class="summary-bar-count">${Number(item.count) || 0}</span>
+    `;
+    reasonList.appendChild(row);
+  });
+  reasonSection.appendChild(reasonList);
+  wrap.appendChild(reasonSection);
+
+  if (summary.templateCounts?.length) {
+    const templateSection = document.createElement("section");
+    templateSection.className = "summary-section";
+    templateSection.innerHTML = "<h4>팀 템플릿별 만족도</h4>";
+    const templateList = document.createElement("div");
+    templateList.className = "feedback-template-list";
+    summary.templateCounts.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "feedback-template-row";
+      row.innerHTML = `
+        <strong>${escapeHtml(teamTemplateLabel(item.templateId))}</strong>
+        <span>${Number(item.total) || 0}건</span>
+        <em>도움됨 ${Number(item.helpfulRate) || 0}%</em>
+      `;
+      templateList.appendChild(row);
+    });
+    templateSection.appendChild(templateList);
+    wrap.appendChild(templateSection);
+  }
+
+  const recentSection = document.createElement("section");
+  recentSection.className = "summary-section";
+  recentSection.innerHTML = "<h4>최근 피드백</h4>";
+  const recentList = document.createElement("div");
+  recentList.className = "feedback-recent-list";
+  (summary.recent || []).forEach((item) => {
+    const row = document.createElement("article");
+    row.className = `feedback-log feedback-${item.rating}`;
+    const statusLabel = item.rating === "helpful" ? "도움됨" : "개선 필요";
+    const detail = item.comment || item.reasonLabel || "추가 의견 없음";
+    row.innerHTML = `
+      <div><span>${escapeHtml(statusLabel)}</span><time>${escapeHtml(String(item.updatedAt || "").replace("T", " ").slice(0, 16))}</time></div>
+      <h4>${escapeHtml(item.question || "")}</h4>
+      <p>${escapeHtml(detail)}</p>
+      <small>${escapeHtml(teamTemplateLabel(item.templateId))} · LOG ${escapeHtml(String(item.auditId || "").slice(0, 8))}</small>
+    `;
+    recentList.appendChild(row);
+  });
+  recentSection.appendChild(recentList);
+  wrap.appendChild(recentSection);
+  els.evaluationContent.appendChild(wrap);
+}
+
+const MODE_LABELS = {
+  model: "모델 답변",
+  deterministic_issue_list: "Mantis 목록",
+  deterministic_notion_list: "Notion 목록",
+  deterministic_effort_report: "공수 리포트",
+  deterministic_mantis_month_count: "월별 건수",
+  deterministic_combined_search: "통합 검색",
+  notion_update_missing_fields: "Notion 수정(필드 누락)",
+  notion_update_missing_target: "Notion 수정(대상 못 찾음)",
+  notion_update_ambiguous: "Notion 수정(대상 모호)",
+  notion_update: "Notion 수정",
+  notion_create: "Notion 생성",
+  model_timeout_fallback: "모델 타임아웃 폴백",
+};
+
+function modeLabel(mode) {
+  return MODE_LABELS[mode] || mode || "알 수 없음";
+}
+
+function renderValidationSummary() {
+  const summary = state.validationSummary;
+  if (!summary || !summary.total) {
+    els.evaluationSummary.innerHTML = `<strong>0</strong>개 감사 로그`;
+    els.evaluationContent.textContent = "아직 집계할 감사 로그가 없습니다.";
+    return;
+  }
+
+  const { total, averageScore, statusCounts, modeCounts, modelCounts, topFailingChecks, recentIssues } = summary;
+  els.evaluationSummary.innerHTML = `<strong>${total}</strong>건 집계 · 평균 <strong>${averageScore}</strong>점`;
+
+  const wrap = document.createElement("div");
+  wrap.className = "validation-summary";
+
+  const statCards = document.createElement("div");
+  statCards.className = "summary-stat-grid";
+  const statEntries = [
+    { label: "통과", value: statusCounts.pass || 0, tone: "pass" },
+    { label: "확인 필요", value: statusCounts.warning || 0, tone: "warning" },
+    { label: "실패", value: statusCounts.fail || 0, tone: "fail" },
+  ];
+  statEntries.forEach(({ label, value, tone }) => {
+    const card = document.createElement("div");
+    card.className = `summary-stat-card tone-${tone}`;
+    const pct = total ? Math.round((value / total) * 100) : 0;
+    card.innerHTML = `<strong>${value}</strong><span>${escapeHtml(label)} · ${pct}%</span>`;
+    statCards.appendChild(card);
+  });
+  wrap.appendChild(statCards);
+
+  const buildBarList = (title, entries) => {
+    const section = document.createElement("div");
+    section.className = "summary-section";
+    const maxCount = Math.max(1, ...entries.map(([, count]) => count));
+    section.innerHTML = `<h4>${escapeHtml(title)}</h4>`;
+    const list = document.createElement("div");
+    list.className = "summary-bar-list";
+    entries.forEach(([label, count]) => {
+      const row = document.createElement("div");
+      row.className = "summary-bar-row";
+      const widthPct = Math.round((count / maxCount) * 100);
+      row.innerHTML = `
+        <span class="summary-bar-label">${escapeHtml(label)}</span>
+        <span class="summary-bar-track"><span class="summary-bar-fill" style="width:${widthPct}%"></span></span>
+        <span class="summary-bar-count">${count}</span>
+      `;
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+    return section;
+  };
+
+  wrap.appendChild(
+    buildBarList(
+      "모드별 분포",
+      Object.entries(modeCounts).map(([mode, count]) => [modeLabel(mode), count]),
+    ),
+  );
+  wrap.appendChild(buildBarList("모델별 분포", Object.entries(modelCounts)));
+
+  if (topFailingChecks.length) {
+    wrap.appendChild(
+      buildBarList(
+        "자주 실패하는 검증 항목",
+        topFailingChecks.map((item) => [item.label, item.count]),
+      ),
+    );
+  }
+
+  if (recentIssues.length) {
+    const section = document.createElement("div");
+    section.className = "summary-section";
+    section.innerHTML = `<h4>최근 확인 필요 / 실패 항목</h4>`;
+    recentIssues.forEach((issue) => {
+      const row = document.createElement("article");
+      row.className = `validation-log log-${issue.status}`;
+      row.innerHTML = `
+        <div>
+          <span>${escapeHtml(modeLabel(issue.mode))}</span>
+          <time>${escapeHtml(String(issue.createdAt || "").replace("T", " ").slice(0, 19))}</time>
+        </div>
+        <h4>${escapeHtml(issue.question)}</h4>
+        <strong>${escapeHtml(String(issue.score))}점</strong>
+      `;
+      section.appendChild(row);
+    });
+    wrap.appendChild(section);
+  }
+
+  els.evaluationContent.appendChild(wrap);
+}
+
+async function openEvaluationModal() {
+  els.evaluationModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.evaluationContent.innerHTML = `<div class="evaluation-loading">검증 데이터를 불러오는 중입니다...</div>`;
+  try {
+    await loadEvaluationData();
+  } catch (error) {
+    els.evaluationContent.textContent = `오류: ${error.message}`;
+  }
+  els.evaluationModalClose.focus();
+}
+
+function closeEvaluationModal() {
+  els.evaluationModal.hidden = true;
+  document.body.classList.remove("modal-open");
+}
+
+async function runEvaluations(caseIds = []) {
+  if (state.evaluationRunning) return;
+  state.evaluationRunning = true;
+  state.evaluationRunningCaseId = null;
+  state.evaluationRunProgress = { done: 0, total: caseIds.length || state.evaluationCases.length };
+  // 전체 실행은 지난 결과를 비우고 시작하고, 케이스 재실행은 기존 결과 위에 덮어쓴다.
+  if (!caseIds.length) state.evaluationResults = new Map();
+  els.runEvaluationBtn.disabled = true;
+  els.runEvaluationBtn.textContent = "테스트 실행 중";
+  if (state.evaluationTab === "cases") renderEvaluationContent();
+  try {
+    const response = await apiFetch("/api/evaluation/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseIds, stream: true }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "검증 실행에 실패했습니다.");
+    }
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("스트리밍 응답을 읽을 수 없습니다.");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() || "";
+      for (const frame of frames) {
+        const payload = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("");
+        if (!payload) continue;
+        const event = JSON.parse(payload);
+        if (event.type === "case_start") {
+          state.evaluationRunningCaseId = event.caseId;
+        } else if (event.type === "case_result") {
+          state.evaluationResults.set(event.result.id, event.result);
+          state.evaluationRunningCaseId = null;
+          state.evaluationRunProgress.done += 1;
+        } else if (event.type === "summary") {
+          state.evaluationRunningCaseId = null;
+        }
+        if (state.evaluationTab === "cases") renderEvaluationContent();
+      }
+      if (done) break;
+    }
+    state.evaluationRunning = false;
+    state.evaluationRunningCaseId = null;
+    await refreshEvaluationHistory();
+    if (state.evaluationTab === "cases") renderEvaluationContent();
+  } catch (error) {
+    state.evaluationRunning = false;
+    state.evaluationRunningCaseId = null;
+    if (state.evaluationTab === "cases") renderEvaluationContent();
+    els.evaluationSummary.textContent = `오류: ${error.message}`;
+  } finally {
+    state.evaluationRunning = false;
+    state.evaluationRunningCaseId = null;
+    els.runEvaluationBtn.disabled = false;
+    els.runEvaluationBtn.textContent = "전체 테스트 실행";
+  }
+}
+
+async function sendChat(content, onEvent = () => {}, signal = undefined) {
+  const model = selectedModel();
+  if (!model) throw new Error("모델을 선택해 주세요.");
+  if (model.status !== "active") {
+    throw new Error(`현재 서비스가 ${statusLabel(model.status)} 상태입니다.`);
+  }
+
+  // 대화가 길어져도 서버로 보내는 히스토리는 최근 N개로 제한한다(서버에서도 한 번 더 제한).
+  // 현재 질문은 state.messages에 이미 push되어 있으므로(제출 핸들러 참고) history에서는
+  // 제외하고, 아래에서 { role: "user", content }로 한 번만 명시적으로 붙인다.
+  const chatMessages = buildChatMessages(state.messages, content, 20);
+
+  // 직전 assistant 답변의 감사 ID. 서버가 "그중 3번째" 같은 서수 참조를
+  // 그 답변에서 실제로 보여준 결과 목록으로 정확히 해석하는 데 사용한다.
+  const lastAssistantWithAudit = [...state.messages]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.auditId && !message.loading);
+
+  const response = await apiFetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal,
+    body: JSON.stringify({
+      modelId: model.id,
+      ...generationPayload(),
+      abTest: abComparisonEnabled(),
+      stream: true,
+      contextAuditId: lastAssistantWithAudit?.auditId || null,
+      messages: chatMessages,
+      tools: sourceToolsPayload(),
+    }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const retryAfter = response.headers.get("Retry-After");
+    const suffix = response.status === 429 && retryAfter
+      ? ` (${retryAfter}초 후 다시 시도)`
+      : "";
+    const error = new Error(`${data.detail || "모델 응답 중 오류가 발생했습니다."}${suffix}`);
+    error.status = response.status;
+    error.retryAfter = retryAfter;
+    throw error;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("스트리밍 응답을 읽을 수 없습니다.");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const parsed = parseSseBuffer(buffer, done);
+    buffer = parsed.rest;
+    for (const event of parsed.events) {
+      onEvent(event);
+      if (event.type === "result") result = event.data;
+      if (event.type === "error") {
+        const error = new Error(event.message || "응답 중 오류가 발생했습니다.");
+        error.status = event.status;
+        throw error;
+      }
+    }
+    if (done) break;
+  }
+  if (!result) throw new Error("완료된 응답을 받지 못했습니다.");
+  return result;
+}
+
+async function requestAssistant(content, questionAskedAt = "", templateId = "") {
+  state.messages.push({
+    role: "assistant",
+    content: "",
+    questionAskedAt,
+    loading: true,
+    streaming: false,
+    progress: "요청을 준비하고 있습니다",
+    templateId,
+  });
+  const assistantIndex = state.messages.length - 1;
+  renderMessages();
+  setBusy(true);
+  const abortController = new AbortController();
+  state.chatAbortController = abortController;
+
+  try {
+    const answer = await sendChat(content, (streamEvent) => {
+      const assistant = state.messages[assistantIndex];
+      if (!assistant) return;
+      if (streamEvent.type === "status") {
+        assistant.progress = streamEvent.message;
+        assistant.stage = streamEvent.stage;
+      } else if (streamEvent.type === "delta") {
+        assistant.loading = false;
+        assistant.streaming = true;
+        assistant.content = `${assistant.content || ""}${streamEvent.content || ""}`;
+      }
+      renderMessages();
+    }, abortController.signal);
+    state.messages[assistantIndex] = {
+      role: "assistant",
+      content: answer.content,
+      sources: answer.sources || [],
+      followUps: answer.followUps || [],
+      verification: answer.verification || null,
+      auditId: answer.auditId || "",
+      abTest: answer.abTest || null,
+      effortChart: answer.effortChart || null,
+      effortRanking: answer.effortRanking || null,
+      questionAskedAt,
+      templateId,
+    };
+  } catch (error) {
+    if (error.name === "AbortError") {
+      // 사용자가 중지: 지금까지 스트리밍된 내용은 남기고 중지 사실만 표시한다.
+      const partial = state.messages[assistantIndex]?.content || "";
+      state.messages[assistantIndex] = {
+        role: "assistant",
+        content: partial
+          ? `${partial}\n\n(여기서 답변 생성을 중지했습니다)`
+          : "답변 생성을 중지했습니다.",
+        stopped: true,
+        questionAskedAt,
+        templateId,
+      };
+    } else {
+      state.messages[assistantIndex] = {
+        role: "assistant",
+        content: `오류: ${error.message}`,
+        questionAskedAt,
+        templateId,
+      };
+    }
+  } finally {
+    state.chatAbortController = null;
+    setBusy(false);
+    persistConversations();
+    renderMessages();
+    els.input.focus();
+  }
+}
+
+function cancelMessageEdit() {
+  state.editingMessageIndex = null;
+  state.pendingTemplateId = null;
+  if (els.editNotice) els.editNotice.hidden = true;
+}
+
+els.form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (state.busy) {
+    state.chatAbortController?.abort();
+    return;
+  }
+  const content = els.input.value.trim();
+  if (!content) return;
+  const templateId = state.pendingTemplateId || "";
+  state.pendingTemplateId = null;
+
+  if (state.editingMessageIndex !== null) {
+    state.messages = state.messages.slice(0, state.editingMessageIndex);
+    cancelMessageEdit();
+  }
+  els.input.value = "";
+  autoResizeInput();
+  const questionAskedAt = new Date().toISOString();
+  state.messages.push({ role: "user", content, createdAt: questionAskedAt, templateId });
+  persistConversations();
+  await requestAssistant(content, questionAskedAt, templateId);
+});
+
+els.input.addEventListener("input", autoResizeInput);
+els.input.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    els.form.requestSubmit();
+  }
+});
+
+els.messages.addEventListener("click", (event) => {
+  const templateCard = event.target.closest("[data-template-id]");
+  if (!templateCard || state.busy) return;
+  openTemplateModal(templateCard.dataset.templateId);
+});
+
+els.templateFields?.addEventListener("input", updateTemplatePreview);
+els.templateFields?.addEventListener("change", updateTemplatePreview);
+els.templateForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const template = selectedTeamTemplate();
+  if (!template) return;
+  const question = buildTeamTemplateQuestion(template.id, templateFormValues());
+  if (!question) return;
+  state.pendingTemplateId = template.id;
+  els.input.value = question;
+  autoResizeInput();
+  closeTemplateModal();
+  els.form.requestSubmit();
+});
+
+els.temperature.addEventListener("input", () => {
+  els.temperatureValue.textContent = Number(els.temperature.value).toFixed(1);
+});
+
+els.searchLimit.addEventListener("input", () => {
+  els.searchLimitValue.textContent = `${els.searchLimit.value}건`;
+});
+
+els.darkModeToggle.addEventListener("click", () => {
+  saveTheme(!document.body.classList.contains("theme-dark"));
+});
+
+els.showSources.addEventListener("click", () => {
+  setShowSources(!showSourcesEnabled());
+});
+els.abTestToggle.addEventListener("click", () => {
+  setAbComparison(!abComparisonEnabled());
+  renderMessages();
+});
+[els.mantisToggle, els.vectorToggle].forEach((toggle) => {
+  toggle.addEventListener("click", () => {
+    const enabledTools = [els.mantisToggle, els.vectorToggle]
+      .filter((item) => toolToggleEnabled(item));
+    if (toolToggleEnabled(toggle) && enabledTools.length === 1) {
+      showToast("검색 소스를 하나 이상 선택해 주세요.", "warning");
+      return;
+    }
+    setToolToggle(toggle, !toolToggleEnabled(toggle));
+  });
+});
+els.sourceModeSelect?.addEventListener("change", () => setSourceMode(els.sourceModeSelect.value));
+
+els.modelSelect.addEventListener("change", updateModelMeta);
+els.resetOptionsBtn.addEventListener("click", () => {
+  resetOptions();
+  els.input.focus();
+});
+els.newChatBtn.addEventListener("click", () => {
+  if (state.busy) return;
+  startNewConversation();
+  els.input.focus();
+  closeMobileSidebar();
+});
+
+// 새로고침만 하면 localStorage의 기존 활성 대화가 다시 복원된다. 브랜드 영역은
+// 새 대화를 실제로 생성한 뒤 빈 초기 화면을 렌더링해야 한다.
+if (els.brandHome) {
+  const goHome = () => {
+    if (state.busy) return;
+    startNewConversation();
+    closeMobileSidebar();
+    els.input.focus();
+  };
+  els.brandHome.addEventListener("click", goHome);
+  els.brandHome.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      goHome();
+    }
+  });
+}
+
+// 좁은 화면에서는 사이드바를 오버레이로 접어두고 헤더의 메뉴 버튼으로 연다.
+// 넓은 화면에서는 항상 펼쳐져 있으므로 이 상태는 CSS 미디어쿼리 조건 안에서만
+// 시각적으로 의미를 갖는다.
+function closeMobileSidebar() {
+  document.body.classList.remove("sidebar-open");
+  els.sidebarMenuToggle?.setAttribute("aria-expanded", "false");
+}
+
+els.sidebarMenuToggle?.addEventListener("click", () => {
+  const isOpen = document.body.classList.toggle("sidebar-open");
+  els.sidebarMenuToggle.setAttribute("aria-expanded", String(isOpen));
+});
+
+els.sidebar?.addEventListener("click", (event) => {
+  if (event.target.closest("[data-conversation-id]") || event.target.closest("#newChatBtn")) {
+    closeMobileSidebar();
+  }
+});
+els.cancelEditBtn.addEventListener("click", () => {
+  cancelMessageEdit();
+  els.input.value = "";
+  autoResizeInput();
+  els.input.focus();
+});
+els.conversationList.addEventListener("click", (event) => {
+  const favoriteButton = event.target.closest("[data-favorite-conversation-id]");
+  if (favoriteButton) {
+    if (state.busy) return;
+    const conversation = state.conversations.find((item) => item.id === favoriteButton.dataset.favoriteConversationId);
+    if (!conversation) return;
+    conversation.favorite = !conversation.favorite;
+    conversation.updatedAt = new Date().toISOString();
+    persistConversations();
+    if (state.workspaceTab === "favorites" && !els.workspaceModal?.hidden) renderWorkspace();
+    showToast(conversation.favorite ? "대화를 즐겨찾기에 추가했어요." : "즐겨찾기에서 해제했어요.");
+    return;
+  }
+  const deleteButton = event.target.closest("[data-delete-conversation-id]");
+  if (deleteButton) {
+    if (state.busy) return;
+    const conversationId = deleteButton.dataset.deleteConversationId;
+    const removed = state.conversations.find((item) => item.id === conversationId);
+    state.conversations = state.conversations.filter((item) => item.id !== conversationId);
+    if (!state.conversations.length) state.conversations.push(createConversation());
+    if (conversationId === state.activeConversationId) {
+      state.activeConversationId = state.conversations[0].id;
+      state.messages = [...(state.conversations[0].messages || [])];
+    }
+    persistConversations();
+    renderMessages();
+    if (state.currentUser?.uid) {
+      apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }).catch(() => {});
+    }
+    showToast(`"${removed?.title || "대화"}"를 삭제했어요.`);
+    return;
+  }
+  const openButton = event.target.closest("[data-conversation-id]");
+  if (openButton) openConversation(openButton.dataset.conversationId);
+});
+els.evaluationBtn.addEventListener("click", openEvaluationModal);
+els.templateModalClose?.addEventListener("click", closeTemplateModal);
+els.templateCancelBtn?.addEventListener("click", closeTemplateModal);
+els.templateModal?.addEventListener("click", (event) => {
+  if (event.target === els.templateModal) closeTemplateModal();
+});
+els.feedbackModalClose?.addEventListener("click", closeFeedbackModal);
+els.feedbackCancelBtn?.addEventListener("click", closeFeedbackModal);
+els.feedbackModal?.addEventListener("click", (event) => {
+  if (event.target === els.feedbackModal) closeFeedbackModal();
+});
+els.feedbackForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const messageIndex = state.feedbackMessageIndex;
+  const reason = new FormData(els.feedbackForm).get("feedbackReason");
+  if (messageIndex === null || !reason) return;
+  const submitButton = els.feedbackForm.querySelector('[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    await saveMessageFeedback(messageIndex, "needs_improvement", String(reason), els.feedbackComment.value.trim());
+    closeFeedbackModal();
+  } catch (error) {
+    showToast(error.message, "warning");
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+els.evaluationModalClose.addEventListener("click", closeEvaluationModal);
+els.runEvaluationBtn.addEventListener("click", () => runEvaluations());
+els.evaluationContent.addEventListener("click", (event) => {
+  const accuracyButton = event.target.closest("[data-accuracy-run]");
+  if (accuracyButton && !accuracyButton.disabled) {
+    runAccuracyCheck();
+    return;
+  }
+  const rerunButton = event.target.closest("[data-evaluation-rerun]");
+  if (!rerunButton || rerunButton.disabled) return;
+  runEvaluations([rerunButton.dataset.evaluationRerun]);
+});
+els.evaluationModal.addEventListener("click", (event) => {
+  if (event.target === els.evaluationModal) closeEvaluationModal();
+});
+els.myWorkBtn?.addEventListener("click", () => openWorkspaceModal("personal"));
+els.teamDashboardBtn?.addEventListener("click", () => openWorkspaceModal("team"));
+els.workspaceModalClose?.addEventListener("click", closeWorkspaceModal);
+els.workspaceModal?.addEventListener("click", (event) => {
+  if (event.target === els.workspaceModal) closeWorkspaceModal();
+});
+els.workspaceRefreshBtn?.addEventListener("click", async () => {
+  els.workspaceRefreshBtn.disabled = true;
+  try {
+    if (state.workspaceMode === "team") await loadTeamDashboard(true);
+    else await loadMyWorkspace(true);
+  } catch (error) {
+    showToast(error.message, "warning");
+  } finally {
+    els.workspaceRefreshBtn.disabled = false;
+  }
+});
+els.workspaceTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-workspace-tab]");
+  if (!button) return;
+  state.workspaceTab = button.dataset.workspaceTab;
+  renderWorkspace();
+});
+els.workspaceContent?.addEventListener("click", async (event) => {
+  const questionButton = event.target.closest("[data-workspace-question]");
+  if (questionButton) {
+    els.input.value = decodeURIComponent(questionButton.dataset.workspaceQuestion || "");
+    autoResizeInput();
+    closeWorkspaceModal();
+    els.input.focus();
+    return;
+  }
+  const favoriteButton = event.target.closest("[data-open-favorite]");
+  if (favoriteButton) {
+    closeWorkspaceModal();
+    openConversation(favoriteButton.dataset.openFavorite);
+    return;
+  }
+  const notificationButton = event.target.closest("[data-notification-read]");
+  if (notificationButton) {
+    const notificationId = notificationButton.dataset.notificationRead;
+    notificationButton.disabled = true;
+    try {
+      const response = await apiFetch(`/api/workspace/notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST" });
+      if (!response.ok) throw new Error("알림 상태를 저장하지 못했습니다.");
+      const notification = state.myWorkspace?.notifications?.find((item) => item.id === notificationId);
+      if (notification) notification.read = true;
+      if (state.myWorkspace?.summary) {
+        state.myWorkspace.summary.unreadNotifications = state.myWorkspace.notifications.filter((item) => !item.read).length;
+      }
+      renderWorkspace();
+    } catch (error) {
+      showToast(error.message, "warning");
+      notificationButton.disabled = false;
+    }
+  }
+});
+document.querySelectorAll(".evaluation-tab").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.evaluationTab = button.dataset.evaluationTab;
+    renderEvaluationContent();
+  });
+});
+
+els.messages.addEventListener("scroll", updateComposerShadow, { passive: true });
+window.addEventListener("scroll", updateComposerShadow, { passive: true });
+window.addEventListener("resize", updateComposerShadow);
+els.scrollToTopBtn?.addEventListener("click", () => {
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const scrollTarget = window.matchMedia?.("(max-width: 860px)").matches ? window : els.messages;
+  scrollTarget.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+});
+
+els.messages.addEventListener("click", (event) => {
+  const feedbackButton = event.target.closest("[data-feedback-rating]");
+  if (feedbackButton) {
+    const messageIndex = Number(feedbackButton.dataset.messageIndex);
+    if (feedbackButton.dataset.feedbackRating === "helpful") {
+      saveMessageFeedback(messageIndex, "helpful").catch((error) => showToast(error.message, "warning"));
+    } else {
+      openFeedbackModal(messageIndex);
+    }
+    return;
+  }
+
+  const conditionButton = event.target.closest("[data-remove-condition]");
+  if (conditionButton) {
+    try {
+      const condition = JSON.parse(decodeURIComponent(conditionButton.dataset.removeCondition || ""));
+      rerunWithoutCondition(Number(conditionButton.dataset.messageIndex), condition);
+    } catch {
+      return;
+    }
+    return;
+  }
+
+  const actionButton = event.target.closest("[data-message-action]");
+  if (actionButton) {
+    const messageIndex = Number(actionButton.dataset.messageIndex);
+    const message = state.messages[messageIndex];
+    if (!message || state.busy) return;
+    if (actionButton.dataset.messageAction === "copy") {
+      navigator.clipboard.writeText(message.content || "").then(() => {
+        const original = actionButton.innerHTML;
+        actionButton.innerHTML = `${MESSAGE_ACTION_ICONS.check}<span>복사됨</span>`;
+        setTimeout(() => { actionButton.innerHTML = original; }, 1200);
+      }).catch(() => {
+        showToast("클립보드 접근이 차단되어 복사하지 못했어요.", "warning");
+      });
+    } else if (actionButton.dataset.messageAction === "edit") {
+      state.editingMessageIndex = messageIndex;
+      state.pendingTemplateId = message.templateId || "";
+      els.editNotice.hidden = false;
+      els.input.value = message.content || "";
+      autoResizeInput();
+      els.input.focus();
+    } else if (actionButton.dataset.messageAction === "regenerate") {
+      let userIndex = messageIndex - 1;
+      while (userIndex >= 0 && state.messages[userIndex].role !== "user") userIndex -= 1;
+      if (userIndex < 0) return;
+      const question = state.messages[userIndex].content;
+      const questionAskedAt = state.messages[userIndex].createdAt || "";
+      const templateId = state.messages[userIndex].templateId || message.templateId || "";
+      state.messages = state.messages.slice(0, messageIndex);
+      persistConversations();
+      requestAssistant(question, questionAskedAt, templateId);
+    }
+    return;
+  }
+
+  const followUp = event.target.closest(".follow-up-chip");
+  if (followUp) {
+    els.input.value = followUp.dataset.followUp || followUp.textContent || "";
+    autoResizeInput();
+    els.input.focus();
+    return;
+  }
+
+  const toggle = event.target.closest(".source-list-toggle");
+  if (toggle) {
+    const panel = document.getElementById(toggle.dataset.sourceToggle);
+    if (!panel) return;
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    panel.hidden = expanded;
+    const label = toggle.querySelector("em");
+    if (label) label.textContent = expanded ? "펼치기" : "접기";
+    return;
+  }
+
+  const inlineRef = event.target.closest(".inline-issue-ref");
+  if (inlineRef) {
+    openSourceDetail(state.sourceMap.get(inlineRef.dataset.sourceKey));
+    return;
+  }
+
+  const issueRow = event.target.closest(".issue-summary-clickable, .issue-table-clickable");
+  if (issueRow) {
+    openSourceDetail(state.sourceMap.get(issueRow.dataset.sourceKey));
+    return;
+  }
+
+  const detailAction = event.target.closest(".issue-detail-action");
+  if (detailAction) {
+    openSourceDetail(state.sourceMap.get(detailAction.dataset.sourceKey));
+    return;
+  }
+
+  const card = event.target.closest(".source-card, .related-issue-item, .notion-card");
+  if (!card) return;
+  openSourceDetail(state.sourceMap.get(card.dataset.sourceKey));
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const issueRow = event.target.closest?.(".issue-table-clickable");
+  if (!issueRow) return;
+  event.preventDefault();
+  openSourceDetail(state.sourceMap.get(issueRow.dataset.sourceKey));
+});
+
+els.chromaModalClose.addEventListener("click", closeChromaModal);
+els.chromaModal.addEventListener("click", (event) => {
+  if (event.target === els.chromaModal) closeChromaModal();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.templateModal.hidden) {
+    closeTemplateModal();
+  } else if (event.key === "Escape" && !els.feedbackModal.hidden) {
+    closeFeedbackModal();
+  } else if (event.key === "Escape" && !els.chromaModal.hidden) {
+    closeChromaModal();
+  } else if (event.key === "Escape" && !els.evaluationModal.hidden) {
+    closeEvaluationModal();
+  } else if (event.key === "Escape" && !els.workspaceModal.hidden) {
+    closeWorkspaceModal();
+  }
+});
+
+async function bootstrapApplication(authState = {}) {
+  state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
+  if (authState.enabled && state.currentUser?.role !== "admin") {
+    els.evaluationBtn.hidden = true;
+  }
+  if (els.teamDashboardBtn) els.teamDashboardBtn.hidden = state.currentUser?.role !== "admin";
+  await loadConversations();
+  if (state.currentUser?.uid) {
+    loadMyWorkspace().catch(() => {});
+  }
+  loadDataStatus().catch(() => {
+    els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
+    els.statusLine.className = "status-warning";
+  }).finally(() => {
+    loadModels().catch((error) => {
+      els.statusLine.textContent = error.message;
+      els.statusLine.className = "status-danger";
+    });
+  });
+  loadTheme();
+  setAbComparison(defaultOptions.abTest);
+  setSourceMode(defaultOptions.sourceMode);
+  renderMessages();
+}
+
+Promise.resolve(globalThis.AssistantAuthReady || { enabled: false, authenticated: false, user: null })
+  .then(bootstrapApplication);

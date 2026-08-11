@@ -21,6 +21,11 @@ class IdCollector(HTMLParser):
 
 
 class FrontendCoreTests(unittest.TestCase):
+    @staticmethod
+    def application_javascript():
+        paths = [STATIC_DIR / "app.js", *sorted((STATIC_DIR / "modules").glob("*.js"))]
+        return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
     def test_frontend_core_node_suite(self):
         node = shutil.which("node")
         if not node:
@@ -38,10 +43,16 @@ class FrontendCoreTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("Node.js가 없어 JavaScript 구문 검사를 건너뜁니다.")
-        for script in ("frontend_core.js", "auth.js", "app.js"):
+        scripts = [
+            STATIC_DIR / "frontend_core.js",
+            STATIC_DIR / "auth.js",
+            STATIC_DIR / "app.js",
+            *sorted((STATIC_DIR / "modules").glob("*.js")),
+        ]
+        for script in scripts:
             with self.subTest(script=script):
                 result = subprocess.run(
-                    [node, "--check", str(STATIC_DIR / script)],
+                    [node, "--check", str(script)],
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -79,10 +90,11 @@ class FrontendCoreTests(unittest.TestCase):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
+        self.assertIn('type="module" src="/static/app.js', html)
 
     def test_notion_controls_are_hidden_in_mantis_focused_ui(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        app_js = self.application_javascript()
 
         self.assertNotIn('id="notionToggle"', html)
         self.assertNotIn("Notion 업무", app_js)
@@ -98,7 +110,7 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('apiFetch("/api/auth/logout", { method: "POST" })', auth_js)
 
     def test_chat_rate_limit_uses_retry_after_message(self):
-        app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+        app_js = self.application_javascript()
 
         self.assertIn('response.headers.get("Retry-After")', app_js)
         self.assertIn("response.status === 429", app_js)
