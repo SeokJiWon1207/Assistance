@@ -132,6 +132,7 @@ class SnapshotRebuildTests(unittest.TestCase):
                 make_vector_db.run_full("https://mantis.example", {}, 10)
 
             make_vector_db.validate_snapshot(current, expected_documents=1)
+            self.assertTrue((current / "mantis_index.sqlite3").exists())
             freshness = (current / "freshness.json").read_text(encoding="utf-8")
             self.assertIn('\"documentCount\": 1', freshness)
             self.assertFalse((current / "existing.marker").exists())

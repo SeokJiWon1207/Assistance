@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from backend.api import chat as chat_api
 from backend.api import notion as notion_api
+from backend.api import operations as operations_api
 from backend.api import quality as quality_api
 from backend.api import search as search_api
 from backend import audit as audit_module
@@ -54,6 +55,23 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "not_ready")
         self.assertEqual(response.json()["checks"]["snapshotDb"]["reason"], "missing")
         self.assertEqual(self.client.get("/health").status_code, 200)
+
+    def test_missing_structured_index_does_not_block_legacy_readiness(self):
+        def check_database(path, _table, **_kwargs):
+            if path == operations_api.MANTIS_INDEX_DB_PATH:
+                return {"status": "error", "reason": "missing"}
+            return {"status": "ok"}
+
+        with patch.object(operations_api, "_sqlite_check", side_effect=check_database), patch.object(
+            operations_api,
+            "get_model_transport_security_status",
+            return_value={"status": "secure"},
+        ):
+            response = self.client.get("/ready")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "ready")
+        self.assertEqual(response.json()["checks"]["structuredIndexDb"]["reason"], "missing")
 
     @patch.object(search_api, "get_model_registry")
     def test_models_endpoint_exposes_only_public_fields(self, registry):
