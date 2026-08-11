@@ -101,6 +101,18 @@ class PythonArchitectureContractTests(unittest.TestCase):
                 missing = sorted(name for name in names if not hasattr(module, name))
                 self.assertEqual(missing, [])
 
+    def test_evaluation_facade_uses_functional_modules(self):
+        expected_modules = {
+            "build_accuracy_analytics": "backend.evaluation.analytics",
+            "build_evaluation_summary": "backend.evaluation.cases",
+            "build_verification_report": "backend.evaluation.verification",
+            "evaluate_ab_comparison": "backend.evaluation.comparison",
+            "finalize_chat_response": "backend.evaluation.finalization",
+        }
+        for name, expected_module in expected_modules.items():
+            with self.subTest(name=name):
+                self.assertEqual(getattr(evaluation, name).__module__, expected_module)
+
     def test_query_plan_golden_cases(self):
         for case in FIXTURE["queryPlans"]:
             question = case["question"]
