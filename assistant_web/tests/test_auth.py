@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from backend import auth as auth_module
@@ -219,6 +220,68 @@ class AuthApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"], "요청 보안 토큰이 올바르지 않습니다.")
+
+    def test_admin_can_update_existing_user_without_creating_an_invite(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "FIREBASE_AUTH_ENABLED": "true",
+                "AUTH_USERS_DB_PATH": str(Path(directory) / "users.sqlite3"),
+                "AUTH_COOKIE_SECURE": "false",
+            },
+        ):
+            auth_module.upsert_invited_user(
+                "admin-uid",
+                "admin@example.com",
+                "관리자",
+                "admin",
+                "",
+                "컨텐츠서비스",
+                "bootstrap",
+            )
+            auth_module.upsert_invited_user(
+                "member-uid",
+                "member@example.com",
+                "팀원",
+                "member",
+                "",
+                "컨텐츠서비스",
+                "admin@example.com",
+            )
+            with patch.object(
+                auth_module,
+                "verify_firebase_session",
+                return_value={"uid": "admin-uid", "email": "admin@example.com"},
+            ):
+                config = self.client.get("/api/auth/config")
+                csrf_token = config.cookies.get("ai_csrf")
+                self.client.cookies.set("ai_session", "valid-session")
+                self.client.cookies.set("ai_csrf", csrf_token)
+                users = self.client.get("/api/auth/users")
+                response = self.client.patch(
+                    "/api/auth/users/member-uid",
+                    headers={"X-CSRF-Token": csrf_token},
+                    json={"mantisUsername": "석지원"},
+                )
+
+        self.assertEqual(users.status_code, 200, users.text)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["user"]["mantisUsername"], "석지원")
+        self.assertEqual(response.json()["user"]["role"], "member")
+
+    def test_admin_cannot_downgrade_their_own_account(self):
+        admin = {"uid": "admin-uid", "role": "admin"}
+        with patch.object(auth_api, "current_request_user", return_value=admin), patch.object(
+            auth_api, "get_user_by_uid", return_value={**admin, "approved": True}
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                auth_api.patch_user(
+                    "admin-uid",
+                    auth_api.UserAccessUpdateRequest(role="member"),
+                    None,
+                )
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertIn("권한이나 승인을 변경할 수 없습니다", raised.exception.detail)
 
 
 if __name__ == "__main__":

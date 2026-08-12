@@ -1989,6 +1989,152 @@ body.theme-dark .chat-header {
   width: min(680px, 100%);
 }
 
+.user-management-modal {
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(980px, 100%);
+  max-height: min(860px, calc(100vh - 40px));
+}
+
+.user-management-body {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  padding: 20px 24px 24px;
+}
+
+.user-management-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.user-management-intro p,
+.user-management-empty {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.user-management-intro .secondary-button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  margin: 0;
+}
+
+.user-management-list {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.user-management-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+
+.user-management-card-heading,
+.user-management-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-management-card-heading {
+  justify-content: space-between;
+}
+
+.user-management-card-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.user-management-card-heading strong,
+.user-management-card-heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-management-card-heading strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.user-management-card-heading small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.user-self-badge {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.user-management-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.user-management-fields input:disabled,
+.user-management-fields select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.user-management-card-actions {
+  justify-content: flex-end;
+}
+
+.user-approved-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-approved-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--blue);
+}
+
+.user-save-status {
+  max-width: 360px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.user-save-status.is-success {
+  color: var(--chart-2);
+}
+
+.user-save-status.is-error {
+  color: var(--danger);
+}
+
+.user-management-card-actions .run-evaluation-button {
+  min-width: 86px;
+}
+
 .logout-confirm-modal {
   width: min(440px, 100%);
 }
@@ -4588,8 +4734,33 @@ textarea:focus {
   }
 
   .template-fields,
-  .feedback-reason-group {
+  .feedback-reason-group,
+  .user-management-fields {
     grid-template-columns: 1fr;
+  }
+
+  .user-management-body {
+    padding: 18px;
+  }
+
+  .user-management-intro,
+  .user-management-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .user-management-intro .secondary-button,
+  .user-management-card-actions .run-evaluation-button {
+    width: 100%;
+  }
+
+  .user-approved-toggle {
+    margin-right: 0;
+  }
+
+  .user-save-status {
+    max-width: none;
+    text-align: left;
   }
 
   .modal-form-actions {

@@ -219,8 +219,14 @@ def patch_user(uid: str, payload: UserAccessUpdateRequest, request: Request) -> 
     current = get_user_by_uid(uid)
     if not current:
         raise HTTPException(status_code=404, detail="사용자를 찾지 못했습니다.")
-    if uid == admin["uid"] and payload.approved is False:
-        raise HTTPException(status_code=400, detail="현재 로그인한 관리자 계정은 비활성화할 수 없습니다.")
+    if uid == admin["uid"] and (
+        payload.approved is False
+        or (payload.role is not None and payload.role != admin["role"])
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="현재 로그인한 관리자 계정의 권한이나 승인을 변경할 수 없습니다.",
+        )
     user = update_user_access(
         uid,
         role=payload.role,

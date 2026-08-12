@@ -75,6 +75,9 @@ class FrontendCoreTests(unittest.TestCase):
             "logoutCancelBtn",
             "inviteModal",
             "inviteForm",
+            "adminUsersBtn",
+            "userManagementModal",
+            "userManagementList",
         ):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
@@ -96,6 +99,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('logoutButton?.addEventListener("click", open)', auth_js)
         self.assertIn('confirmButton?.addEventListener("click", async () =>', auth_js)
         self.assertIn('apiFetch("/api/auth/logout", { method: "POST" })', auth_js)
+
+    def test_admin_can_manage_existing_users_without_invite(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        auth_js = (STATIC_DIR / "auth.js").read_text(encoding="utf-8")
+
+        self.assertIn("사용자 관리", html)
+        self.assertIn('apiFetch("/api/auth/users")', auth_js)
+        self.assertIn('method: "PATCH"', auth_js)
+        self.assertIn("mantisUsername: form.elements.mantisUsername.value.trim()", auth_js)
 
     def test_chat_rate_limit_uses_retry_after_message(self):
         app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
