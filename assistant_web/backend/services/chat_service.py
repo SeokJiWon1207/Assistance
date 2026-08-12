@@ -92,6 +92,27 @@ IDENTITY_QUESTIONS = {
     "지금로그인한사람누구야",
 }
 
+PERSONAL_SCOPE_GROUP_MARKERS = ("팀", "팀원", "부서", "조직", "전체", "우리")
+PERSONAL_SCOPE_PRONOUN_NAMES = {"나", "나에게", "내", "내게", "저", "저에게", "제"}
+PERSONAL_SCOPE_DIRECT_PATTERN = re.compile(
+    r"(?:^|[\s,])(?:"
+    r"내\s*(?:담당|이슈|업무)|나의\s*이슈|"
+    r"(?:내가|제가)\s*(?:맡은|담당한)|"
+    r"(?:내게|나에게|저에게)\s*할당된"
+    r")",
+    re.IGNORECASE,
+)
+PERSONAL_SCOPE_SPACED_PATTERN = re.compile(
+    r"(?:^|[\s,])(?:내|나의|제)\s+(?P<qualifiers>.{0,40}?)(?:이슈|업무)"
+    r"(?:를|을|가|은|는|도|만|의)?(?=$|[\s?!.,])",
+    re.IGNORECASE,
+)
+PERSONAL_SCOPE_COMPACT_PATTERN = re.compile(
+    r"(?:^|[\s,])(?:내|나의|제)(?:(?:최근|미종료|장기|열린|진행중|처리중|종료된|완료된))*"
+    r"(?:이슈|업무)",
+    re.IGNORECASE,
+)
+
 
 def is_identity_question(text: str) -> bool:
     normalized = re.sub(r"[\s?!.,]+", "", str(text or "")).casefold()
@@ -114,23 +135,42 @@ def format_authenticated_identity(user: Optional[Dict[str, Any]]) -> str:
     )
 
 
+def has_personal_mantis_scope_phrase(text: str) -> bool:
+    """개인 소유 표현과 이슈·업무 대상을 함께 확인한다.
+
+    ``내 최근 이슈``처럼 수식어가 사이에 들어간 표현을 허용하되,
+    ``내 팀 이슈``나 ``사내 이슈``를 로그인 사용자 개인 범위로 오인하지 않는다.
+    """
+    raw_text = str(text or "").strip()
+    if PERSONAL_SCOPE_DIRECT_PATTERN.search(raw_text):
+        return True
+    if PERSONAL_SCOPE_COMPACT_PATTERN.search(raw_text):
+        return True
+    for match in PERSONAL_SCOPE_SPACED_PATTERN.finditer(raw_text):
+        qualifiers = re.sub(r"\s+", "", match.group("qualifiers")).casefold()
+        if not any(marker in qualifiers for marker in PERSONAL_SCOPE_GROUP_MARKERS):
+            return True
+    return False
+
+
 def should_scope_to_authenticated_mantis_user(text: str) -> bool:
     """개인 업무 요청인지 판정해 로그인 사용자의 Mantis 담당 범위를 적용한다."""
     normalized = re.sub(r"\s+", "", str(text or "")).casefold()
     if any(marker in normalized for marker in ("notion", "노션", "노선")):
         return False
     constraints = extract_query_constraints(text)
-    if constraints.get("people", {}).get("names"):
+    explicit_names = {
+        str(name or "").strip().casefold()
+        for name in constraints.get("people", {}).get("names") or []
+    } - PERSONAL_SCOPE_PRONOUN_NAMES
+    if explicit_names:
         return False
     if any(
         marker in normalized
         for marker in ("업무보고서", "주간보고서", "주간업무보고", "주간업무")
     ):
         return True
-    return any(
-        marker in normalized
-        for marker in ("내담당", "내이슈", "나의이슈", "내업무", "내가맡은")
-    )
+    return has_personal_mantis_scope_phrase(text)
 
 
 def apply_authenticated_mantis_scope(

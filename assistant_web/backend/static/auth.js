@@ -74,6 +74,7 @@
     document.querySelector("#signedInUserName").textContent = label;
     document.querySelector("#signedInUserMeta").textContent = `${user.role}${user.team ? ` · ${user.team}` : ""}`;
     document.querySelector("#signedInUserAvatar").textContent = label.trim().slice(0, 1).toUpperCase();
+    document.querySelector("#adminUsersBtn").hidden = user.role !== "admin";
     document.querySelector("#adminInviteBtn").hidden = user.role !== "admin";
     panel.hidden = false;
   }
@@ -193,6 +194,142 @@
     });
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function setupUserManagementDialog() {
+    const modal = document.querySelector("#userManagementModal");
+    const list = document.querySelector("#userManagementList");
+    const error = document.querySelector("#userManagementError");
+    const refreshButton = document.querySelector("#userManagementRefreshBtn");
+
+    const close = () => {
+      modal.hidden = true;
+      document.body.classList.remove("modal-open");
+      document.querySelector("#adminUsersBtn")?.focus();
+    };
+
+    const roleOptions = (currentRole) => [
+      ["member", "팀원"],
+      ["manager", "팀장"],
+      ["admin", "관리자"],
+    ].map(([value, label]) => (
+      `<option value="${value}"${currentRole === value ? " selected" : ""}>${label}</option>`
+    )).join("");
+
+    const renderUsers = (users) => {
+      if (!users.length) {
+        list.innerHTML = '<p class="user-management-empty">등록된 사용자가 없습니다.</p>';
+        return;
+      }
+      const currentUid = String(globalScope.AssistantCurrentUser?.uid || "");
+      list.innerHTML = users.map((user) => {
+        const isCurrentUser = String(user.uid || "") === currentUid;
+        const protectedAttribute = isCurrentUser ? " disabled" : "";
+        return `
+          <form class="user-management-card" data-user-uid="${escapeHtml(user.uid)}">
+            <div class="user-management-card-heading">
+              <div>
+                <strong>${escapeHtml(user.displayName || user.email)}</strong>
+                <small>${escapeHtml(user.email)}</small>
+              </div>
+              ${isCurrentUser ? '<span class="user-self-badge">내 계정</span>' : ""}
+            </div>
+            <div class="user-management-fields">
+              <label class="template-field"><span>이름</span><input name="displayName" type="text" maxlength="100" value="${escapeHtml(user.displayName)}" /></label>
+              <label class="template-field"><span>권한</span><select name="role"${protectedAttribute}>${roleOptions(user.role)}</select></label>
+              <label class="template-field"><span>Mantis 담당자명</span><input name="mantisUsername" type="text" maxlength="100" value="${escapeHtml(user.mantisUsername)}" placeholder="예: 석지원" /></label>
+              <label class="template-field"><span>팀</span><input name="team" type="text" maxlength="100" value="${escapeHtml(user.team)}" /></label>
+            </div>
+            <div class="user-management-card-actions">
+              <label class="user-approved-toggle">
+                <input name="approved" type="checkbox"${user.approved ? " checked" : ""}${protectedAttribute} />
+                <span>로그인 승인</span>
+              </label>
+              <span class="user-save-status" role="status"></span>
+              <button class="run-evaluation-button" type="submit">저장</button>
+            </div>
+          </form>`;
+      }).join("");
+    };
+
+    const loadUsers = async () => {
+      error.hidden = true;
+      error.textContent = "";
+      refreshButton.disabled = true;
+      list.innerHTML = '<p class="user-management-empty">사용자 목록을 불러오는 중…</p>';
+      try {
+        const response = await apiFetch("/api/auth/users");
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "사용자 목록을 불러오지 못했습니다.");
+        renderUsers(Array.isArray(data.users) ? data.users : []);
+      } catch (loadError) {
+        list.innerHTML = "";
+        error.textContent = loadError.message;
+        error.hidden = false;
+      } finally {
+        refreshButton.disabled = false;
+      }
+    };
+
+    document.querySelector("#adminUsersBtn")?.addEventListener("click", () => {
+      modal.hidden = false;
+      document.body.classList.add("modal-open");
+      loadUsers();
+    });
+    document.querySelector("#userManagementModalClose")?.addEventListener("click", close);
+    refreshButton?.addEventListener("click", loadUsers);
+    modal?.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && modal && !modal.hidden) close();
+    });
+
+    list?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.target.closest(".user-management-card");
+      if (!form) return;
+      const submit = form.querySelector('button[type="submit"]');
+      const status = form.querySelector(".user-save-status");
+      const uid = form.dataset.userUid || "";
+      const payload = {
+        displayName: form.elements.displayName.value.trim(),
+        role: form.elements.role.value,
+        mantisUsername: form.elements.mantisUsername.value.trim(),
+        team: form.elements.team.value.trim(),
+        approved: form.elements.approved.checked,
+      };
+      submit.disabled = true;
+      status.textContent = "저장 중…";
+      status.className = "user-save-status";
+      try {
+        const response = await apiFetch(`/api/auth/users/${encodeURIComponent(uid)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "사용자 정보를 저장하지 못했습니다.");
+        if (uid === String(globalScope.AssistantCurrentUser?.uid || "")) {
+          globalScope.AssistantCurrentUser = data.user;
+          applySignedInUser(data.user);
+        }
+        status.textContent = "저장됨";
+        status.classList.add("is-success");
+      } catch (saveError) {
+        status.textContent = saveError.message;
+        status.classList.add("is-error");
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  }
+
   function waitForLogin() {
     showLogin();
     return new Promise((resolve) => {
@@ -246,6 +383,7 @@
   async function bootstrapAuthentication() {
     setupSessionActions();
     setupInviteDialog();
+    setupUserManagementDialog();
     try {
       const configResponse = await rawFetch("/api/auth/config", { credentials: "same-origin" });
       authConfig = await configResponse.json();

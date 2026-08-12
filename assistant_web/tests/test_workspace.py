@@ -144,6 +144,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
         self.assertEqual(result["summary"]["open"], 1)
         self.assertEqual(result["summary"]["overdue"], 1)
         self.assertEqual(result["summary"]["aging"], 1)
+        self.assertEqual([issue["id"] for issue in result["mantis"]["issues"]], [101])
         self.assertNotIn("notion", result["summary"])
         self.assertEqual(result["notion"]["status"], "hidden")
         self.assertEqual(result["summary"]["unreadNotifications"], 1)
