@@ -25,7 +25,7 @@ chmod 400 "$SSH_KEY"
 EC2_HOST="$EC2_HOST" \
 SSH_KEY="$SSH_KEY" \
 INCLUDE_ENV=1 \
-"$SCRIPT_DIR/deploy_to_ec2.sh"
+"$PROJECT_DIR/assistant_web/deploy/aws/deploy_to_ec2.sh"
 
 echo
 echo "재배포 완료"

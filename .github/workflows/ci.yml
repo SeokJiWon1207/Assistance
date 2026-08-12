@@ -46,6 +46,7 @@ jobs:
 
       - name: Validate deployment shell scripts
         run: |
+          bash -n assistant_web/scripts/commands/*.command
           bash -n assistant_web/deploy/aws/deploy_to_ec2.sh
           bash -n assistant_web/deploy/aws/setup_server.sh
           bash -n assistant_web/deploy/aws/rollback_release.sh

@@ -19,6 +19,10 @@ EC2 한 대에 FastAPI 앱을 올리고 nginx와 Let's Encrypt TLS로 공개하�
 
 Assistance 루트에서 실행합니다.
 
+macOS에서는 `assistant_web/scripts/commands/AWS_시연서버_재배포.command`를 더블클릭해
+아래 배포 명령을 실행할 수도 있습니다. 사용자가 직접 실행하는 명령 3개는
+[`scripts/commands`](../../scripts/commands/README.md)에서 함께 관리합니다.
+
 ```bash
 EC2_HOST=EC2_PUBLIC_IP \
 SSH_KEY=~/.ssh/your-key.pem \
@@ -140,7 +144,8 @@ TARGET_RELEASE=20260811T010203Z ./deploy/aws/rollback_release.sh
 
 배포나 서버 작업 중에 사용자가 오류 화면 대신 "서버 점검중입니다." 안내를 보게 합니다.
 
-`AWS_점검모드.command`를 더블클릭하면 현재 상태를 보여주고 켜기/끄기를 물어봅니다.
+`assistant_web/scripts/commands/AWS_점검모드.command`를 더블클릭하면 현재 상태를 보여주고
+켜기/끄기를 물어봅니다.
 켜고 끄는 데 재배포도, 서버 재시작도 필요하지 않습니다.
 
 터미널에서 직접 할 수도 있습니다.

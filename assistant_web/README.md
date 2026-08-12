@@ -12,8 +12,9 @@ python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 ```
 
 브라우저에서 `http://127.0.0.1:8787`로 접속합니다.
-Ollama 모델에는 API 키가 필요하지 않습니다. macOS에서는
-`scripts/local/AI비서_서버_재시작.command`를 실행해 앱 서버를 다시 시작할 수도 있습니다.
+Ollama 모델에는 API 키가 필요하지 않습니다. macOS에서 직접 실행하는 로컬 재시작·AWS
+재배포·점검 명령은 [`scripts/commands`](./scripts/commands/README.md)에 모여 있습니다.
+로컬 앱 서버는 `scripts/commands/AI비서_서버_재시작.command`로 다시 시작할 수 있습니다.
 
 ## Firebase 로그인
 
