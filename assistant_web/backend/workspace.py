@@ -495,7 +495,10 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
         "mantis": {
             "status": mantis_meta.get("status", "unknown"),
             "reason": mantis_meta.get("reason", ""),
-            "issues": issues[:30],
+            # 개인 워크스페이스의 기본 목록은 현재 할 일이다. 담당 이력 전체를
+            # 내려보내면 상단의 '미종료' 수와 목록 건수가 어긋나고 종료된 이슈가
+            # 할 일처럼 보이므로 미종료 이슈만 표시한다.
+            "issues": open_issues[:30],
         },
         "notion": {
             "status": "hidden",
