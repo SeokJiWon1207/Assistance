@@ -2650,6 +2650,7 @@ function displayIssueStatus(status) {
     closed: "종료된 이슈",
     confirmed: "확인된 이슈",
     assigned: "할당된 이슈",
+    acknowledged: "이슈 검토",
     resolved: "해결된 이슈",
     feedback: "정보 부족",
     developed: "개발완료",

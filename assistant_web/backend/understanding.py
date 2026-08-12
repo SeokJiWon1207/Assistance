@@ -1533,6 +1533,16 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
+    personal_scope_text = bool(
+        re.search(
+            r"(?:^|[\s,])(?:내|나의|제|내가|제가|내게|나에게|저에게)(?:\s|[가-힣])",
+            str(text or ""),
+        )
+    )
+    compact_personal_term = re.compile(
+        r"(?:내|나의|제)(?:(?:최근|미종료|장기|열린|진행중|처리중|종료된|완료된))*"
+        r"(?:이슈|업무)(?:를|을|가|은|는|도|만|의)?"
+    )
     filter_control_terms = {
         "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
@@ -1547,7 +1557,13 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
         "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
         "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
+        # 로그인 사용자 범위는 chat_service가 Mantis 담당자 조건으로 바꾼다.
+        # 개인 대명사를 본문 키워드로도 남기면 제목·내용에 '내'가 없는 실제 담당
+        # 이슈가 모두 제외되므로 검색어에서는 제거한다.
+        "내", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
+        "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",
     }
+    personal_control_terms = {"장기"} if personal_scope_text else set()
     terms = [
         term
         for term in terms
@@ -1555,6 +1571,8 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         and term.lower() not in STOPWORDS
         and term not in STOPWORDS
         and term not in filter_control_terms
+        and term not in personal_control_terms
+        and not compact_personal_term.fullmatch(term)
         and not is_control_search_term(term)
     ]
     if constraints:
