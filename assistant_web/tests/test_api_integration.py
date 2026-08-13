@@ -98,6 +98,15 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertNotIn("endpoint", model)
         self.assertNotIn("apiKeyEnv", model)
 
+    def test_team_templates_endpoint_returns_validated_config(self):
+        response = self.client.get("/api/templates")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["version"], 1)
+        self.assertEqual(len(payload["templates"]), 7)
+        self.assertIn("customer-profile", {item["id"] for item in payload["templates"]})
+
     @patch.object(notion_api, "notion_is_configured", return_value=True)
     @patch.object(notion_api, "get_notion_settings")
     def test_notion_status_masks_token_and_database_ids(self, settings, _configured):

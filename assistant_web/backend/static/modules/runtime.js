@@ -38,6 +38,7 @@ export const state = {
   chatAbortController: null,
   activeTemplateId: null,
   pendingTemplateId: null,
+  teamTemplatesError: "",
   feedbackMessageIndex: null,
   currentUser: initialCurrentUser(),
   myWorkspace: null,

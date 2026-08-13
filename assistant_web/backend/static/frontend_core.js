@@ -58,35 +58,32 @@
     return { events, rest };
   }
 
-  function buildTeamTemplateQuestion(templateId, values = {}) {
-    const text = (value) => String(value || "").trim();
-    const join = (...parts) => parts.map(text).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-    const period = text(values.period) || "오늘";
-    const customer = text(values.customer);
-    const platform = text(values.platform);
-    const status = text(values.status);
+  function buildTeamTemplateQuestion(template, values = {}) {
+    if (!template || typeof template.questionTemplate !== "string") return "";
+    const fields = new Map((template.fields || []).map((field) => [field.name, field]));
+    const normalizedValues = Object.fromEntries(Object.entries(values).map(([key, value]) => [
+      key,
+      String(value ?? "").trim(),
+    ]));
+    fields.forEach((field, name) => {
+      if (field.normalize === "issue-id") {
+        normalizedValues[name] = String(normalizedValues[name] || "").replace(/^#/, "");
+      }
+    });
+    const missingRequired = (template.fields || []).find(
+      (field) => field.required && !normalizedValues[field.name],
+    );
+    if (missingRequired) return `${missingRequired.label} 항목을 입력해 주세요.`;
 
-    if (templateId === "daily-operations") {
-      return `${join(period, "등록된", status === "전체" ? "" : status, "이슈를 고객사별로")} 요약해줘`;
-    }
-    if (templateId === "customer-analysis") {
-      return `${join(period, customer || "전체 고객사", platform === "전체" ? "" : platform, status === "전체" ? "" : status, "이슈를", text(values.format) || "표")}로 보여줘`;
-    }
-    if (templateId === "aging-issues") {
-      return `${join(customer, platform === "전체" ? "" : platform, `${text(values.days) || "30"}일 넘게 미종료된 이슈를 오래된 순으로`)} 보여줘`;
-    }
-    if (templateId === "similar-issues") {
-      const issueId = text(values.issueId).replace(/^#/, "");
-      if (!issueId) return "기준 이슈 ID를 입력해 주세요.";
-      return `#${issueId}와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘`;
-    }
-    if (templateId === "effort-sla") {
-      return `${join(period, customer || "고객사별", platform === "전체" ? "" : platform, "공수와 평균 처리시간을 표로")} 보여줘`;
-    }
-    if (templateId === "weekly-report") {
-      return `${join(period, customer, "신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로")} 작성해줘`;
-    }
-    return "";
+    return template.questionTemplate.replace(
+      /\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}/g,
+      (_token, name, operator, operand = "") => {
+        const value = normalizedValues[name] || "";
+        if (operator === "|") return value || operand;
+        if (operator === "?") return value === operand ? "" : value;
+        return value;
+      },
+    ).replace(/\s+/g, " ").trim();
   }
 
   const api = Object.freeze({

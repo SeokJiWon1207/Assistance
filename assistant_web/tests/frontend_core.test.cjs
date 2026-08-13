@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const {
   storageSafeMessages,
@@ -8,6 +10,11 @@ const {
   buildTeamTemplateQuestion,
   parseSseBuffer,
 } = require("../backend/static/frontend_core.js");
+
+const configuredTemplates = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "../config/team_templates.json"), "utf8"),
+).templates;
+const template = (id) => configuredTemplates.find((item) => item.id === id);
 
 test("storageSafeMessages removes transient rows and bounds stored source text", () => {
   const messages = [
@@ -94,13 +101,13 @@ test("parseSseBuffer flushes a final frame without a blank terminator", () => {
   assert.equal(parsed.rest, "");
 });
 
-test("buildTeamTemplateQuestion creates all six shared template questions", () => {
+test("buildTeamTemplateQuestion creates every configured shared template question", () => {
   assert.equal(
-    buildTeamTemplateQuestion("daily-operations", { period: "오늘", status: "미종료" }),
+    buildTeamTemplateQuestion(template("daily-operations"), { period: "오늘", status: "미종료" }),
     "오늘 등록된 미종료 이슈를 고객사별로 요약해줘",
   );
   assert.equal(
-    buildTeamTemplateQuestion("customer-analysis", {
+    buildTeamTemplateQuestion(template("customer-analysis"), {
       period: "이번 달",
       customer: "유진증권",
       platform: "MTS",
@@ -110,19 +117,44 @@ test("buildTeamTemplateQuestion creates all six shared template questions", () =
     "이번 달 유진증권 MTS 미종료 이슈를 표로 보여줘",
   );
   assert.equal(
-    buildTeamTemplateQuestion("aging-issues", { days: "30", platform: "전체" }),
+    buildTeamTemplateQuestion(template("aging-issues"), { days: "30", platform: "전체" }),
     "30일 넘게 미종료된 이슈를 오래된 순으로 보여줘",
   );
   assert.equal(
-    buildTeamTemplateQuestion("similar-issues", { issueId: "#30225" }),
+    buildTeamTemplateQuestion(template("similar-issues"), { issueId: "#30225" }),
     "#30225와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
   );
   assert.equal(
-    buildTeamTemplateQuestion("effort-sla", { period: "지난달", platform: "HTS" }),
+    buildTeamTemplateQuestion(template("effort-sla"), { period: "지난달", platform: "HTS" }),
     "지난달 고객사별 HTS 공수와 평균 처리시간을 표로 보여줘",
   );
   assert.equal(
-    buildTeamTemplateQuestion("weekly-report", { period: "지난주", customer: "NH증권" }),
+    buildTeamTemplateQuestion(template("weekly-report"), { period: "지난주", customer: "NH증권" }),
     "지난주 NH증권 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘",
   );
+  assert.equal(
+    buildTeamTemplateQuestion(template("customer-profile"), {
+      period: "최근 3개월",
+      customer: "신한투자증권",
+      platform: "전체",
+      status: "전체",
+    }),
+    "최근 3개월 신한투자증권 고객사 프로필을 만들어줘",
+  );
+});
+
+test("buildTeamTemplateQuestion applies defaults, omissions, and field normalizers", () => {
+  assert.equal(
+    buildTeamTemplateQuestion(template("daily-operations"), { status: "전체" }),
+    "오늘 등록된 이슈를 고객사별로 요약해줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion(template("similar-issues"), { issueId: "#30225" }),
+    "#30225와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion(template("customer-profile"), { period: "최근 3개월" }),
+    "고객사 항목을 입력해 주세요.",
+  );
+  assert.equal(buildTeamTemplateQuestion(null, {}), "");
 });

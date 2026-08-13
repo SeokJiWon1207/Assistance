@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "daily-operations",
+      "category": "운영 현황",
+      "title": "오늘의 운영 현황",
+      "description": "기간과 상태를 골라 고객사별 주요 이슈를 확인합니다.",
+      "icon": "today",
+      "questionTemplate": "{period|오늘} 등록된 {status?전체} 이슈를 고객사별로 요약해줘",
+      "fields": [
+        { "name": "period", "label": "기간", "type": "select", "value": "오늘", "options": ["오늘", "이번 주", "이번 달"] },
+        { "name": "status", "label": "상태", "type": "select", "value": "미종료", "options": ["미종료", "종료", "전체"] }
+      ]
+    },
+    {
+      "id": "customer-analysis",
+      "category": "고객사 분석",
+      "title": "고객사별 이슈 분석",
+      "description": "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
+      "icon": "customer",
+      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}로 보여줘",
+      "fields": [
+        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 유진증권" },
+        { "name": "period", "label": "기간", "type": "select", "value": "이번 달", "options": ["이번 주", "이번 달", "지난달", "올해"] },
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
+        { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] },
+        { "name": "format", "label": "결과 형태", "type": "select", "value": "표", "options": ["표", "목록", "요약"] }
+      ]
+    },
+    {
+      "id": "customer-profile",
+      "category": "고객사 분석",
+      "title": "고객사 프로필",
+      "description": "이슈 추이, 미종료·장기 이슈, 담당자와 처리시간을 한 번에 확인합니다.",
+      "icon": "profile",
+      "questionTemplate": "{period|최근 3개월} {customer} {platform?전체} {status?전체} 고객사 프로필을 만들어줘",
+      "fields": [
+        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 신한투자증권" },
+        { "name": "period", "label": "조회 기간", "type": "select", "value": "최근 3개월", "options": ["최근 3개월", "최근 6개월", "올해"] },
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
+        { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] }
+      ]
+    },
+    {
+      "id": "aging-issues",
+      "category": "장기 적체",
+      "title": "장기 미종료 이슈",
+      "description": "기준 일수를 넘긴 미종료 이슈를 오래된 순으로 찾습니다.",
+      "icon": "aging",
+      "questionTemplate": "{customer} {platform?전체} {days|30}일 넘게 미종료된 이슈를 오래된 순으로 보여줘",
+      "fields": [
+        { "name": "days", "label": "기준 일수", "type": "number", "value": "30", "required": true, "min": 1, "max": 365 },
+        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "선택 입력" },
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
+      ]
+    },
+    {
+      "id": "similar-issues",
+      "category": "유사 사례",
+      "title": "유사 사례 조사",
+      "description": "기준 이슈와 유사한 과거 원인과 해결 내용을 비교합니다.",
+      "icon": "similar",
+      "questionTemplate": "#{issueId}와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+      "fields": [
+        { "name": "issueId", "label": "기준 이슈 ID", "type": "text", "required": true, "placeholder": "예: #30225", "normalize": "issue-id" }
+      ]
+    },
+    {
+      "id": "effort-sla",
+      "category": "공수·SLA",
+      "title": "공수 및 처리시간",
+      "description": "기간별 공수와 평균 처리시간을 표로 비교합니다.",
+      "icon": "effort",
+      "questionTemplate": "{period|지난달} {customer|고객사별} {platform?전체} 공수와 평균 처리시간을 표로 보여줘",
+      "fields": [
+        { "name": "period", "label": "기간", "type": "select", "value": "지난달", "options": ["이번 달", "지난달", "올해"] },
+        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "선택 입력" },
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
+      ]
+    },
+    {
+      "id": "weekly-report",
+      "category": "보고서",
+      "title": "주간 보고서 작성",
+      "description": "신규·미종료·장기 적체·공수 현황을 보고서로 정리합니다.",
+      "icon": "report",
+      "questionTemplate": "{period|지난주} {customer} 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘",
+      "fields": [
+        { "name": "period", "label": "보고 기간", "type": "select", "value": "지난주", "options": ["지난주", "이번 주"] },
+        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "전체 고객사" }
+      ]
+    }
+  ]
+}

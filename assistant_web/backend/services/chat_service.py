@@ -45,6 +45,7 @@ from backend.reports.effort import (
     build_effort_report_from_plan,
 )
 from backend.reports.evaluation import finalize_chat_response as persist_chat_response
+from backend.reports.customer import build_customer_profile_report
 from backend.reports.similar import build_similar_resolution_report
 from backend.reports.sla import build_sla_report
 from backend.retrieval import (
@@ -330,6 +331,17 @@ class ChatService:
                     request,
                     latest_user_text,
                     {"modelId": request.modelId, **similar_resolution_report},
+                )
+
+        # 고객사 프로필은 처리시간도 포함하지만 여러 지표를 묶은 더 구체적인 요청이다.
+        # SLA 단일 리포트보다 먼저 처리해 프로필 전체가 축약되지 않게 한다.
+        if latest_user_text and enabled_tools.get("mantis"):
+            customer_profile_report = build_customer_profile_report(latest_user_text)
+            if customer_profile_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **customer_profile_report},
                 )
 
         # "처리시간 얼마나 걸려", "오래 방치된 이슈"처럼 시간 성과를 묻는 질문은

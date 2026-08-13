@@ -21,6 +21,7 @@ from backend.api.notion import router as notion_router  # noqa: E402
 from backend.api.operations import router as operations_router  # noqa: E402
 from backend.api.quality import router as quality_router  # noqa: E402
 from backend.api.search import router as search_router  # noqa: E402
+from backend.api.templates import router as templates_router  # noqa: E402
 from backend.api.workspace import router as workspace_router  # noqa: E402
 from backend.config import STATIC_DIR  # noqa: E402
 from backend.startup_validation import validate_runtime_security  # noqa: E402
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(workspace_router)
     application.include_router(search_router)
+    application.include_router(templates_router)
     application.include_router(notion_router)
     application.include_router(quality_router)
     application.include_router(chat_router)

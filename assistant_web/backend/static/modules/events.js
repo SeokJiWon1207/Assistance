@@ -52,7 +52,7 @@ els.templateForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   const template = selectedTeamTemplate();
   if (!template) return;
-  const question = buildTeamTemplateQuestion(template.id, templateFormValues());
+  const question = buildTeamTemplateQuestion(template, templateFormValues());
   if (!question) return;
   state.pendingTemplateId = template.id;
   els.input.value = question;

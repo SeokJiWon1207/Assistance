@@ -1,7 +1,7 @@
 import "./events.js";
 import { state, els, defaultOptions } from "./runtime.js";
 import { loadConversations, loadMyWorkspace } from "./workspace.js";
-import { loadTheme, setAbComparison, setSourceMode, renderMessages, loadModels, loadDataStatus } from "./chat.js";
+import { loadTheme, setAbComparison, setSourceMode, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
@@ -9,7 +9,10 @@ async function bootstrapApplication(authState = {}) {
     els.evaluationBtn.hidden = true;
   }
   if (els.teamDashboardBtn) els.teamDashboardBtn.hidden = state.currentUser?.role !== "admin";
-  await loadConversations();
+  await Promise.all([
+    loadConversations(),
+    loadTeamTemplates().catch(() => {}),
+  ]);
   if (state.currentUser?.uid) {
     loadMyWorkspace().catch(() => {});
   }

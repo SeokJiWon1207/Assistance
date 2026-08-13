@@ -130,82 +130,12 @@ function sourceToolsPayload() {
   };
 }
 
-const TEAM_TEMPLATES = [
-  {
-    id: "daily-operations",
-    category: "운영 현황",
-    title: "오늘의 운영 현황",
-    description: "기간과 상태를 골라 고객사별 주요 이슈를 확인합니다.",
-    icon: "today",
-    fields: [
-      { name: "period", label: "기간", type: "select", value: "오늘", options: ["오늘", "이번 주", "이번 달"] },
-      { name: "status", label: "상태", type: "select", value: "미종료", options: ["미종료", "종료", "전체"] },
-    ],
-  },
-  {
-    id: "customer-analysis",
-    category: "고객사 분석",
-    title: "고객사별 이슈 분석",
-    description: "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
-    icon: "customer",
-    fields: [
-      { name: "customer", label: "고객사", type: "text", required: true, placeholder: "예: 유진증권" },
-      { name: "period", label: "기간", type: "select", value: "이번 달", options: ["이번 주", "이번 달", "지난달", "올해"] },
-      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
-      { name: "status", label: "상태", type: "select", value: "전체", options: ["전체", "미종료", "종료"] },
-      { name: "format", label: "결과 형태", type: "select", value: "표", options: ["표", "목록", "요약"] },
-    ],
-  },
-  {
-    id: "aging-issues",
-    category: "장기 적체",
-    title: "장기 미종료 이슈",
-    description: "기준 일수를 넘긴 미종료 이슈를 오래된 순으로 찾습니다.",
-    icon: "aging",
-    fields: [
-      { name: "days", label: "기준 일수", type: "number", value: "30", required: true, min: 1, max: 365 },
-      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
-      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
-    ],
-  },
-  {
-    id: "similar-issues",
-    category: "유사 사례",
-    title: "유사 사례 조사",
-    description: "기준 이슈와 유사한 과거 원인과 해결 내용을 비교합니다.",
-    icon: "similar",
-    fields: [
-      { name: "issueId", label: "기준 이슈 ID", type: "text", required: true, placeholder: "예: #30225" },
-    ],
-  },
-  {
-    id: "effort-sla",
-    category: "공수·SLA",
-    title: "공수 및 처리시간",
-    description: "기간별 공수와 평균 처리시간을 표로 비교합니다.",
-    icon: "effort",
-    fields: [
-      { name: "period", label: "기간", type: "select", value: "지난달", options: ["이번 달", "지난달", "올해"] },
-      { name: "customer", label: "고객사", type: "text", placeholder: "선택 입력" },
-      { name: "platform", label: "플랫폼", type: "select", value: "전체", options: ["전체", "HTS", "MTS"] },
-    ],
-  },
-  {
-    id: "weekly-report",
-    category: "보고서",
-    title: "주간 보고서 작성",
-    description: "신규·미종료·장기 적체·공수 현황을 보고서로 정리합니다.",
-    icon: "report",
-    fields: [
-      { name: "period", label: "보고 기간", type: "select", value: "지난주", options: ["지난주", "이번 주"] },
-      { name: "customer", label: "고객사", type: "text", placeholder: "전체 고객사" },
-    ],
-  },
-];
+const TEAM_TEMPLATES = [];
 
 const STARTER_ICONS = {
   today: '<path d="M5 8h14M8 3v4M16 3v4M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z"/><path d="m8 14 2.2 2.2L16 10.5"/>',
   customer: '<path d="M4 20v-2.2c0-2.1 1.8-3.8 4-3.8s4 1.7 4 3.8V20M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15 5h5M15 9h5M15 13h4"/>',
+  profile: '<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="9" cy="10" r="2.5"/><path d="M6.5 17c.4-2 1.4-3 2.5-3s2.1 1 2.5 3M14 8h3M14 12h3M14 16h3"/>',
   spike: '<path d="M4 18 9 12l3 3 7-9"/><path d="M14 6h5v5"/>',
   aging: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>',
   similar: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6M10 7v6"/>',
@@ -217,7 +147,7 @@ function renderTeamTemplates() {
   return TEAM_TEMPLATES.map((item) => `
     <button type="button" class="starter-card" data-template-id="${escapeHtml(item.id)}">
       <span class="starter-card-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon]}</svg>
+        <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon] || STARTER_ICONS.report}</svg>
       </span>
       <span class="starter-card-copy">
         <small>${escapeHtml(item.category)}</small>
@@ -227,6 +157,19 @@ function renderTeamTemplates() {
       <span class="starter-card-arrow" aria-hidden="true">→</span>
     </button>
   `).join("");
+}
+
+async function loadTeamTemplates() {
+  try {
+    const payload = await apiFetch("/api/templates");
+    if (!Array.isArray(payload.templates)) throw new Error("팀 템플릿 응답 형식이 올바르지 않습니다.");
+    TEAM_TEMPLATES.splice(0, TEAM_TEMPLATES.length, ...payload.templates);
+    state.teamTemplatesError = "";
+  } catch (error) {
+    TEAM_TEMPLATES.splice(0, TEAM_TEMPLATES.length);
+    state.teamTemplatesError = error.message || "팀 템플릿을 불러오지 못했습니다.";
+    throw error;
+  }
 }
 
 function selectedTeamTemplate() {
@@ -241,7 +184,7 @@ function templateFormValues() {
 function updateTemplatePreview() {
   const template = selectedTeamTemplate();
   if (!template || !els.templateQuestionPreview) return;
-  els.templateQuestionPreview.textContent = buildTeamTemplateQuestion(template.id, templateFormValues());
+  els.templateQuestionPreview.textContent = buildTeamTemplateQuestion(template, templateFormValues());
 }
 
 function renderTemplateFields(template) {
@@ -328,11 +271,13 @@ function renderMessages() {
           <path d="M58 58 L78 78" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
           <path d="M30 40h20M30 48h14" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
         </svg>
-        <p class="empty-state-eyebrow">팀 공용 템플릿 6개</p>
+        <p class="empty-state-eyebrow">팀 공용 템플릿 ${TEAM_TEMPLATES.length}개</p>
         <h3>조건만 고르면 업무 질문이 완성됩니다</h3>
         <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요.</p>
         <div class="starter-grid" aria-label="팀 공용 템플릿">
-          ${renderTeamTemplates()}
+          ${state.teamTemplatesError
+            ? `<p class="status-warning">${escapeHtml(state.teamTemplatesError)} 직접 질문은 계속 사용할 수 있습니다.</p>`
+            : renderTeamTemplates()}
         </div>
       </div>
     `;
@@ -2248,6 +2193,7 @@ export {
   setSourceMode,
   sourceToolsPayload,
   TEAM_TEMPLATES,
+  loadTeamTemplates,
   STARTER_ICONS,
   renderTeamTemplates,
   selectedTeamTemplate,
