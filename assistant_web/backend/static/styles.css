@@ -5119,6 +5119,30 @@ textarea:focus {
   background: var(--blue-pressed);
 }
 
+.workspace-brief-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 16px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
+  border-radius: 14px;
+  background: var(--blue-soft);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-brief-banner span { color: var(--blue); font-size: 10px; font-weight: 900; }
+.workspace-brief-banner strong { font-size: 14px; }
+.workspace-brief-banner em { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--blue); font-style: normal; font-weight: 900; }
+
+.workspace-insight-list { display: grid; }
+.workspace-insight-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.workspace-insight-row:last-child { border-bottom: 0; }
+.workspace-insight-row strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-insight-row span { color: var(--blue); font-size: 12px; font-weight: 900; }
+.workspace-insight-row small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
+
 .workspace-notification {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr) auto;

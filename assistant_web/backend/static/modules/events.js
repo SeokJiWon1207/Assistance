@@ -1,5 +1,5 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
-import { createConversation, showToast, persistConversations, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
+import { createConversation, showToast, persistConversations, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, setToolToggle, toolToggleEnabled, setSourceMode, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 
@@ -234,6 +234,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
   els.workspaceRefreshBtn.disabled = true;
   try {
     if (state.workspaceMode === "team") await loadTeamDashboard(true);
+    else if (state.workspaceTab === "team-brief") await loadTeamWeeklyBrief(false);
     else await loadMyWorkspace(true);
   } catch (error) {
     showToast(error.message, "warning");
@@ -246,8 +247,24 @@ els.workspaceTabs?.addEventListener("click", (event) => {
   if (!button) return;
   state.workspaceTab = button.dataset.workspaceTab;
   renderWorkspace();
+  if (state.workspaceTab === "team-brief") {
+    loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
+  }
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
+  const teamBriefButton = event.target.closest("[data-open-team-brief]");
+  if (teamBriefButton) {
+    state.workspaceTab = "team-brief";
+    renderWorkspace();
+    loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
+    return;
+  }
+  const refreshTeamBriefButton = event.target.closest("[data-refresh-team-brief]");
+  if (refreshTeamBriefButton) {
+    refreshTeamBriefButton.disabled = true;
+    loadTeamWeeklyBrief(true).catch((error) => showToast(error.message, "warning"));
+    return;
+  }
   const questionButton = event.target.closest("[data-workspace-question]");
   if (questionButton) {
     els.input.value = decodeURIComponent(questionButton.dataset.workspaceQuestion || "");

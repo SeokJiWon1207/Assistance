@@ -161,7 +161,9 @@ function renderTeamTemplates() {
 
 async function loadTeamTemplates() {
   try {
-    const payload = await apiFetch("/api/templates");
+    const response = await apiFetch("/api/templates");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || "팀 템플릿을 불러오지 못했습니다.");
     if (!Array.isArray(payload.templates)) throw new Error("팀 템플릿 응답 형식이 올바르지 않습니다.");
     TEAM_TEMPLATES.splice(0, TEAM_TEMPLATES.length, ...payload.templates);
     state.teamTemplatesError = "";
@@ -192,11 +194,15 @@ function renderTemplateFields(template) {
     const inputId = `templateField-${field.name}`;
     const required = field.required ? "required" : "";
     const requiredLabel = field.required ? '<small class="required-mark">필수</small>' : '<small>선택</small>';
+    const today = new Date();
+    const dynamicValue = field.dynamicValue === "current-month"
+      ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
+      : "";
     const control = field.type === "select"
       ? `<select id="${inputId}" name="${escapeHtml(field.name)}" ${required}>
           ${field.options.map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
         </select>`
-      : `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || "")}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
+      : `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || dynamicValue)}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
     return `
       <label class="template-field" for="${inputId}">
         <span>${escapeHtml(field.label)} ${requiredLabel}</span>

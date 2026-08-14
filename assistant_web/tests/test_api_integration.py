@@ -13,6 +13,7 @@ from backend.api import notion as notion_api
 from backend.api import operations as operations_api
 from backend.api import quality as quality_api
 from backend.api import search as search_api
+from backend.api import workspace as workspace_api
 from backend import audit as audit_module
 from backend.main import app
 
@@ -104,8 +105,29 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(len(payload["templates"]), 7)
+        self.assertEqual(len(payload["templates"]), 8)
         self.assertIn("customer-profile", {item["id"] for item in payload["templates"]})
+        self.assertIn("monthly-customer-report", {item["id"] for item in payload["templates"]})
+
+    @patch.object(workspace_api, "get_weekly_team_brief")
+    @patch.object(workspace_api, "current_request_user")
+    def test_team_brief_endpoint_uses_authenticated_user(self, current_user, get_brief):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        get_brief.return_value = {"weekStart": "2026-08-10", "viewed": False}
+
+        response = self.client.get("/api/workspace/team-brief")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["weekStart"], "2026-08-10")
+        get_brief.assert_called_once_with("uid-1")
+
+    @patch.object(workspace_api, "current_request_user")
+    def test_member_cannot_refresh_team_brief(self, current_user):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+
+        response = self.client.post("/api/workspace/team-brief/refresh")
+
+        self.assertEqual(response.status_code, 403)
 
     @patch.object(notion_api, "notion_is_configured", return_value=True)
     @patch.object(notion_api, "get_notion_settings")

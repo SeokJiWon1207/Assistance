@@ -53,25 +53,47 @@ def _create_workspace_schema(connection: sqlite3.Connection) -> None:
             """
         )
     connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_conversations_user_updated "
-            "ON conversations(user_uid, favorite DESC, updated_at DESC)"
-        )
+        "CREATE INDEX IF NOT EXISTS idx_conversations_user_updated "
+        "ON conversations(user_uid, favorite DESC, updated_at DESC)"
+    )
     connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS notification_reads (
-                user_uid TEXT NOT NULL,
-                notification_id TEXT NOT NULL,
-                read_at TEXT NOT NULL,
-                PRIMARY KEY (user_uid, notification_id)
-            )
-            """
+        """
+        CREATE TABLE IF NOT EXISTS notification_reads (
+            user_uid TEXT NOT NULL,
+            notification_id TEXT NOT NULL,
+            read_at TEXT NOT NULL,
+            PRIMARY KEY (user_uid, notification_id)
         )
+        """
+    )
+
+
+def _create_team_brief_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weekly_team_briefs (
+            week_start TEXT PRIMARY KEY,
+            payload_json TEXT NOT NULL,
+            generated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weekly_team_brief_reads (
+            user_uid TEXT NOT NULL,
+            week_start TEXT NOT NULL,
+            read_at TEXT NOT NULL,
+            PRIMARY KEY (user_uid, week_start)
+        )
+        """
+    )
 
 
 def init_workspace_db() -> None:
     run_sqlite_migrations(
         workspace_db_path(),
-        [_create_workspace_schema],
+        [_create_workspace_schema, _create_team_brief_schema],
         database_name="workspace",
     )
 

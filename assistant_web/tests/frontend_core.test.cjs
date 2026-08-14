@@ -141,6 +141,14 @@ test("buildTeamTemplateQuestion creates every configured shared template questio
     }),
     "최근 3개월 신한투자증권 고객사 프로필을 만들어줘",
   );
+  assert.equal(
+    buildTeamTemplateQuestion(template("monthly-customer-report"), {
+      month: "2026-08",
+      customer: "신한투자증권",
+      platform: "전체",
+    }),
+    "2026년 8월 신한투자증권 월간 고객사 리포트를 만들어줘",
+  );
 });
 
 test("buildTeamTemplateQuestion applies defaults, omissions, and field normalizers", () => {

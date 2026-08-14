@@ -13,8 +13,9 @@ TEAM_TEMPLATES_PATH = CONFIG_DIR / "team_templates.json"
 TEMPLATE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 PLACEHOLDER_PATTERN = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}")
-ALLOWED_FIELD_TYPES = {"text", "select", "number"}
-ALLOWED_NORMALIZERS = {"issue-id"}
+ALLOWED_FIELD_TYPES = {"text", "select", "number", "month"}
+ALLOWED_NORMALIZERS = {"issue-id", "month-korean"}
+ALLOWED_DYNAMIC_VALUES = {"current-month"}
 ALLOWED_ICONS = {"today", "customer", "profile", "spike", "aging", "similar", "effort", "report"}
 
 
@@ -64,6 +65,12 @@ def _validate_field(raw: Any, template_id: str) -> Dict[str, Any]:
         value = _optional_text(raw.get(key), f"{template_id}.{name}.{key}", 200)
         if value:
             field[key] = value
+
+    dynamic_value = raw.get("dynamicValue")
+    if dynamic_value is not None:
+        if field_type != "month" or dynamic_value not in ALLOWED_DYNAMIC_VALUES:
+            raise TeamTemplateConfigError(f"{template_id}.{name}.dynamicValue를 지원하지 않습니다.")
+        field["dynamicValue"] = dynamic_value
 
     if field_type == "select":
         options = raw.get("options")

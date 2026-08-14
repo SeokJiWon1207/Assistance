@@ -56,6 +56,19 @@
       ]
     },
     {
+      "id": "monthly-customer-report",
+      "category": "고객사 보고서",
+      "title": "월간 고객사 리포트",
+      "description": "전월 비교, 공수, 처리시간, 장기 이슈와 빈발 화면을 월 단위로 정리합니다.",
+      "icon": "report",
+      "questionTemplate": "{month} {customer} {platform?전체} 월간 고객사 리포트를 만들어줘",
+      "fields": [
+        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 신한투자증권" },
+        { "name": "month", "label": "보고 월", "type": "month", "required": true, "dynamicValue": "current-month", "normalize": "month-korean" },
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
+      ]
+    },
+    {
       "id": "similar-issues",
       "category": "유사 사례",
       "title": "유사 사례 조사",

@@ -43,6 +43,7 @@ export const state = {
   currentUser: initialCurrentUser(),
   myWorkspace: null,
   teamDashboard: null,
+  teamWeeklyBrief: null,
   workspaceMode: "personal",
   workspaceTab: "overview",
 };
@@ -178,6 +179,9 @@ export function automaticSourceTools() {
 export const WORKSPACE_ENDPOINTS = Object.freeze({
   personal: "/api/workspace/me",
   team: "/api/workspace/team",
+  teamBrief: "/api/workspace/team-brief",
+  teamBriefRead: "/api/workspace/team-brief/read",
+  teamBriefRefresh: "/api/workspace/team-brief/refresh",
 });
 
 export const ADMIN_ENDPOINTS = Object.freeze({

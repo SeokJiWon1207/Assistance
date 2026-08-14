@@ -68,6 +68,11 @@
     fields.forEach((field, name) => {
       if (field.normalize === "issue-id") {
         normalizedValues[name] = String(normalizedValues[name] || "").replace(/^#/, "");
+      } else if (field.normalize === "month-korean") {
+        normalizedValues[name] = String(normalizedValues[name] || "").replace(
+          /^(20\d{2})-(0?[1-9]|1[0-2])$/,
+          (_value, year, month) => `${year}년 ${Number(month)}월`,
+        );
       }
     });
     const missingRequired = (template.fields || []).find(

@@ -128,6 +128,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("response.status === 429", app_js)
         self.assertIn("초 후 다시 시도", app_js)
 
+    def test_team_brief_tab_and_snapshot_actions_are_connected(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = self.application_javascript()
+
+        self.assertIn('data-workspace-tab="team-brief"', html)
+        self.assertIn('teamBrief: "/api/workspace/team-brief"', app_js)
+        self.assertIn("data-refresh-team-brief", app_js)
+        self.assertIn("markTeamWeeklyBriefRead", app_js)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ from backend.workspace import (
     mark_notification_read,
     save_conversation,
 )
+from backend.reports.team_brief import get_weekly_team_brief, mark_weekly_team_brief_read
 
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
@@ -107,3 +108,24 @@ def team_dashboard(request: Request) -> Dict[str, Any]:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return build_team_dashboard(list_users())
+
+
+@router.get("/team-brief")
+def team_brief(request: Request) -> Dict[str, Any]:
+    return get_weekly_team_brief(_user(request)["uid"])
+
+
+@router.post("/team-brief/read")
+def read_team_brief(request: Request) -> Dict[str, bool]:
+    user = _user(request)
+    brief = get_weekly_team_brief(user["uid"])
+    mark_weekly_team_brief_read(user["uid"], brief["weekStart"])
+    return {"read": True}
+
+
+@router.post("/team-brief/refresh")
+def refresh_team_brief(request: Request) -> Dict[str, Any]:
+    user = _user(request)
+    if user.get("role") not in {"manager", "admin"}:
+        raise HTTPException(status_code=403, detail="매니저 이상만 팀 브리핑을 재생성할 수 있습니다.")
+    return get_weekly_team_brief(user["uid"], refresh=True)
