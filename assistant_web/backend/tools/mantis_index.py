@@ -13,7 +13,8 @@ from typing import Any, Iterable
 
 
 INDEX_FILENAME = "mantis_index.sqlite3"
-INDEX_SCHEMA_VERSION = "1"
+# v2: 이슈 유형(멘티스 severity.label) 컬럼 추가
+INDEX_SCHEMA_VERSION = "2"
 DATE_FIELD_NAMES = (
     "고객사요청일",
     "고객사전달 목표일",
@@ -64,6 +65,8 @@ def parse_index_document(document: str) -> dict[str, Any]:
     handler = extract_document_field(document, "담당자")
     reporter = extract_document_field(document, "요청자")
     status = extract_document_field(document, "현재 상태")
+    # 과거에 수집된 문서에는 이슈 유형 줄이 없다. 빈 값으로 두고 조회 쪽에서 거른다.
+    issue_type = extract_document_field(document, "이슈 유형")
     created_at = extract_document_field(document, "등록일")
     updated_at = extract_document_field(document, "최종수정일")
     title = extract_document_title(document)
@@ -72,6 +75,7 @@ def parse_index_document(document: str) -> dict[str, Any]:
         "created_at": created_at,
         "updated_at": updated_at,
         "status": status,
+        "issue_type": issue_type,
         "handler": handler,
         "reporter": reporter,
         "customer": customer,
@@ -82,6 +86,7 @@ def parse_index_document(document: str) -> dict[str, Any]:
         "document": document,
         "document_hash": hashlib.sha256(document.encode("utf-8")).hexdigest(),
         "status_normalized": normalize_index_text(status),
+        "issue_type_normalized": normalize_index_text(issue_type),
         "handler_normalized": normalize_index_text(handler),
         "reporter_normalized": normalize_index_text(reporter),
         "customer_normalized": normalize_index_text(customer),
@@ -108,6 +113,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
           created_at TEXT,
           updated_at TEXT,
           status TEXT,
+          issue_type TEXT,
           handler TEXT,
           reporter TEXT,
           customer TEXT,
@@ -118,6 +124,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
           document TEXT NOT NULL,
           document_hash TEXT NOT NULL,
           status_normalized TEXT NOT NULL,
+          issue_type_normalized TEXT NOT NULL,
           handler_normalized TEXT NOT NULL,
           reporter_normalized TEXT NOT NULL,
           customer_normalized TEXT NOT NULL,
@@ -134,6 +141,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         CREATE INDEX idx_issues_created_at ON issues(created_at);
         CREATE INDEX idx_issues_updated_at ON issues(updated_at);
         CREATE INDEX idx_issues_status ON issues(status_normalized);
+        CREATE INDEX idx_issues_issue_type ON issues(issue_type_normalized);
         CREATE INDEX idx_issues_customer ON issues(customer_normalized);
         CREATE INDEX idx_issues_platform ON issues(platform_normalized);
         CREATE INDEX idx_issues_handler ON issues(handler_normalized);
@@ -168,17 +176,17 @@ def build_mantis_index(index_path: Path, documents: Iterable[str]) -> dict[str, 
             connection.executemany(
                 """
                 INSERT INTO issues (
-                  issue_id, created_at, updated_at, status, handler, reporter,
+                  issue_id, created_at, updated_at, status, issue_type, handler, reporter,
                   customer, platform, screen_number, work_subject, title,
-                  document, document_hash, status_normalized, handler_normalized,
-                  reporter_normalized, customer_normalized, platform_normalized,
-                  screen_number_normalized
+                  document, document_hash, status_normalized, issue_type_normalized,
+                  handler_normalized, reporter_normalized, customer_normalized,
+                  platform_normalized, screen_number_normalized
                 ) VALUES (
-                  :issue_id, :created_at, :updated_at, :status, :handler, :reporter,
+                  :issue_id, :created_at, :updated_at, :status, :issue_type, :handler, :reporter,
                   :customer, :platform, :screen_number, :work_subject, :title,
-                  :document, :document_hash, :status_normalized, :handler_normalized,
-                  :reporter_normalized, :customer_normalized, :platform_normalized,
-                  :screen_number_normalized
+                  :document, :document_hash, :status_normalized, :issue_type_normalized,
+                  :handler_normalized, :reporter_normalized, :customer_normalized,
+                  :platform_normalized, :screen_number_normalized
                 )
                 """,
                 records,

@@ -3,6 +3,7 @@ import { showToast, persistConversations } from "./workspace.js";
 import { isMarkdownTableRow, isMarkdownTableSeparatorRow, splitMarkdownTableRow, renderMarkdownTable, extractInlineMarkdownTable, renderNotionAnswer, formatNotionDetail } from "./notion.js";
 import { refreshFeedbackSummary } from "./admin.js";
 import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js";
+import { renderEffortTrendChart } from "./trend_chart.js";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -971,6 +972,7 @@ function renderEffortRankingChart(ranking) {
 function appendAssistantExtras(container, message, messageIndex) {
   if (message.effortChart) container.appendChild(renderEffortChart(message.effortChart));
   if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking));
+  if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend));
   if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {
     container.appendChild(renderSourceList(message.sources, messageIndex));
   }
@@ -2466,6 +2468,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       abTest: answer.abTest || null,
       effortChart: answer.effortChart || null,
       effortRanking: answer.effortRanking || null,
+      effortTrend: answer.effortTrend || null,
       playbookCandidate: answer.playbookCandidate || null,
       playbookSaved: false,
       questionAskedAt,

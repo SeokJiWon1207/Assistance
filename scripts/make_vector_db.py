@@ -193,6 +193,9 @@ def build_issue_document(issue: dict) -> Document:
     issue_id = issue.get("id")
     project_name = issue.get("project", {}).get("name", "프로젝트 미상")
     status_label = issue.get("status", {}).get("label", "상태 미상")
+    # 멘티스는 이슈 유형(오류/개선/문의 등)을 severity 필드로 관리하며
+    # label 에 한국어 표기가 들어온다. name 은 major/minor 같은 영문 코드다.
+    issue_type_label = issue.get("severity", {}).get("label", "유형 미상")
     handler_name = issue.get("handler", {}).get("real_name", "담당자 미지정")
     reporter_name = issue.get("reporter", {}).get("real_name", "미상")
     summary = issue.get("summary", "제목 없음")
@@ -239,6 +242,7 @@ def build_issue_document(issue: dict) -> Document:
 - 화면번호: {screen_number}
 - 작업주체: {work_subject}
 - 현재 상태: {status_label}
+- 이슈 유형: {issue_type_label}
 - 담당자: {handler_name}
 - 요청자: {reporter_name}
 - 등록일: {created_at}

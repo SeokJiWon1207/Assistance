@@ -4697,6 +4697,82 @@ textarea:focus {
   }
 }
 
+/* 월별 이슈 유형 추이 차트 (ECharts) */
+.effort-trend {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.effort-trend-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.effort-trend-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.effort-trend-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.effort-trend-tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.effort-trend-period {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.effort-trend-canvas {
+  width: 100%;
+  height: 320px;
+}
+
+.effort-trend-empty {
+  margin: 0;
+  padding: 28px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .effort-trend-canvas {
+    height: 260px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .effort-trend-tabs button {
+    transition: none;
+  }
+}
+
 .evaluation-loading {
   padding: 36px 0;
   color: var(--muted);

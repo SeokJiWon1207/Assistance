@@ -44,6 +44,7 @@ from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
 )
+from backend.reports.effort_trend import build_effort_trend_report
 from backend.reports.evaluation import finalize_chat_response as persist_chat_response
 from backend.reports.customer import build_customer_profile_report
 from backend.reports.monthly_customer import build_monthly_customer_report
@@ -402,6 +403,14 @@ class ChatService:
 
         pending_effort_report = None
         if latest_user_text and enabled_tools.get("mantis"):
+            # 월별 유형 추이는 기간 표현이 겹치므로 공수 리포트보다 먼저 판별한다.
+            trend_report = build_effort_trend_report(latest_user_text)
+            if trend_report:
+                return finalize_chat_response(
+                    request,
+                    latest_user_text,
+                    {"modelId": request.modelId, **trend_report},
+                )
             ranking_report = build_effort_ranking_report(latest_user_text)
             if ranking_report:
                 return finalize_chat_response(

@@ -82,7 +82,8 @@ class MantisIndexTests(unittest.TestCase):
                 ).fetchone()
 
         self.assertEqual(stats["document_count"], 2)
-        self.assertEqual(metadata["schema_version"], "1")
+        # v2에서 이슈 유형(severity) 컬럼이 추가되었다.
+        self.assertEqual(metadata["schema_version"], "2")
         self.assertEqual(row, ("132SHGM(신한굿모닝증권)", "MTS", "9413"))
 
     def test_parser_rejects_document_without_issue_id(self):
