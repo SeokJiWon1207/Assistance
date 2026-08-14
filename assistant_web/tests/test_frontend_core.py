@@ -137,6 +137,16 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("data-refresh-team-brief", app_js)
         self.assertIn("markTeamWeeklyBriefRead", app_js)
 
+    def test_playbook_search_and_curator_actions_are_connected(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        app_js = self.application_javascript()
+
+        self.assertIn('data-workspace-tab="playbooks"', html)
+        self.assertIn('playbooks: "/api/playbooks"', app_js)
+        self.assertIn("data-save-playbook-candidate", app_js)
+        self.assertIn("data-playbook-editor", app_js)
+        self.assertIn("changePlaybookStatus", app_js)
+
 
 if __name__ == "__main__":
     unittest.main()

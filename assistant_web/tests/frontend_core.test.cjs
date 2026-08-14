@@ -166,3 +166,22 @@ test("buildTeamTemplateQuestion applies defaults, omissions, and field normalize
   );
   assert.equal(buildTeamTemplateQuestion(null, {}), "");
 });
+
+test("storageSafeMessages preserves a bounded playbook candidate", () => {
+  const [message] = storageSafeMessages([{
+    role: "assistant",
+    content: "유사 사례",
+    playbookCandidate: {
+      title: "세션 만료 대응",
+      symptom: "증상",
+      cause: "원인",
+      resolution: "해결",
+      verification: "검증",
+      tags: ["MTS"],
+      sourceIssueIds: [12345],
+    },
+    playbookSaved: true,
+  }]);
+  assert.equal(message.playbookCandidate.title, "세션 만료 대응");
+  assert.equal(message.playbookSaved, true);
+});

@@ -20,6 +20,8 @@
         templateId: message.templateId || "",
         feedback: message.feedback || null,
         abTest: message.abTest || null,
+        playbookCandidate: message.playbookCandidate || null,
+        playbookSaved: Boolean(message.playbookSaved),
         createdAt: message.createdAt || "",
         questionAskedAt: message.questionAskedAt || "",
       }));

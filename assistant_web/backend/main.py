@@ -19,6 +19,7 @@ from backend.api.chat import router as chat_router  # noqa: E402
 from backend.api.auth import router as auth_router  # noqa: E402
 from backend.api.notion import router as notion_router  # noqa: E402
 from backend.api.operations import router as operations_router  # noqa: E402
+from backend.api.playbooks import router as playbooks_router  # noqa: E402
 from backend.api.quality import router as quality_router  # noqa: E402
 from backend.api.search import router as search_router  # noqa: E402
 from backend.api.templates import router as templates_router  # noqa: E402
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     application.include_router(quality_router)
     application.include_router(chat_router)
     application.include_router(operations_router)
+    application.include_router(playbooks_router)
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return application
 

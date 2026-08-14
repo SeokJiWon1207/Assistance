@@ -90,10 +90,38 @@ def _create_team_brief_schema(connection: sqlite3.Connection) -> None:
     )
 
 
+def _create_playbook_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS resolution_playbooks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            symptom TEXT NOT NULL,
+            cause TEXT NOT NULL DEFAULT '',
+            resolution TEXT NOT NULL,
+            verification TEXT NOT NULL DEFAULT '',
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            source_issue_ids_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'draft'
+                CHECK (status IN ('draft', 'published', 'archived')),
+            created_by_uid TEXT NOT NULL,
+            created_by_name TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            published_at TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_resolution_playbooks_status_updated "
+        "ON resolution_playbooks(status, updated_at DESC)"
+    )
+
+
 def init_workspace_db() -> None:
     run_sqlite_migrations(
         workspace_db_path(),
-        [_create_workspace_schema, _create_team_brief_schema],
+        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema],
         database_name="workspace",
     )
 

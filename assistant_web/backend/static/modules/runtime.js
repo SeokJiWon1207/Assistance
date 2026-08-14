@@ -44,6 +44,10 @@ export const state = {
   myWorkspace: null,
   teamDashboard: null,
   teamWeeklyBrief: null,
+  playbooks: null,
+  playbooksCanCurate: false,
+  playbookFilter: { q: "", status: "" },
+  playbookEditor: null,
   workspaceMode: "personal",
   workspaceTab: "overview",
 };
@@ -182,6 +186,7 @@ export const WORKSPACE_ENDPOINTS = Object.freeze({
   teamBrief: "/api/workspace/team-brief",
   teamBriefRead: "/api/workspace/team-brief/read",
   teamBriefRefresh: "/api/workspace/team-brief/refresh",
+  playbooks: "/api/playbooks",
 });
 
 export const ADMIN_ENDPOINTS = Object.freeze({

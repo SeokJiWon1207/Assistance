@@ -1,5 +1,5 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
-import { createConversation, showToast, persistConversations, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
+import { createConversation, showToast, persistConversations, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, setToolToggle, toolToggleEnabled, setSourceMode, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 
@@ -235,6 +235,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
   try {
     if (state.workspaceMode === "team") await loadTeamDashboard(true);
     else if (state.workspaceTab === "team-brief") await loadTeamWeeklyBrief(false);
+    else if (state.workspaceTab === "playbooks") await loadPlaybooks(true);
     else await loadMyWorkspace(true);
   } catch (error) {
     showToast(error.message, "warning");
@@ -249,9 +250,44 @@ els.workspaceTabs?.addEventListener("click", (event) => {
   renderWorkspace();
   if (state.workspaceTab === "team-brief") {
     loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
+  } else if (state.workspaceTab === "playbooks" && !state.playbooks) {
+    loadPlaybooks().catch((error) => showToast(error.message, "warning"));
   }
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
+  const newPlaybookButton = event.target.closest("[data-new-playbook]");
+  if (newPlaybookButton) {
+    state.playbookEditor = { title: "", symptom: "", cause: "", resolution: "", verification: "", tags: [], sourceIssueIds: [] };
+    renderWorkspace();
+    els.workspaceContent.querySelector('[name="title"]')?.focus();
+    return;
+  }
+  const editPlaybookButton = event.target.closest("[data-edit-playbook]");
+  if (editPlaybookButton) {
+    const playbook = state.playbooks?.find((item) => item.id === editPlaybookButton.dataset.editPlaybook);
+    if (!playbook) return;
+    state.playbookEditor = { ...playbook, tags: [...(playbook.tags || [])], sourceIssueIds: [...(playbook.sourceIssueIds || [])] };
+    renderWorkspace();
+    els.workspaceContent.querySelector('[name="title"]')?.focus();
+    return;
+  }
+  if (event.target.closest("[data-cancel-playbook-edit]")) {
+    state.playbookEditor = null;
+    renderWorkspace();
+    return;
+  }
+  const statusButton = event.target.closest("[data-playbook-status]");
+  if (statusButton) {
+    statusButton.disabled = true;
+    try {
+      await changePlaybookStatus(statusButton.dataset.playbookId, statusButton.dataset.playbookStatus);
+      showToast("플레이북 상태를 변경했어요.", "success");
+    } catch (error) {
+      showToast(error.message, "warning");
+      statusButton.disabled = false;
+    }
+    return;
+  }
   const teamBriefButton = event.target.closest("[data-open-team-brief]");
   if (teamBriefButton) {
     state.workspaceTab = "team-brief";
@@ -298,6 +334,31 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
   }
 });
+els.workspaceContent?.addEventListener("submit", async (event) => {
+  const searchForm = event.target.closest("[data-playbook-search-form]");
+  if (searchForm) {
+    event.preventDefault();
+    const formData = new FormData(searchForm);
+    state.playbookFilter = {
+      q: String(formData.get("q") || "").trim(),
+      status: String(formData.get("status") || ""),
+    };
+    loadPlaybooks(true).catch((error) => showToast(error.message, "warning"));
+    return;
+  }
+  const editorForm = event.target.closest("[data-playbook-editor]");
+  if (!editorForm) return;
+  event.preventDefault();
+  const submitButton = editorForm.querySelector('[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    await savePlaybookEditor(editorForm);
+    showToast("플레이북 초안을 저장했어요.", "success");
+  } catch (error) {
+    showToast(error.message, "warning");
+    submitButton.disabled = false;
+  }
+});
 document.querySelectorAll(".evaluation-tab").forEach((button) => {
   button.addEventListener("click", () => {
     state.evaluationTab = button.dataset.evaluationTab;
@@ -315,6 +376,23 @@ els.scrollToTopBtn?.addEventListener("click", () => {
 });
 
 els.messages.addEventListener("click", (event) => {
+  const playbookButton = event.target.closest("[data-save-playbook-candidate]");
+  if (playbookButton) {
+    const messageIndex = Number(playbookButton.dataset.messageIndex);
+    const message = state.messages[messageIndex];
+    if (!message?.playbookCandidate || message.playbookSaved) return;
+    playbookButton.disabled = true;
+    savePlaybookCandidate(message.playbookCandidate).then(() => {
+      message.playbookSaved = true;
+      persistConversations();
+      renderMessages();
+      showToast("플레이북 검수 대기 초안으로 저장했어요.", "success");
+    }).catch((error) => {
+      showToast(error.message, "warning");
+      playbookButton.disabled = false;
+    });
+    return;
+  }
   const feedbackButton = event.target.closest("[data-feedback-rating]");
   if (feedbackButton) {
     const messageIndex = Number(feedbackButton.dataset.messageIndex);

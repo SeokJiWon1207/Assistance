@@ -20,6 +20,7 @@ __all__ = [
     "SortClause",
     "StructuredQueryPlan",
     "ConversationMessage",
+    "PlaybookCandidate",
 ]
 
 
@@ -156,6 +157,16 @@ class ConversationSource(BaseModel):
     detail: Optional[ConversationSourceDetail] = None
 
 
+class PlaybookCandidate(BaseModel):
+    title: str = Field(default="", max_length=200)
+    symptom: str = Field(default="", max_length=4000)
+    cause: str = Field(default="", max_length=4000)
+    resolution: str = Field(default="", max_length=8000)
+    verification: str = Field(default="", max_length=4000)
+    tags: List[str] = Field(default_factory=list, max_length=12)
+    sourceIssueIds: List[int] = Field(default_factory=list, max_length=20)
+
+
 class ConversationMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(default="", max_length=30000)
@@ -166,6 +177,8 @@ class ConversationMessage(BaseModel):
     templateId: str = Field(default="", max_length=64)
     feedback: Optional[Dict[str, Any]] = None
     abTest: Optional[Dict[str, Any]] = None
+    playbookCandidate: Optional[PlaybookCandidate] = None
+    playbookSaved: bool = False
     createdAt: str = Field(default="", max_length=64)
     questionAskedAt: str = Field(default="", max_length=64)
 

@@ -343,6 +343,147 @@ function renderFavoriteConversations() {
     </section>`;
 }
 
+function playbookStatusLabel(status) {
+  return { draft: "검수 대기", published: "공개", archived: "보관" }[status] || status;
+}
+
+function playbookEditorForm() {
+  const editor = state.playbookEditor;
+  if (!editor || !state.playbooksCanCurate) return "";
+  return `
+    <form class="playbook-editor" data-playbook-editor data-playbook-id="${escapeHtml(editor.id || "")}">
+      <header><div><span>CURATION</span><h4>${editor.id ? "플레이북 편집" : "새 플레이북 작성"}</h4></div></header>
+      <label>제목<input name="title" maxlength="200" required value="${escapeHtml(editor.title || "")}" /></label>
+      <label>증상<textarea name="symptom" maxlength="4000" required>${escapeHtml(editor.symptom || "")}</textarea></label>
+      <label>원인<textarea name="cause" maxlength="4000" placeholder="확인된 원인이 없으면 비워둘 수 있습니다.">${escapeHtml(editor.cause || "")}</textarea></label>
+      <label>해결 방법<textarea name="resolution" maxlength="8000" required>${escapeHtml(editor.resolution || "")}</textarea></label>
+      <label>검증 방법<textarea name="verification" maxlength="4000" placeholder="조치 후 확인해야 할 내용을 적어주세요.">${escapeHtml(editor.verification || "")}</textarea></label>
+      <div class="playbook-editor-row">
+        <label>태그<input name="tags" maxlength="500" value="${escapeHtml((editor.tags || []).join(", "))}" placeholder="고객사, 화면번호, 증상" /></label>
+        <label>근거 이슈<input name="sourceIssueIds" maxlength="300" value="${escapeHtml((editor.sourceIssueIds || []).map((id) => `#${id}`).join(", "))}" placeholder="#12345, #12346" /></label>
+      </div>
+      <div class="playbook-editor-actions">
+        <button type="button" class="secondary-button" data-cancel-playbook-edit>취소</button>
+        <button type="submit" class="workspace-primary-action">${editor.id ? "수정 내용 저장" : "초안 저장"}</button>
+      </div>
+    </form>`;
+}
+
+function playbookCard(playbook) {
+  const canCurate = state.playbooksCanCurate;
+  const tags = (playbook.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("");
+  const sourceIds = (playbook.sourceIssueIds || []).map((id) => `#${id}`).join(", ");
+  const statusActions = canCurate ? `
+    <div class="playbook-card-actions">
+      <button type="button" data-edit-playbook="${escapeHtml(playbook.id)}">편집</button>
+      ${playbook.status !== "published" ? `<button type="button" data-playbook-status="published" data-playbook-id="${escapeHtml(playbook.id)}">공개</button>` : ""}
+      ${playbook.status !== "draft" ? `<button type="button" data-playbook-status="draft" data-playbook-id="${escapeHtml(playbook.id)}">초안으로</button>` : ""}
+      ${playbook.status !== "archived" ? `<button type="button" data-playbook-status="archived" data-playbook-id="${escapeHtml(playbook.id)}">보관</button>` : ""}
+    </div>` : "";
+  return `
+    <article class="playbook-card">
+      <header>
+        <div><span class="playbook-status is-${escapeHtml(playbook.status)}">${escapeHtml(playbookStatusLabel(playbook.status))}</span><h4>${escapeHtml(playbook.title)}</h4></div>
+        <small>${escapeHtml(String(playbook.updatedAt || "").slice(0, 10))}</small>
+      </header>
+      ${tags ? `<div class="playbook-tags">${tags}</div>` : ""}
+      <section><strong>증상</strong><p>${escapeHtml(playbook.symptom)}</p></section>
+      ${playbook.cause ? `<section><strong>원인</strong><p>${escapeHtml(playbook.cause)}</p></section>` : ""}
+      <section><strong>해결 방법</strong><p>${escapeHtml(playbook.resolution)}</p></section>
+      ${playbook.verification ? `<section><strong>검증 방법</strong><p>${escapeHtml(playbook.verification)}</p></section>` : ""}
+      <footer>
+        <span>${sourceIds ? `근거 ${escapeHtml(sourceIds)}` : "근거 이슈 미등록"} · 작성 ${escapeHtml(playbook.createdBy?.name || "알 수 없음")}</span>
+        ${sourceIds ? `<button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`${sourceIds} 이슈를 근거로 이 해결 플레이북의 최신 유효성을 검토해줘`)}">AI에게 검토 요청</button>` : ""}
+      </footer>
+      ${statusActions}
+    </article>`;
+}
+
+function renderPlaybooks() {
+  const playbooks = state.playbooks || [];
+  const canCurate = state.playbooksCanCurate;
+  const filter = state.playbookFilter || { q: "", status: "" };
+  return `
+    ${playbookEditorForm()}
+    <section class="playbook-toolbar">
+      <form data-playbook-search-form>
+        <input name="q" maxlength="200" value="${escapeHtml(filter.q || "")}" placeholder="증상, 고객사, 화면번호, 이슈 번호 검색" aria-label="플레이북 검색" />
+        ${canCurate ? `<select name="status" aria-label="플레이북 상태"><option value="">모든 상태</option><option value="draft" ${filter.status === "draft" ? "selected" : ""}>검수 대기</option><option value="published" ${filter.status === "published" ? "selected" : ""}>공개</option><option value="archived" ${filter.status === "archived" ? "selected" : ""}>보관</option></select>` : ""}
+        <button type="submit" class="secondary-button">검색</button>
+      </form>
+      ${canCurate ? '<button type="button" class="workspace-primary-action" data-new-playbook>새 플레이북</button>' : ""}
+    </section>
+    <p class="workspace-connection">${canCurate ? "검수 대기·공개·보관 플레이북을 모두 관리합니다." : "팀에서 검수해 공개한 해결 플레이북만 표시합니다."} · ${playbooks.length}건</p>
+    <div class="playbook-list">${playbooks.length ? playbooks.map(playbookCard).join("") : workspaceEmpty(filter.q ? "검색 조건에 맞는 플레이북이 없습니다." : "아직 공개된 해결 플레이북이 없습니다.")}</div>`;
+}
+
+async function loadPlaybooks(force = false) {
+  if (force) state.playbooks = null;
+  renderWorkspace();
+  const filter = state.playbookFilter || { q: "", status: "" };
+  const parameters = new URLSearchParams();
+  if (filter.q) parameters.set("q", filter.q);
+  if (filter.status) parameters.set("status", filter.status);
+  if (["manager", "admin"].includes(state.currentUser?.role)) parameters.set("includeDrafts", "true");
+  const response = await apiFetch(`${WORKSPACE_ENDPOINTS.playbooks}?${parameters}`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "플레이북을 불러오지 못했습니다.");
+  state.playbooks = data.playbooks || [];
+  state.playbooksCanCurate = Boolean(data.canCurate);
+  renderWorkspace();
+}
+
+async function savePlaybookCandidate(candidate) {
+  const response = await apiFetch(WORKSPACE_ENDPOINTS.playbooks, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...candidate, status: "draft" }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "플레이북 후보를 저장하지 못했습니다.");
+  state.playbooks = null;
+  return data.playbook;
+}
+
+async function savePlaybookEditor(form) {
+  const formData = new FormData(form);
+  const playbookId = form.dataset.playbookId || "";
+  const payload = {
+    title: String(formData.get("title") || "").trim(),
+    symptom: String(formData.get("symptom") || "").trim(),
+    cause: String(formData.get("cause") || "").trim(),
+    resolution: String(formData.get("resolution") || "").trim(),
+    verification: String(formData.get("verification") || "").trim(),
+    tags: String(formData.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean),
+    sourceIssueIds: [...String(formData.get("sourceIssueIds") || "").matchAll(/\d+/g)].map((match) => Number(match[0])),
+  };
+  const response = await apiFetch(
+    playbookId ? `${WORKSPACE_ENDPOINTS.playbooks}/${encodeURIComponent(playbookId)}` : WORKSPACE_ENDPOINTS.playbooks,
+    {
+      method: playbookId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(playbookId ? payload : { ...payload, status: "draft" }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "플레이북을 저장하지 못했습니다.");
+  state.playbookEditor = null;
+  await loadPlaybooks(true);
+  return data.playbook;
+}
+
+async function changePlaybookStatus(playbookId, status) {
+  const response = await apiFetch(`${WORKSPACE_ENDPOINTS.playbooks}/${encodeURIComponent(playbookId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || "플레이북 상태를 변경하지 못했습니다.");
+  await loadPlaybooks(true);
+  return data.playbook;
+}
+
 function renderTeamDashboard(data) {
   const summary = data.summary || {};
   const members = data.members || [];
@@ -403,6 +544,7 @@ function renderWorkspace() {
     overview: () => renderPersonalOverview(state.myWorkspace),
     brief: () => renderWeeklyBrief(state.myWorkspace),
     "team-brief": renderTeamWeeklyBrief,
+    playbooks: renderPlaybooks,
     notifications: () => renderNotifications(state.myWorkspace),
     favorites: renderFavoriteConversations,
   };
@@ -460,7 +602,7 @@ function closeWorkspaceModal() {
 
 async function openWorkspaceModal(mode = "personal") {
   state.workspaceMode = mode;
-  if (mode === "personal" && !["overview", "brief", "team-brief", "notifications", "favorites"].includes(state.workspaceTab)) {
+  if (mode === "personal" && !["overview", "brief", "team-brief", "playbooks", "notifications", "favorites"].includes(state.workspaceTab)) {
     state.workspaceTab = "overview";
   }
   els.workspaceModal.hidden = false;
@@ -500,6 +642,14 @@ export {
   renderTeamWeeklyBrief,
   renderNotifications,
   renderFavoriteConversations,
+  playbookStatusLabel,
+  playbookEditorForm,
+  playbookCard,
+  renderPlaybooks,
+  loadPlaybooks,
+  savePlaybookCandidate,
+  savePlaybookEditor,
+  changePlaybookStatus,
   renderTeamDashboard,
   updateWorkspaceUnread,
   renderWorkspace,

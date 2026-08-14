@@ -220,6 +220,7 @@ class FrontendArchitectureContractTests(unittest.TestCase):
             "/api/models",
             "/api/workspace/me",
             "/api/workspace/team",
+            "/api/playbooks",
             "/api/evaluation/run",
         ):
             self.assertIn(endpoint, javascript)

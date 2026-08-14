@@ -75,6 +75,45 @@ def _summarize_resolution(detail: Dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
+def _build_playbook_candidate(
+    base_issue: Dict[str, Any], examples: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """현재 답변을 검수 가능한 플레이북 초안으로 넘길 구조를 만든다."""
+    base_id = int(base_issue.get("id") or 0)
+    base_summary = compact_text(base_issue.get("summary") or "이슈 대응", 160)
+    description = compact_text(base_issue.get("description") or "", 1200)
+    symptom = f"#{base_id} {base_summary}" if base_id else base_summary
+    if description:
+        symptom += f"\n\n{description}"
+    resolution_lines = [
+        f"- #{int(item.get('id') or 0)} {_summarize_resolution(item)}"
+        for item in examples
+        if int(item.get("id") or 0) > 0
+    ]
+    tags: List[str] = []
+    for value in (
+        base_issue.get("project"),
+        base_issue.get("screen_number"),
+        base_issue.get("platform"),
+    ):
+        tag = str(value or "").strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return {
+        "title": f"{base_summary} 대응",
+        "symptom": symptom,
+        "cause": "",
+        "resolution": "\n".join(resolution_lines),
+        "verification": "",
+        "tags": tags,
+        "sourceIssueIds": [
+            issue_id
+            for issue_id in [base_id, *[int(item.get("id") or 0) for item in examples]]
+            if issue_id > 0
+        ],
+    }
+
+
 def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
     """'#12345랑 비슷한 이슈 어떻게 해결했어?'류 질문에 사례+조치로 답한다."""
     constraints = extract_query_constraints(text)
@@ -196,6 +235,7 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
         "content": "\n".join(lines),
         "sources": sources,
         "sourcesForFollowUps": sources,
+        "playbookCandidate": _build_playbook_candidate(base_issue, example_rows),
         "retrieval": retrieval,
         "raw": {"mode": "deterministic_similar_resolution"},
     }

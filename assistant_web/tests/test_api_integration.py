@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from backend.api import chat as chat_api
 from backend.api import notion as notion_api
 from backend.api import operations as operations_api
+from backend.api import playbooks as playbooks_api
 from backend.api import quality as quality_api
 from backend.api import search as search_api
 from backend.api import workspace as workspace_api
@@ -126,6 +127,29 @@ class ApiIntegrationTests(unittest.TestCase):
         current_user.return_value = {"uid": "uid-1", "role": "member"}
 
         response = self.client.post("/api/workspace/team-brief/refresh")
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch.object(playbooks_api, "list_playbooks")
+    @patch.object(playbooks_api, "current_request_user")
+    def test_member_searches_only_published_playbooks(self, current_user, list_items):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        list_items.return_value = []
+
+        response = self.client.get("/api/playbooks?q=세션&includeDrafts=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["canCurate"])
+        self.assertFalse(list_items.call_args.kwargs["include_unpublished"])
+
+    @patch.object(playbooks_api, "current_request_user")
+    def test_member_cannot_create_playbook(self, current_user):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+
+        response = self.client.post(
+            "/api/playbooks",
+            json={"title": "제목", "symptom": "증상", "resolution": "해결"},
+        )
 
         self.assertEqual(response.status_code, 403)
 

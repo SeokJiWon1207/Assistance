@@ -209,6 +209,10 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("타임아웃", content)
         # 기준 이슈 자기 자신은 유사 목록에서 제외된다.
         self.assertNotIn("자기자신", content)
+        candidate = report["playbookCandidate"]
+        self.assertIn("세션 만료", candidate["title"])
+        self.assertIn("타임아웃", candidate["resolution"])
+        self.assertEqual(candidate["sourceIssueIds"], [12345, 9001])
 
     def test_returns_none_without_resolution_intent(self):
         self.assertIsNone(similar.build_similar_resolution_report("#12345 비슷한 이슈 목록"))

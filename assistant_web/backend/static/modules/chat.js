@@ -673,6 +673,16 @@ function appendAssistantExtras(container, message, messageIndex) {
   if (message.verification) {
     container.appendChild(renderVerificationPanel(message.verification, message.auditId));
   }
+  if (message.playbookCandidate && ["manager", "admin"].includes(state.currentUser?.role)) {
+    const action = document.createElement("section");
+    action.className = "playbook-candidate-action";
+    action.innerHTML = `
+      <div><strong>재사용할 해결 사례인가요?</strong><span>검수 전 플레이북 초안으로 저장할 수 있습니다.</span></div>
+      <button type="button" data-save-playbook-candidate data-message-index="${messageIndex}" ${message.playbookSaved ? "disabled" : ""}>
+        ${message.playbookSaved ? "초안 저장됨" : "플레이북 후보 저장"}
+      </button>`;
+    container.appendChild(action);
+  }
 }
 
 function conditionId(condition = {}) {
@@ -2149,6 +2159,8 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       abTest: answer.abTest || null,
       effortChart: answer.effortChart || null,
       effortRanking: answer.effortRanking || null,
+      playbookCandidate: answer.playbookCandidate || null,
+      playbookSaved: false,
       questionAskedAt,
       templateId,
     };
