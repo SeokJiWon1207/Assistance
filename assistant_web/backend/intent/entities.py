@@ -275,6 +275,16 @@ def extract_explicit_keyword_filter_clauses(text: str) -> List[Dict[str, Any]]:
     return clauses
 
 
+# "나한테 배정된"에서 "나한테"가 이름으로 잡히면 존재하지 않는 담당자로
+# 검색해 결과가 0건이 된다. 화자를 가리키는 말은 이름 후보에서 뺀다.
+# (로그인 사용자로 치환하는 일은 상위 계층이 담당한다.)
+_FIRST_PERSON_TOKENS = frozenset({
+    "나", "내", "저", "제", "본인",
+    "나한테", "내게", "나에게", "저한테", "저에게", "본인에게",
+    "내가", "제가", "나의", "저의",
+})
+
+
 def extract_people_constraints(text: str) -> Dict[str, Any]:
     # ``담당자별로`` and similar phrases specify result presentation, not a
     # person named "별로" nor the preceding object (for example ``항목을``).
@@ -308,6 +318,8 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
     if not people:
         for match in re.finditer(r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원|한테|에게|담당|할당|할당된|배정|배정된)", person_text):
             name = match.group(1).strip()
+            if name in _FIRST_PERSON_TOKENS or strip_korean_particle(name) in _FIRST_PERSON_TOKENS:
+                continue
             # "그 이슈의 담당자", "제목과 담당자로 정리해줘"처럼 조사가 붙은 일반
             # 명사가 이름으로 잡히지 않도록 조사를 뗀 어간까지 함께 검증한다.
             if not is_valid_person_name(name):

@@ -239,12 +239,48 @@ def extract_relative_year_range(question: str, today: Optional[date] = None) -> 
     }
 
 
+_AGING_SUFFIX = r"(?:\s*(?:이상|넘은|넘게|지난|경과|된|이나\s*된|묵은))"
+_KOREAN_SMALL_NUMBERS = {"한": 1, "두": 2, "세": 3, "네": 4, "다섯": 5, "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10}
+
+
+def _months_before(base: date, months: int) -> date:
+    year, month = base.year, base.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = min(base.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _extract_aging_created_at_range(question: str, base: date) -> Optional[Dict[str, str]]:
+    """'한 달 넘은', '30일 지난'처럼 오래된 건만 찾는 표현을 구간으로 바꾼다."""
+    if match := re.search(rf"(\d{{1,4}})\s*일{_AGING_SUFFIX}", question):
+        cutoff = base - timedelta(days=int(match.group(1)))
+    elif match := re.search(rf"(\d{{1,3}})\s*(?:개월|달){_AGING_SUFFIX}", question):
+        cutoff = _months_before(base, max(int(match.group(1)), 1))
+    elif match := re.search(rf"(\d{{1,2}})\s*년{_AGING_SUFFIX}", question):
+        cutoff = _months_before(base, max(int(match.group(1)), 1) * 12)
+    elif match := re.search(rf"([가-힣]{{1,2}})\s*(?:개월|달){_AGING_SUFFIX}", question):
+        months = _KOREAN_SMALL_NUMBERS.get(match.group(1))
+        if not months:
+            return None
+        cutoff = _months_before(base, months)
+    else:
+        return None
+    return {"from": "", "to": cutoff.isoformat(), "precision": "older_than"}
+
+
 def extract_relative_created_at_range(question: str, today: Optional[date] = None) -> Optional[Dict[str, str]]:
     """'오늘/어제/이번 주/지난주/최근 N일' 같은 상대 표현을 실제 날짜 범위로 바꾼다.
 
     today는 테스트에서 기준일을 고정할 때만 넘기고, 실제 요청 처리에서는
     항상 date.today()를 쓴다(자정을 넘기면 "오늘"의 의미도 바뀌어야 하므로)."""
     base = today or date.today()
+
+    # "N일/개월 넘은", "한 달 지난"처럼 오래된 건만 찾는 표현.
+    # 등록일이 기준일보다 이전인 것만 남기므로 상한만 정한다.
+    if aging := _extract_aging_created_at_range(question, base):
+        return aging
 
     if match := re.search(r"최근\s*(\d{1,3})\s*일", question):
         days = int(match.group(1))
@@ -533,4 +569,11 @@ def plan_created_at_matches(value: str, plan_range: Optional[Dict[str, str]]) ->
     candidate = str(value or "")[:10]
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", candidate):
         return False
-    return str(plan_range.get("from", "")) <= candidate <= str(plan_range.get("to", ""))
+    # "한 달 넘은 건"처럼 한쪽만 정해진 구간도 있으므로 빈 경계는 무시한다.
+    start = str(plan_range.get("from") or "")
+    end = str(plan_range.get("to") or "")
+    if start and candidate < start:
+        return False
+    if end and candidate > end:
+        return False
+    return True
