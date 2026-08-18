@@ -44,7 +44,10 @@ from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
 )
-from backend.reports.effort_trend import build_effort_trend_report
+from backend.reports.effort_trend import (
+    build_effort_trend_report,
+    build_effort_trend_report_from_plan,
+)
 from backend.reports.evaluation import finalize_chat_response as persist_chat_response
 from backend.reports.customer import build_customer_profile_report
 from backend.reports.monthly_customer import build_monthly_customer_report
@@ -471,6 +474,27 @@ class ChatService:
                 "planned": True,
                 "ruleFallback": rule_plan,
             }
+
+            # 규칙 경로가 못 잡은 추이 질문을 플래너 분류로 실행한다.
+            # 기간 해석과 집계는 결정형 코어가 그대로 담당한다.
+            # 규칙 경로가 이미 인물 공수 질문으로 보고 이름을 기다리는 중이면
+            # 여기서 가로채지 않는다. 단일 기간 질문이 추이 차트로 바뀌어 버린다.
+            if (
+                pending_effort_report is None
+                and enabled_tools.get("mantis")
+                and model_plan.get("planned")
+            ):
+                trend_fallback = build_effort_trend_report_from_plan(
+                    retrieval_text,
+                    model_plan,
+                    constraints=query_constraints,
+                )
+                if trend_fallback:
+                    return finalize_chat_response(
+                        request,
+                        latest_user_text,
+                        {"modelId": request.modelId, **trend_fallback},
+                    )
 
             if pending_effort_report is not None and enabled_tools.get("mantis"):
                 effort_fallback = build_effort_report_from_plan(retrieval_text, model_plan)

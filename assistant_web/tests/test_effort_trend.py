@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import unittest.mock
 from datetime import date
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from backend.reports.effort_trend import (
     MAX_TREND_MONTHS,
     TREND_ISSUE_TYPES,
     build_effort_trend_report,
+    build_effort_trend_report_from_plan,
     extract_document_effort,
     parse_trend_months,
     resolve_trend_window,
@@ -74,6 +76,15 @@ class EffortTrendTriggerTest(unittest.TestCase):
         self.assertFalse(wants_effort_trend("2026년 8월 공수 알려줘"))
         self.assertFalse(wants_effort_trend("홍길동 공수 알려줘"))
         self.assertFalse(wants_effort_trend(""))
+
+    def test_rule_path_stays_high_precision(self):
+        # 애매한 표현은 규칙이 잡지 않고 플래너에 맡긴다.
+        self.assertFalse(wants_effort_trend("월별 회의 이슈 정리해줘"))
+        self.assertFalse(wants_effort_trend("월간 통계 보여줘"))
+        # 오탐 없는 표현은 LLM 호출 없이 규칙이 바로 처리한다.
+        self.assertTrue(wants_effort_trend("월별 등록건수 보여줘"))
+        self.assertTrue(wants_effort_trend("월간 공수 추이"))
+        self.assertTrue(wants_effort_trend("달별 처리 건수"))
 
     def test_defers_questions_it_cannot_scope(self):
         # 1인칭/지시어는 담당자·맥락 해석이 필요하므로 기존 공수 리포트가 맡는다.
@@ -307,6 +318,58 @@ class EffortTrendReportTest(unittest.TestCase):
             )
         self.assertIn("등록일", report["content"])
         self.assertIn("처리·완료 시점 아님", report["content"])
+
+    def test_planner_path_runs_trend_for_unmatched_phrasing(self):
+        documents = [
+            issue_document(1, created_at="2026-08-01", issue_type="오류"),
+            issue_document(2, created_at="2026-08-02", issue_type="개선"),
+        ]
+        # 규칙은 못 잡지만 플래너가 trend 로 분류한 질문.
+        question = "월간 통계 보여줘"
+        self.assertFalse(wants_effort_trend(question))
+
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            with unittest.mock.patch(
+                "backend.reports.effort_trend.run_effort_trend_report",
+                side_effect=lambda *args, **kwargs: run_effort_trend_report(
+                    *args, **{**kwargs, "index_path": index_path, "today": date(2026, 8, 15)}
+                ),
+            ):
+                report = build_effort_trend_report_from_plan(
+                    question,
+                    {"effort": {"type": "trend"}},
+                    constraints={},
+                )
+
+        self.assertIsNotNone(report)
+        self.assertEqual(report["effortTrend"]["totalIssues"], 2)
+
+    def test_planner_path_ignores_other_effort_types(self):
+        for effort in ({"type": "person", "person": "홍길동"}, {"type": "ranking"}, {}):
+            self.assertIsNone(
+                build_effort_trend_report_from_plan("월간 통계", {"effort": effort}, constraints={})
+            )
+        self.assertIsNone(
+            build_effort_trend_report_from_plan("월간 통계", {}, constraints={})
+        )
+
+    def test_planner_path_rejects_non_issue_subjects(self):
+        # 플래너가 trend 라고 해도 회의록·공지 주제면 이슈 집계가 아니다.
+        plan = {"effort": {"type": "trend"}}
+        for question in ("월별 회의 이슈 정리해줘", "월간 공지 추이", "월별 휴가 현황 추이"):
+            self.assertIsNone(
+                build_effort_trend_report_from_plan(question, plan, constraints={}),
+                msg=question,
+            )
+
+    def test_planner_path_defers_unresolved_scope(self):
+        # 플래너가 trend 라고 해도 화자 표현이 있으면 넘기지 않는다.
+        self.assertIsNone(
+            build_effort_trend_report_from_plan(
+                "내 월간 공수 어떻게 변했어", {"effort": {"type": "trend"}}, constraints={}
+            )
+        )
 
     def test_scope_label_defaults_to_company_wide(self):
         self.assertEqual(scope_label({}), "전사")

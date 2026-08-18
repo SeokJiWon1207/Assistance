@@ -31,16 +31,27 @@ MAX_TREND_MONTHS = 36
 _EFFORT_SECTION_PATTERN = re.compile(r"\[공수\]\n(.*?)(?=\n\[|\Z)", re.S)
 _EFFORT_LINE_PATTERN = re.compile(r"^-\s*(?P<field>[^:]+):\s*(?P<value>.*)$")
 
-_TREND_KEYWORDS = ("월별", "추이", "트렌드", "추세", "월간 추이")
-_TREND_SUBJECTS = ("처리", "공수", "건수", "이슈", "유형")
+# 규칙 경로는 오탐이 없는 표현만 잡는다. 애매한 표현은 LLM 플래너가 판정한다.
+# '이슈'만으로 매칭하면 "월별 회의 이슈 정리해줘" 같은 질문까지 차트로 빠진다.
+_TREND_KEYWORDS = ("월별", "월간", "달별", "추이", "트렌드", "추세")
+_TREND_SUBJECTS = ("처리", "공수", "건수", "유형")
 # 1인칭·지시어는 이 리포트가 해석할 수 없다. 조건 없이 전사로 답하면
 # 사용자는 자기 실적으로 오해하므로, 기존 공수 리포트에 넘긴다.
 _UNRESOLVED_SCOPE_HINTS = ("내 ", "내가", "제 ", "나의", "본인", "우리", "그중", "거기서", "저건", "방금", "위에서")
+# 플래너가 trend 로 분류해도 이 주제가 섞여 있으면 멘티스 이슈 집계가 아니다.
+# 플래너 출력은 실행 전에 결정형 규칙으로 한 번 더 검증한다
+# (build_effort_report_from_plan 이 인물 이름을 검증하는 것과 같은 방식).
+_NON_ISSUE_SUBJECTS = ("회의", "회의록", "공지", "결재", "휴가", "회식", "일정", "계약", "출장", "교육")
 
 
 def has_unresolved_scope(text: str) -> bool:
     """이 리포트가 해석할 수 없는 범위 표현이 있는지 본다."""
     return any(hint in str(text or "") for hint in _UNRESOLVED_SCOPE_HINTS)
+
+
+def mentions_non_issue_subject(text: str) -> bool:
+    """멘티스 이슈가 아닌 주제(회의·공지 등)를 묻는지 본다."""
+    return any(subject in str(text or "") for subject in _NON_ISSUE_SUBJECTS)
 
 
 def wants_effort_trend(text: str) -> bool:
@@ -313,6 +324,37 @@ def _empty_trend(text: str, periods: List[str], reason: str) -> Dict[str, Any]:
         "effortTrend": None,
         "raw": {"mode": "deterministic_effort_trend", "error": reason},
     }
+
+
+def build_effort_trend_report_from_plan(
+    text: str,
+    model_plan: Dict[str, Any],
+    constraints: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """규칙 경로가 못 잡은 추이 질문을 LLM 플래너의 effort 분류로 실행한다.
+
+    플래너는 "추이 질문인가"만 판정하고, 기간 해석과 실제 집계는 전부 기존
+    결정형 코어가 수행한다. 플래너가 기간을 지어내도 집계에 영향이 없다.
+    """
+    effort = model_plan.get("effort") if isinstance(model_plan.get("effort"), dict) else None
+    if not effort:
+        return None
+    if str(effort.get("type", "")).strip().lower() != "trend":
+        return None
+    # 화자·지시어가 섞인 질문은 담당자 해석이 필요하므로 여기서도 넘기지 않는다.
+    if has_unresolved_scope(text):
+        return None
+    # 플래너가 trend 라고 해도 회의록·공지 같은 주제면 이슈 집계가 아니다.
+    if mentions_non_issue_subject(text):
+        return None
+    months, end_year, end_month = resolve_trend_window(text)
+    return run_effort_trend_report(
+        text,
+        months=months,
+        constraints=constraints if constraints is not None else extract_query_constraints(text),
+        end_year=end_year,
+        end_month=end_month,
+    )
 
 
 def build_effort_trend_report(text: str) -> Optional[Dict[str, Any]]:
