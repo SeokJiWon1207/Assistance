@@ -158,12 +158,13 @@ export function renderEffortTrendChart(trend) {
   wrap.innerHTML = `
     <header class="effort-trend-header">
       <div class="effort-trend-tabs" role="tablist" aria-label="추이 지표 선택">
-        <button type="button" role="tab" data-trend-metric="counts" aria-selected="true">월별 처리건수</button>
-        <button type="button" role="tab" data-trend-metric="efforts" aria-selected="false">월별 처리공수</button>
+        <button type="button" role="tab" data-trend-metric="counts" aria-selected="true">월별 등록건수</button>
+        <button type="button" role="tab" data-trend-metric="efforts" aria-selected="false">월별 등록 공수</button>
       </div>
       <span class="effort-trend-period">${escapeText(trend.scopeLabel || "전사")} · ${escapeText(trend.periodLabel || "")}</span>
     </header>
     <div class="effort-trend-canvas" role="img" aria-label="월별 이슈 유형 추이 차트"></div>
+    <p class="effort-trend-basis">이슈 <strong>등록일</strong> 기준입니다. 처리·완료 시점 기준이 아닙니다.</p>
   `;
 
   const canvas = wrap.querySelector(".effort-trend-canvas");

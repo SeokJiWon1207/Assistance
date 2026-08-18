@@ -33,6 +33,14 @@ _EFFORT_LINE_PATTERN = re.compile(r"^-\s*(?P<field>[^:]+):\s*(?P<value>.*)$")
 
 _TREND_KEYWORDS = ("월별", "추이", "트렌드", "추세", "월간 추이")
 _TREND_SUBJECTS = ("처리", "공수", "건수", "이슈", "유형")
+# 1인칭·지시어는 이 리포트가 해석할 수 없다. 조건 없이 전사로 답하면
+# 사용자는 자기 실적으로 오해하므로, 기존 공수 리포트에 넘긴다.
+_UNRESOLVED_SCOPE_HINTS = ("내 ", "내가", "제 ", "나의", "본인", "우리", "그중", "거기서", "저건", "방금", "위에서")
+
+
+def has_unresolved_scope(text: str) -> bool:
+    """이 리포트가 해석할 수 없는 범위 표현이 있는지 본다."""
+    return any(hint in str(text or "") for hint in _UNRESOLVED_SCOPE_HINTS)
 
 
 def wants_effort_trend(text: str) -> bool:
@@ -42,7 +50,16 @@ def wants_effort_trend(text: str) -> bool:
     lowered = str(text)
     if not any(keyword in lowered for keyword in _TREND_KEYWORDS):
         return False
-    return any(subject in lowered for subject in _TREND_SUBJECTS)
+    if not any(subject in lowered for subject in _TREND_SUBJECTS):
+        return False
+    # "내 월별 공수 추이"처럼 화자를 가리키는 질문은 담당자 해석이 필요하다.
+    return not has_unresolved_scope(lowered)
+
+
+def parse_trend_year(text: str) -> Optional[int]:
+    """'2025년 월별 추이'처럼 연도를 명시하면 그 해로 구간을 고정한다."""
+    match = re.search(r"(20\d{2})\s*년", str(text or ""))
+    return int(match.group(1)) if match else None
 
 
 def parse_trend_months(text: str) -> int:
@@ -54,17 +71,45 @@ def parse_trend_months(text: str) -> int:
     return max(1, min(months, MAX_TREND_MONTHS))
 
 
-def _month_sequence(months: int, today: Optional[date] = None) -> List[str]:
-    """가장 오래된 달부터 이번 달까지 'YYYYMM' 목록을 만든다."""
+def _month_sequence(
+    months: int,
+    today: Optional[date] = None,
+    end_year: Optional[int] = None,
+    end_month: Optional[int] = None,
+) -> List[str]:
+    """끝 달에서 거꾸로 세어 'YYYYMM' 목록을 만든다. 기본 끝점은 이번 달이다."""
     current = today or date.today()
+    year = end_year if end_year is not None else current.year
+    month = end_month if end_month is not None else current.month
     periods: List[str] = []
-    year, month = current.year, current.month
     for _ in range(months):
         periods.append(f"{year:04d}{month:02d}")
         month -= 1
         if month == 0:
             year, month = year - 1, 12
     return list(reversed(periods))
+
+
+def resolve_trend_window(text: str, today: Optional[date] = None) -> tuple[int, Optional[int], Optional[int]]:
+    """질문에서 (개월 수, 끝 연도, 끝 월)을 정한다.
+
+    연도만 밝히고 개월 수를 안 적으면 그 해 전체(1~12월)를 본다. 이 경우
+    오늘 기준 최근 12개월로 잡으면 사용자가 지정한 해의 앞부분이 잘려 나간다.
+    """
+    year = parse_trend_year(text)
+    has_explicit_months = bool(re.search(r"\d{1,2}\s*개월", str(text or "")))
+    months = parse_trend_months(text)
+    if year is None:
+        return months, None, None
+    current = today or date.today()
+    if has_explicit_months:
+        # 연도와 개월 수를 함께 적었으면 그 해 끝을 기준으로 거꾸로 센다.
+        end_month = 12 if year < current.year else current.month
+        return months, year, end_month
+    if year < current.year:
+        return 12, year, 12
+    # 올해를 지정하면 아직 오지 않은 달까지 그리지 않는다.
+    return current.month, year, current.month
 
 
 def extract_document_effort(document: str) -> float:
@@ -111,6 +156,8 @@ def run_effort_trend_report(
     index_path: Optional[Path] = None,
     today: Optional[date] = None,
     constraints: Optional[Dict[str, Any]] = None,
+    end_year: Optional[int] = None,
+    end_month: Optional[int] = None,
 ) -> Dict[str, Any]:
     """월별 × 이슈 유형으로 건수와 공수를 집계한다.
 
@@ -118,7 +165,7 @@ def run_effort_trend_report(
     전사 합계를 돌려주면 사용자는 자기가 물어본 범위의 답으로 오해하게 된다.
     """
     active_constraints = constraints if constraints is not None else {}
-    periods = _month_sequence(months, today=today)
+    periods = _month_sequence(months, today=today, end_year=end_year, end_month=end_month)
     start_date = f"{periods[0][:4]}-{periods[0][4:]}-01"
 
     counts: Dict[str, Dict[str, int]] = {
@@ -218,8 +265,16 @@ def _summary_lines(
 ) -> List[str]:
     scope = trend_chart.get("scopeLabel") or "전사"
     if not typed:
+        # 조건에 맞는 이슈 자체가 없는 정상적인 빈 결과와,
+        # 인덱스에 이슈 유형이 없어 못 그리는 경우를 구분해서 안내한다.
+        if not matched:
+            return [
+                f"{trend_chart['periodLabel']} {scope} 구간에 해당하는 이슈가 없습니다.",
+                "",
+                "기간이나 조건을 바꿔서 다시 물어봐 주세요.",
+            ]
         return [
-            f"{trend_chart['periodLabel']} {scope} 구간에서 이슈 유형이 기록된 이슈를 찾지 못했습니다.",
+            f"{trend_chart['periodLabel']} {scope} 구간의 {matched}건 모두 이슈 유형이 인덱스에 없습니다.",
             "",
             *_rebuild_notice(),
         ]
@@ -230,7 +285,7 @@ def _summary_lines(
         f"- 집계 범위: {scope}",
         f"- 집계 기간: {len(periods)}개월",
         f"- 유형이 기록된 이슈: **{typed}건** (범위 내 {matched}건)",
-        "- 기준: Mantis 이슈 등록일 · 이슈 유형(severity)",
+        "- 기준: Mantis 이슈 **등록일** (처리·완료 시점 아님) · 이슈 유형(severity)",
     ]
 
     # 일부만 반영된 인덱스는 과거 달이 0으로 보여 없는 상승세를 만들어낸다.
@@ -247,7 +302,7 @@ def _summary_lines(
     for item in series:
         total_count = sum(item["counts"])
         total_effort = sum(item["efforts"])
-        lines.append(f"- {item['label']}: **{total_count}건** · 공수 **{total_effort:.2f}**")
+        lines.append(f"- {item['label']}: 등록 **{total_count}건** · 공수 **{total_effort:.2f}**")
     return lines
 
 
@@ -267,8 +322,11 @@ def build_effort_trend_report(text: str) -> Optional[Dict[str, Any]]:
     """
     if not wants_effort_trend(text):
         return None
+    months, end_year, end_month = resolve_trend_window(text)
     return run_effort_trend_report(
         text,
-        months=parse_trend_months(text),
+        months=months,
         constraints=extract_query_constraints(text),
+        end_year=end_year,
+        end_month=end_month,
     )

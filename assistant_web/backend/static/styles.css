@@ -4753,6 +4753,13 @@ textarea:focus {
   height: 320px;
 }
 
+.effort-trend-basis {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
 .effort-trend-empty {
   margin: 0;
   padding: 28px 0;

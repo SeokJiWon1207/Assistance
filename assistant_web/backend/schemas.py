@@ -177,6 +177,11 @@ class ConversationMessage(BaseModel):
     templateId: str = Field(default="", max_length=64)
     feedback: Optional[Dict[str, Any]] = None
     abTest: Optional[Dict[str, Any]] = None
+    # 차트 payload 를 스키마에 두지 않으면 서버 저장 시 버려져
+    # 다른 기기나 재로그인 후 차트가 사라진다.
+    effortChart: Optional[Dict[str, Any]] = None
+    effortRanking: Optional[Dict[str, Any]] = None
+    effortTrend: Optional[Dict[str, Any]] = None
     playbookCandidate: Optional[PlaybookCandidate] = None
     playbookSaved: bool = False
     createdAt: str = Field(default="", max_length=64)

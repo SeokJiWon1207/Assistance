@@ -10,6 +10,7 @@ from backend.reports.effort_trend import (
     build_effort_trend_report,
     extract_document_effort,
     parse_trend_months,
+    resolve_trend_window,
     run_effort_trend_report,
     scope_label,
     wants_effort_trend,
@@ -73,6 +74,25 @@ class EffortTrendTriggerTest(unittest.TestCase):
         self.assertFalse(wants_effort_trend("2026년 8월 공수 알려줘"))
         self.assertFalse(wants_effort_trend("홍길동 공수 알려줘"))
         self.assertFalse(wants_effort_trend(""))
+
+    def test_defers_questions_it_cannot_scope(self):
+        # 1인칭/지시어는 담당자·맥락 해석이 필요하므로 기존 공수 리포트가 맡는다.
+        self.assertFalse(wants_effort_trend("내 월별 공수 추이"))
+        self.assertFalse(wants_effort_trend("제 월별 처리건수 추이"))
+        self.assertFalse(wants_effort_trend("우리 팀 월별 추이"))
+        self.assertFalse(wants_effort_trend("그중 월별 추이는?"))
+        self.assertTrue(wants_effort_trend("신한증권 월별 처리건수 추이"))
+
+    def test_pins_window_to_explicit_year(self):
+        today = date(2026, 8, 15)
+        # 지난 해를 지정하면 그 해 1~12월 전체를 본다.
+        self.assertEqual(resolve_trend_window("2025년 월별 처리건수 추이", today=today), (12, 2025, 12))
+        # 올해는 아직 오지 않은 달까지 그리지 않는다.
+        self.assertEqual(resolve_trend_window("2026년 월별 추이", today=today), (8, 2026, 8))
+        # 연도와 개월 수를 함께 적으면 그 해 끝에서 거꾸로 센다.
+        self.assertEqual(resolve_trend_window("2025년 6개월 월별 추이", today=today), (6, 2025, 12))
+        # 연도가 없으면 종전대로 오늘 기준이다.
+        self.assertEqual(resolve_trend_window("월별 추이", today=today), (DEFAULT_TREND_MONTHS, None, None))
 
     def test_parses_month_span_with_bounds(self):
         self.assertEqual(parse_trend_months("최근 20개월 추이"), 20)
@@ -235,6 +255,58 @@ class EffortTrendReportTest(unittest.TestCase):
         self.assertEqual(report["effortTrend"]["untypedCount"], 10)
         self.assertIn("차트에서 빠졌습니다", report["content"])
         self.assertIn("--full", report["content"])
+
+    def test_explicit_year_window_covers_that_year(self):
+        documents = [
+            issue_document(1, created_at="2025-02-10", issue_type="오류"),
+            issue_document(2, created_at="2025-11-05", issue_type="개선"),
+            # 지정한 해 밖의 이슈는 빠져야 한다.
+            issue_document(3, created_at="2026-03-01", issue_type="오류"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            months, end_year, end_month = resolve_trend_window(
+                "2025년 월별 처리건수 추이", today=date(2026, 8, 15)
+            )
+            report = run_effort_trend_report(
+                "2025년 월별 처리건수 추이",
+                months=months,
+                index_path=index_path,
+                today=date(2026, 8, 15),
+                end_year=end_year,
+                end_month=end_month,
+            )
+
+        chart = report["effortTrend"]
+        self.assertEqual(chart["periods"][0], "202501")
+        self.assertEqual(chart["periods"][-1], "202512")
+        self.assertEqual(chart["totalIssues"], 2)
+
+    def test_empty_result_does_not_blame_the_index(self):
+        documents = [issue_document(1, created_at="2026-08-01", issue_type="오류")]
+        constraints = {"customer_aliases": ["없는고객사"], "customer_key": "없는고객사"}
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            report = run_effort_trend_report(
+                "없는고객사 월별 처리건수 추이",
+                months=1,
+                index_path=index_path,
+                today=date(2026, 8, 15),
+                constraints=constraints,
+            )
+
+        self.assertIn("해당하는 이슈가 없습니다", report["content"])
+        self.assertNotIn("--full", report["content"])
+
+    def test_summary_states_registration_date_basis(self):
+        documents = [issue_document(1, created_at="2026-08-01", issue_type="오류")]
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            report = run_effort_trend_report(
+                "월별 처리건수 추이", months=1, index_path=index_path, today=date(2026, 8, 15)
+            )
+        self.assertIn("등록일", report["content"])
+        self.assertIn("처리·완료 시점 아님", report["content"])
 
     def test_scope_label_defaults_to_company_wide(self):
         self.assertEqual(scope_label({}), "전사")
