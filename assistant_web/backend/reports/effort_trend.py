@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.config import MANTIS_INDEX_DB_PATH
+from backend.intent.matching import chroma_text_matches_constraints
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
+from backend.understanding import extract_query_constraints
 
 # 차트에 그릴 이슈 유형. 멘티스 severity 8종 가운데 실제 처리 업무에 해당하는
 # 5종만 사용한다. 제외/중복·기각·정리/기타는 집계상 의미가 없어 제외한다.
@@ -82,13 +84,40 @@ def extract_document_effort(document: str) -> float:
     return round(total, 4)
 
 
+def scope_label(constraints: Dict[str, Any]) -> str:
+    """집계 범위를 사람이 읽는 문구로 만든다. 조건이 없으면 전사다."""
+    parts: List[str] = []
+    if constraints.get("customer_key"):
+        parts.append(str(constraints["customer_key"]))
+    if constraints.get("platform_key"):
+        parts.append(str(constraints["platform_key"]).upper())
+    names = (constraints.get("people") or {}).get("names") or []
+    if names:
+        parts.append(" · ".join(str(name) for name in names))
+    return " · ".join(parts) if parts else "전사"
+
+
+def has_scope_constraints(constraints: Dict[str, Any]) -> bool:
+    if constraints.get("customer_key") or constraints.get("platform_key"):
+        return True
+    if (constraints.get("people") or {}).get("names"):
+        return True
+    return bool(constraints.get("statuses") or constraints.get("screen_numbers"))
+
+
 def run_effort_trend_report(
     text: str,
     months: int = DEFAULT_TREND_MONTHS,
     index_path: Optional[Path] = None,
     today: Optional[date] = None,
+    constraints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """월별 × 이슈 유형으로 건수와 공수를 집계한다."""
+    """월별 × 이슈 유형으로 건수와 공수를 집계한다.
+
+    고객사·매체·담당자 조건이 있으면 그 범위로 좁혀서 집계한다. 조건을 무시하고
+    전사 합계를 돌려주면 사용자는 자기가 물어본 범위의 답으로 오해하게 된다.
+    """
+    active_constraints = constraints if constraints is not None else {}
     periods = _month_sequence(months, today=today)
     start_date = f"{periods[0][:4]}-{periods[0][4:]}-01"
 
@@ -99,7 +128,9 @@ def run_effort_trend_report(
         issue_type: {period: 0.0 for period in periods} for issue_type in TREND_ISSUE_TYPES
     }
     scanned = 0
+    matched = 0
     typed = 0
+    untyped = 0
 
     database_path = Path(index_path) if index_path else MANTIS_INDEX_DB_PATH
     if not database_path.exists():
@@ -123,7 +154,14 @@ def run_effort_trend_report(
         period = str(created_at or "")[:7].replace("-", "")
         if period not in counts.get(TREND_ISSUE_TYPES[0], {}):
             continue
+        if active_constraints and not chroma_text_matches_constraints(document, active_constraints):
+            continue
+        matched += 1
         label = str(issue_type or "").strip()
+        if not label:
+            # 이슈 유형이 아직 인덱스에 반영되지 않은 과거 문서.
+            untyped += 1
+            continue
         if label not in counts:
             continue
         typed += 1
@@ -144,10 +182,12 @@ def run_effort_trend_report(
         "series": series,
         "totalIssues": typed,
         "monthCount": len(periods),
+        "scopeLabel": scope_label(active_constraints),
+        "untypedCount": untyped,
         "periodLabel": f"{periods[0][:4]}년 {int(periods[0][4:])}월 ~ {periods[-1][:4]}년 {int(periods[-1][4:])}월",
     }
 
-    lines = _summary_lines(trend_chart, series, periods, typed, scanned)
+    lines = _summary_lines(trend_chart, series, periods, typed, matched, untyped)
     return {
         "content": "\n".join(lines),
         "sources": [],
@@ -156,30 +196,54 @@ def run_effort_trend_report(
     }
 
 
+# 인덱스에 이슈 유형이 없는 문서 비율이 이 값을 넘으면 추세가 왜곡된 것으로 본다.
+UNTYPED_WARNING_RATIO = 0.05
+
+
+def _rebuild_notice() -> List[str]:
+    return [
+        "이슈 유형은 전체 재구축을 해야 과거 이슈까지 채워집니다.",
+        "기본 실행(`python3 scripts/make_vector_db.py`)은 증분이라 신규 이슈만 반영됩니다.",
+        "`python3 scripts/make_vector_db.py --full` 로 재구축한 뒤 다시 시도해 주세요.",
+    ]
+
+
 def _summary_lines(
     trend_chart: Dict[str, Any],
     series: List[Dict[str, Any]],
     periods: List[str],
     typed: int,
-    scanned: int,
+    matched: int,
+    untyped: int,
 ) -> List[str]:
+    scope = trend_chart.get("scopeLabel") or "전사"
     if not typed:
         return [
-            f"{trend_chart['periodLabel']} 구간에서 이슈 유형이 기록된 이슈를 찾지 못했습니다.",
+            f"{trend_chart['periodLabel']} {scope} 구간에서 이슈 유형이 기록된 이슈를 찾지 못했습니다.",
             "",
-            "구조화 인덱스에 이슈 유형이 아직 반영되지 않았을 수 있습니다.",
-            "`python3 scripts/make_vector_db.py`로 인덱스를 갱신한 뒤 다시 시도해 주세요.",
+            *_rebuild_notice(),
         ]
 
     lines = [
-        f"{trend_chart['periodLabel']} 월별 이슈 유형 추이입니다.",
+        f"{trend_chart['periodLabel']} {scope} 월별 이슈 유형 추이입니다.",
         "",
+        f"- 집계 범위: {scope}",
         f"- 집계 기간: {len(periods)}개월",
-        f"- 유형이 기록된 이슈: **{typed}건** (조회 {scanned}건)",
+        f"- 유형이 기록된 이슈: **{typed}건** (범위 내 {matched}건)",
         "- 기준: Mantis 이슈 등록일 · 이슈 유형(severity)",
-        "",
-        "유형별 합계",
     ]
+
+    # 일부만 반영된 인덱스는 과거 달이 0으로 보여 없는 상승세를 만들어낸다.
+    if matched and untyped / matched > UNTYPED_WARNING_RATIO:
+        percent = untyped / matched * 100
+        lines.extend([
+            "",
+            f"⚠️ 범위 내 {untyped}건({percent:.0f}%)은 이슈 유형이 인덱스에 없어 차트에서 빠졌습니다.",
+            "과거 구간이 실제보다 낮게 보일 수 있습니다.",
+            *_rebuild_notice(),
+        ])
+
+    lines.extend(["", "유형별 합계"])
     for item in series:
         total_count = sum(item["counts"])
         total_effort = sum(item["efforts"])
@@ -197,7 +261,14 @@ def _empty_trend(text: str, periods: List[str], reason: str) -> Dict[str, Any]:
 
 
 def build_effort_trend_report(text: str) -> Optional[Dict[str, Any]]:
-    """질문이 월별 유형 추이를 요구하면 리포트를 만든다."""
+    """질문이 월별 유형 추이를 요구하면 리포트를 만든다.
+
+    고객사·매체·담당자 조건은 그대로 집계에 반영한다.
+    """
     if not wants_effort_trend(text):
         return None
-    return run_effort_trend_report(text, months=parse_trend_months(text))
+    return run_effort_trend_report(
+        text,
+        months=parse_trend_months(text),
+        constraints=extract_query_constraints(text),
+    )

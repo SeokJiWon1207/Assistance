@@ -20,6 +20,10 @@
         templateId: message.templateId || "",
         feedback: message.feedback || null,
         abTest: message.abTest || null,
+        // 차트 payload 도 함께 저장해야 대화를 다시 열었을 때 차트가 남는다.
+        effortChart: message.effortChart || null,
+        effortRanking: message.effortRanking || null,
+        effortTrend: message.effortTrend || null,
         playbookCandidate: message.playbookCandidate || null,
         playbookSaved: Boolean(message.playbookSaved),
         createdAt: message.createdAt || "",

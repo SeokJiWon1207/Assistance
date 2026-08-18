@@ -11,6 +11,7 @@ from backend.reports.effort_trend import (
     extract_document_effort,
     parse_trend_months,
     run_effort_trend_report,
+    scope_label,
     wants_effort_trend,
 )
 from backend.tools.mantis_index import INDEX_FILENAME, build_mantis_index, parse_index_document
@@ -22,11 +23,13 @@ def issue_document(
     created_at: str,
     issue_type: str,
     effort_line: str = "- 1문의공수: 0.00",
+    customer: str = "132SHGM(신한굿모닝증권)",
+    platform: str = "MTS",
 ) -> str:
     return f"""[Mantis 이슈 정보]
 - 이슈 ID: #{issue_id}
-- 프로젝트(고객사): 132SHGM(신한굿모닝증권)
-- 매체구분: MTS
+- 프로젝트(고객사): {customer}
+- 매체구분: {platform}
 - 화면번호: 9413
 - 작업주체: 개발
 - 현재 상태: 할당된 이슈
@@ -177,6 +180,66 @@ class EffortTrendReportTest(unittest.TestCase):
 
     def test_returns_none_for_unrelated_question(self):
         self.assertIsNone(build_effort_trend_report("홍길동 공수 알려줘"))
+
+    def test_applies_customer_constraint_instead_of_company_wide(self):
+        documents = [
+            issue_document(
+                1,
+                created_at="2026-08-03",
+                issue_type="오류",
+                customer="132SHGM(신한굿모닝증권)",
+                effort_line="- 1문의공수: 홍길동(1.00)",
+            ),
+            issue_document(
+                2,
+                created_at="2026-08-04",
+                issue_type="오류",
+                customer="900KIWOOM(키움증권)",
+                effort_line="- 1문의공수: 김철수(5.00)",
+            ),
+        ]
+        constraints = {"customer_aliases": ["신한굿모닝증권"], "customer_key": "신한굿모닝증권"}
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            report = run_effort_trend_report(
+                "신한굿모닝증권 월별 처리건수 추이",
+                months=1,
+                index_path=index_path,
+                today=date(2026, 8, 15),
+                constraints=constraints,
+            )
+
+        chart = report["effortTrend"]
+        by_label = {item["label"]: item for item in chart["series"]}
+        # 키움증권 이슈(공수 5.00)는 집계에서 빠져야 한다.
+        self.assertEqual(by_label["오류"]["counts"], [1])
+        self.assertEqual(by_label["오류"]["efforts"], [1.0])
+        self.assertEqual(chart["scopeLabel"], "신한굿모닝증권")
+        self.assertIn("신한굿모닝증권", report["content"])
+
+    def test_warns_when_many_issues_lack_issue_type(self):
+        documents = [issue_document(1, created_at="2026-08-01", issue_type="오류")]
+        for issue_id in range(2, 12):
+            legacy = issue_document(issue_id, created_at="2026-08-02", issue_type="오류")
+            documents.append(legacy.replace("- 이슈 유형: 오류\n", ""))
+
+        with tempfile.TemporaryDirectory() as directory:
+            index_path = self.build_index(Path(directory), documents)
+            report = run_effort_trend_report(
+                "월별 처리건수 추이",
+                months=1,
+                index_path=index_path,
+                today=date(2026, 8, 15),
+            )
+
+        self.assertEqual(report["effortTrend"]["untypedCount"], 10)
+        self.assertIn("차트에서 빠졌습니다", report["content"])
+        self.assertIn("--full", report["content"])
+
+    def test_scope_label_defaults_to_company_wide(self):
+        self.assertEqual(scope_label({}), "전사")
+        self.assertEqual(scope_label({"customer_key": "신한", "platform_key": "mts"}), "신한 · MTS")
+        self.assertEqual(scope_label({"people": {"names": ["홍길동"]}}), "홍길동")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,13 @@ function loadECharts() {
   return echartsModulePromise;
 }
 
+// 서버 값이라도 마크업에 넣기 전에는 이스케이프한다.
+function escapeText(value) {
+  const holder = document.createElement("span");
+  holder.textContent = String(value ?? "");
+  return holder.innerHTML;
+}
+
 function cssValue(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
@@ -154,7 +161,7 @@ export function renderEffortTrendChart(trend) {
         <button type="button" role="tab" data-trend-metric="counts" aria-selected="true">월별 처리건수</button>
         <button type="button" role="tab" data-trend-metric="efforts" aria-selected="false">월별 처리공수</button>
       </div>
-      <span class="effort-trend-period">${trend.periodLabel || ""}</span>
+      <span class="effort-trend-period">${escapeText(trend.scopeLabel || "전사")} · ${escapeText(trend.periodLabel || "")}</span>
     </header>
     <div class="effort-trend-canvas" role="img" aria-label="월별 이슈 유형 추이 차트"></div>
   `;
@@ -199,20 +206,21 @@ export function renderEffortTrendChart(trend) {
   // 대화 목록이 다시 그려지면 이전 인스턴스를 정리해 캔버스가 새지 않게 한다.
   const resizeObserver = new ResizeObserver(() => chart?.resize());
   resizeObserver.observe(canvas);
+  // 테마 전환 시 색상 토큰을 다시 읽어 적용한다.
+  const themeObserver = new MutationObserver(() => applyOption());
+  themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
   const cleanup = new MutationObserver(() => {
     if (wrap.isConnected) return;
     disposed = true;
     cleanup.disconnect();
     resizeObserver.disconnect();
     observer.disconnect();
+    themeObserver.disconnect();
     chart?.dispose();
     chart = null;
   });
   cleanup.observe(document.body, { childList: true, subtree: true });
-
-  // 테마 전환 시 색상 토큰을 다시 읽어 적용한다.
-  const themeObserver = new MutationObserver(() => applyOption());
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
   return wrap;
 }
