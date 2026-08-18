@@ -831,6 +831,34 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(constraints["issue_ids"], [30964])
         self.assertEqual(constraints["customer_exact"], "117Hantu(한투증권)")
 
+    def test_notion_follow_up_does_not_repeat_current_detail_question(self):
+        title = (
+            "[VOC][9580] 주식차트 화면 - 지표탭 내 차트유형 카테고리에 "
+            "매물차트 유형 추가 요청(520)"
+        )
+        question = f"노션에서 '{title}' 상세 내용 정리해줘"
+        source = {
+            "type": "notion",
+            "page_id": "page-1",
+            "title": title,
+            "database_label": "이슈리스트_테스트",
+            "status": "종료된이슈",
+            "owner": "담당자 미지정",
+        }
+
+        followups = generate_follow_up_questions(
+            question,
+            [source],
+            None,
+            "model",
+        )
+
+        self.assertNotIn(question, followups)
+        self.assertEqual(
+            followups,
+            ["이슈리스트_테스트에서 같은 상태의 항목 더 보여줘"],
+        )
+
     def test_issue_history_follow_up_includes_history_and_notes(self):
         issue = self.normalized_issue(30964, "2026-04-30")
         issue.update(

@@ -31,6 +31,7 @@ from backend.sources.notion import (
     notion_properties_to_text,
     notion_search_max_pages,
     resolve_notion_page_owner,
+    should_return_deterministic_notion_list,
 )
 from backend.understanding import (
     extract_query_constraints,
@@ -64,6 +65,68 @@ class SearchIntentTests(unittest.TestCase):
             self.route("주요이슈현황에서 결재완료(팀장) 항목 보여줘")["source"],
             "notion",
         )
+
+    def test_quoted_notion_detail_request_is_not_misclassified_as_list(self):
+        question = (
+            "노션에서 '[VOC][9580] 주식차트 화면 - 지표탭 내 차트유형 카테고리에 "
+            "매물차트 유형 추가 요청(520)' 상세 내용 정리해줘"
+        )
+        retrieval_result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [{"source": "notion", "status": "ok", "notion_pages": [{}]}],
+        }
+
+        self.assertFalse(
+            should_return_deterministic_notion_list(question, retrieval_result)
+        )
+
+    def test_quoted_notion_list_request_still_returns_deterministic_list(self):
+        question = "노션에서 '배포 요청 문서' 찾아줘"
+        retrieval_result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [{"source": "notion", "status": "ok", "notion_pages": [{}]}],
+        }
+
+        self.assertTrue(
+            should_return_deterministic_notion_list(question, retrieval_result)
+        )
+
+    def test_quoted_notion_list_displays_exact_title_in_search_criteria(self):
+        title = "배포 요청 문서"
+        retrieval_result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [
+                {
+                    "source": "notion",
+                    "status": "ok",
+                    "notion_pages": [
+                        {
+                            "id": "page-1",
+                            "title": title,
+                            "database_label": "업무 DB",
+                            "status": "진행 중",
+                            "owner": "담당자 미지정",
+                            "last_edited_time": "2026-08-18",
+                        }
+                    ],
+                    "meta": {
+                        "candidate_count": 1,
+                        "terms": ["배포", "요청", "문서"],
+                        "databases": [{"database_label": "업무 DB"}],
+                        "constraints": {"exact_title": title},
+                    },
+                }
+            ],
+        }
+
+        answer = notion.format_deterministic_notion_answer(
+            f"노션에서 '{title}' 찾아줘",
+            retrieval_result,
+            5,
+        )
+
+        self.assertIn(f"정확 제목={title}", answer)
+        self.assertNotIn("키워드=배포, 요청, 문서", answer)
 
 
 class ExactConstraintTests(unittest.TestCase):

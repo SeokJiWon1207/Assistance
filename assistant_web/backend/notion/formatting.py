@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List
 
-from backend.common import normalize_for_match
+from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
 from backend.intent.constants import ISSUE_LIST_INTENT_KEYWORDS
 from backend.intent.constraints import should_run_notion_search
 from backend.notion.search import collect_retrieved_notion_pages
@@ -40,7 +40,16 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
         return False
     if not should_run_notion_search(text) and plan_source not in {"notion", "both"}:
         return False
-    normalized_text = normalize_for_match(text)
+    # 인용된 제목은 검색 대상이지 사용자의 명령이 아니다. 제목에 "요청" 같은
+    # 목록 의도 단어가 들어 있으면 ``상세 내용 정리해줘``도 목록 조회로 오인한다.
+    # 정확 제목 뒤의 실제 명령만 보고 목록 여부를 판정한다.
+    intent_text = remove_quoted_value(text) if extract_quoted_value(text) else text
+    normalized_text = normalize_for_match(intent_text)
+    if extract_quoted_value(text) and any(
+        normalize_for_match(marker) in normalized_text
+        for marker in ("상세", "자세히", "요약", "내용 정리", "정리해줘")
+    ):
+        return False
     has_list_intent = any(
         normalize_for_match(keyword) in normalized_text
         for keyword in ISSUE_LIST_INTENT_KEYWORDS
@@ -128,7 +137,10 @@ def format_deterministic_notion_answer(
     criteria = "검색 기준: Notion DB"
     if database_labels:
         criteria += f"({', '.join(database_labels)})"
-    if terms:
+    exact_title = str(notion_constraints.get("exact_title") or "").strip()
+    if exact_title:
+        criteria += f", 정확 제목={exact_title}"
+    elif terms:
         criteria += f", 키워드={', '.join(terms)}"
     structured_labels = [
         filter_clause_label(clause)

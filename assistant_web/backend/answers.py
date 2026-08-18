@@ -839,11 +839,24 @@ def generate_follow_up_questions(
 
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     followups: List[str] = []
+    current_question_key = re.sub(
+        r"[\s?!.,'\"“”‘’]+",
+        "",
+        str(question or ""),
+    ).casefold()
+    followup_keys: set[str] = set()
 
     def add(value: str) -> None:
         normalized = re.sub(r"\s+", " ", value).strip()
-        if normalized and normalized not in followups:
+        normalized_key = re.sub(r"[\s?!.,'\"“”‘’]+", "", normalized).casefold()
+        if (
+            normalized
+            and normalized_key
+            and normalized_key != current_question_key
+            and normalized_key not in followup_keys
+        ):
             followups.append(normalized)
+            followup_keys.add(normalized_key)
 
     # "확인된 이슈"처럼 상태 표현이 중의적으로 해석돼 결과가 걸러졌다면,
     # 다른 해석(상태 무관)을 한 번의 클릭으로 실행할 수 있는 칩을 맨 앞에 둔다.
