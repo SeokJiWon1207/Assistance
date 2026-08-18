@@ -497,6 +497,9 @@ def run_person_effort_report(
 _RANKING_ORDER_MARKERS = (
     "순위", "랭킹", "1위", "일위", "최다", "최소", "상위", "하위", "top", "순서",
 )
+# 적은 쪽을 묻는 표현. 이때 순위를 오름차순으로 뒤집지 않으면
+# "공수 가장 적은 사람"에 가장 많은 사람을 답하게 된다.
+_RANKING_ASCENDING_MARKERS = ("최소", "하위", "적은", "적게", "낮은", "바닥")
 # "제일/가장" + "많/적" 조합. 사이에 다른 말이 끼어도 잡히도록 따로 본다.
 _RANKING_SUPERLATIVES = ("제일", "가장")
 _RANKING_COMPARATIVES = ("많", "적")
@@ -537,6 +540,12 @@ def wants_effort_ranking(text: str) -> bool:
     known = set(handlers) | set(reporters)
     # 질문에 known_people 이름이 직접 등장하면 개인 조회이므로 랭킹이 아니다.
     return not any(text_contains_person_name(text, name) for name in known)
+
+
+def wants_ascending_effort_ranking(text: str) -> bool:
+    """'가장 적은/하위'처럼 공수가 낮은 쪽을 묻는지 판별한다."""
+    normalized = normalize_for_match(text)
+    return any(marker in normalized for marker in _RANKING_ASCENDING_MARKERS)
 
 
 def wants_full_effort_roster(text: str) -> bool:
@@ -615,14 +624,24 @@ def run_effort_ranking_report(
             "raw": {"mode": "deterministic_effort_ranking"},
         }
 
-    ranked = sorted(per_person.items(), key=lambda item: item[1]["_total"], reverse=True)
+    # "가장 적은/하위"를 물으면 오름차순으로 뒤집는다.
+    ascending = wants_ascending_effort_ranking(text)
+    ranked = sorted(
+        per_person.items(),
+        key=lambda item: item[1]["_total"],
+        reverse=not ascending,
+    )
     # "다/전원 보여줘"면 전체를, 아니면 상위 10명만 노출한다.
     show_all = wants_full_effort_roster(text)
     top_n = ranked if show_all else ranked[:10]
     top_person_name, top_person_totals = top_n[0]
 
-    heading = f"{period_label} 공수 기입자 전체 명단입니다." if show_all else f"{period_label} 공수 순위입니다."
-    list_label = "공수 기입자 (많은 순)" if show_all else "공수 순위"
+    order_label = "적은 순" if ascending else "많은 순"
+    if show_all:
+        heading = f"{period_label} 공수 기입자 전체 명단입니다."
+    else:
+        heading = f"{period_label} 공수 순위입니다({order_label})."
+    list_label = f"공수 기입자 ({order_label})" if show_all else f"공수 순위 ({order_label})"
     lines = [
         heading,
         "",
@@ -634,7 +653,8 @@ def run_effort_ranking_report(
     for index, (name, totals) in enumerate(top_n, start=1):
         lines.append(f"{index}. {name} — **{totals['_total']:.2f}**")
 
-    lines.extend(["", f"1위는 **{top_person_name}**이며 유형별 내역은 다음과 같습니다."])
+    rank_label = "공수가 가장 적은 사람은" if ascending else "1위는"
+    lines.extend(["", f"{rank_label} **{top_person_name}**이며 유형별 내역은 다음과 같습니다."])
     for field_name, label in EFFORT_FIELD_LABELS.items():
         lines.append(f"- {label}: **{top_person_totals[field_name]:.2f}**")
 

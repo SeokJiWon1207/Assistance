@@ -34,7 +34,12 @@ _EFFORT_LINE_PATTERN = re.compile(r"^-\s*(?P<field>[^:]+):\s*(?P<value>.*)$")
 # 규칙 경로는 오탐이 없는 표현만 잡는다. 애매한 표현은 LLM 플래너가 판정한다.
 # '이슈'만으로 매칭하면 "월별 회의 이슈 정리해줘" 같은 질문까지 차트로 빠진다.
 _TREND_KEYWORDS = ("월별", "월간", "달별", "추이", "트렌드", "추세")
-_TREND_SUBJECTS = ("처리", "공수", "건수", "유형", "통계", "집계", "현황")
+# 이 어휘만으로 멘티스 이슈 집계라고 단정할 수 있는 대상.
+_TREND_SUBJECTS = ("처리건수", "등록건수", "공수", "이슈유형")
+# '통계/집계/현황'은 대상이 없으면 매출·팀 현황 등 무엇이든 가리킨다.
+# 이슈를 가리키는 말이 함께 있을 때만 추이 질문으로 인정한다.
+_TREND_WEAK_SUBJECTS = ("통계", "집계", "현황", "건수", "처리")
+_TREND_ISSUE_MARKERS = ("이슈", "오류", "버그", "장애", "결함", "멘티스", "맨티스", "mantis")
 # 1인칭·지시어는 이 리포트가 해석할 수 없다. 조건 없이 전사로 답하면
 # 사용자는 자기 실적으로 오해하므로, 기존 공수 리포트에 넘긴다.
 _UNRESOLVED_SCOPE_HINTS = ("내 ", "내가", "제 ", "나의", "본인", "우리", "그중", "거기서", "저건", "방금", "위에서")
@@ -42,6 +47,12 @@ _UNRESOLVED_SCOPE_HINTS = ("내 ", "내가", "제 ", "나의", "본인", "우리
 # 플래너 출력은 실행 전에 결정형 규칙으로 한 번 더 검증한다
 # (build_effort_report_from_plan 이 인물 이름을 검증하는 것과 같은 방식).
 _NON_ISSUE_SUBJECTS = ("회의", "회의록", "공지", "결재", "휴가", "회식", "일정", "계약", "출장", "교육")
+# 여러 달에 걸친 비교임을 드러내는 표현. 플래너가 trend 라고 해도 이런 표현이
+# 없으면 "2026년 8월 공수"처럼 단일 기간 질문일 가능성이 높다.
+_MULTI_PERIOD_HINTS = (
+    "월별", "월간", "달별", "달마다", "매월", "매달", "추이", "추세", "트렌드",
+    "증감", "변화", "변했", "변동", "흐름", "개월", "분기별", "연도별", "년도별",
+)
 
 
 def has_unresolved_scope(text: str) -> bool:
@@ -54,6 +65,11 @@ def mentions_non_issue_subject(text: str) -> bool:
     return any(subject in str(text or "") for subject in _NON_ISSUE_SUBJECTS)
 
 
+def mentions_multiple_periods(text: str) -> bool:
+    """여러 달에 걸친 비교를 요구하는 표현인지 본다."""
+    return any(hint in str(text or "") for hint in _MULTI_PERIOD_HINTS)
+
+
 def wants_effort_trend(text: str) -> bool:
     """월별 유형 추이 질문인지 판별한다."""
     if not text:
@@ -61,7 +77,13 @@ def wants_effort_trend(text: str) -> bool:
     lowered = str(text)
     if not any(keyword in lowered for keyword in _TREND_KEYWORDS):
         return False
-    if not any(subject in lowered for subject in _TREND_SUBJECTS):
+    # "처리 건수"처럼 띄어 쓴 표현도 같게 보도록 공백을 지우고 맞춘다.
+    compact = re.sub(r"\s+", "", lowered).lower()
+    strong = any(subject in compact for subject in _TREND_SUBJECTS)
+    weak = any(subject in compact for subject in _TREND_WEAK_SUBJECTS) and any(
+        marker in compact for marker in _TREND_ISSUE_MARKERS
+    )
+    if not strong and not weak:
         return False
     # 회의·공지처럼 이슈 집계가 아닌 주제는 대상 어휘가 겹쳐도 넘긴다.
     if mentions_non_issue_subject(lowered):
@@ -344,11 +366,19 @@ def build_effort_trend_report_from_plan(
         return None
     if str(effort.get("type", "")).strip().lower() != "trend":
         return None
+    # 이 리포트는 멘티스 이슈만 집계한다. 플래너가 Notion 이나 일반 대화로
+    # 판단한 질문에 멘티스 차트를 돌려주면 엉뚱한 답이 된다.
+    if str(model_plan.get("source", "")).strip().lower() not in {"mantis", "both"}:
+        return None
     # 화자·지시어가 섞인 질문은 담당자 해석이 필요하므로 여기서도 넘기지 않는다.
     if has_unresolved_scope(text):
         return None
     # 플래너가 trend 라고 해도 회의록·공지 같은 주제면 이슈 집계가 아니다.
     if mentions_non_issue_subject(text):
+        return None
+    # 단일 기간 질문을 추이로 바꾸지 않는다. "2026년 8월 공수 알려줘"에
+    # 12개월 차트를 돌려주면 물어본 것과 다른 답이 된다.
+    if not mentions_multiple_periods(text):
         return None
     months, end_year, end_month = resolve_trend_window(text)
     return run_effort_trend_report(

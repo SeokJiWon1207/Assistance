@@ -477,13 +477,12 @@ class ChatService:
 
             # 규칙 경로가 못 잡은 추이 질문을 플래너 분류로 실행한다.
             # 기간 해석과 집계는 결정형 코어가 그대로 담당한다.
-            # 규칙 경로가 이미 인물 공수 질문으로 보고 이름을 기다리는 중이면
-            # 여기서 가로채지 않는다. 단일 기간 질문이 추이 차트로 바뀌어 버린다.
-            if (
-                pending_effort_report is None
-                and enabled_tools.get("mantis")
-                and model_plan.get("planned")
-            ):
+            #
+            # 규칙 경로가 인물 이름을 기다리는(pending) 상태라도, 플래너가 추이로
+            # 판정하면 추이를 우선한다. "공수 어떻게 변했어"처럼 두 해석이 겹치는
+            # 질문에서 pending 을 이유로 막으면 추이가 영영 나오지 않는다.
+            # 다만 질문에 기간을 여러 달로 넓히는 표현이 있을 때만 추이로 본다.
+            if enabled_tools.get("mantis") and model_plan.get("planned"):
                 trend_fallback = build_effort_trend_report_from_plan(
                     retrieval_text,
                     model_plan,

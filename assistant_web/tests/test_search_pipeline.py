@@ -17,6 +17,7 @@ from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
     wants_full_effort_roster,
+    wants_ascending_effort_ranking,
     wants_effort_ranking,
 )
 from backend.reports.evaluation import evaluate_ab_comparison
@@ -336,6 +337,12 @@ class EffortIntentTests(unittest.TestCase):
         self.assertTrue(wants_effort_ranking("공수 많이 쓴 순서대로"))
         self.assertTrue(wants_effort_ranking("공수 최다 담당자"))
         self.assertFalse(wants_effort_ranking("이번달 공수 총합"))
+        # 적은 쪽을 묻는 표현도 순위 질문이며, 정렬 방향이 뒤집혀야 한다.
+        self.assertTrue(wants_effort_ranking("공수 가장 적은 사람"))
+        self.assertTrue(wants_ascending_effort_ranking("공수 가장 적은 사람"))
+        self.assertTrue(wants_ascending_effort_ranking("공수 하위 5명"))
+        self.assertFalse(wants_ascending_effort_ranking("공수 제일 많은 사람"))
+        self.assertFalse(wants_ascending_effort_ranking("공수 상위 5명"))
         self.assertFalse(wants_effort_ranking("석지원 공수 알려줘"))
 
     def test_roster_phrasing_is_treated_as_ranking(self):

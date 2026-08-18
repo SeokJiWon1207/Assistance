@@ -86,17 +86,20 @@ class EffortTrendTriggerTest(unittest.TestCase):
         self.assertTrue(wants_effort_trend("월간 공수 추이"))
         self.assertTrue(wants_effort_trend("달별 처리 건수"))
 
-    def test_catches_statistic_wordings(self):
-        # '통계/집계/현황'도 월 단위 표현과 함께 오면 추이 질문이다.
-        self.assertTrue(wants_effort_trend("월간 통계 보여줘"))
-        self.assertTrue(wants_effort_trend("월별 집계 알려줘"))
-        self.assertTrue(wants_effort_trend("월별 현황"))
+    def test_weak_wordings_need_an_issue_marker(self):
+        # '통계/집계/현황'만으로는 무엇을 묻는지 알 수 없어 가로채지 않는다.
+        self.assertFalse(wants_effort_trend("월별 현황"))
+        self.assertFalse(wants_effort_trend("월간 통계 보여줘"))
+        self.assertFalse(wants_effort_trend("월별 매출 현황"))
+        self.assertFalse(wants_effort_trend("월간 팀 현황 공유"))
+        # 이슈를 가리키는 말이 함께 오면 추이 질문이다.
+        self.assertTrue(wants_effort_trend("월별 이슈 통계"))
+        self.assertTrue(wants_effort_trend("월간 오류 현황"))
 
     def test_rule_path_rejects_non_issue_subjects(self):
         # 대상 어휘가 겹쳐도 회의·공지 주제면 이슈 집계가 아니다.
-        self.assertFalse(wants_effort_trend("월별 회의 통계"))
-        self.assertFalse(wants_effort_trend("월간 공지 현황"))
-        self.assertFalse(wants_effort_trend("월별 휴가 집계"))
+        self.assertFalse(wants_effort_trend("월별 회의 이슈 통계"))
+        self.assertFalse(wants_effort_trend("월간 공지 오류 현황"))
 
     def test_defers_questions_it_cannot_scope(self):
         # 1인칭/지시어는 담당자·맥락 해석이 필요하므로 기존 공수 리포트가 맡는다.
@@ -350,7 +353,7 @@ class EffortTrendReportTest(unittest.TestCase):
             ):
                 report = build_effort_trend_report_from_plan(
                     question,
-                    {"effort": {"type": "trend"}},
+                    {"effort": {"type": "trend"}, "source": "mantis"},
                     constraints={},
                 )
 
@@ -360,15 +363,33 @@ class EffortTrendReportTest(unittest.TestCase):
     def test_planner_path_ignores_other_effort_types(self):
         for effort in ({"type": "person", "person": "홍길동"}, {"type": "ranking"}, {}):
             self.assertIsNone(
-                build_effort_trend_report_from_plan("달별 변화", {"effort": effort}, constraints={})
+                build_effort_trend_report_from_plan(
+                    "달별 변화", {"effort": effort, "source": "mantis"}, constraints={}
+                )
             )
         self.assertIsNone(
-            build_effort_trend_report_from_plan("달별 변화", {}, constraints={})
+            build_effort_trend_report_from_plan("달별 변화", {"source": "mantis"}, constraints={})
         )
+
+    def test_planner_path_requires_mantis_source(self):
+        # 플래너가 Notion·일반으로 본 질문에 멘티스 차트를 돌려주면 안 된다.
+        for source, expected in (("mantis", True), ("both", True), ("notion", False), ("general", False), ("", False)):
+            report = build_effort_trend_report_from_plan(
+                "달별 이슈 변화",
+                {"effort": {"type": "trend"}, "source": source},
+                constraints={},
+            )
+            self.assertEqual(report is not None, expected, msg=source)
+
+    def test_planner_path_requires_multi_period_wording(self):
+        plan = {"effort": {"type": "trend"}, "source": "mantis"}
+        # 단일 기간 질문은 추이로 바꾸지 않는다.
+        self.assertIsNone(build_effort_trend_report_from_plan("2026년 8월 공수 알려줘", plan, constraints={}))
+        self.assertIsNone(build_effort_trend_report_from_plan("홍길동 공수 얼마야", plan, constraints={}))
 
     def test_planner_path_rejects_non_issue_subjects(self):
         # 플래너가 trend 라고 해도 회의록·공지 주제면 이슈 집계가 아니다.
-        plan = {"effort": {"type": "trend"}}
+        plan = {"effort": {"type": "trend"}, "source": "mantis"}
         for question in ("월별 회의 이슈 정리해줘", "월간 공지 추이", "월별 휴가 현황 추이"):  # noqa: E501
             self.assertIsNone(
                 build_effort_trend_report_from_plan(question, plan, constraints={}),
@@ -379,7 +400,9 @@ class EffortTrendReportTest(unittest.TestCase):
         # 플래너가 trend 라고 해도 화자 표현이 있으면 넘기지 않는다.
         self.assertIsNone(
             build_effort_trend_report_from_plan(
-                "내 공수 어떻게 변했어", {"effort": {"type": "trend"}}, constraints={}
+                "내 공수 어떻게 변했어",
+                {"effort": {"type": "trend"}, "source": "mantis"},
+                constraints={},
             )
         )
 
