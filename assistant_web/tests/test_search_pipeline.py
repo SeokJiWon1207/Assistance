@@ -329,6 +329,13 @@ class EffortIntentTests(unittest.TestCase):
     def test_ranking_regex_catches_common_phrasings(self):
         self.assertTrue(wants_effort_ranking("작년 기준으로 공수가 제일 많은 사람은 누구야"))
         self.assertTrue(wants_effort_ranking("공수 순위 보여줘"))
+        # 낱말 사이에 다른 말이 끼어도 순위 질문으로 인식해야 한다.
+        self.assertTrue(wants_effort_ranking("누가 공수 제일 많아?"))
+        self.assertTrue(wants_effort_ranking("공수 누가 많아"))
+        self.assertTrue(wants_effort_ranking("공수 상위 5명"))
+        self.assertTrue(wants_effort_ranking("공수 많이 쓴 순서대로"))
+        self.assertTrue(wants_effort_ranking("공수 최다 담당자"))
+        self.assertFalse(wants_effort_ranking("이번달 공수 총합"))
         self.assertFalse(wants_effort_ranking("석지원 공수 알려줘"))
 
     def test_roster_phrasing_is_treated_as_ranking(self):

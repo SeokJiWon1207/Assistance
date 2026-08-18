@@ -493,45 +493,50 @@ def run_person_effort_report(
     }
 
 
+# 순위를 명시하는 표현. 이것만 있으면 인물 이름이 함께 있어도 랭킹으로 본다.
+_RANKING_ORDER_MARKERS = (
+    "순위", "랭킹", "1위", "일위", "최다", "최소", "상위", "하위", "top", "순서",
+)
+# "제일/가장" + "많/적" 조합. 사이에 다른 말이 끼어도 잡히도록 따로 본다.
+_RANKING_SUPERLATIVES = ("제일", "가장")
+_RANKING_COMPARATIVES = ("많", "적")
+_RANKING_PERSON_MARKERS = ("누가", "누구", "사람", "인원", "담당자", "명단")
+_RANKING_ROSTER_VERBS = ("보여", "알려", "정리", "리스트", "목록", "나열")
+
+
 def wants_effort_ranking(text: str) -> bool:
     """특정 인물을 지정하지 않고 공수 순위/명단을 묻는 질문인지 판별한다.
 
-    두 갈래를 잡는다.
-    1) 순위형: "제일 많은 사람", "공수 순위" 등 명시적 랭킹 표현.
-    2) 명단형: "공수 기입한 사람들 다 보여줘"처럼 공수를 낸 인원 전체를 묻는 표현.
-       (인원 집계 결과는 순위 리포트와 동일하므로 같은 경로로 처리한다.)"""
+    세 갈래를 잡는다.
+    1) 순위형: "공수 순위", "공수 상위 5명"처럼 순서를 명시한 표현.
+    2) 최상급형: "누가 공수 제일 많아"처럼 제일/가장과 많/적이 함께 오는 표현.
+       두 낱말 사이에 다른 말이 끼므로 연속 문자열로는 잡히지 않는다.
+    3) 명단형: "공수 기입한 사람들 다 보여줘"처럼 공수를 낸 인원 전체를 묻는 표현.
+       (인원 집계 결과는 순위 리포트와 동일하므로 같은 경로로 처리한다.)
+
+    2)와 3)은 질문에 실제 담당자 이름이 있으면 개인 조회로 보고 넘긴다.
+    """
     normalized = normalize_for_match(text)
     if "공수" not in normalized:
         return False
-    ranking_markers = (
-        "제일많은사람",
-        "가장많은사람",
-        "제일많이한사람",
-        "가장많이한사람",
-        "제일많이쓴사람",
-        "가장많이쓴사람",
-        "최다공수",
-        "공수1위",
-        "공수순위",
-        "공수랭킹",
-        "누가제일",
-        "누가가장",
-        "누구가제일",
-        "누구가가장",
-    )
-    if any(marker in normalized for marker in ranking_markers):
+
+    if any(marker in normalized for marker in _RANKING_ORDER_MARKERS):
         return True
-    # 명단형: "사람/인원/담당자" + 목록 요청 동사가 함께 오고, 특정 인물 이름이
-    # 없을 때 전원 집계로 본다. "석지원 공수 알려줘"(특정 인물)는 아래에서 걸러진다.
-    roster_subject = any(marker in normalized for marker in ("사람", "인원", "담당자", "명단", "누구"))
-    roster_verb = any(marker in normalized for marker in ("보여", "알려", "정리", "누구", "리스트", "목록"))
-    if roster_subject and roster_verb:
-        handlers, reporters = load_known_people()
-        known = set(handlers) | set(reporters)
-        # 질문에 known_people 이름이 직접 등장하면 개인 조회이므로 랭킹이 아니다.
-        if not any(text_contains_person_name(text, name) for name in known):
-            return True
-    return False
+
+    has_comparative = any(marker in normalized for marker in _RANKING_COMPARATIVES)
+    has_superlative = (
+        any(marker in normalized for marker in _RANKING_SUPERLATIVES) and has_comparative
+    )
+    roster_subject = any(marker in normalized for marker in _RANKING_PERSON_MARKERS)
+    roster_verb = any(marker in normalized for marker in _RANKING_ROSTER_VERBS)
+    # "공수 누가 많아"처럼 인물 지시어와 비교 표현만 있어도 순위 질문이다.
+    if not has_superlative and not (roster_subject and (roster_verb or has_comparative)):
+        return False
+
+    handlers, reporters = load_known_people()
+    known = set(handlers) | set(reporters)
+    # 질문에 known_people 이름이 직접 등장하면 개인 조회이므로 랭킹이 아니다.
+    return not any(text_contains_person_name(text, name) for name in known)
 
 
 def wants_full_effort_roster(text: str) -> bool:

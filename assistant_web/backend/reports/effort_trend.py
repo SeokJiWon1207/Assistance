@@ -34,7 +34,7 @@ _EFFORT_LINE_PATTERN = re.compile(r"^-\s*(?P<field>[^:]+):\s*(?P<value>.*)$")
 # 규칙 경로는 오탐이 없는 표현만 잡는다. 애매한 표현은 LLM 플래너가 판정한다.
 # '이슈'만으로 매칭하면 "월별 회의 이슈 정리해줘" 같은 질문까지 차트로 빠진다.
 _TREND_KEYWORDS = ("월별", "월간", "달별", "추이", "트렌드", "추세")
-_TREND_SUBJECTS = ("처리", "공수", "건수", "유형")
+_TREND_SUBJECTS = ("처리", "공수", "건수", "유형", "통계", "집계", "현황")
 # 1인칭·지시어는 이 리포트가 해석할 수 없다. 조건 없이 전사로 답하면
 # 사용자는 자기 실적으로 오해하므로, 기존 공수 리포트에 넘긴다.
 _UNRESOLVED_SCOPE_HINTS = ("내 ", "내가", "제 ", "나의", "본인", "우리", "그중", "거기서", "저건", "방금", "위에서")
@@ -62,6 +62,9 @@ def wants_effort_trend(text: str) -> bool:
     if not any(keyword in lowered for keyword in _TREND_KEYWORDS):
         return False
     if not any(subject in lowered for subject in _TREND_SUBJECTS):
+        return False
+    # 회의·공지처럼 이슈 집계가 아닌 주제는 대상 어휘가 겹쳐도 넘긴다.
+    if mentions_non_issue_subject(lowered):
         return False
     # "내 월별 공수 추이"처럼 화자를 가리키는 질문은 담당자 해석이 필요하다.
     return not has_unresolved_scope(lowered)
