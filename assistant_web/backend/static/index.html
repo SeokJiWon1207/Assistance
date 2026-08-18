@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260811-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260818-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -123,7 +123,7 @@
                 </span>
               </span>
               <div class="range-row">
-                <input id="temperature" type="range" min="0" max="1" step="0.1" value="0.3" />
+                <input id="temperature" type="range" min="0" max="1" step="0.1" value="0.3" aria-label="응답 온도" />
                 <output id="temperatureValue">0.3</output>
               </div>
             </div>
@@ -168,7 +168,7 @@
             <div class="advanced-section">
               <span class="field-caption">검색 결과 개수</span>
               <div class="range-row">
-                <input id="searchLimit" type="range" min="1" max="20" step="1" value="5" />
+                <input id="searchLimit" type="range" min="1" max="20" step="1" value="5" aria-label="검색 결과 개수" />
                 <output id="searchLimitValue">5건</output>
               </div>
               <button id="showSources" class="theme-toggle" type="button" role="switch" aria-pressed="true">
@@ -363,7 +363,7 @@
           <div id="inviteResult" class="invite-result" hidden>
             <strong>비밀번호 설정 링크</strong>
             <p>아래 링크를 사용자에게 안전하게 전달해 주세요.</p>
-            <div><input id="inviteSetupUrl" type="text" readonly /><button id="copyInviteUrlBtn" class="secondary-button" type="button">복사</button></div>
+            <div><input id="inviteSetupUrl" type="text" readonly aria-label="비밀번호 설정 링크" /><button id="copyInviteUrlBtn" class="secondary-button" type="button">복사</button></div>
           </div>
           <p id="inviteError" class="login-error" role="alert" hidden></p>
           <div class="modal-form-actions">
@@ -431,7 +431,7 @@
       </section>
     </div>
 
-    <script src="/static/frontend_core.js?v=20260724-2"></script>
+    <script src="/static/frontend_core.js?v=20260818-1"></script>
     <script src="/static/custom_select.js?v=20260727-4"></script>
     <script src="/static/auth.js?v=20260811-1"></script>
     <script type="module" src="/static/app.js?v=20260812-1"></script>

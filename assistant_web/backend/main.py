@@ -39,6 +39,22 @@ async def lifespan(_application: FastAPI):
     yield
 
 
+class CacheRevalidatedStaticFiles(StaticFiles):
+    """정적 파일에 항상 재검증을 요구한다.
+
+    Cache-Control 이 없으면 브라우저가 휴리스틱 캐싱을 적용해, 배포 후에도
+    옛 CSS/JS 를 그대로 쓰는 일이 생긴다. index.html 이 ?v= 로 버전을 붙이는
+    파일은 일부뿐이고 modules/ 아래 모듈은 버전이 없어 특히 취약하다.
+    no-cache 는 캐시를 막는 게 아니라 매번 ETag 로 확인하게 하므로,
+    바뀌지 않았다면 304 로 끝나 전송량은 늘지 않는다.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+
 def create_app() -> FastAPI:
     application = FastAPI(
         title="컨텐츠서비스 AI 비서",
@@ -62,7 +78,7 @@ def create_app() -> FastAPI:
     application.include_router(chat_router)
     application.include_router(operations_router)
     application.include_router(playbooks_router)
-    application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    application.mount("/static", CacheRevalidatedStaticFiles(directory=STATIC_DIR), name="static")
     return application
 
 

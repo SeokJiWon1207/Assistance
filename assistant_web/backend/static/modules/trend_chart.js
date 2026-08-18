@@ -107,8 +107,10 @@ function buildOption(trend, metric, palette) {
       axisLabel: {
         color: palette.muted,
         fontSize: 11,
-        // 개월 수가 많으면 라벨을 솎아 겹침을 막는다.
-        interval: trend.periods.length > 14 ? 1 : 0,
+        // 개월 수가 아니라 실제 폭을 기준으로 솎아야 한다. 좁은 화면에서는
+        // 12개월만 돼도 라벨이 서로 붙어 읽을 수 없다.
+        interval: "auto",
+        hideOverlap: true,
         formatter: formatPeriodTick,
       },
       splitLine: { show: false },

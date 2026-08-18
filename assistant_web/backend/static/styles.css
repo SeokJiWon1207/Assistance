@@ -5,15 +5,17 @@
   --surface-alt: #f2f4f6;
   --text: #191f28;
   --text-soft: #4e5968;
-  --muted: #8b95a1;
+  --muted: #6f7781;
   --line: #e5e8eb;
   --line-strong: #d1d6db;
-  --blue: #3182f6;
+  --blue: #2c74db;
   --blue-pressed: #1b64da;
   --blue-soft: #e8f3ff;
   --danger: #f04452;
   --warning: #f59f00;
   --shadow: 0 12px 32px rgba(25, 31, 40, 0.08);
+  /* 강조색으로 채운 요소 위의 글자색 */
+  --on-accent: #ffffff;
   --chart-1: #3182f6;
   --chart-2: #1cab63;
   --chart-3: #f59f00;
@@ -38,6 +40,8 @@ body.theme-dark {
   --danger: #ff6b78;
   --warning: #ffbe3d;
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  /* 밝은 파랑 위에는 흰 글자 대비가 2.77 이라 어두운 글자를 쓴다 */
+  --on-accent: #111318;
   --chart-1: #5b9bff;
   --chart-2: #34d399;
   --chart-3: #ffbe3d;
@@ -201,7 +205,7 @@ body.auth-pending .app-shell {
   border: 0;
   border-radius: 9px;
   background: var(--blue);
-  color: white;
+  color: var(--on-accent);
   cursor: pointer;
   font-weight: 800;
 }
@@ -2665,7 +2669,7 @@ body.theme-dark .chat-header {
 .message.user .avatar {
   grid-column: 2;
   background: var(--blue);
-  color: #ffffff;
+  color: var(--on-accent);
 }
 
 .bubble {
@@ -3590,7 +3594,7 @@ textarea:focus {
   border: 0;
   border-radius: 8px;
   background: var(--blue);
-  color: white;
+  color: var(--on-accent);
   font-weight: 800;
   cursor: pointer;
   box-shadow: 0 10px 22px rgba(49, 130, 246, 0.24);
@@ -3907,7 +3911,7 @@ textarea:focus {
   border: 0;
   border-radius: 7px;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-accent);
   cursor: pointer;
   font-size: 13px;
   font-weight: 800;
@@ -5317,7 +5321,7 @@ textarea:focus {
   border: 0;
   border-radius: 10px;
   background: var(--blue);
-  color: white;
+  color: var(--on-accent);
   cursor: pointer;
   font-weight: 900;
 }
