@@ -94,6 +94,20 @@ class ConversationWorkspaceTests(unittest.TestCase):
 
 
 class PersonalWorkspaceTests(unittest.TestCase):
+    def test_open_status_excludes_resolved_and_closed_but_keeps_developed(self):
+        for status in ("개발완료", "developed", "확인된 이슈"):
+            with self.subTest(status=status):
+                self.assertTrue(workspace._is_open(status))
+        for status in (
+            "해결된 이슈",
+            "resolved",
+            "MTS-4 해결 및 종료",
+            "종료된 이슈",
+            "closed",
+        ):
+            with self.subTest(status=status):
+                self.assertFalse(workspace._is_open(status))
+
     def test_my_workspace_builds_summary_notifications_and_weekly_brief(self):
         today = workspace.date.today()
         old = (today - workspace.timedelta(days=45)).isoformat()

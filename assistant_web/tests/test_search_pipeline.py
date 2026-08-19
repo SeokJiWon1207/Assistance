@@ -23,7 +23,7 @@ from backend.reports.effort import (
     wants_effort_ranking,
 )
 from backend.reports.evaluation import evaluate_ab_comparison
-from backend.retrieval import merge_combined_sources, source_specific_terms
+from backend.retrieval import count_retrieved_issues, merge_combined_sources, source_specific_terms
 from backend.sources.notion import (
     deduplicate_notion_pages_by_id,
     extract_notion_constraints,
@@ -581,14 +581,38 @@ class LiveStatusRevalidationTests(unittest.TestCase):
     def test_english_live_status_names_count_as_open(self):
         # 스냅샷은 상태를 한글로, 라이브 API는 영문으로 준다. 영문 이름이
         # open에 없어 재검증에서 열린 이슈가 전부 탈락하던 회귀.
-        for status in ("confirmed", "assigned", "acknowledged", "new", "resolved"):
+        for status in ("confirmed", "assigned", "acknowledged", "new", "developed"):
             with self.subTest(status=status):
                 self.assertTrue(mantis.text_matches_status(status, ["open"]))
 
-    def test_closed_is_never_open(self):
-        self.assertFalse(mantis.text_matches_status("closed", ["open"]))
-        self.assertFalse(mantis.text_matches_status("종료된 이슈", ["open"]))
+    def test_resolved_and_closed_are_never_open(self):
+        for status in ("resolved", "해결된 이슈", "closed", "종료된 이슈"):
+            with self.subTest(status=status):
+                self.assertFalse(mantis.text_matches_status(status, ["open"]))
         self.assertTrue(mantis.text_matches_status("closed", ["closed"]))
+
+    def test_retrieval_count_deduplicates_snapshot_and_live_results(self):
+        retrieval = {
+            "stages": [
+                {
+                    "source": "mantis_snapshot",
+                    "status": "ok",
+                    "meta": {"found_count": 3, "matched_issue_ids": [1, 2, 3]},
+                },
+                {
+                    "source": "mantis_page_scan",
+                    "status": "ok",
+                    "meta": {
+                        "found_count": 2,
+                        "scanned_issue_ids": [2, 3, 4],
+                        "matched_issue_ids": [3, 4],
+                    },
+                },
+            ]
+        }
+
+        # #2는 실시간 상태가 해결/종료로 바뀌어 제외되고, #3은 중복 제거된다.
+        self.assertEqual(count_retrieved_issues(retrieval), 3)
 
     def test_revalidation_keeps_live_open_issue(self):
         constraints = extract_query_constraints("KB증권 MTS 이슈 중 종료되지 않은 최근 5개 보여줘")
@@ -608,6 +632,33 @@ class LiveStatusRevalidationTests(unittest.TestCase):
         with patch("backend.sources.mantis.fetch_mantis_issue_by_id", return_value=live_issue):
             refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
         self.assertEqual(len(refreshed["issues_list"]), 1)
+
+    def test_revalidation_removes_issue_resolved_after_snapshot(self):
+        constraints = extract_query_constraints("MTS 미종료 이슈 보여줘")
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 30977, "status": "확인된 이슈"}],
+            "meta": {
+                "found_count": 1,
+                "displayed_count": 1,
+                "matched_issue_ids": [30977],
+            },
+        }
+        live_issue = {
+            "id": 30977,
+            "status": {"name": "resolved"},
+            "project": {"name": "112KBStar(KB증권)"},
+            "summary": "해결된 MTS 이슈",
+            "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}],
+        }
+
+        with patch("backend.sources.mantis.fetch_mantis_issue_by_id", return_value=live_issue):
+            refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
+
+        self.assertEqual(refreshed["issues_list"], [])
+        self.assertEqual(refreshed["meta"]["found_count"], 0)
+        self.assertEqual(refreshed["meta"]["matched_issue_ids"], [])
 
 
 class TopCustomersTests(unittest.TestCase):

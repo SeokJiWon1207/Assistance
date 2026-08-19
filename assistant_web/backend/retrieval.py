@@ -570,6 +570,52 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> Li
     return sorted(rows.values(), key=lambda issue: issue["id"], reverse=True)[:limit]
 
 
+def count_retrieved_issues(retrieval_result: Dict[str, Any]) -> int:
+    """검색 단계 간 중복을 제거하고 라이브 상태로 스냅샷을 보정한다.
+
+    스냅샷과 라이브 검색은 같은 Mantis 이슈를 함께 반환한다. 단계별 건수를 단순히
+    더하지 않고 전체 일치 ID의 합집합을 사용한다. 라이브 단계가 직접 확인한 ID는
+    기존 집합에서 제거한 뒤 현재 조건에 맞는 ID만 다시 넣어, 스냅샷 이후 해결·종료된
+    이슈도 총 건수에서 제외한다.
+    """
+    issue_ids: set[int] = set()
+    fallback_count = 0
+
+    for stage in retrieval_result.get("stages", []):
+        meta = stage.get("meta") or {}
+        if stage.get("status") != "ok" or meta.get("reference_only"):
+            continue
+
+        scanned_ids = {
+            int(issue_id)
+            for issue_id in meta.get("scanned_issue_ids", [])
+            if str(issue_id).isdigit()
+        }
+        issue_ids.difference_update(scanned_ids)
+
+        if "matched_issue_ids" in meta:
+            issue_ids.update(
+                int(issue_id)
+                for issue_id in meta.get("matched_issue_ids", [])
+                if str(issue_id).isdigit()
+            )
+            continue
+
+        stage_ids = {
+            int(issue.get("id") or 0)
+            for issue in stage.get("issues_list", [])
+            if issue.get("id")
+        }
+        if stage_ids:
+            issue_ids.update(stage_ids)
+            reported_count = int(meta.get("found_count") or meta.get("displayed_count") or 0)
+            fallback_count += max(0, reported_count - len(stage_ids))
+        else:
+            fallback_count += int(meta.get("found_count") or meta.get("displayed_count") or 0)
+
+    return len(issue_ids) + fallback_count
+
+
 def combined_source_key(source: Dict[str, Any]) -> str:
     title = re.sub(r"^\s*(?:#?\d+\s*)?(?:\[[^]]+\]\s*)?", "", source.get("title", ""))
     return re.sub(r"[^0-9a-z가-힣]", "", title.casefold())

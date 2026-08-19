@@ -275,8 +275,12 @@ def _is_open(status: str) -> bool:
     normalized = normalize_for_match(str(status or ""))
     if not normalized:
         return False
-    # Mantis에서는 해결/개발완료도 최종 종료 전까지 열린 이슈로 취급한다.
-    return not any(marker in normalized for marker in ("closed", "종료된이슈", "종료"))
+    # 업무 단계상 개발완료는 후속 확인이 남은 미종료 상태지만, 해결과 종료는
+    # 최종 상태이므로 개인·팀 업무 건수에서 제외한다.
+    return not any(
+        marker in normalized
+        for marker in ("resolved", "해결된이슈", "해결및종료", "closed", "종료된이슈", "종료")
+    )
 
 
 def _is_notion_closed(status: str) -> bool:

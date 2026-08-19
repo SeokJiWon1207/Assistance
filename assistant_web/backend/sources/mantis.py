@@ -727,6 +727,7 @@ def execute_mantis_snapshot_search(
             "scanned_count": snapshot["scanned_count"],
             "found_count": snapshot["matched_count"],
             "displayed_count": len(snapshot["issues"]),
+            "matched_issue_ids": sorted(snapshot["matched_ids"]),
             "applied_filters": constraints,
             "tool": "mantis_chroma_snapshot",
             "snapshot_as_of": get_mantis_snapshot_freshness(),
@@ -759,6 +760,11 @@ def revalidate_mantis_snapshot_stage(
         return stage
 
     refreshed: List[Dict[str, Any]] = []
+    matched_issue_ids = {
+        int(issue_id)
+        for issue_id in (stage.get("meta") or {}).get("matched_issue_ids", [])
+        if str(issue_id).isdigit()
+    }
     revalidated_count = 0
     removed_count = 0
     fallback_count = 0
@@ -772,15 +778,19 @@ def revalidate_mantis_snapshot_stage(
         revalidated_count += 1
         if issue_matches_constraints(live_issue, constraints):
             refreshed.append(normalize_issue(live_issue))
+            matched_issue_ids.add(issue_id)
         else:
             removed_count += 1
+            matched_issue_ids.discard(issue_id)
 
     return {
         **stage,
         "issues_list": refreshed,
         "meta": {
             **(stage.get("meta") or {}),
+            "found_count": len(matched_issue_ids),
             "displayed_count": len(refreshed),
+            "matched_issue_ids": sorted(matched_issue_ids),
             "live_revalidated_count": revalidated_count,
             "stale_removed_count": removed_count,
             "live_fallback_count": fallback_count,
@@ -795,6 +805,7 @@ def execute_mantis_page_scan(
 ) -> Dict[str, Any]:
     keywords = [kw.strip().casefold() for kw in search_keyword.split() if kw.strip()]
     filtered_issues: List[Dict[str, Any]] = []
+    scanned_issue_ids: set[int] = set()
     status_excluded_count = 0
     page = 1
     page_size = 50
@@ -810,6 +821,9 @@ def execute_mantis_page_scan(
                 break
 
             for issue in issues:
+                issue_id = int(issue.get("id") or 0)
+                if issue_id:
+                    scanned_issue_ids.add(issue_id)
                 combined_text = issue_to_search_text(issue)
                 normalized_text = combined_text.casefold()
                 if constraints and has_constraint(constraints) and not issue_matches_constraints(
@@ -870,6 +884,12 @@ def execute_mantis_page_scan(
             "search_keyword": search_keyword,
             "found_count": len(filtered_issues),
             "displayed_count": len(target_batch),
+            "matched_issue_ids": sorted(
+                int(issue.get("id") or 0)
+                for issue in filtered_issues
+                if issue.get("id")
+            ),
+            "scanned_issue_ids": sorted(scanned_issue_ids),
             "searched_pages": min(page, max_pages),
             "status_excluded_count": status_excluded_count,
         },

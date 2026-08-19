@@ -18,6 +18,7 @@ from backend.query_filters import filter_clause_label, normalize_filter_clauses
 from backend.retrieval import (
     build_snapshot_note,
     collect_retrieved_issues,
+    count_retrieved_issues,
     merge_combined_sources,
     similar_base_issue_ids_from_retrieval,
 )
@@ -1251,11 +1252,7 @@ def format_deterministic_issue_answer(
                 if preview:
                     lines.append(f"   - 요약: {preview}")
 
-    found_count = sum(
-        int(stage.get("meta", {}).get("found_count") or stage.get("meta", {}).get("displayed_count") or 0)
-        for stage in retrieval_result.get("stages", [])
-        if stage.get("status") == "ok" and not stage.get("meta", {}).get("reference_only")
-    )
+    found_count = count_retrieved_issues(retrieval_result)
     requested_limit = extract_requested_limit(query_text)
     if group_by == "customer":
         lines.extend(["", f"총 {len(issues)}개 고객사의 최신 이슈를 확인했습니다."])
