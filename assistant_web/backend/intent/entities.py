@@ -284,6 +284,14 @@ _FIRST_PERSON_TOKENS = frozenset({
     "내가", "제가", "나의", "저의",
 })
 
+# '사원'은 직위 접미사이기도 하지만 '신입사원'처럼 복합명사를 이룬다.
+# 그대로 두면 "신입사원 관련 문서"에서 '신입'이 담당자 이름으로 잡히고,
+# 인물 조건이 생기면 질문이 Notion 대신 Mantis 로 라우팅된다.
+_NON_NAME_MODIFIERS = frozenset({
+    "신입", "경력", "정규", "계약", "일반", "전임", "임시", "퇴직", "전직",
+    "기존", "해당", "담당", "인수", "협력", "외주", "파견",
+})
+
 
 def extract_people_constraints(text: str) -> Dict[str, Any]:
     # ``담당자별로`` and similar phrases specify result presentation, not a
@@ -319,6 +327,8 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
         for match in re.finditer(r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원|한테|에게|담당|할당|할당된|배정|배정된)", person_text):
             name = match.group(1).strip()
             if name in _FIRST_PERSON_TOKENS or strip_korean_particle(name) in _FIRST_PERSON_TOKENS:
+                continue
+            if name in _NON_NAME_MODIFIERS or strip_korean_particle(name) in _NON_NAME_MODIFIERS:
                 continue
             # "그 이슈의 담당자", "제목과 담당자로 정리해줘"처럼 조사가 붙은 일반
             # 명사가 이름으로 잡히지 않도록 조사를 뗀 어간까지 함께 검증한다.
