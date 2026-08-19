@@ -52,7 +52,13 @@ def parse_effort_period(text: str) -> tuple[int, Optional[int]]:
         year = today.year - 1
     else:
         year = today.year
-    return year, int(month_match.group(1)) if month_match else None
+    if month_match:
+        month = int(month_match.group(1))
+    elif re.search(r"이번\s*달|금월", text):
+        month = today.month
+    else:
+        month = None
+    return year, month
 
 
 def extract_effort_date_range(text: str) -> Optional[Dict[str, str]]:

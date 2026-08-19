@@ -1,5 +1,6 @@
 import re
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -16,6 +17,7 @@ from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
+    parse_effort_period,
     wants_full_effort_roster,
     wants_ascending_effort_ranking,
     wants_effort_ranking,
@@ -407,6 +409,19 @@ class EffortIntentTests(unittest.TestCase):
         self.assertFalse(wants_ascending_effort_ranking("공수 제일 많은 사람"))
         self.assertFalse(wants_ascending_effort_ranking("공수 상위 5명"))
         self.assertFalse(wants_effort_ranking("석지원 공수 알려줘"))
+
+    def test_current_month_effort_ranking_uses_current_month(self):
+        with patch("backend.reports.effort.date") as mocked_date:
+            mocked_date.today.return_value = date(2026, 8, 19)
+
+            self.assertEqual(
+                parse_effort_period("지금 이번달 공수 순위 보여줘"),
+                (2026, 8),
+            )
+            self.assertEqual(
+                parse_effort_period("이번 달 공수 순위 보여줘"),
+                (2026, 8),
+            )
 
     def test_roster_phrasing_is_treated_as_ranking(self):
         # "공수 기입한 사람들 다 보여줘"는 전원 명단 요청 → 랭킹 경로로 처리한다.
