@@ -3,6 +3,7 @@ import sqlite3
 import tempfile
 import unittest
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -210,7 +211,13 @@ class SnapshotRebuildTests(unittest.TestCase):
                 make_vector_db, "fetch_issue_pages", return_value=iter([(1, [changed_issue])])
             ), patch.object(make_vector_db, "Chroma", FailingChroma):
                 with self.assertRaisesRegex(make_vector_db.SnapshotBuildError, "embedding failed"):
-                    make_vector_db.run_incremental("https://mantis.example", {}, 7, 10)
+                    make_vector_db.run_incremental(
+                        "https://mantis.example",
+                        {},
+                        7,
+                        10,
+                        reference_time=datetime(2026, 8, 18, 12, 0),
+                    )
 
             with closing(sqlite3.connect(current / "chroma.sqlite3")) as connection:
                 stored = connection.execute(
@@ -295,7 +302,13 @@ class SnapshotRebuildTests(unittest.TestCase):
                 "fetch_issue_pages",
                 return_value=iter([(1, [changed_issue, new_issue])]),
             ), patch.object(make_vector_db, "Chroma", FakeChroma):
-                make_vector_db.run_incremental("https://mantis.example", {}, 7, 10)
+                make_vector_db.run_incremental(
+                    "https://mantis.example",
+                    {},
+                    7,
+                    10,
+                    reference_time=datetime(2026, 8, 18, 12, 0),
+                )
 
             make_vector_db.validate_snapshot(current, expected_documents=2)
             with closing(sqlite3.connect(current / "chroma.sqlite3")) as connection:

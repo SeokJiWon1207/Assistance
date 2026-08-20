@@ -493,15 +493,23 @@ def reuse_unchanged_embeddings(
     ]
 
 
-def run_incremental(url: str, headers: dict, refresh_days: int, max_pages: int) -> None:
+def run_incremental(
+    url: str,
+    headers: dict,
+    refresh_days: int,
+    max_pages: int,
+    *,
+    reference_time: datetime | None = None,
+) -> None:
     existing_ids = load_existing_issue_ids()
     print(f"📦 기존 스냅샷 이슈 수: {len(existing_ids)}")
     if not existing_ids:
         print("⚠️ 기존 스냅샷이 비어 있습니다. --full 로 전체 구축을 먼저 실행하세요.", file=sys.stderr)
         sys.exit(1)
 
+    current_time = reference_time or datetime.now()
     refresh_cutoff = (
-        (datetime.now() - timedelta(days=refresh_days)).strftime("%Y-%m-%d")
+        (current_time - timedelta(days=refresh_days)).strftime("%Y-%m-%d")
         if refresh_days > 0
         else None
     )
