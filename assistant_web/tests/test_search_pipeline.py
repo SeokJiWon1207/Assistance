@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend import answers, retrieval, understanding
+from backend.reports import aggregate
 from backend.sources import mantis, notion
 from backend.answers import (
     build_issue_intro_line,
@@ -853,6 +854,14 @@ class ContextDateInheritanceTests(unittest.TestCase):
         constraints = self.context(["유진증권 2026년 이슈 보여줘", "2025년 이슈만 보여줘"])
         self.assertEqual(constraints["created_at"]["from"], "2025-01-01")
 
+    def test_follow_up_platform_exclusion_replaces_inherited_platform(self):
+        constraints = self.context(
+            ["내 MTS 미종료 이슈 보여줘", "MTS는 빼고 오래된 순으로 정렬해줘"]
+        )
+        self.assertIsNone(constraints["platform_key"])
+        self.assertEqual(constraints["excluded_platform_keys"], ["mts"])
+        self.assertEqual(constraints["statuses"], ["open"])
+
 
 class DemonstrativeReferenceTests(unittest.TestCase):
     def test_demonstrative_issue_questions_are_follow_ups(self):
@@ -1002,21 +1011,21 @@ class CountGroupingTests(unittest.TestCase):
 
     def _run_spike(self, question, group_counts):
         """급증 리포트를 합성 스냅샷으로 실행한다."""
-        original_scan = answers.scan_mantis_documents
-        original_constraints = answers.extract_query_constraints
-        answers.scan_mantis_documents = lambda *a, **k: {
+        original_scan = aggregate.scan_mantis_documents
+        original_constraints = aggregate.extract_query_constraints
+        aggregate.scan_mantis_documents = lambda *a, **k: {
             "available": True,
             "scanned_count": sum(group_counts.values()),
             "group_counts": group_counts,
             "issues": [],
             "matched_count": 0,
         }
-        answers.extract_query_constraints = lambda text: {}
+        aggregate.extract_query_constraints = lambda text: {}
         try:
             return answers.build_mantis_spike_report(question)
         finally:
-            answers.scan_mantis_documents = original_scan
-            answers.extract_query_constraints = original_constraints
+            aggregate.scan_mantis_documents = original_scan
+            aggregate.extract_query_constraints = original_constraints
 
     def test_spike_report_flags_recent_surge_over_baseline(self):
         sep = "\x1f"
@@ -1046,21 +1055,21 @@ class CountGroupingTests(unittest.TestCase):
         self.assertIsNone(answers.build_mantis_spike_report("이슈 많은 고객사 알려줘"))
 
     def _run_pivot(self, question, group_counts):
-        original_scan = answers.scan_mantis_documents
-        original_constraints = answers.extract_query_constraints
-        answers.scan_mantis_documents = lambda *a, **k: {
+        original_scan = aggregate.scan_mantis_documents
+        original_constraints = aggregate.extract_query_constraints
+        aggregate.scan_mantis_documents = lambda *a, **k: {
             "available": True,
             "scanned_count": sum(group_counts.values()),
             "group_counts": group_counts,
             "issues": [],
             "matched_count": 0,
         }
-        answers.extract_query_constraints = lambda text: {}
+        aggregate.extract_query_constraints = lambda text: {}
         try:
             return answers.build_mantis_pivot_report(question)
         finally:
-            answers.scan_mantis_documents = original_scan
-            answers.extract_query_constraints = original_constraints
+            aggregate.scan_mantis_documents = original_scan
+            aggregate.extract_query_constraints = original_constraints
 
     def test_pivot_report_cross_tabulates_axis_by_month(self):
         sep = "\x1f"
@@ -1079,9 +1088,9 @@ class CountGroupingTests(unittest.TestCase):
 
     def test_pivot_report_requires_two_axes(self):
         # 축 하나만 있는 요청은 피벗이 아니라 단일 축 집계로 흘려보낸다.
-        self.assertIsNone(answers._detect_pivot_axis("월별 이슈 추이"))
-        self.assertIsNone(answers._detect_pivot_axis("고객사별 이슈 건수"))
-        self.assertEqual(answers._detect_pivot_axis("담당자별 월별 처리 건수")[0], "owner")
+        self.assertIsNone(aggregate._detect_pivot_axis("월별 이슈 추이"))
+        self.assertIsNone(aggregate._detect_pivot_axis("고객사별 이슈 건수"))
+        self.assertEqual(aggregate._detect_pivot_axis("담당자별 월별 처리 건수")[0], "owner")
 
     def test_monthly_trend_question_is_grouped_by_month(self):
         self.assertEqual(extract_group_by("2026년 월별 이슈 건수 추이를 알려줘"), "month")

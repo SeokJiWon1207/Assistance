@@ -6,6 +6,7 @@ HTTP 라우팅과 분리해 질문 해석, 검색, 결정형 응답, 모델 폴�
 import json
 import os
 import re
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -15,10 +16,6 @@ from backend.answers import (
     CONVERSATION_TONE_NOTE,
     answer_style_instruction,
     build_current_date_note,
-    build_mantis_count_report,
-    build_mantis_pivot_report,
-    build_mantis_spike_report,
-    build_top_customers_report,
     build_unknown_customer_report,
     format_deterministic_combined_answer,
     format_deterministic_issue_answer,
@@ -39,6 +36,12 @@ from backend.llm import (
     post_model_chat,
 )
 from backend.query_planning import build_query_plan, extract_group_by
+from backend.reports.aggregate import (
+    build_mantis_count_report,
+    build_mantis_pivot_report,
+    build_mantis_spike_report,
+    build_top_customers_report,
+)
 from backend.reports.effort import (
     build_effort_ranking_report,
     build_effort_report,
@@ -77,6 +80,7 @@ from backend.understanding import (
     get_recent_user_texts,
     merge_query_plan_constraints,
     plan_search_intent_with_model,
+    is_follow_up_question,
     resolve_reference_from_context,
     resolve_result_limit,
     rewrite_follow_up_query_with_model,
@@ -187,12 +191,247 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
 def apply_authenticated_mantis_scope(
     text: str,
     user: Optional[Dict[str, Any]],
+    *,
+    scope_text: Optional[str] = None,
 ) -> str:
     """개인 Mantis 요청에 인증 계정의 담당자명을 검색 조건으로 명시한다."""
     mantis_username = str((user or {}).get("mantisUsername") or "").strip()
-    if not mantis_username or not should_scope_to_authenticated_mantis_user(text):
+    if not mantis_username or not should_scope_to_authenticated_mantis_user(scope_text or text):
         return text
     return f"{text} 담당자: {mantis_username}".strip()
+
+
+@dataclass
+class DeterministicReportResult:
+    """LLM 계획 전에 실행하는 결정형 리포트의 판정 결과."""
+
+    response: Optional[Dict[str, Any]] = None
+    pending_effort_report: Optional[Dict[str, Any]] = None
+
+
+def build_deterministic_report(
+    latest_user_text: str,
+    retrieval_text: str,
+    enabled_tools: Dict[str, Any],
+    messages: List[Any],
+    user: Optional[Dict[str, Any]],
+) -> DeterministicReportResult:
+    """우선순위가 있는 결정형 리포트 중 첫 번째 일치 결과를 반환한다."""
+    if not latest_user_text:
+        return DeterministicReportResult()
+
+    if enabled_tools.get("mantis"):
+        report_builders = [
+            lambda: build_unknown_customer_report(retrieval_text or latest_user_text),
+        ]
+        if enabled_tools.get("vectorDb"):
+            report_builders.append(lambda: build_similar_resolution_report(latest_user_text))
+        report_builders.extend(
+            [
+                lambda: build_monthly_customer_report(latest_user_text),
+                lambda: build_customer_profile_report(latest_user_text),
+                lambda: build_sla_report(latest_user_text),
+                lambda: build_mantis_pivot_report(latest_user_text),
+                lambda: build_mantis_spike_report(latest_user_text),
+                lambda: build_top_customers_report(latest_user_text),
+                lambda: build_effort_trend_report(latest_user_text),
+                lambda: build_effort_ranking_report(latest_user_text),
+            ]
+        )
+        for build_report in report_builders:
+            report = build_report()
+            if report:
+                return DeterministicReportResult(response=report)
+
+        effort_report = build_effort_report(latest_user_text)
+        if effort_report:
+            if effort_report.pop("needsPerson", False):
+                pending_effort_report = effort_report
+            else:
+                return DeterministicReportResult(response=effort_report)
+        else:
+            pending_effort_report = None
+    else:
+        pending_effort_report = None
+
+    if enabled_tools.get("notion"):
+        notion_write_result = run_notion_write_command(
+            latest_user_text,
+            messages,
+            allow_write=not user or user.get("role") in {"manager", "admin"},
+        )
+        if notion_write_result:
+            return DeterministicReportResult(response=notion_write_result)
+
+    return DeterministicReportResult(pending_effort_report=pending_effort_report)
+
+
+def generate_model_response(
+    request: ChatRequest,
+    model: Dict[str, Any],
+    messages: List[Dict[str, Any]],
+    retrieval_result: Optional[Dict[str, Any]],
+    query_constraints: Dict[str, Any],
+    active_limit: int,
+) -> Dict[str, Any]:
+    """활성 모델 폴백, 스트림 해석, 검색 타임아웃 폴백을 한곳에서 처리한다."""
+    candidate_models = [model] + [
+        other
+        for other in get_model_registry()
+        if other["id"] != model["id"] and other.get("status") == "active"
+    ]
+
+    response = None
+    final_model = model
+    timeout_exc: Optional[requests.Timeout] = None
+    request_exc: Optional[requests.RequestException] = None
+    emit_chat_status("답변을 생성하고 있습니다", "generation")
+
+    for index, candidate in enumerate(candidate_models):
+        is_last_candidate = index == len(candidate_models) - 1
+        candidate_api_key = get_model_api_key(candidate)
+        if not candidate_api_key:
+            continue
+
+        candidate_payload = {
+            "model": candidate.get("model", candidate["id"]),
+            "messages": messages,
+            "temperature": request.temperature,
+            "stream": bool(request.stream),
+        }
+        candidate_payload.update(build_generation_options(request))
+        final_model = candidate
+
+        try:
+            model_timeout = clamp_int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"), 30, 300) or 180
+            candidate_response = post_model_chat(
+                candidate,
+                candidate_api_key,
+                candidate_payload,
+                timeout=model_timeout,
+                stream=bool(request.stream),
+            )
+        except requests.Timeout as exc:
+            timeout_exc = exc
+            if is_last_candidate:
+                break
+            continue
+        except requests.RequestException as exc:
+            request_exc = exc
+            if is_last_candidate:
+                break
+            continue
+
+        if candidate_response.status_code >= 400:
+            if is_last_candidate:
+                response = candidate_response
+                final_model = candidate
+                break
+            continue
+
+        response = candidate_response
+        final_model = candidate
+        timeout_exc = None
+        request_exc = None
+        break
+
+    if response is None:
+        connection_exc = timeout_exc or request_exc
+        if retrieval_result and connection_exc is not None:
+            fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
+            return {
+                "modelId": final_model["id"],
+                "content": format_model_timeout_fallback(
+                    query_constraints,
+                    retrieval_result,
+                    active_limit,
+                ),
+                "sources": fallback_sources if request.showSources else [],
+                "sourcesForFollowUps": fallback_sources,
+                "retrieval": retrieval_result,
+                "raw": {
+                    "mode": "model_timeout_fallback",
+                    "error": str(connection_exc),
+                    "errorType": type(connection_exc).__name__,
+                },
+            }
+        raise HTTPException(status_code=502, detail=f"Model connection failed: {connection_exc}")
+
+    if response.status_code >= 400:
+        unsupported_hint = ""
+        if any(
+            keyword in response.text.lower()
+            for keyword in ("extra", "unknown", "unsupported", "unexpected", "not permitted")
+        ):
+            unsupported_hint = " 선택한 생성 옵션 중 회사 모델 서버가 지원하지 않는 값이 있을 수 있습니다. 해당 옵션을 비우고 다시 시도해 주세요."
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=(response.text[:1000] + unsupported_hint),
+        )
+
+    if request.stream and is_ollama_model(final_model):
+        streamed_content = ""
+        ollama_stream_chunks: List[Dict[str, Any]] = []
+        for raw_line in response.iter_lines(decode_unicode=True):
+            if isinstance(raw_line, bytes):
+                line = raw_line.decode("utf-8", errors="replace").strip()
+            else:
+                line = str(raw_line or "").strip()
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ollama_stream_chunks.append(chunk)
+            delta = chunk.get("message", {}).get("content", "")
+            if delta:
+                streamed_content += delta
+                CHAT_STREAM_CONTEXT.content_streamed = True
+                emit_chat_event("delta", content=delta)
+        data = {
+            "choices": [{"message": {"content": streamed_content}}],
+            "streamChunks": len(ollama_stream_chunks),
+            "provider": "ollama",
+        }
+    elif request.stream and "text/event-stream" in response.headers.get("content-type", "").lower():
+        streamed_content = ""
+        sse_stream_chunks: List[Dict[str, Any]] = []
+        for raw_line in response.iter_lines(decode_unicode=True):
+            line = str(raw_line or "").strip()
+            if not line or not line.startswith("data:"):
+                continue
+            body = line[5:].strip()
+            if body == "[DONE]":
+                break
+            try:
+                chunk = json.loads(body)
+            except json.JSONDecodeError:
+                continue
+            sse_stream_chunks.append(chunk)
+            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+            if delta:
+                streamed_content += delta
+                CHAT_STREAM_CONTEXT.content_streamed = True
+                emit_chat_event("delta", content=delta)
+        data = {
+            "choices": [{"message": {"content": streamed_content}}],
+            "streamChunks": len(sse_stream_chunks),
+        }
+    else:
+        data = response.json()
+
+    final_sources = build_sources(retrieval_result, max_sources=active_limit)
+    content = extract_model_content(data)
+    return {
+        "modelId": final_model["id"],
+        "content": content or "응답 본문을 찾지 못했습니다.",
+        "sources": final_sources if request.showSources else [],
+        "sourcesForFollowUps": final_sources,
+        "retrieval": retrieval_result,
+        "raw": data,
+        "usedFallbackModel": final_model["id"] if final_model["id"] != model["id"] else None,
+    }
 
 
 class ChatService:
@@ -302,7 +541,14 @@ class ChatService:
             if rewritten:
                 retrieval_text = rewritten
         retrieval_text = retrieval_text or latest_user_text
-        retrieval_text = apply_authenticated_mantis_scope(retrieval_text, user)
+        scope_text = retrieval_text
+        if is_follow_up_question(latest_user_text):
+            scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))
+        retrieval_text = apply_authenticated_mantis_scope(
+            retrieval_text,
+            user,
+            scope_text=scope_text,
+        )
         system_notes = []
         retrieval_result = None
         intent_plan = None
@@ -316,139 +562,20 @@ class ChatService:
         system_notes.append(build_current_date_note())
         active_limit = clamp_int(request.searchLimit, 1, 20) or 5
 
-        # 공수 질문 빠른 경로: 규칙(정규식+known_people)이 확신하는 경우 LLM 없이 바로
-        # 결정형 계산으로 응답한다. 규칙이 인물/의도를 못 잡으면(pending) 바로 에러를
-        # 돌려주지 않고, 아래 LLM 플래너에게 분류를 한 번 더 맡긴 뒤 그래도 안 되면
-        # 보류해둔 안내 문구를 반환한다.
-        # 등록되지 않은 고객사를 물으면 조건 없는 전체 검색으로 흘러가 엉뚱한
-        # 고객사 이슈가 답이 된다. 검색 전에 그 사실을 그대로 알린다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            unknown_customer_report = build_unknown_customer_report(retrieval_text or latest_user_text)
-            if unknown_customer_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **unknown_customer_report},
-                )
-
-        # "#12345랑 비슷한 이슈 어떻게 해결했어?"처럼 기준 이슈 + 유사 + 해결 의도가
-        # 모두 있으면 유사 사례와 그때의 조치를 함께 정리한다. 기준 이슈 번호가
-        # 필요한 가장 구체적인 의도라 먼저 처리한다.
-        if latest_user_text and enabled_tools.get("mantis") and enabled_tools.get("vectorDb"):
-            similar_resolution_report = build_similar_resolution_report(latest_user_text)
-            if similar_resolution_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **similar_resolution_report},
-                )
-
-        # 월간 고객사 리포트는 전월 비교·공수·처리시간을 함께 계산하는 구체적인 요청이다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            monthly_customer_report = build_monthly_customer_report(latest_user_text)
-            if monthly_customer_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **monthly_customer_report},
-                )
-
-        # 고객사 프로필은 처리시간도 포함하지만 여러 지표를 묶은 더 구체적인 요청이다.
-        # SLA 단일 리포트보다 먼저 처리해 프로필 전체가 축약되지 않게 한다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            customer_profile_report = build_customer_profile_report(latest_user_text)
-            if customer_profile_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **customer_profile_report},
-                )
-
-        # "처리시간 얼마나 걸려", "오래 방치된 이슈"처럼 시간 성과를 묻는 질문은
-        # 라이브 이슈의 등록/최종수정/상태로 리드타임·적체를 결정형으로 계산한다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            sla_report = build_sla_report(latest_user_text)
-            if sla_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **sla_report},
-                )
-
-        # "고객사별 월별"처럼 축과 월 두 축을 함께 지정한 요청은 피벗 표로 답한다.
-        # 단일 축 집계(count_report)나 급증보다 구체적인 의도라 가장 먼저 처리한다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            pivot_report = build_mantis_pivot_report(latest_user_text)
-            if pivot_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **pivot_report},
-                )
-
-        # "평소보다 급증한 고객사/화면번호"처럼 시점 변화를 묻는 질문은 '많은 순'이
-        # 아니라 최근 월을 직전 평균과 비교한 '튄 순'으로 답한다. '많은 순'을 답하는
-        # top_customers보다 구체적인 의도라 먼저 처리한다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            spike_report = build_mantis_spike_report(latest_user_text)
-            if spike_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **spike_report},
-                )
-
-        # "문제 많은 고객사"처럼 기준이 빠진 질문은 임의 기준으로 답하지 말고
-        # 무엇을 세었는지 밝히면서 답한다.
-        if latest_user_text and enabled_tools.get("mantis"):
-            top_customers_report = build_top_customers_report(latest_user_text)
-            if top_customers_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **top_customers_report},
-                )
-
-        pending_effort_report = None
-        if latest_user_text and enabled_tools.get("mantis"):
-            # 월별 유형 추이는 기간 표현이 겹치므로 공수 리포트보다 먼저 판별한다.
-            trend_report = build_effort_trend_report(latest_user_text)
-            if trend_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **trend_report},
-                )
-            ranking_report = build_effort_ranking_report(latest_user_text)
-            if ranking_report:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **ranking_report},
-                )
-            effort_report = build_effort_report(latest_user_text)
-            if effort_report:
-                if effort_report.pop("needsPerson", False):
-                    pending_effort_report = effort_report
-                else:
-                    return finalize_chat_response(
-                        request,
-                        latest_user_text,
-                        {"modelId": request.modelId, **effort_report},
-                    )
-
-        if latest_user_text and enabled_tools.get("notion"):
-            notion_write_result = run_notion_write_command(
+        deterministic = build_deterministic_report(
+            latest_user_text,
+            retrieval_text,
+            enabled_tools,
+            request.messages,
+            user,
+        )
+        if deterministic.response:
+            return finalize_chat_response(
+                request,
                 latest_user_text,
-                request.messages,
-                allow_write=not user or user.get("role") in {"manager", "admin"},
+                {"modelId": request.modelId, **deterministic.response},
             )
-            if notion_write_result:
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **notion_write_result},
-                )
+        pending_effort_report = deterministic.pending_effort_report
 
         if retrieval_text:
             rule_plan = rule_based_search_intent(retrieval_text, query_constraints)
@@ -628,163 +755,13 @@ class ChatService:
         if system_notes:
             messages.insert(0, {"role": "system", "content": "\n\n".join(system_notes)})
 
-        # 1차 모델이 타임아웃/오류일 때 시도할 대체 모델 목록. models.json에 활성 모델이
-        # 하나뿐이면(현재 기본 상태) 이 목록은 [model] 하나뿐이라 동작은 기존과 동일하다.
-        candidate_models = [model] + [
-            other
-            for other in get_model_registry()
-            if other["id"] != model["id"] and other.get("status") == "active"
-        ]
-
-        response = None
-        final_model = model
-        timeout_exc: Optional[requests.Timeout] = None
-        request_exc: Optional[requests.RequestException] = None
-        emit_chat_status("답변을 생성하고 있습니다", "generation")
-
-        for index, candidate in enumerate(candidate_models):
-            is_last_candidate = index == len(candidate_models) - 1
-            candidate_api_key = get_model_api_key(candidate)
-            if not candidate_api_key:
-                continue
-
-            candidate_payload = {
-                "model": candidate.get("model", candidate["id"]),
-                "messages": messages,
-                "temperature": request.temperature,
-                "stream": bool(request.stream),
-            }
-            candidate_payload.update(build_generation_options(request))
-            final_model = candidate
-
-            try:
-                model_timeout = clamp_int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"), 30, 300) or 180
-                candidate_response = post_model_chat(
-                    candidate,
-                    candidate_api_key,
-                    candidate_payload,
-                    timeout=model_timeout,
-                    stream=bool(request.stream),
-                )
-            except requests.Timeout as exc:
-                timeout_exc = exc
-                if is_last_candidate:
-                    break
-                continue
-            except requests.RequestException as exc:
-                request_exc = exc
-                if is_last_candidate:
-                    break
-                continue
-
-            if candidate_response.status_code >= 400:
-                if is_last_candidate:
-                    response = candidate_response
-                    final_model = candidate
-                    break
-                continue
-
-            response = candidate_response
-            final_model = candidate
-            timeout_exc = None
-            request_exc = None
-            break
-
-        if response is None:
-            connection_exc = timeout_exc or request_exc
-            if retrieval_result and connection_exc is not None:
-                fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
-                return finalize_chat_response(request, latest_user_text, {
-                    "modelId": final_model["id"],
-                    "content": format_model_timeout_fallback(
-                        query_constraints,
-                        retrieval_result,
-                        active_limit,
-                    ),
-                    "sources": fallback_sources if request.showSources else [],
-                    "sourcesForFollowUps": fallback_sources,
-                    "retrieval": retrieval_result,
-                    "raw": {
-                        "mode": "model_timeout_fallback",
-                        "error": str(connection_exc),
-                        "errorType": type(connection_exc).__name__,
-                    },
-                })
-            raise HTTPException(status_code=502, detail=f"Model connection failed: {connection_exc}")
-
-        if response.status_code >= 400:
-            unsupported_hint = ""
-            if any(
-                keyword in response.text.lower()
-                for keyword in ("extra", "unknown", "unsupported", "unexpected", "not permitted")
-            ):
-                unsupported_hint = " 선택한 생성 옵션 중 회사 모델 서버가 지원하지 않는 값이 있을 수 있습니다. 해당 옵션을 비우고 다시 시도해 주세요."
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=(response.text[:1000] + unsupported_hint),
-            )
-
-        if request.stream and is_ollama_model(final_model):
-            streamed_content = ""
-            ollama_stream_chunks: List[Dict[str, Any]] = []
-            for raw_line in response.iter_lines(decode_unicode=True):
-                if isinstance(raw_line, bytes):
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                else:
-                    line = str(raw_line or "").strip()
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                ollama_stream_chunks.append(chunk)
-                delta = chunk.get("message", {}).get("content", "")
-                if delta:
-                    streamed_content += delta
-                    CHAT_STREAM_CONTEXT.content_streamed = True
-                    emit_chat_event("delta", content=delta)
-            data = {
-                "choices": [{"message": {"content": streamed_content}}],
-                "streamChunks": len(ollama_stream_chunks),
-                "provider": "ollama",
-            }
-        elif request.stream and "text/event-stream" in response.headers.get("content-type", "").lower():
-            streamed_content = ""
-            sse_stream_chunks: List[Dict[str, Any]] = []
-            for raw_line in response.iter_lines(decode_unicode=True):
-                line = str(raw_line or "").strip()
-                if not line or not line.startswith("data:"):
-                    continue
-                body = line[5:].strip()
-                if body == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(body)
-                except json.JSONDecodeError:
-                    continue
-                sse_stream_chunks.append(chunk)
-                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                if delta:
-                    streamed_content += delta
-                    CHAT_STREAM_CONTEXT.content_streamed = True
-                    emit_chat_event("delta", content=delta)
-            data = {
-                "choices": [{"message": {"content": streamed_content}}],
-                "streamChunks": len(sse_stream_chunks),
-            }
-        else:
-            data = response.json()
-        content = extract_model_content(data)
-
-        final_sources = build_sources(retrieval_result, max_sources=active_limit)
-        return finalize_chat_response(request, latest_user_text, {
-            "modelId": final_model["id"],
-            "content": content or "응답 본문을 찾지 못했습니다.",
-            "sources": final_sources if request.showSources else [],
-            "sourcesForFollowUps": final_sources,
-            "retrieval": retrieval_result,
-            "raw": data,
-            "usedFallbackModel": final_model["id"] if final_model["id"] != model["id"] else None,
-        })
+        generated_response = generate_model_response(
+            request,
+            model,
+            messages,
+            retrieval_result,
+            query_constraints,
+            active_limit,
+        )
+        return finalize_chat_response(request, latest_user_text, generated_response)
 chat_service = ChatService()

@@ -80,6 +80,7 @@ class RoutingFixtureTest(unittest.TestCase):
                     plan = rule_based_search_intent(case["q"], constraints)
                     self.assertEqual(plan["source"], case["source"])
                     self.assertEqual(plan["authority"], case["authority"])
+                    self.assertNotIn("needs_model", plan)
                     self.assertEqual(constraints["people"]["names"], case["people"])
                     self.assertEqual(
                         [item["name"] for item in constraints["people"]["candidates"]],

@@ -575,8 +575,8 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertTrue(issue_matches_constraints(self.issue(1, "2025-10-23"), constraints))
         self.assertFalse(issue_matches_constraints(self.issue(2, "2026-01-21"), constraints))
 
-    @patch("backend.answers.collect_mantis_live_ids_in_range", return_value={})
-    @patch("backend.answers.scan_mantis_documents")
+    @patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value={})
+    @patch("backend.reports.aggregate.scan_mantis_documents")
     def test_count_report_counts_all_matches_not_top_five(self, scan_documents, _live):
         # 날짜 조건이 있으면 스냅샷 matched_ids와 라이브 결과를 합집합한다.
         # 라이브는 빈 결과로 목킹해 스냅샷 2건이 그대로 유지되는지 검증한다.
@@ -613,7 +613,7 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(verification["score"], 100)
         self.assertEqual(verification["status"], "pass")
 
-    @patch("backend.answers.scan_mantis_documents")
+    @patch("backend.reports.aggregate.scan_mantis_documents")
     def test_month_count_merges_live_when_snapshot_misses_dates(self, scan_documents):
         # 옛 포맷 스냅샷은 등록일이 없어 월 필터에서 0으로 샌다(matched_ids 비어 있음).
         # 라이브에서 실제 등록일로 매칭된 2건이 합집합돼 총 2건으로 보완돼야 한다.
@@ -640,14 +640,14 @@ class QueryPlanningTests(unittest.TestCase):
             extract_query_constraints(question),
             {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
         )
-        with patch("backend.answers.collect_mantis_live_ids_in_range", return_value=live):
+        with patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value=live):
             report = build_mantis_count_report(question, plan)
         self.assertIsNotNone(report)
         self.assertIn("총 2건입니다.", report["content"])
         self.assertIn("실시간 최신 800건 기준", report["content"])
         self.assertEqual(report["retrieval"]["stages"][0]["meta"]["total_count"], 2)
 
-    @patch("backend.answers.scan_mantis_documents")
+    @patch("backend.reports.aggregate.scan_mantis_documents")
     def test_month_count_uses_only_live_window_when_latest_snapshot_is_explicit(self, scan_documents):
         # "최신 800건 기준"에서는 로컬 스냅샷의 과거 이슈를 합치면 안 된다.
         # 스냅샷 {3,2}, 라이브 최신 창 {2,9}라면 답은 라이브 창의 2건이다.
@@ -672,7 +672,7 @@ class QueryPlanningTests(unittest.TestCase):
             extract_query_constraints(question),
             {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
         )
-        with patch("backend.answers.collect_mantis_live_ids_in_range", return_value=live):
+        with patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value=live):
             report = build_mantis_count_report(question, plan)
         self.assertIn("총 2건입니다.", report["content"])
         self.assertIn("실시간 최신 800건 기준", report["content"])
@@ -1003,6 +1003,28 @@ class QueryPlanningTests(unittest.TestCase):
                 notion_post_json("https://example.invalid", {}, timeout=45, retries=2)
         self.assertEqual(post.call_count, 1)
         self.assertEqual(post.call_args.kwargs["timeout"], 7)
+
+    @patch("backend.config.requests.post")
+    def test_notion_tool_default_budget_does_not_retry_timeout(self, post):
+        post.side_effect = requests.Timeout("timeout")
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaises(requests.Timeout):
+                notion_post_json("https://example.invalid", {}, timeout=45, retries=2)
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.kwargs["timeout"], 8)
+
+    def test_unscored_model_content_does_not_depress_verified_dimension_score(self):
+        report = build_verification_report(
+            "안녕하세요",
+            "안녕하세요. 무엇을 도와드릴까요?",
+            [],
+            None,
+            "model_generated",
+        )
+        self.assertEqual(report["score"], 100)
+        self.assertEqual(report["status"], "warning")
+        self.assertEqual(report["completedDimensions"], 1)
+        self.assertEqual(report["applicableDimensions"], 2)
 
     def test_chroma_status_uses_status_field_not_body_words(self):
         document = """[Mantis 이슈 정보]

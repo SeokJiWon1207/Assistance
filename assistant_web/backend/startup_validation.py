@@ -14,6 +14,10 @@ from backend.llm import get_model_registry
 
 
 LOGGER = logging.getLogger(__name__)
+LOCAL_DEVELOPMENT_ORIGINS = (
+    "http://localhost:8787",
+    "http://127.0.0.1:8787",
+)
 
 
 def is_production() -> bool:
@@ -41,6 +45,21 @@ def _is_loopback(hostname: str) -> bool:
         return ipaddress.ip_address(normalized).is_loopback
     except ValueError:
         return False
+
+
+def get_cors_allowed_origins() -> list[str]:
+    """환경에 맞는 credential CORS origin만 반환한다.
+
+    운영에서는 검증된 공개 주소만 허용하고, 로컬 주소는 개발 환경에서만
+    유지한다. PUBLIC_BASE_URL의 경로·기본 포트는 origin 형태로 정규화한다.
+    """
+    origins = [] if is_production() else list(LOCAL_DEVELOPMENT_ORIGINS)
+    public_base_url = os.getenv("PUBLIC_BASE_URL", "").strip()
+    if public_base_url:
+        public_origin = _origin(public_base_url)
+        if not is_production() or public_origin.startswith("https://"):
+            origins.append(public_origin)
+    return list(dict.fromkeys(origins))
 
 
 def validate_auth_transport_security() -> None:

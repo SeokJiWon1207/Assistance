@@ -6,9 +6,11 @@
 
 ```bash
 cd assistant_web
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.lock
 cp .env.example .env
 ollama pull qwen3.5:9b
-python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 ```
 
 브라우저에서 `http://127.0.0.1:8787`로 접속합니다.
@@ -91,7 +93,7 @@ AUTH_COOKIE_SECURE=true
 
 ```bash
 cd assistant_web
-python3 -m unittest discover -s tests -p 'test_*.py'
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
 이 명령은 검색·답변 단위 테스트와 FastAPI API 통합 테스트를 실행합니다. Node.js가
@@ -202,7 +204,7 @@ Mantis 읽기 도구는 다음 원칙으로 선택합니다.
 
 ```bash
 QUERY_PLANNER_ENABLED=true
-NOTION_TOOL_TIMEOUT_SECONDS=12
+NOTION_TOOL_TIMEOUT_SECONDS=8
 NOTION_TOOL_MAX_RETRIES=0
 ```
 

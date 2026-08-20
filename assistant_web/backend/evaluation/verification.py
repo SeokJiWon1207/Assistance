@@ -383,8 +383,8 @@ def build_verification_report(
     applicable_dimensions = [dimension for dimension in dimensions if dimension["status"] != "na"]
     completed_dimensions = [dimension for dimension in applicable_dimensions if dimension["score"] is not None]
     score = round(
-        sum(dimension["score"] for dimension in completed_dimensions) / len(applicable_dimensions)
-    ) if applicable_dimensions else 0
+        sum(dimension["score"] for dimension in completed_dimensions) / len(completed_dimensions)
+    ) if completed_dimensions else 0
     status = (
         "fail"
         if any(dimension["status"] == "fail" for dimension in applicable_dimensions)
@@ -410,7 +410,7 @@ def build_verification_report(
         "sourceCount": len(sources),
         "mode": mode,
         "verifiedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "note": "각 검증 영역은 독립적으로 표시되며, '검토 필요'는 자동 사실 판정이 불가능한 영역입니다.",
+        "note": "점수는 자동 판정이 완료된 영역만 평균하며, '검토 필요' 영역은 상태로 별도 표시합니다.",
     }
 
 

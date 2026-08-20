@@ -529,7 +529,6 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
             "confidence": 1.0,
             "authority": SourceAuthority.AUTHORITATIVE.value,
             "evidence": [],
-            "needs_model": False,
         }
     if explicit_notion and explicit_mantis:
         source, authority, reason = "both", SourceAuthority.AUTHORITATIVE, "두 검색 소스를 모두 명시"
@@ -581,7 +580,6 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
         "confidence": confidence,
         "authority": authority.value,
         "evidence": evidence,
-        "needs_model": authority != SourceAuthority.AUTHORITATIVE and should_use_intent_planner(text, constraints),
     }
 
 
@@ -616,28 +614,6 @@ def should_run_notion_search(text: str) -> bool:
         or _contains_normalized_marker(normalized_text, NOTION_TARGET_OBJECT_MARKERS)
         or _contains_normalized_marker(normalized_text, ("문서", "자료", "신입사원", "교육"))
     )
-
-
-def should_use_intent_planner(text: str, constraints: Dict[str, Any]) -> bool:
-    if is_simple_greeting(text):
-        return False
-    normalized_text = normalize_for_match(text)
-    search_markers = (
-        "찾아",
-        "검색",
-        "조회",
-        "보여",
-        "알려",
-        "정리",
-        "문서",
-        "자료",
-        "내역",
-        "현황",
-        "일정",
-        "공지",
-        "관련",
-    )
-    return any(normalize_for_match(marker) in normalized_text for marker in search_markers)
 
 
 def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
@@ -1029,7 +1005,6 @@ __all__ = [
     "rule_based_search_intent",
     "should_run_retrieval",
     "should_run_notion_search",
-    "should_use_intent_planner",
     "extract_json_object",
     "plan_search_intent_with_model",
     "term_is_covered_by_constraints",

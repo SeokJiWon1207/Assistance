@@ -34,6 +34,28 @@ class StartupValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "PUBLIC_BASE_URL"):
                 startup_validation.validate_auth_transport_security()
 
+    def test_production_cors_allows_only_public_origin(self):
+        with self.production_env(PUBLIC_BASE_URL="https://assistant.example.com/app"):
+            self.assertEqual(
+                startup_validation.get_cors_allowed_origins(),
+                ["https://assistant.example.com"],
+            )
+
+    def test_development_cors_keeps_loopback_and_optional_public_origin(self):
+        with patch.dict(
+            os.environ,
+            {"APP_ENV": "development", "PUBLIC_BASE_URL": "https://dev.example.com/path"},
+            clear=True,
+        ):
+            self.assertEqual(
+                startup_validation.get_cors_allowed_origins(),
+                [
+                    "http://localhost:8787",
+                    "http://127.0.0.1:8787",
+                    "https://dev.example.com",
+                ],
+            )
+
     @patch.object(startup_validation, "get_model_registry")
     def test_remote_http_model_requires_exact_allowlist(self, registry):
         registry.return_value = [

@@ -172,6 +172,28 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
         self.assertEqual(scoped, "김담당 주간 업무보고서 작성해줘")
 
+    def test_personal_scope_survives_a_follow_up_sort_request(self):
+        retrieval_text = "MTS 미종료 오래된 순으로 정렬해줘"
+        scoped = chat_service_module.apply_authenticated_mantis_scope(
+            retrieval_text,
+            {"mantisUsername": "석지원"},
+            scope_text="오래된 순으로 정렬해줘 내 MTS 미종료 이슈 보여줘",
+        )
+        self.assertEqual(scoped, f"{retrieval_text} 담당자: 석지원")
+
+    def test_follow_up_for_an_explicit_other_person_does_not_inherit_login(self):
+        with patch.object(
+            chat_service_module,
+            "extract_query_constraints",
+            return_value={"people": {"names": ["김담당"], "role": "handler"}},
+        ):
+            scoped = chat_service_module.apply_authenticated_mantis_scope(
+                "김담당 오래된 순으로 정렬해줘",
+                {"mantisUsername": "석지원"},
+                scope_text="김담당 오래된 순으로 정렬해줘 내 이슈 보여줘",
+            )
+        self.assertEqual(scoped, "김담당 오래된 순으로 정렬해줘")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -406,10 +406,10 @@ def get_notion_headers() -> Dict[str, str]:
 def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retries: int = 2) -> requests.Response:
     # A single Notion tool call must not monopolize the whole chat request.
     # Callers may request a larger timeout/retry count, but the orchestration
-    # budget caps each network attempt and defaults to one short retry for
-    # transient read/connect failures.
-    max_timeout = max(3, min(int(os.getenv("NOTION_TOOL_TIMEOUT_SECONDS", "12")), 45))
-    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "1")), 2))
+    # budget caps each network attempt. Chat orchestration can issue more than
+    # one Notion query, so the default does not retry a timed-out request.
+    max_timeout = max(3, min(int(os.getenv("NOTION_TOOL_TIMEOUT_SECONDS", "8")), 45))
+    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "0")), 2))
     timeout = min(timeout, max_timeout)
     retries = min(retries, max_retries)
     last_error: Optional[requests.RequestException] = None

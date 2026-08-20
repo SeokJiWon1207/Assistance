@@ -27,7 +27,6 @@ from backend.intent.constraints import (
     rule_based_search_intent as rule_based_search_intent,
     should_run_notion_search as should_run_notion_search,
     should_run_retrieval as should_run_retrieval,
-    should_use_intent_planner as should_use_intent_planner,
     split_project_search_terms as split_project_search_terms,
     term_is_covered_by_constraints as term_is_covered_by_constraints,
     wants_all_results as wants_all_results,
