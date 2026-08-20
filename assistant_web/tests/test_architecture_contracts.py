@@ -1,8 +1,9 @@
+import ast
 import json
 import unittest
 from pathlib import Path
 
-from backend import understanding
+from backend import answers, understanding
 from backend.query_planning import build_query_plan
 from backend.reports import evaluation
 from backend.sources import notion
@@ -140,6 +141,35 @@ class PythonArchitectureContractTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(getattr(notion, name).__module__, expected_module)
 
+    def test_aggregate_report_builders_use_dedicated_module(self):
+        for name in (
+            "build_mantis_count_report",
+            "build_mantis_month_count_report",
+            "build_mantis_pivot_report",
+            "build_mantis_spike_report",
+            "build_top_customers_report",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(getattr(answers, name).__module__, "backend.reports.aggregate")
+
+    def test_chat_orchestrator_stays_phase_oriented(self):
+        path = APP_DIR / "backend" / "services" / "chat_service.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        chat_service = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatService"
+        )
+        build_response = next(
+            node
+            for node in chat_service.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_build_response"
+        )
+        self.assertLessEqual(build_response.end_lineno - build_response.lineno + 1, 320)
+        function_names = {
+            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+        }
+        self.assertIn("build_deterministic_report", function_names)
+        self.assertIn("generate_model_response", function_names)
+
     def test_query_plan_golden_cases(self):
         for case in FIXTURE["queryPlans"]:
             question = case["question"]
@@ -187,6 +217,7 @@ class FrontendArchitectureContractTests(unittest.TestCase):
         expected_owners = {
             "workspace.js": "function renderWorkspace()",
             "chat.js": "async function requestAssistant(",
+            "charts.js": "export function renderDonutChart(",
             "notion.js": "function renderNotionAnswer(",
             "admin.js": "function renderEvaluationContent()",
             "events.js": 'els.form.addEventListener("submit"',
@@ -197,6 +228,9 @@ class FrontendArchitectureContractTests(unittest.TestCase):
                 content = (modules_dir / filename).read_text(encoding="utf-8")
                 self.assertIn(marker, content)
                 self.assertNotIn(marker, bootstrap)
+        chat = (modules_dir / "chat.js").read_text(encoding="utf-8")
+        self.assertNotIn("function renderDonutChart(", chat)
+        self.assertIn('from "./charts.js"', chat)
 
     def test_dom_and_api_contracts_are_present(self):
         static_dir = APP_DIR / "backend" / "static"

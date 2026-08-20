@@ -95,6 +95,19 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
         self.assertIn('type="module" src="/static/app.js', html)
 
+    def test_stylesheets_are_split_by_responsibility_in_cascade_order(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet_names = ("styles.css", "charts.css", "responsive.css", "workspace.css")
+        positions = []
+        for name in stylesheet_names:
+            path = STATIC_DIR / name
+            self.assertTrue(path.is_file(), name)
+            self.assertLessEqual(len(path.read_text(encoding="utf-8").splitlines()), 4500)
+            marker = f'/static/{name}?v='
+            self.assertIn(marker, html)
+            positions.append(html.index(marker))
+        self.assertEqual(positions, sorted(positions))
+
     def test_notion_controls_are_hidden_in_mantis_focused_ui(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()

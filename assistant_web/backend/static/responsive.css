@@ -1,0 +1,201 @@
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .control-group {
+    padding: 12px 0;
+  }
+
+  .chat-panel {
+    height: auto;
+    min-height: 72vh;
+    overflow: visible;
+  }
+
+  .chat-header {
+    min-height: 76px;
+    padding: 18px 20px;
+    justify-content: flex-start;
+  }
+
+  .sidebar-menu-toggle {
+    display: grid;
+  }
+
+  /* 좁은 화면에서는 사이드바를 상단 고정 오버레이로 접어둔다. 메뉴 버튼으로
+     열고, 배경을 눌러 닫는다. */
+  .sidebar {
+    position: fixed;
+    inset: 0 12vw auto 0;
+    z-index: 60;
+    max-height: 82vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow);
+    transform: translateY(-8px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+  }
+
+  body.sidebar-open .sidebar {
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  body.sidebar-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(10, 12, 16, 0.35);
+  }
+
+  .messages {
+    padding: 20px;
+  }
+
+  .starter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .message {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .message.user {
+    grid-template-columns: minmax(0, 1fr) 34px;
+    justify-content: stretch;
+  }
+
+  .message.user .avatar {
+    grid-column: 2;
+  }
+
+  .issue-detail-header {
+    display: grid;
+  }
+
+  .issue-detail-header em {
+    justify-self: start;
+  }
+
+  .issue-detail-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+    padding: 14px 20px 20px;
+  }
+
+  .scroll-to-top-button {
+    position: fixed;
+    top: auto;
+    bottom: 24px;
+    right: 20px;
+  }
+
+  .verification-checks,
+  .evaluation-case ul {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .empty-state {
+    padding: 24px 0;
+  }
+
+  .empty-state h3 {
+    font-size: 24px;
+  }
+
+  .starter-grid {
+    grid-template-columns: 1fr;
+    margin-top: 22px;
+  }
+
+  .starter-card {
+    min-height: 96px;
+  }
+
+  .data-status-line {
+    max-width: calc(100vw - 90px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .modal-form {
+    padding: 18px;
+  }
+
+  .template-fields,
+  .feedback-reason-group,
+  .user-management-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .user-management-body {
+    padding: 18px;
+  }
+
+  .user-management-intro,
+  .user-management-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .user-management-intro .secondary-button,
+  .user-management-card-actions .run-evaluation-button {
+    width: 100%;
+  }
+
+  .user-approved-toggle {
+    margin-right: 0;
+  }
+
+  .user-save-status {
+    max-width: none;
+    text-align: left;
+  }
+
+  .modal-form-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .feedback-template-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .feedback-template-row em {
+    grid-column: 1 / -1;
+  }
+
+  .message-feedback-label,
+  .message-action-divider {
+    display: none;
+  }
+}

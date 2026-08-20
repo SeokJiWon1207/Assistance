@@ -1,0 +1,352 @@
+.effort-chart {
+  display: grid;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.effort-chart-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.effort-stat-card {
+  min-height: 78px;
+  padding: 13px 15px;
+  gap: 5px;
+  align-content: center;
+}
+
+.effort-stat-card strong {
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.effort-stat-1 strong {
+  font-size: 24px;
+}
+
+.effort-stat-card span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.effort-chart .summary-section {
+  display: grid;
+  gap: 10px;
+}
+
+.effort-chart .summary-section h4 {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+@media (max-width: 560px) {
+  .effort-chart-stats {
+    grid-template-columns: 1fr;
+  }
+  .donut-chart-row {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.donut-chart-row {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 4px 0 2px;
+}
+
+.donut-chart-svg {
+  flex-shrink: 0;
+}
+
+.donut-chart-total {
+  font-size: 14px;
+  font-weight: 800;
+  fill: var(--text);
+}
+
+.donut-chart-total-label {
+  font-size: 8px;
+  fill: var(--muted);
+}
+
+.chart-legend {
+  display: grid;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.chart-legend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 42px 48px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.chart-legend-row > span:nth-child(2) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.chart-legend-pct {
+  color: var(--muted);
+  min-width: 34px;
+  text-align: right;
+}
+
+.chart-legend-value {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-chart-wrap {
+  position: relative;
+}
+
+.bar-chart-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.bar-chart-value-label {
+  font-size: 12px;
+  font-weight: 800;
+  fill: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar-chart-axis-label {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--text-soft);
+}
+
+/* 축 기준선(0)과 눈금 그리드. 그리드는 막대를 방해하지 않도록 옅게 둔다. */
+.bar-chart-axis-line {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.bar-chart-grid-line {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.bar-chart-tick-label {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 행 전체를 덮는 투명 히트 영역이라 막대가 짧아도 호버가 잡힌다. */
+.bar-chart-row-hit {
+  fill: transparent;
+}
+
+[data-bar-row] {
+  cursor: default;
+}
+
+[data-bar-row] .bar-chart-row-hit {
+  transition: fill 120ms ease;
+}
+
+[data-bar-row].is-active .bar-chart-row-hit {
+  fill: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* 호버 중인 행만 선명하게 남기고 나머지는 뒤로 물린다. */
+.bar-chart-wrap.has-hover [data-bar-row]:not(.is-active) {
+  opacity: 0.45;
+}
+
+[data-bar-row] {
+  transition: opacity 140ms ease;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  max-width: 280px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.chart-tooltip.is-visible {
+  opacity: 1;
+}
+
+.chart-tooltip strong {
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tooltip span {
+  font-size: 12px;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+/* 도넛 구간과 범례 호버 연동. */
+[data-donut-segment] {
+  transition: opacity 140ms ease, stroke-width 140ms ease;
+}
+
+.donut-chart-row.has-hover [data-donut-segment]:not(.is-active) {
+  opacity: 0.32;
+}
+
+.donut-chart-row.has-hover [data-donut-segment].is-active {
+  stroke-width: 21;
+}
+
+/* 호버 배경이 글자에 붙지 않도록 여백을 주고, 음수 마진으로 기존 정렬을 유지한다. */
+.chart-legend-row {
+  padding: 2px 5px;
+  margin: -2px -5px;
+  border-radius: 5px;
+  transition: background 120ms ease, opacity 140ms ease;
+}
+
+.donut-chart-row.has-hover .chart-legend-row:not(.is-active) {
+  opacity: 0.5;
+}
+
+.chart-legend-row.is-active {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-bar-row],
+  [data-donut-segment],
+  .chart-legend-row,
+  .chart-tooltip,
+  [data-bar-row] .bar-chart-row-hit {
+    transition: none;
+  }
+}
+
+/* 월별 이슈 유형 추이 차트 (ECharts) */
+.effort-trend {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.effort-trend-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.effort-trend-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.effort-trend-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.effort-trend-tabs button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.effort-trend-period {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.effort-trend-canvas {
+  width: 100%;
+  height: 320px;
+}
+
+.effort-trend-basis {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+.effort-trend-empty {
+  margin: 0;
+  padding: 28px 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .effort-trend-canvas {
+    height: 260px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .effort-trend-tabs button {
+    transition: none;
+  }
+}
+
+.evaluation-loading {
+  padding: 36px 0;
+  color: var(--muted);
+  text-align: center;
+}
