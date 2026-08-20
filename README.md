@@ -16,11 +16,11 @@ Assistance/
 
 ```bash
 cd assistant_web
-python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
+.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8787 --reload
 
 cd ..
-python3 scripts/make_vector_db.py --refresh-days 7
+assistant_web/.venv/bin/python scripts/make_vector_db.py --refresh-days 7
 
 cd assistant_web
-python3 -m unittest discover -s tests -p 'test_*.py'
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
