@@ -14,6 +14,8 @@ class LocalScriptSafetyTests(unittest.TestCase):
         self.assertIn('kill -TERM "$SERVER_PID"', script)
         self.assertNotIn("xargs kill -9", script)
         self.assertIn("이 스크립트가 관리하지 않는 프로세스", script)
+        self.assertIn('-sTCP:LISTEN', script)
+        self.assertIn('포트 ${PORT}를', script)
 
     def test_aws_commands_default_to_key_outside_repository(self):
         for name in ("AWS_시연서버_재배포.command", "AWS_점검모드.command"):

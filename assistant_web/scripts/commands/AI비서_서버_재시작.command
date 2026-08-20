@@ -49,9 +49,9 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
-PORT_PID="$(lsof -ti tcp:"$PORT" | head -1 || true)"
+PORT_PID="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN | head -1 || true)"
 if [ -n "$PORT_PID" ]; then
-  echo "포트 $PORT를 이 스크립트가 관리하지 않는 프로세스(PID $PORT_PID)가 사용 중입니다."
+  echo "포트 ${PORT}를 이 스크립트가 관리하지 않는 프로세스(PID $PORT_PID)가 사용 중입니다."
   echo "프로세스를 직접 확인한 뒤 다시 실행해 주세요."
   exit 1
 fi
