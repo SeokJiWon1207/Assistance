@@ -48,7 +48,15 @@ class AuthenticatedIdentityTests(unittest.TestCase):
         constraints = chat_service_module.extract_query_constraints(scoped)
 
         self.assertIn("담당자: 석지원", scoped)
-        self.assertEqual(constraints["people"], {"names": ["석지원"], "role": "handler"})
+        self.assertEqual(
+            constraints["people"],
+            {
+                "names": ["석지원"],
+                "role": "handler",
+                "name_origins": {"석지원": "known"},
+                "candidates": [],
+            },
+        )
 
     def test_personal_issue_variants_are_scoped_to_authenticated_user(self):
         questions = (
@@ -71,7 +79,12 @@ class AuthenticatedIdentityTests(unittest.TestCase):
                 self.assertEqual(scoped, f"{question} 담당자: 석지원")
                 self.assertEqual(
                     constraints["people"],
-                    {"names": ["석지원"], "role": "handler"},
+                    {
+                        "names": ["석지원"],
+                        "role": "handler",
+                        "name_origins": {"석지원": "known"},
+                        "candidates": [],
+                    },
                 )
                 self.assertTrue(
                     chat_service_module.should_return_deterministic_issue_list(

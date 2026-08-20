@@ -16,6 +16,7 @@ from backend.common import (
     normalize_for_match,
     text_contains_person_name,
 )
+from backend.intent.people import build_people
 from backend.query_planning import build_query_plan, extract_created_at_range
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
@@ -364,7 +365,9 @@ def run_person_effort_report(
         "year": "연간 개인 공수 집계",
     }[period_kind]
     effort_constraints = extract_query_constraints(text)
-    effort_constraints["people"] = {"names": [person], "role": "any"}
+    handlers, reporters = load_known_people()
+    origin = "known" if person in set(handlers) | set(reporters) else "explicit_unverified"
+    effort_constraints["people"] = build_people([(person, origin)], "any")
     effort_constraints["created_at"] = {
         "from": start_date,
         "to": end_date,

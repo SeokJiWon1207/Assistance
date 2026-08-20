@@ -45,7 +45,7 @@ from backend.understanding import (
     extract_query_constraints,
     has_constraint,
     merge_query_plan_constraints,
-    should_run_notion_search,
+    rule_based_search_intent,
     wants_similar_issue_search,
 )
 
@@ -120,6 +120,8 @@ def run_retrieval_pipeline(
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)
     stages = []
     plan_source = str((intent_plan or {}).get("source", ""))
+    if plan_source not in {"notion", "mantis", "both", "general"}:
+        plan_source = str(rule_based_search_intent(query_text, constraints).get("source") or "general")
     # 고객사별 최신 목록은 특정 검색어가 아니라 전체 이슈 집합이 대상이다.
     # 플래너가 "최근"·"하나씩" 같은 표현을 검색어로 되돌려도 적용하지 않는다.
     planned_terms = (
@@ -127,7 +129,8 @@ def run_retrieval_pipeline(
         if (intent_plan or {}).get("group_by") == "customer"
         else (intent_plan or {}).get("terms") or []
     )
-    notion_intent = plan_source in {"notion", "both"} or should_run_notion_search(query_text)
+    notion_intent = plan_source in {"notion", "both"}
+    mantis_intent = plan_source in {"mantis", "both"}
     normalized_query = normalize_for_match(query_text)
     explicit_notion = any(
         normalize_for_match(keyword) in normalized_query
@@ -155,11 +158,7 @@ def run_retrieval_pipeline(
         notion_terms = source_specific_terms(query_text, "notion", effective_constraints)
         mantis_terms = source_specific_terms(query_text, "mantis", effective_constraints)
     keyword = " ".join(mantis_terms or build_keyword_terms(query_text, effective_constraints))
-    notion_only = planner_notion or (
-        plan_source != "both"
-        and notion_intent
-        and (explicit_notion or not has_constraint(effective_constraints))
-    )
+    notion_only = planner_notion
     similar_issue_search = wants_similar_issue_search(query_text, constraints)
     exact_issue_lookup = bool(constraints.get("issue_ids")) and not similar_issue_search and plan_source != "both"
     historical_snapshot_used = False
@@ -196,7 +195,7 @@ def run_retrieval_pipeline(
             )
         )
 
-    if tools.get("mantis") and not notion_only:
+    if tools.get("mantis") and mantis_intent:
         if constraints.get("issue_ids"):
             try:
                 id_stage = execute_mantis_id_lookup(constraints["issue_ids"], constraints)
@@ -304,7 +303,7 @@ def run_retrieval_pipeline(
 
     if (
         tools.get("vectorDb")
-        and not notion_only
+        and mantis_intent
         and not exact_issue_lookup
         and not similar_issue_search
         and not historical_snapshot_used

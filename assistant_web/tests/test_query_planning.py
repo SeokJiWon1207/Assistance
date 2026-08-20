@@ -518,7 +518,10 @@ class QueryPlanningTests(unittest.TestCase):
         constraints = extract_query_constraints(question)
         plan = build_query_plan(question, {"source": "notion"}, constraints)
         self.assertEqual(plan["group_by"], "owner")
-        self.assertEqual(plan["filters"]["people"], {"names": [], "role": None})
+        self.assertEqual(
+            plan["filters"]["people"],
+            {"names": [], "role": None, "name_origins": {}, "candidates": []},
+        )
 
     def test_effort_query_uses_detected_person_when_date_separates_words(self):
         self.assertEqual(

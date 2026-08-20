@@ -465,7 +465,7 @@ class ChatService:
             if should_plan:
                 emit_chat_status("질문을 도구 실행 계획으로 변환하고 있습니다", "routing")
                 model_plan = plan_search_intent_with_model(retrieval_text, model, api_key)
-                if rule_plan.get("confidence", 0) >= 0.9 and rule_plan.get("source") != "general":
+                if rule_plan.get("authority") == "authoritative":
                     model_plan["source"] = rule_plan["source"]
             query_plan = build_query_plan(
                 retrieval_text,

@@ -8,6 +8,7 @@ import json
 import os
 import random
 import re
+import statistics
 import sys
 import time
 from collections import Counter
@@ -29,6 +30,7 @@ if __name__ == "__main__":
 import requests
 
 from backend.environment import load_dotenv
+from backend.evaluation.verification import ungrounded_constraint_labels
 
 load_dotenv(APP_DIR / ".env")
 
@@ -480,6 +482,40 @@ def extract_answer_count(content: str) -> Optional[int]:
     return None
 
 
+def observed_route_source(response: Dict[str, Any]) -> Optional[str]:
+    retrieval = response.get("retrieval") or {}
+    plan = retrieval.get("intent_plan") or retrieval.get("query_plan") or {}
+    source = str(plan.get("source") or "").lower()
+    if source in {"mantis", "notion", "both", "general"}:
+        return source
+    stage_sources = {
+        "notion" if str(stage.get("source") or "").startswith("notion") else "mantis"
+        for stage in retrieval.get("stages") or []
+        if str(stage.get("source") or "").startswith(("notion", "mantis", "chroma"))
+    }
+    if stage_sources == {"notion", "mantis"}:
+        return "both"
+    return next(iter(stage_sources), None)
+
+
+def filter_recall_matches(question: str, actual: Dict[str, Any]) -> bool:
+    expected = extract_query_constraints(question)
+    scalar_keys = ("customer_key", "platform_key")
+    if any(expected.get(key) and expected.get(key) != actual.get(key) for key in scalar_keys):
+        return False
+    list_keys = ("statuses", "issue_ids", "screen_numbers", "excluded_statuses")
+    for key in list_keys:
+        if not set(expected.get(key) or []).issubset(set(actual.get(key) or [])):
+            return False
+    expected_people = set((expected.get("people") or {}).get("names") or [])
+    actual_people = set((actual.get("people") or {}).get("names") or [])
+    if not expected_people.issubset(actual_people):
+        return False
+    expected_range = expected.get("created_at") or {}
+    actual_range = actual.get("created_at") or {}
+    return not expected_range or expected_range == actual_range
+
+
 def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     content = str(response.get("content") or "")
     sources = response.get("sources") or []
@@ -533,12 +569,35 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     ):
         dependency_reason = content[:500]
 
+    retrieval = response.get("retrieval") or {}
+    observed_route = observed_route_source(response)
+    routing_passed = observed_route == case.source if observed_route else None
+    actual_constraints = retrieval.get("constraints") or {}
+    grounding_text = str(retrieval.get("query") or case.question)
+    ungrounded = (
+        ungrounded_constraint_labels(grounding_text, actual_constraints)
+        if actual_constraints
+        else []
+    )
+    filter_precision_passed = not ungrounded if actual_constraints else None
+    filter_recall_passed = (
+        filter_recall_matches(case.question, actual_constraints)
+        if actual_constraints
+        else None
+    )
     outcome = "passed" if passed else "dependency_error" if dependency_reason else "assertion_failed"
     return {
         **asdict(case),
         "passed": passed,
         "outcome": outcome,
         "actual": actual,
+        "answer_passed": passed,
+        "expected_route": case.source,
+        "observed_route": observed_route,
+        "routing_passed": routing_passed,
+        "filter_precision_passed": filter_precision_passed,
+        "filter_recall_passed": filter_recall_passed,
+        "ungrounded_filters": ungrounded,
         "answer": content[:2000],
         "source_count": len(sources),
         "audit_id": response.get("auditId"),
@@ -547,6 +606,7 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
+    started = time.perf_counter()
     try:
         tools = {
             "mantis": case.source == "mantis",
@@ -564,7 +624,7 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             stream=False,
             tools=tools,
         ))
-        return grade(case, response)
+        return {**grade(case, response), "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
     except Exception as exc:
         error = f"{type(exc).__name__}: {str(exc)[:500]}"
         dependency_error = isinstance(exc, requests.RequestException) or any(
@@ -575,6 +635,7 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             "passed": False,
             "outcome": "dependency_error" if dependency_error else "execution_error",
             "error": error,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 1),
         }
 
 
@@ -613,6 +674,7 @@ def run_follow_up_scenario(
         scenario.expected_kind,
         scenario.expected,
     )
+    started = time.perf_counter()
     try:
         tools = {
             "mantis": scenario.source == "mantis",
@@ -635,7 +697,7 @@ def run_follow_up_scenario(
             stream=False,
             tools=tools,
         ))
-        result = grade(case, response)
+        result = {**grade(case, response), "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
     except Exception as exc:
         error = f"{type(exc).__name__}: {str(exc)[:500]}"
         dependency_error = isinstance(exc, requests.RequestException) or any(
@@ -646,6 +708,7 @@ def run_follow_up_scenario(
             "passed": False,
             "outcome": "dependency_error" if dependency_error else "execution_error",
             "error": error,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 1),
         }
     return {
         **result,
@@ -682,6 +745,27 @@ def summarize_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def summarize_boolean_dimension(results: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
+    evaluated = [result.get(key) for result in results if result.get(key) is not None]
+    passed = sum(value is True for value in evaluated)
+    return {
+        "total": len(evaluated),
+        "passed": passed,
+        "score": round(passed / len(evaluated) * 100) if evaluated else None,
+    }
+
+
+def summarize_latency(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    values = sorted(float(result["latency_ms"]) for result in results if result.get("latency_ms") is not None)
+    if not values:
+        return {"p50_ms": None, "p95_ms": None}
+    p95_index = min(len(values) - 1, max(0, round((len(values) - 1) * 0.95)))
+    return {
+        "p50_ms": round(statistics.median(values), 1),
+        "p95_ms": round(values[p95_index], 1),
+    }
+
+
 def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
@@ -699,6 +783,17 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
         if follow_up_summary.get("score") is not None
         else "N/A"
     )
+    routing = summary.get("routing", {})
+    filter_precision = summary.get("filter_precision", {})
+    filter_recall = summary.get("filter_recall", {})
+    latency = summary.get("latency", {})
+    routing_label = f"{routing.get('score')}%" if routing.get("score") is not None else "N/A"
+    filter_precision_label = (
+        f"{filter_precision.get('score')}%" if filter_precision.get("score") is not None else "N/A"
+    )
+    filter_recall_label = (
+        f"{filter_recall.get('score')}%" if filter_recall.get("score") is not None else "N/A"
+    )
     lines = [
         "# Dynamic accuracy report",
         "",
@@ -707,6 +802,10 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
         f"- Accuracy: {score_label} ({summary['passed']}/{summary['total']} evaluated)",
         f"- Base questions: {base_score_label} ({base_summary.get('passed', 0)}/{base_summary.get('total', 0)})",
         f"- Follow-up scenarios: {follow_up_score_label} ({follow_up_summary.get('passed', 0)}/{follow_up_summary.get('total', 0)})",
+        f"- Source routing: {routing_label} ({routing.get('passed', 0)}/{routing.get('total', 0)})",
+        f"- Filter precision: {filter_precision_label} ({filter_precision.get('passed', 0)}/{filter_precision.get('total', 0)})",
+        f"- Filter recall: {filter_recall_label} ({filter_recall.get('passed', 0)}/{filter_recall.get('total', 0)})",
+        f"- Latency: p50 {latency.get('p50_ms')} ms / p95 {latency.get('p95_ms')} ms",
         f"- Attempted: {summary.get('attempted', summary['total'])}",
         f"- Blocked follow-ups: {summary.get('blocked_by_prerequisite', 0)}",
         f"- Dependency errors: {summary.get('dependency_errors', 0)}",
@@ -842,6 +941,10 @@ def main() -> int:
         source: summarize_results([result for result in results if result.get("source") == source])
         for source in ("mantis", "notion")
     }
+    routing_summary = summarize_boolean_dimension(results, "routing_passed")
+    filter_precision_summary = summarize_boolean_dimension(results, "filter_precision_passed")
+    filter_recall_summary = summarize_boolean_dimension(results, "filter_recall_passed")
+    latency_summary = summarize_latency(results)
     incomplete = (
         len(cases) < args.questions
         or len(follow_up_scenarios) < args.follow_up_scenarios
@@ -868,6 +971,10 @@ def main() -> int:
             "base": base_summary,
             "follow_up": follow_up_summary,
             "by_source": source_summaries,
+            "routing": routing_summary,
+            "filter_precision": filter_precision_summary,
+            "filter_recall": filter_recall_summary,
+            "latency": latency_summary,
         },
         "errors": errors,
         "results": results,

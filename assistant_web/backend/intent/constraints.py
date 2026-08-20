@@ -4,6 +4,7 @@ import json
 import os
 import re
 from datetime import date
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -25,10 +26,9 @@ from backend.intent.constants import (
     EXPLICIT_MANTIS_MARKERS,
     EXPLICIT_NOTION_MARKERS,
     GENERAL_INTENT_KEYWORDS,
-    MANTIS_DOMAIN_MARKERS,
-    NOTION_DOMAIN_MARKERS,
-    NOTION_INTENT_KEYWORDS,
+    MANTIS_TARGET_OBJECT_MARKERS,
     NOTION_QUERY_STOPWORDS,
+    NOTION_TARGET_OBJECT_MARKERS,
     RETRIEVAL_INTENT_KEYWORDS,
     SOURCE_NAME_ALIASES,
 )
@@ -46,6 +46,11 @@ from backend.intent.entities import (
     get_customer_alias_groups,
     is_simple_greeting,
 )
+from backend.intent.people import (
+    drop_people,
+    empty_people,
+    grounded_model_people,
+)
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
 from backend.query_planning import extract_created_at_range, extract_group_by, infer_operation
@@ -60,7 +65,7 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
             "customer_aliases": [],
             "platform_key": None,
             "platform_aliases": [],
-            "people": {"names": [], "role": None},
+            "people": empty_people(),
             "statuses": [],
             "issue_ids": [],
             "screen_numbers": [],
@@ -176,13 +181,14 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
             customer_exact = None
         else:
             customer_alias_norms = {normalize_for_match(alias) for alias in customer_aliases}
-            people["names"] = [
-                name
-                for name in people["names"]
-                if normalize_for_match(name) not in customer_alias_norms
-            ]
-            if not people["names"]:
-                people["role"] = None
+            people = drop_people(
+                people,
+                [
+                    name
+                    for name in people.get("names") or []
+                    if normalize_for_match(name) in customer_alias_norms
+                ],
+            )
 
     statuses = extract_status_constraints(text)
     excluded_statuses: List[str] = []
@@ -345,7 +351,7 @@ def merge_query_plan_constraints(
         "excluded_customer_keys": list(constraints.get("excluded_customer_keys") or []),
         "excluded_customer_aliases": list(constraints.get("excluded_customer_aliases") or []),
         "excluded_statuses": list(constraints.get("excluded_statuses") or []),
-        "people": dict(constraints.get("people") or {"names": [], "role": None}),
+        "people": dict(constraints.get("people") or empty_people()),
         "statuses": list(constraints.get("statuses") or []),
         "issue_ids": list(constraints.get("issue_ids") or []),
         "exclude_issue_ids": list(constraints.get("exclude_issue_ids") or []),
@@ -360,10 +366,27 @@ def merge_query_plan_constraints(
         clause for clause in legacy_filters_to_clauses(filters) if clause not in planned_clauses
     )
     for clause in planned_clauses:
-        if clause not in merged["filter_clauses"]:
-            merged["filter_clauses"].append(clause)
         field, operator, value = clause["field"], clause["operator"], clause.get("value")
         values = value if isinstance(value, list) else [value]
+        grounded_people = None
+        if field in {"owner", "reporter"} and operator in {"equals", "in"}:
+            grounded_people = grounded_model_people(
+                str((query_plan or {}).get("grounding_text") or ""),
+                merged["people"],
+                [str(item) for item in values],
+                "handler" if field == "owner" else "reporter",
+            )
+            accepted = {
+                normalize_for_match(name)
+                for name in grounded_people.get("names") or []
+            }
+            accepted_values = [item for item in values if normalize_for_match(str(item)) in accepted]
+            if not accepted_values:
+                continue
+            values = accepted_values
+            clause = {**clause, "value": accepted_values if isinstance(value, list) else accepted_values[0]}
+        if clause not in merged["filter_clauses"]:
+            merged["filter_clauses"].append(clause)
         if field == "platform":
             for planned_value in values:
                 key = normalize_for_match(str(planned_value))
@@ -400,10 +423,7 @@ def merge_query_plan_constraints(
         elif field == "status" and operator in {"equals", "in"} and not merged.get("statuses"):
             merged["statuses"] = [str(item) for item in values]
         elif field in {"owner", "reporter"} and operator in {"equals", "in"}:
-            merged["people"] = {
-                "names": list(dict.fromkeys(str(item) for item in values)),
-                "role": "handler" if field == "owner" else "reporter",
-            }
+            merged["people"] = grounded_people or merged["people"]
         elif field == "issue_id":
             numeric_values = [int(str(item)) for item in values if str(item).isdigit()]
             if operator in {"not_equals", "not_in"}:
@@ -451,41 +471,106 @@ def merge_query_plan_constraints(
     return merged
 
 
-def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
-    """Choose a source deterministically before asking the model planner.
+class SourceAuthority(str, Enum):
+    AUTHORITATIVE = "authoritative"
+    ADVISORY = "advisory"
+    ABSTAIN = "abstain"
 
-    The model planner remains a fallback for genuinely ambiguous natural-language
-    requests. Explicit source names and structured fields must never be overridden
-    by a probabilistic classification.
-    """
+
+def _contains_normalized_marker(normalized: str, markers: Any) -> bool:
+    return any(normalize_for_match(marker) in normalized for marker in markers)
+
+
+def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
+    """소스 대상과 검색 범위를 분리해 규칙 기반 검색 소스를 제안한다."""
     normalized = normalize_for_match(text)
-    explicit_notion = any(normalize_for_match(marker) in normalized for marker in EXPLICIT_NOTION_MARKERS)
-    explicit_mantis = any(normalize_for_match(marker) in normalized for marker in EXPLICIT_MANTIS_MARKERS)
-    combined_marker = any(normalize_for_match(marker) in normalized for marker in COMBINED_SOURCE_MARKERS)
-    notion_domain = any(normalize_for_match(marker) in normalized for marker in NOTION_DOMAIN_MARKERS)
-    mantis_domain = any(normalize_for_match(marker) in normalized for marker in MANTIS_DOMAIN_MARKERS)
-    structured_mantis = has_constraint(constraints) and not notion_domain
+    explicit_notion = _contains_normalized_marker(normalized, EXPLICIT_NOTION_MARKERS)
+    explicit_mantis = _contains_normalized_marker(normalized, EXPLICIT_MANTIS_MARKERS)
+    combined_marker = _contains_normalized_marker(normalized, COMBINED_SOURCE_MARKERS)
+    notion_target = _contains_normalized_marker(normalized, NOTION_TARGET_OBJECT_MARKERS)
+    notion_target = notion_target or bool(
+        re.search(
+            r"(?:신입사원|교육|업무|운영).{0,16}(?:문서|자료)"
+            r"|(?:문서|자료).{0,16}(?:신입사원|교육|업무|운영)",
+            normalized,
+        )
+    )
+    mantis_target = _contains_normalized_marker(normalized, MANTIS_TARGET_OBJECT_MARKERS)
+    exact_mantis_target = bool(constraints.get("issue_ids") or constraints.get("screen_numbers"))
+    issue_request = bool(
+        re.search(
+            r"(?:이슈|장애|오류|버그).{0,16}(?:보여|찾아|조회|목록|리스트|건수|몇|상세|알려|정리)"
+            r"|(?:보여|찾아|조회|목록|리스트|건수|몇|상세|알려|정리).{0,16}(?:이슈|장애|오류|버그)",
+            normalized,
+        )
+    )
+    document_hint = _contains_normalized_marker(
+        normalized,
+        ("문서", "자료", "신입사원", "교육"),
+    )
+    filterable_person = bool(constraints.get("people", {}).get("names"))
+    scope_only = bool(
+        constraints.get("customer_key")
+        or constraints.get("platform_key")
+        or constraints.get("people", {}).get("names")
+        or constraints.get("created_at")
+        or constraints.get("statuses")
+        or constraints.get("date_fields")
+    )
+    evidence: List[Dict[str, str]] = []
 
     if is_simple_greeting(text):
-        return {"source": "general", "terms": [], "reason": "단순 인사", "planned": True, "confidence": 1.0}
+        return {
+            "source": "general",
+            "terms": [],
+            "reason": "단순 인사",
+            "planned": True,
+            "planner": "rule",
+            "confidence": 1.0,
+            "authority": SourceAuthority.AUTHORITATIVE.value,
+            "evidence": [],
+            "needs_model": False,
+        }
     if explicit_notion and explicit_mantis:
-        source, reason, confidence = "both", "두 검색 소스를 모두 명시", 1.0
-    elif combined_marker and notion_domain and (mantis_domain or structured_mantis):
-        source, reason, confidence = "both", "Notion 업무와 Mantis 이슈를 함께 요청", 0.98
+        source, authority, reason = "both", SourceAuthority.AUTHORITATIVE, "두 검색 소스를 모두 명시"
+        evidence.append({"kind": "explicit_source", "source": "both"})
+    elif combined_marker and notion_target and (mantis_target or exact_mantis_target or issue_request):
+        source, authority, reason = "both", SourceAuthority.AUTHORITATIVE, "두 검색 소스의 비교·교차를 명시"
+        evidence.append({"kind": "explicit_combination", "source": "both"})
     elif explicit_notion:
-        source, reason, confidence = "notion", "Notion을 검색 대상으로 명시", 1.0
+        source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "Notion을 검색 대상으로 명시"
+        evidence.append({"kind": "explicit_source", "source": "notion"})
     elif explicit_mantis:
-        source, reason, confidence = "mantis", "Mantis를 검색 대상으로 명시", 1.0
-    elif notion_domain and not mantis_domain:
-        source, reason, confidence = "notion", "팀 문서·조직 운영 키워드를 인식", 0.92
-    elif structured_mantis:
-        source, reason, confidence = "mantis", "이슈 구조화 조건을 인식", 0.98
-    elif mantis_domain and not notion_domain:
-        source, reason, confidence = "mantis", "고객 이슈·개발 업무 키워드를 인식", 0.92
+        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "Mantis를 검색 대상으로 명시"
+        evidence.append({"kind": "explicit_source", "source": "mantis"})
+    elif exact_mantis_target:
+        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 식별자를 인식"
+        evidence.append({"kind": "exact_identifier", "source": "mantis"})
+    elif notion_target:
+        source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "문서 대상 표현을 인식"
+        evidence.append({"kind": "target_object", "source": "notion"})
+    elif mantis_target or issue_request:
+        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 대상 표현을 인식"
+        evidence.append({"kind": "target_object", "source": "mantis"})
+    elif document_hint:
+        source, authority, reason = "notion", SourceAuthority.ADVISORY, "문서·자료 표현을 인식"
+        evidence.append({"kind": "topic", "source": "notion"})
+    elif filterable_person:
+        source, authority, reason = "mantis", SourceAuthority.ADVISORY, "담당자 검색 범위를 인식"
+        evidence.append({"kind": "scope", "source": "mantis"})
+    elif scope_only:
+        source, authority, reason = "general", SourceAuthority.ABSTAIN, "검색 범위만 인식해 소스 판단을 보류"
+        evidence.append({"kind": "scope", "source": "general"})
     elif any(normalize_for_match(keyword) in normalized for keyword in GENERAL_INTENT_KEYWORDS):
-        source, reason, confidence = "general", "일반 대화 키워드를 인식", 0.95
+        source, authority, reason = "general", SourceAuthority.AUTHORITATIVE, "일반 대화 키워드를 인식"
     else:
-        source, reason, confidence = "general", "명확한 검색 소스를 규칙으로 확정하지 못함", 0.35
+        source, authority, reason = "general", SourceAuthority.ABSTAIN, "명확한 검색 소스를 규칙으로 확정하지 못함"
+
+    confidence = {
+        SourceAuthority.AUTHORITATIVE: 1.0,
+        SourceAuthority.ADVISORY: 0.75,
+        SourceAuthority.ABSTAIN: 0.35,
+    }[authority]
 
     return {
         "source": source,
@@ -494,7 +579,9 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
         "planned": True,
         "planner": "rule",
         "confidence": confidence,
-        "needs_model": confidence < 0.7 and should_use_intent_planner(text, constraints),
+        "authority": authority.value,
+        "evidence": evidence,
+        "needs_model": authority != SourceAuthority.AUTHORITATIVE and should_use_intent_planner(text, constraints),
     }
 
 
@@ -524,9 +611,10 @@ def should_run_retrieval(text: str, constraints: Dict[str, Any]) -> bool:
 
 def should_run_notion_search(text: str) -> bool:
     normalized_text = normalize_for_match(text)
-    return any(
-        normalize_for_match(keyword) in normalized_text
-        for keyword in NOTION_INTENT_KEYWORDS
+    return bool(
+        _contains_normalized_marker(normalized_text, EXPLICIT_NOTION_MARKERS)
+        or _contains_normalized_marker(normalized_text, NOTION_TARGET_OBJECT_MARKERS)
+        or _contains_normalized_marker(normalized_text, ("문서", "자료", "신입사원", "교육"))
     )
 
 
@@ -534,12 +622,6 @@ def should_use_intent_planner(text: str, constraints: Dict[str, Any]) -> bool:
     if is_simple_greeting(text):
         return False
     normalized_text = normalize_for_match(text)
-    explicit_source = any(
-        normalize_for_match(marker) in normalized_text
-        for marker in ("notion", "노션", "노선", "mantis", "멘티스", "맨티스")
-    )
-    if has_constraint(constraints) and not explicit_source:
-        return False
     search_markers = (
         "찾아",
         "검색",
@@ -938,6 +1020,7 @@ def extract_limit(text: str, default: int = 5) -> int:
 
 
 __all__ = [
+    "SourceAuthority",
     "extract_query_constraints",
     "has_targeting_constraint",
     "has_constraint",

@@ -30,6 +30,12 @@ from backend.intent.constants import (
     SIMPLE_GREETING_TERMS,
 )
 from backend.intent.dates import remove_date_field_phrases
+from backend.intent.people import (
+    ROLE_FOLLOWING_NOUNS,
+    build_people,
+    plausible_explicit_person_name,
+    roster_person_origin,
+)
 from backend.query_filters import add_filter_clause
 
 
@@ -284,13 +290,11 @@ _FIRST_PERSON_TOKENS = frozenset({
     "내가", "제가", "나의", "저의",
 })
 
-# '사원'은 직위 접미사이기도 하지만 '신입사원'처럼 복합명사를 이룬다.
-# 그대로 두면 "신입사원 관련 문서"에서 '신입'이 담당자 이름으로 잡히고,
-# 인물 조건이 생기면 질문이 Notion 대신 Mantis 로 라우팅된다.
-_NON_NAME_MODIFIERS = frozenset({
-    "신입", "경력", "정규", "계약", "일반", "전임", "임시", "퇴직", "전직",
-    "기존", "해당", "담당", "인수", "협력", "외주", "파견",
-})
+_EXPLICIT_HANDLER_PATTERN = re.compile(
+    r"(?:담당자(?:가|는|를|도)?\s*[:=]?\s*|담당\s*[:=]\s*)"
+    r"([가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31})",
+    re.IGNORECASE,
+)
 
 
 def extract_people_constraints(text: str) -> Dict[str, Any]:
@@ -304,45 +308,42 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
     )
     handlers, reporters = load_known_people()
     known_people = sorted(set(handlers) | set(reporters), key=len, reverse=True)
-    people = [
-        person
-        for person in known_people
-        if person and is_valid_handler_name(person) and text_contains_person_name(person_text, person)
-    ]
+    pairs: List[tuple[str, str]] = []
+    for person in known_people:
+        if person and is_valid_handler_name(person) and text_contains_person_name(person_text, person):
+            pairs.append((person, roster_person_origin(person)))
 
-    if not people:
-        explicit_handler = re.search(
-            r"(?:담당자|담당)\s*[:=]\s*([가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31})",
-            person_text,
-            re.IGNORECASE,
-        ) or re.search(
-            r"(?:담당자|담당)\s*([A-Za-z][A-Za-z0-9_.-]{1,31})",
-            person_text,
-            re.IGNORECASE,
-        )
-        if explicit_handler and is_valid_handler_name(explicit_handler.group(1)):
-            people.append(explicit_handler.group(1))
+    explicit_handler = _EXPLICIT_HANDLER_PATTERN.search(person_text)
+    if explicit_handler:
+        name = explicit_handler.group(1).strip()
+        korean_candidate = bool(re.fullmatch(r"[가-힣]{2,4}", name))
+        if (
+            is_valid_handler_name(name)
+            and name not in ROLE_FOLLOWING_NOUNS
+            and (not korean_candidate or plausible_explicit_person_name(name))
+        ):
+            known_origin = next(
+                (origin for known_name, origin in pairs if normalize_for_match(known_name) == normalize_for_match(name)),
+                None,
+            )
+            pairs.append((name, "known" if known_origin == "known" else "explicit_unverified"))
 
-    if not people:
-        for match in re.finditer(r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원|한테|에게|담당|할당|할당된|배정|배정된)", person_text):
+    if not build_people(pairs, infer_person_role(person_text))["names"]:
+        for match in re.finditer(
+            r"([가-힣]{2,4})\s*(?:선임|차장|과장|대리|주임|수석|매니저|팀장|부장|사원|한테|에게|담당|할당|할당된|배정|배정된)",
+            person_text,
+        ):
             name = match.group(1).strip()
-            if name in _FIRST_PERSON_TOKENS or strip_korean_particle(name) in _FIRST_PERSON_TOKENS:
+            stem = strip_korean_particle(name)
+            if name in _FIRST_PERSON_TOKENS or stem in _FIRST_PERSON_TOKENS:
                 continue
-            if name in _NON_NAME_MODIFIERS or strip_korean_particle(name) in _NON_NAME_MODIFIERS:
+            if not plausible_explicit_person_name(name):
                 continue
-            # "그 이슈의 담당자", "제목과 담당자로 정리해줘"처럼 조사가 붙은 일반
-            # 명사가 이름으로 잡히지 않도록 조사를 뗀 어간까지 함께 검증한다.
-            if not is_valid_person_name(name):
+            if not is_valid_person_name(name) or not is_valid_person_name(stem):
                 continue
-            if not is_valid_person_name(strip_korean_particle(name)):
-                continue
-            people.append(name)
+            pairs.append((name, "inferred"))
 
-    people = list(dict.fromkeys(people))
-    return {
-        "names": people,
-        "role": infer_person_role(person_text) if people else None,
-    }
+    return build_people(pairs, infer_person_role(person_text))
 
 
 def is_simple_greeting(text: str) -> bool:

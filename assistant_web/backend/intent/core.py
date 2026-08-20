@@ -10,6 +10,7 @@ from backend.intent.constants import (
     NOTION_QUERY_STOPWORDS as NOTION_QUERY_STOPWORDS,
 )
 from backend.intent.constraints import (
+    SourceAuthority as SourceAuthority,
     build_keyword_terms as build_keyword_terms,
     build_similar_issue_search_text as build_similar_issue_search_text,
     expand_compound_search_term as expand_compound_search_term,

@@ -1,4 +1,7 @@
+import json
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from backend.understanding import (
     extract_query_constraints,
@@ -17,12 +20,22 @@ class CompoundNounNameTest(unittest.TestCase):
             )
 
     def test_real_names_with_titles_still_extracted(self):
-        self.assertEqual(
-            extract_query_constraints("홍길동 사원 이슈")["people"]["names"], ["홍길동"]
-        )
-        self.assertEqual(
-            extract_query_constraints("우동헌 과장 담당 건")["people"]["names"], ["우동헌"]
-        )
+        with patch(
+            "backend.intent.entities.load_known_people",
+            return_value=(("홍길동", "우동헌"), ()),
+        ):
+            self.assertEqual(
+                extract_query_constraints("홍길동 사원 이슈")["people"]["names"], ["홍길동"]
+            )
+            self.assertEqual(
+                extract_query_constraints("우동헌 과장 담당 건")["people"]["names"], ["우동헌"]
+            )
+
+    def test_unverified_title_name_is_only_a_candidate(self):
+        with patch("backend.intent.entities.load_known_people", return_value=((), ())):
+            people = extract_query_constraints("홍길동 사원 이슈")["people"]
+        self.assertEqual(people["names"], [])
+        self.assertEqual(people["candidates"], [{"name": "홍길동", "origin": "inferred"}])
 
     def test_fake_person_no_longer_routes_to_mantis(self):
         # 가짜 인물 조건이 생기면 문서 질문이 Mantis 이슈 검색으로 빠진다.
@@ -51,6 +64,27 @@ class NotionIntentKeywordTest(unittest.TestCase):
             "월별 등록건수 추이",
         ):
             self.assertFalse(should_run_notion_search(text), msg=text)
+
+
+class RoutingFixtureTest(unittest.TestCase):
+    def test_routing_and_people_filter_contract(self):
+        fixture = Path(__file__).parent / "fixtures" / "routing_cases.jsonl"
+        with patch(
+            "backend.intent.entities.load_known_people",
+            return_value=(("김보람", "svn"), ()),
+        ):
+            for line in fixture.read_text(encoding="utf-8").splitlines():
+                case = json.loads(line)
+                with self.subTest(question=case["q"]):
+                    constraints = extract_query_constraints(case["q"])
+                    plan = rule_based_search_intent(case["q"], constraints)
+                    self.assertEqual(plan["source"], case["source"])
+                    self.assertEqual(plan["authority"], case["authority"])
+                    self.assertEqual(constraints["people"]["names"], case["people"])
+                    self.assertEqual(
+                        [item["name"] for item in constraints["people"]["candidates"]],
+                        case["candidate_people"],
+                    )
 
 
 if __name__ == "__main__":

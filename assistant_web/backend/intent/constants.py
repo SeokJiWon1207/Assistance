@@ -191,6 +191,55 @@ NOTION_DOMAIN_MARKERS = (
     "업무공유",
 )
 
+# 소스를 잠글 수 있는 대상 객체 표현이다. 고객사·플랫폼·담당자·날짜·상태는
+# 검색 범위이지 소스 근거가 아니므로 이 목록에 넣지 않는다.
+NOTION_TARGET_OBJECT_MARKERS = (
+    "회의록",
+    "온보딩",
+    "인수인계",
+    "규정",
+    "지침",
+    "양식",
+    "템플릿",
+    "매뉴얼",
+    "가이드",
+    "결재요청",
+    "결재완료",
+    "팀내 공지",
+    "공지",
+    "휴가",
+    "회식",
+    "송년회",
+    "신년회",
+    "팀빌딩",
+    "주요이슈현황",
+    "주요 이슈 현황",
+    "업무공유",
+    "접속 방법",
+    "사용 방법",
+)
+
+MANTIS_TARGET_OBJECT_MARKERS = (
+    "공수",
+    "개발완료",
+    "개발 완료",
+    "qc완료",
+    "qc 완료",
+)
+
+SHARED_TOPIC_MARKERS = (
+    "문서",
+    "자료",
+    "일정",
+    "기한",
+    "교육",
+    "프로젝트",
+    "장애",
+    "오류",
+    "버그",
+    "이슈",
+)
+
 ISSUE_LIST_INTENT_KEYWORDS = {
     "최근",
     "최신",
@@ -273,6 +322,9 @@ __all__ = [
     "COMBINED_SOURCE_MARKERS",
     "MANTIS_DOMAIN_MARKERS",
     "NOTION_DOMAIN_MARKERS",
+    "NOTION_TARGET_OBJECT_MARKERS",
+    "MANTIS_TARGET_OBJECT_MARKERS",
+    "SHARED_TOPIC_MARKERS",
     "ISSUE_LIST_INTENT_KEYWORDS",
     "ISSUE_ANALYSIS_INTENT_KEYWORDS",
     "CUSTOMER_LIKE_PATTERN",

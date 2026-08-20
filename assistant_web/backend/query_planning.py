@@ -480,6 +480,7 @@ def build_query_plan(
     terms = model_plan.get("terms") or source_plan.get("terms") or []
     return {
         "version": 2,
+        "grounding_text": question,
         "operation": operation,
         "source": source,
         "filters": filters,

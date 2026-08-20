@@ -188,7 +188,10 @@ class ExactConstraintTests(unittest.TestCase):
         passed_constraints = notion_search.call_args.args[2]
         self.assertIsNone(passed_constraints["platform_key"])
         self.assertEqual(passed_constraints["statuses"], [])
-        self.assertEqual(passed_constraints["people"], {"names": [], "role": None})
+        self.assertEqual(
+            passed_constraints["people"],
+            {"names": [], "role": None, "name_origins": {}, "candidates": []},
+        )
         self.assertEqual(result["constraints"], passed_constraints)
 
     @patch("backend.sources.notion.notion_property_schema")
@@ -303,7 +306,10 @@ class ExactConstraintTests(unittest.TestCase):
         general_constraints = extract_query_constraints(question)
         notion_constraints = extract_notion_constraints(question)
 
-        self.assertEqual(general_constraints["people"], {"names": [], "role": None})
+        self.assertEqual(
+            general_constraints["people"],
+            {"names": [], "role": None, "name_origins": {}, "candidates": []},
+        )
         self.assertEqual(notion_constraints["status"], "결재요청")
         self.assertEqual(notion_constraints["owner"], "")
         self.assertEqual(notion_constraints["group_by"], "owner")

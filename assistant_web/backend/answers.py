@@ -1094,6 +1094,24 @@ def build_unapplied_filters_note(retrieval_result: Dict[str, Any]) -> Optional[s
     return f"주의: 현재 검색 소스에서 적용하지 못한 조건이 있습니다: {labels}."
 
 
+def build_unverified_person_note(
+    constraints: Dict[str, Any],
+    count: int,
+) -> Optional[str]:
+    """명시했지만 명부에서 확인되지 않은 담당자의 0건 결과를 설명한다."""
+    if count:
+        return None
+    origins = (constraints.get("people") or {}).get("name_origins") or {}
+    names = [name for name, origin in origins.items() if origin == "explicit_unverified"]
+    if not names:
+        return None
+    joined = ", ".join(names)
+    return (
+        f"참고: '{joined}'는 현재 담당자 명부에서 확인하지 못했어요. "
+        "이름이 맞다면 아직 이슈 이력이 없거나 명부 갱신 전일 수 있어요."
+    )
+
+
 def wants_issue_history_detail(text: str) -> bool:
     normalized = normalize_for_match(text)
     return any(
@@ -1166,6 +1184,7 @@ def format_deterministic_issue_answer(
         criteria = f"{criteria}, 고객사별 최신 이슈 1건" if criteria != "요청 조건" else "고객사별 최신 이슈 1건"
     status_note = build_status_excluded_note(display_constraints, retrieval_result)
     unapplied_note = build_unapplied_filters_note(retrieval_result)
+    unverified_person_note = build_unverified_person_note(display_constraints, len(issues))
     snapshot_note = build_snapshot_note(retrieval_result)
     if not issues:
         intro = build_issue_intro_line(display_constraints, issues, 0)
@@ -1175,6 +1194,8 @@ def format_deterministic_issue_answer(
             parts.extend(["", status_note])
         if unapplied_note:
             parts.extend(["", unapplied_note])
+        if unverified_person_note:
+            parts.extend(["", unverified_person_note])
         if snapshot_note:
             parts.extend(["", snapshot_note])
         return "\n".join(parts)

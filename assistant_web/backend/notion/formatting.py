@@ -4,7 +4,6 @@ from typing import Any, Dict, List
 
 from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
 from backend.intent.constants import ISSUE_LIST_INTENT_KEYWORDS
-from backend.intent.constraints import should_run_notion_search
 from backend.notion.search import collect_retrieved_notion_pages
 from backend.query_filters import filter_clause_label
 from backend.query_planning import extract_group_by
@@ -38,7 +37,8 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
     plan_source = str((retrieval_result.get("intent_plan") or {}).get("source", ""))
     if plan_source == "both":
         return False
-    if not should_run_notion_search(text) and plan_source not in {"notion", "both"}:
+    has_notion_stage = any(stage.get("source") == "notion" for stage in retrieval_result.get("stages", []))
+    if plan_source != "notion" and not has_notion_stage:
         return False
     # 인용된 제목은 검색 대상이지 사용자의 명령이 아니다. 제목에 "요청" 같은
     # 목록 의도 단어가 들어 있으면 ``상세 내용 정리해줘``도 목록 조회로 오인한다.
@@ -54,7 +54,7 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
         normalize_for_match(keyword) in normalized_text
         for keyword in ISSUE_LIST_INTENT_KEYWORDS
     )
-    return has_list_intent and any(stage.get("source") == "notion" for stage in retrieval_result.get("stages", []))
+    return has_list_intent and has_notion_stage
 
 
 def notion_page_owner_names(page: Dict[str, Any]) -> List[str]:
