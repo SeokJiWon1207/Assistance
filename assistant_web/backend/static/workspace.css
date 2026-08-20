@@ -96,6 +96,10 @@
   gap: 10px;
 }
 
+.workspace-summary-grid.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .workspace-metric {
   display: grid;
   gap: 4px;
@@ -118,11 +122,22 @@
   font-weight: 700;
 }
 
+.workspace-metric small {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .workspace-metric.is-blue strong { color: var(--blue); }
 .workspace-metric.is-danger strong { color: var(--danger); }
 .workspace-metric.is-warning strong { color: var(--warning); }
 
 .workspace-connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 12px;
   margin: -4px 0 0;
   padding: 9px 12px;
   border-radius: 8px;
@@ -132,9 +147,37 @@
   font-weight: 700;
 }
 
+.workspace-connection strong {
+  font-size: 11px;
+}
+
+.workspace-connection span:not(.workspace-connection-dot) {
+  color: var(--text-soft);
+  font-weight: 650;
+}
+
+.workspace-connection span:not(.workspace-connection-dot) + span::before {
+  margin-right: 12px;
+  color: var(--line-strong);
+  content: "·";
+}
+
+.workspace-connection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2bb673;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #2bb673 14%, transparent);
+}
+
 .workspace-connection.is-warning {
   background: color-mix(in srgb, var(--warning) 13%, transparent);
   color: var(--warning);
+}
+
+.workspace-connection.is-warning .workspace-connection-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 14%, transparent);
 }
 
 .workspace-columns {
@@ -191,10 +234,27 @@
   white-space: nowrap;
 }
 
+.workspace-issue-header p {
+  margin: 1px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.workspace-visible-count strong {
+  color: var(--blue);
+  font-size: 14px;
+}
+
 .workspace-list {
   display: grid;
   max-height: 390px;
   overflow-y: auto;
+}
+
+/* 모달 본문이 이미 스크롤되므로 개인 업무 목록에는 중첩 스크롤을 만들지 않는다. */
+.workspace-issue-list {
+  max-height: none;
+  overflow: visible;
 }
 
 .workspace-item {
@@ -215,13 +275,24 @@
   border-left: 3px solid var(--danger);
 }
 
+.workspace-item.is-aging:not(.is-overdue) {
+  border-left: 3px solid var(--warning);
+}
+
 .workspace-item-main {
   display: grid;
   min-width: 0;
   gap: 5px;
 }
 
-.workspace-item-main strong {
+.workspace-item-title {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 6px;
+}
+
+.workspace-item-title strong {
   overflow: hidden;
   color: var(--text);
   font-size: 12px;
@@ -229,8 +300,11 @@
   white-space: nowrap;
 }
 
-.workspace-item-main strong > span {
+.workspace-item-title > span {
+  flex: 0 0 auto;
   color: var(--blue);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .workspace-item-main a {
@@ -243,12 +317,48 @@
   text-decoration: underline;
 }
 
-.workspace-item-main small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
+.workspace-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.workspace-item-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 9px;
+  font-weight: 750;
   white-space: nowrap;
+}
+
+.workspace-item-meta .workspace-meta-project {
+  max-width: 280px;
+  overflow: hidden;
+  background: transparent;
+  padding-left: 0;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+
+.workspace-item-meta .workspace-meta-status {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.workspace-item-meta .workspace-meta-due.is-overdue {
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  color: var(--danger);
+}
+
+.workspace-item-meta .workspace-meta-age.is-aging {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
 }
 
 .workspace-item-action,
@@ -268,6 +378,7 @@
 .workspace-item-action:hover,
 .workspace-notification button:hover {
   border-color: var(--blue);
+  background: var(--blue-soft);
   color: var(--blue);
 }
 
@@ -532,6 +643,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .workspace-summary-grid.is-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .workspace-columns {
     grid-template-columns: 1fr;
   }
@@ -542,8 +657,13 @@
     padding: 16px;
   }
 
-  .workspace-summary-grid {
+  .workspace-summary-grid,
+  .workspace-summary-grid.is-three {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-summary-grid.is-three .workspace-metric:first-child {
+    grid-column: 1 / -1;
   }
 
   .workspace-item {
@@ -551,7 +671,15 @@
   }
 
   .workspace-item-action {
-    justify-self: start;
+    justify-self: stretch;
+  }
+
+  .workspace-issue-header {
+    align-items: flex-start !important;
+  }
+
+  .workspace-issue-header p {
+    display: none;
   }
 
   .workspace-refresh-button {

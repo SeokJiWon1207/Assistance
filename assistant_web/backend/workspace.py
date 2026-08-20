@@ -519,6 +519,7 @@ def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
     issues.sort(
         key=lambda item: (
             not item["overdue"],
+            not ((item.get("ageDays") or 0) >= 30),
             not _is_open(item["status"]),
             item.get("dueDate") or "9999-12-31",
             str(item.get("updatedAt") or ""),

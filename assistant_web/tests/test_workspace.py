@@ -164,6 +164,62 @@ class PersonalWorkspaceTests(unittest.TestCase):
         self.assertEqual(result["summary"]["unreadNotifications"], 1)
         self.assertEqual(result["weeklyBrief"]["newIssues"], 1)
 
+    def test_personal_issue_list_prioritizes_overdue_then_aging_work(self):
+        today = workspace.date.today()
+        issues = [
+            {
+                "id": 201,
+                "summary": "일반 업무",
+                "project": "고객사",
+                "status": "확인된 이슈",
+                "handler": "석지원",
+                "created_at": (today - workspace.timedelta(days=2)).isoformat(),
+                "updated_at": today.isoformat(),
+                "date_fields": {"완료예정일": (today + workspace.timedelta(days=1)).isoformat()},
+            },
+            {
+                "id": 202,
+                "summary": "장기 업무",
+                "project": "고객사",
+                "status": "확인된 이슈",
+                "handler": "석지원",
+                "created_at": (today - workspace.timedelta(days=45)).isoformat(),
+                "updated_at": today.isoformat(),
+                "date_fields": {"완료예정일": (today + workspace.timedelta(days=2)).isoformat()},
+            },
+            {
+                "id": 203,
+                "summary": "지연 업무",
+                "project": "고객사",
+                "status": "확인된 이슈",
+                "handler": "석지원",
+                "created_at": (today - workspace.timedelta(days=3)).isoformat(),
+                "updated_at": today.isoformat(),
+                "date_fields": {"완료예정일": (today - workspace.timedelta(days=1)).isoformat()},
+            },
+        ]
+        user = {
+            "uid": "uid-order",
+            "email": "user@example.com",
+            "displayName": "석지원",
+            "mantisUsername": "석지원",
+            "team": "컨텐츠서비스팀",
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")},
+        ), patch.object(
+            workspace,
+            "_my_mantis_issues",
+            return_value=("석지원", issues, {"status": "live", "matchedCount": 3}),
+        ):
+            result = workspace.build_my_workspace(user)
+
+        self.assertEqual(
+            [issue["id"] for issue in result["mantis"]["issues"]],
+            [203, 202, 201],
+        )
+
     def test_notification_read_state_is_per_user(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,

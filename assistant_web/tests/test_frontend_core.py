@@ -150,6 +150,18 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("data-refresh-team-brief", app_js)
         self.assertIn("markTeamWeeklyBriefRead", app_js)
 
+    def test_personal_workspace_shows_every_issue_without_nested_scrolling(self):
+        workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
+        workspace_css = (STATIC_DIR / "workspace.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="workspace-list workspace-issue-list"', workspace_js)
+        self.assertIn("`${issues.length} / ${totalOpen}건 표시`", workspace_js)
+        self.assertIn(".workspace-issue-list {", workspace_css)
+        self.assertIn("max-height: none", workspace_css)
+        self.assertIn("overflow: visible", workspace_css)
+        self.assertIn(".workspace-summary-grid.is-three", workspace_css)
+        self.assertIn('closeMobileSidebar();\n  openWorkspaceModal("personal")', self.application_javascript())
+
     def test_playbook_search_and_curator_actions_are_connected(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()

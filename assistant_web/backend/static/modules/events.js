@@ -224,8 +224,14 @@ els.evaluationContent.addEventListener("click", (event) => {
 els.evaluationModal.addEventListener("click", (event) => {
   if (event.target === els.evaluationModal) closeEvaluationModal();
 });
-els.myWorkBtn?.addEventListener("click", () => openWorkspaceModal("personal"));
-els.teamDashboardBtn?.addEventListener("click", () => openWorkspaceModal("team"));
+els.myWorkBtn?.addEventListener("click", () => {
+  closeMobileSidebar();
+  openWorkspaceModal("personal");
+});
+els.teamDashboardBtn?.addEventListener("click", () => {
+  closeMobileSidebar();
+  openWorkspaceModal("team");
+});
 els.workspaceModalClose?.addEventListener("click", closeWorkspaceModal);
 els.workspaceModal?.addEventListener("click", (event) => {
   if (event.target === els.workspaceModal) closeWorkspaceModal();

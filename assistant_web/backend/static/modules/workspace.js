@@ -194,24 +194,56 @@ function safeExternalUrl(value) {
   }
 }
 
-function workspaceMetric(label, value, tone = "") {
-  return `<article class="workspace-metric ${tone}"><strong>${escapeHtml(String(value ?? 0))}</strong><span>${escapeHtml(label)}</span></article>`;
+function workspaceMetric(label, value, tone = "", detail = "") {
+  return `<article class="workspace-metric ${tone}"><strong>${escapeHtml(String(value ?? 0))}</strong><span>${escapeHtml(label)}</span>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</article>`;
 }
 
 function workspaceEmpty(message) {
   return `<div class="workspace-empty"><span aria-hidden="true">✓</span><p>${escapeHtml(message)}</p></div>`;
 }
 
+function workspaceStatusLabel(value) {
+  const status = String(value || "").trim();
+  const normalized = status.toLowerCase().replace(/[\s_-]+/g, "");
+  const labels = {
+    new: "신규",
+    assigned: "담당 지정",
+    acknowledged: "접수 확인",
+    confirmed: "검토 중",
+    feedback: "피드백",
+    developed: "개발 완료",
+    resolved: "해결",
+    closed: "종료",
+  };
+  return labels[normalized] || status || "상태 미상";
+}
+
+function formatWorkspaceDate(value) {
+  const raw = String(value || "");
+  const match = raw.match(/^\d{4}-(\d{2})-(\d{2})/);
+  return match ? `${Number(match[1])}.${Number(match[2])}` : raw;
+}
+
 function issueWorkspaceRow(issue) {
-  const metadata = [issue.project, issue.status, issue.dueDate ? `예정 ${issue.dueDate}` : "", issue.ageDays ? `${issue.ageDays}일 경과` : ""]
-    .filter(Boolean).join(" · ");
+  const ageDays = Number(issue.ageDays || 0);
+  const aging = ageDays >= 30;
+  const status = workspaceStatusLabel(issue.status);
+  const rowTone = issue.overdue ? "is-overdue" : aging ? "is-aging" : "";
   return `
-    <article class="workspace-item ${issue.overdue ? "is-overdue" : ""}">
+    <article class="workspace-item ${rowTone}">
       <div class="workspace-item-main">
-        <strong><span>#${escapeHtml(String(issue.id || ""))}</span> ${escapeHtml(issue.title || "제목 없음")}</strong>
-        <small>${escapeHtml(metadata)}</small>
+        <div class="workspace-item-title">
+          <span>#${escapeHtml(String(issue.id || ""))}</span>
+          <strong>${escapeHtml(issue.title || "제목 없음")}</strong>
+        </div>
+        <div class="workspace-item-meta">
+          ${issue.project ? `<span class="workspace-meta-project">${escapeHtml(issue.project)}</span>` : ""}
+          <span class="workspace-meta-status">${escapeHtml(status)}</span>
+          ${issue.dueDate ? `<span class="workspace-meta-due ${issue.overdue ? "is-overdue" : ""}">완료 예정 ${escapeHtml(formatWorkspaceDate(issue.dueDate))}</span>` : ""}
+          ${ageDays ? `<span class="workspace-meta-age ${aging ? "is-aging" : ""}">등록 ${ageDays}일</span>` : ""}
+        </div>
       </div>
-      <button type="button" class="workspace-item-action" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">AI에게 묻기</button>
+      <button type="button" class="workspace-item-action" aria-label="#${escapeHtml(String(issue.id || ""))} 이슈를 AI에게 묻기" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">AI 요약</button>
     </article>`;
 }
 
@@ -219,20 +251,30 @@ function renderPersonalOverview(data) {
   const summary = data.summary || {};
   const issues = data.mantis?.issues || [];
   const sourceLabel = data.mantis?.status === "snapshot" ? "로컬 스냅샷" : "실시간";
-  const mapping = data.user?.mantisUsername
-    ? `Mantis 담당자 '${data.user.mantisUsername}'(으)로 연결됨 · ${sourceLabel}`
-    : "Mantis 담당자명이 연결되지 않았습니다. 관리자에게 담당자명 등록을 요청해 주세요.";
+  const totalOpen = Number(summary.open || 0);
+  const visibleCountLabel = issues.length === totalOpen
+    ? `${issues.length}건 모두 표시`
+    : `${issues.length} / ${totalOpen}건 표시`;
+  const isConnected = Boolean(data.user?.mantisUsername);
   return `
     ${renderTeamBriefBanner()}
-    <section class="workspace-summary-grid">
-      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "")}
-      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
-      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
+    <section class="workspace-summary-grid is-three">
+      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", "현재 처리할 전체 업무")}
+      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "", summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중")}
+      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "", summary.aging ? "우선 확인이 필요한 장기 업무" : "장기 업무 없음")}
     </section>
-    <p class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">${escapeHtml(mapping)}</p>
+    <div class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">
+      <span class="workspace-connection-dot" aria-hidden="true"></span>
+      ${isConnected
+        ? `<strong>${escapeHtml(sourceLabel)} 조회 완료</strong><span>담당자 ${escapeHtml(data.user.mantisUsername)}</span><span>${escapeHtml(visibleCountLabel)}</span>`
+        : "<strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span>"}
+    </div>
     <section class="workspace-section workspace-section-single">
-      <header><div><span>Mantis</span><h4>내 담당 이슈</h4></div><em>${issues.length}건</em></header>
-      <div class="workspace-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("최근 담당 이슈가 없습니다.")}</div>
+      <header class="workspace-issue-header">
+        <div><span>Mantis</span><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
+        <em class="workspace-visible-count"><strong>${issues.length}</strong>${issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
+      </header>
+      <div class="workspace-list workspace-issue-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("현재 담당한 미종료 이슈가 없습니다.")}</div>
     </section>`;
 }
 
