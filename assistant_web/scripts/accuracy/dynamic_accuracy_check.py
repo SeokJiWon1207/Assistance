@@ -314,6 +314,76 @@ def build_mantis_cases(
         pair_question, "issue_ids", pair_expected,
     ))
 
+    project_platform_groups: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
+    for item in issues:
+        item_project = str(item.get("project", {}).get("name") or "").strip()
+        platform = normalize(custom_field(item, "매체구분"))
+        if item_project and platform in {"hts", "mts"}:
+            project_platform_groups.setdefault((item_project, platform.upper()), []).append(item)
+    project_platform_pairs = [
+        pair
+        for pair, rows in project_platform_groups.items()
+        if len(rows) >= 2
+    ]
+    if project_platform_pairs:
+        platform_project, platform = rng.choice(sorted(project_platform_pairs))
+        platform_question = (
+            f"{human_project_name(platform_project)} {platform} 최근 이슈 2개만 최신순으로 보여줘"
+        )
+        platform_expected = [
+            int(item["id"])
+            for item in issues
+            if mantis.issue_matches_constraints(item, extract_query_constraints(platform_question))
+        ][:2]
+        if augment_mutable_oracle:
+            platform_expected = (
+                complete_mutable_mantis_ids(platform_question, issues, 2) or platform_expected
+            )
+        if len(platform_expected) >= 2:
+            cases.append(AccuracyCase(
+                "mantis-project-platform",
+                "mantis",
+                "고객사·플랫폼·정렬",
+                platform_question,
+                "ordered_issue_ids",
+                platform_expected,
+            ))
+
+    exclusion_candidates: List[tuple[str, str, List[int]]] = []
+    for candidate_project in sorted(project_counts):
+        if not candidate_project:
+            continue
+        for excluded_platform in ("HTS", "MTS"):
+            exclusion_question = (
+                f"{human_project_name(candidate_project)} 이슈에서 {excluded_platform}는 빼고 "
+                "최근 3개만 보여줘"
+            )
+            matching_ids = [
+                int(item["id"])
+                for item in issues
+                if mantis.issue_matches_constraints(item, extract_query_constraints(exclusion_question))
+            ][:3]
+            if len(matching_ids) >= 2:
+                exclusion_candidates.append((candidate_project, excluded_platform, matching_ids))
+    if exclusion_candidates:
+        excluded_project, excluded_platform, exclusion_expected = rng.choice(exclusion_candidates)
+        exclusion_question = (
+            f"{human_project_name(excluded_project)} 이슈에서 {excluded_platform}는 빼고 "
+            "최근 3개만 보여줘"
+        )
+        if augment_mutable_oracle:
+            exclusion_expected = (
+                complete_mutable_mantis_ids(exclusion_question, issues, 3) or exclusion_expected
+            )
+        cases.append(AccuracyCase(
+            "mantis-project-platform-exclusion",
+            "mantis",
+            "고객사·플랫폼 제외",
+            exclusion_question,
+            "ordered_issue_ids",
+            exclusion_expected,
+        ))
+
     screen_groups: Dict[str, List[Dict[str, Any]]] = {}
     for item in issues:
         for screen in exact_screen_numbers(item):
@@ -353,7 +423,26 @@ def build_mantis_cases(
             f"최신 {len(issues)}건 기준으로 {year}년 {int(month_number)}월에 {human_project_name(project)}에서 들어온 이슈는 몇 개야?",
             "count", month_counts[month],
         ))
-    return cases[:6]
+
+    used_screens = {
+        screen
+        for item in issues
+        for screen in exact_screen_numbers(item)
+    }
+    absent_screen = next(
+        screen
+        for screen in (str(value) for value in range(99999, 89999, -1))
+        if screen not in used_screens
+    )
+    cases.append(AccuracyCase(
+        "mantis-screen-no-result",
+        "mantis",
+        "결과 없음·환각 방지",
+        f"화면번호 {absent_screen} 관련 Mantis 이슈가 있는지 확인해줘",
+        "no_results",
+        [],
+    ))
+    return cases
 
 
 def useful_title(page: Dict[str, str]) -> bool:
@@ -372,19 +461,81 @@ def build_notion_cases(pages: List[Dict[str, str]], rng: random.Random) -> List[
             selected.append(page)
         if len(selected) == 4:
             break
-    return [
+    cases = [
         AccuracyCase(
             f"notion-title-{index + 1}", "notion", "제목 검색",
             f"노션에서 '{page['title']}' 항목을 찾아서 알려줘", "titles", [page["title"]],
         )
         for index, page in enumerate(selected)
     ]
+    status_candidates = [page for page in selected if page.get("status", "").strip()]
+    for index, page in enumerate(status_candidates[:2]):
+        cases.append(AccuracyCase(
+            f"notion-title-status-{index + 1}",
+            "notion",
+            "제목·상태 복합 조건",
+            f"노션에서 상태가 {page['status']}인 '{page['title']}' 항목을 정확히 찾아줘",
+            "titles",
+            [page["title"]],
+        ))
+    nonce = rng.randrange(100000, 1000000)
+    cases.append(AccuracyCase(
+        "notion-title-no-result",
+        "notion",
+        "결과 없음·환각 방지",
+        f"노션에서 '자동 정확도 점검용 존재하지 않는 항목 {nonce}'을 찾아줘",
+        "no_results",
+        [],
+    ))
+    return cases
+
+
+def select_rotating_cases(
+    cases: List[AccuracyCase],
+    limit: int,
+    rng: random.Random,
+) -> List[AccuracyCase]:
+    """Keep conversation prerequisites and rotate the remaining daily coverage."""
+    if limit <= 0:
+        return []
+    mantis_cases = [case for case in cases if case.source == "mantis"]
+    notion_cases = [case for case in cases if case.source == "notion"]
+    by_id = {case.id: case for case in cases}
+    required_ids = [
+        "mantis-exact-id",
+        "mantis-project-latest",
+        "mantis-project-status",
+        "notion-title-1",
+    ]
+    selected = [by_id[case_id] for case_id in required_ids if case_id in by_id][:limit]
+    selected_ids = {case.id for case in selected}
+
+    mantis_target = min(len(mantis_cases), max(min(3, limit), round(limit * 0.6)))
+    notion_target = min(len(notion_cases), max(0, limit - mantis_target))
+    targets = {"mantis": mantis_target, "notion": notion_target}
+    pools = {
+        "mantis": [case for case in mantis_cases if case.id not in selected_ids],
+        "notion": [case for case in notion_cases if case.id not in selected_ids],
+    }
+    for pool in pools.values():
+        rng.shuffle(pool)
+    for source in ("mantis", "notion"):
+        current = sum(case.source == source for case in selected)
+        take = max(0, targets[source] - current)
+        selected.extend(pools[source][:take])
+        selected_ids.update(case.id for case in pools[source][:take])
+
+    remainder = [case for case in cases if case.id not in selected_ids]
+    rng.shuffle(remainder)
+    selected.extend(remainder[: max(0, limit - len(selected))])
+    return selected[:limit]
 
 
 def build_follow_up_scenarios(
     cases: List[AccuracyCase],
     mantis_issues: List[Dict[str, Any]],
     limit: int = 4,
+    rng: Optional[random.Random] = None,
 ) -> List[FollowUpScenario]:
     """Build deterministic conversation checks from already generated base cases.
 
@@ -394,6 +545,7 @@ def build_follow_up_scenarios(
     """
     if limit <= 0:
         return []
+    rng = rng or random.Random(0)
     by_id = {case.id: case for case in cases}
     issues_by_id = {
         int(issue["id"]): issue
@@ -431,8 +583,9 @@ def build_follow_up_scenarios(
         ))
 
     status_case = by_id.get("mantis-project-status")
+    status_scenarios: List[FollowUpScenario] = []
     if status_case and status_case.expected:
-        scenarios.append(FollowUpScenario(
+        status_scenarios.append(FollowUpScenario(
             "followup-project-status-latest",
             "mantis",
             "후속 질문·조건 상속",
@@ -441,6 +594,29 @@ def build_follow_up_scenarios(
             "exact_issue_ids",
             [int(status_case.expected[0])],
         ))
+        setup_issue = issues_by_id.get(int(status_case.expected[0]))
+        setup_project = str((setup_issue or {}).get("project", {}).get("name") or "")
+        setup_status = status_name(setup_issue or {})
+        alternate_groups: Dict[str, List[Dict[str, Any]]] = {}
+        for issue in mantis_issues:
+            if str(issue.get("project", {}).get("name") or "") != setup_project:
+                continue
+            alternate_status = status_name(issue)
+            if alternate_status and alternate_status != setup_status:
+                alternate_groups.setdefault(alternate_status, []).append(issue)
+        if alternate_groups:
+            alternate_status = rng.choice(sorted(alternate_groups))
+            status_scenarios.append(FollowUpScenario(
+                "followup-project-status-correction",
+                "mantis",
+                "후속 질문·조건 교정",
+                status_case.id,
+                f"아니, 고객사는 그대로 두고 상태만 {alternate_status}로 바꿔서 가장 최근 이슈 하나를 알려줘",
+                "exact_issue_ids",
+                [int(alternate_groups[alternate_status][0]["id"])],
+            ))
+    if status_scenarios:
+        scenarios.append(rng.choice(status_scenarios))
 
     notion_case = next(
         (case for case in cases if case.source == "notion" and case.expected),
@@ -468,6 +644,21 @@ def observed_issue_ids(response: Dict[str, Any]) -> set[int]:
     }
     ids.update(int(value) for value in re.findall(r"#?0*(\d{5,7})\b", response.get("content", "")))
     return ids
+
+
+def observed_ordered_issue_ids(response: Dict[str, Any]) -> List[int]:
+    ordered: List[int] = []
+    for source in response.get("sources") or []:
+        issue_id = source.get("issue_id")
+        if issue_id and int(issue_id) not in ordered:
+            ordered.append(int(issue_id))
+    if ordered:
+        return ordered
+    for value in re.findall(r"#0*(\d{5,7})\b", str(response.get("content") or "")):
+        issue_id = int(value)
+        if issue_id not in ordered:
+            ordered.append(issue_id)
+    return ordered
 
 
 def extract_answer_count(content: str) -> Optional[int]:
@@ -503,7 +694,13 @@ def filter_recall_matches(question: str, actual: Dict[str, Any]) -> bool:
     scalar_keys = ("customer_key", "platform_key")
     if any(expected.get(key) and expected.get(key) != actual.get(key) for key in scalar_keys):
         return False
-    list_keys = ("statuses", "issue_ids", "screen_numbers", "excluded_statuses")
+    list_keys = (
+        "statuses",
+        "issue_ids",
+        "screen_numbers",
+        "excluded_statuses",
+        "excluded_platform_keys",
+    )
     for key in list_keys:
         if not set(expected.get(key) or []).issubset(set(actual.get(key) or [])):
             return False
@@ -529,6 +726,10 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         observed = observed_issue_ids(response)
         passed = expected == observed
         actual = sorted(observed)
+    elif case.expected_kind == "ordered_issue_ids":
+        expected_order = [int(value) for value in case.expected]
+        actual = observed_ordered_issue_ids(response)
+        passed = expected_order == actual
     elif case.expected_kind == "titles":
         haystacks = [content, *(str(source.get("title") or "") for source in sources)]
         expected_titles = [str(value) for value in case.expected]
@@ -552,6 +753,14 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     elif case.expected_kind == "count":
         actual = extract_answer_count(content)
         passed = actual == int(case.expected)
+    elif case.expected_kind == "no_results":
+        actual_ids = sorted(
+            int(source["issue_id"])
+            for source in sources
+            if source.get("issue_id")
+        )
+        actual = {"source_issue_ids": actual_ids, "source_count": len(sources)}
+        passed = not actual_ids and not sources
     else:
         actual = None
         passed = False
@@ -871,16 +1080,17 @@ def main() -> int:
         notion_pages = []
         errors.append(f"Notion snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
 
-    cases = build_mantis_cases(
+    candidate_cases = build_mantis_cases(
         mantis_issues,
         rng,
         augment_mutable_oracle=True,
     ) + build_notion_cases(notion_pages, rng)
-    cases = cases[: args.questions]
+    cases = select_rotating_cases(candidate_cases, args.questions, rng)
     follow_up_scenarios = build_follow_up_scenarios(
         cases,
         mantis_issues,
         args.follow_up_scenarios,
+        rng,
     )
     models = [model for model in get_model_registry() if model.get("enabled", True)]
     model_id = args.model_id or (str(models[0]["id"]) if models else "")

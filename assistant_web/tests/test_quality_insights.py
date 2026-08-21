@@ -1,3 +1,4 @@
+import random
 import unittest
 from datetime import date, timedelta
 from unittest.mock import Mock, patch
@@ -12,6 +13,8 @@ from backend.sources import mantis
 from scripts.accuracy.dynamic_accuracy_check import (
     AccuracyCase,
     FollowUpScenario,
+    build_mantis_cases,
+    build_notion_cases,
     build_follow_up_scenarios,
     complete_mutable_mantis_ids,
     execute_chat,
@@ -19,6 +22,7 @@ from scripts.accuracy.dynamic_accuracy_check import (
     fetch_mantis_snapshot,
     grade,
     run_follow_up_scenario,
+    select_rotating_cases,
     summarize_results,
 )
 
@@ -230,6 +234,66 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
 
 
 class AccuracyInsightTests(unittest.TestCase):
+    def test_mantis_cases_add_compound_ordering_exclusion_and_no_result_checks(self):
+        issues = []
+        for index in range(8):
+            issues.append({
+                "id": 31008 - index,
+                "project": {"name": "001Test(테스트증권)"},
+                "summary": f"테스트 이슈 {index}",
+                "status": {"name": "closed" if index < 4 else "assigned"},
+                "handler": {"real_name": "테스트담당자"},
+                "created_at": "2026-08-01",
+                "custom_fields": [
+                    {"field": {"name": "매체구분"}, "value": "HTS" if index % 2 == 0 else "MTS"},
+                    {"field": {"name": "화면번호"}, "value": "2301"},
+                ],
+            })
+
+        cases = build_mantis_cases(issues, random.Random(42))
+        by_id = {case.id: case for case in cases}
+
+        self.assertEqual(by_id["mantis-project-platform"].expected_kind, "ordered_issue_ids")
+        self.assertEqual(
+            by_id["mantis-project-platform-exclusion"].expected_kind,
+            "ordered_issue_ids",
+        )
+        self.assertEqual(by_id["mantis-screen-no-result"].expected_kind, "no_results")
+
+    def test_daily_case_selection_keeps_follow_up_prerequisites_and_rotates_other_slots(self):
+        cases = [
+            AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "q1", "issue_ids", [1]),
+            AccuracyCase("mantis-project-latest", "mantis", "고객사", "q2", "issue_ids", [2, 1]),
+            AccuracyCase("mantis-project-status", "mantis", "상태", "q3", "issue_ids", [2]),
+            *[
+                AccuracyCase(f"mantis-extra-{index}", "mantis", "고급", f"mq{index}", "issue_ids", [index])
+                for index in range(6)
+            ],
+            *[
+                AccuracyCase(f"notion-title-{index}", "notion", "제목", f"nq{index}", "titles", [str(index)])
+                for index in range(1, 7)
+            ],
+        ]
+
+        first = select_rotating_cases(cases, 10, random.Random("2026-08-21"))
+        second = select_rotating_cases(cases, 10, random.Random("2026-08-22"))
+
+        required = {"mantis-exact-id", "mantis-project-latest", "mantis-project-status", "notion-title-1"}
+        self.assertTrue(required.issubset({case.id for case in first}))
+        self.assertEqual(sum(case.source == "mantis" for case in first), 6)
+        self.assertEqual(sum(case.source == "notion" for case in first), 4)
+        self.assertNotEqual({case.id for case in first}, {case.id for case in second})
+
+    def test_notion_cases_include_no_result_hallucination_check(self):
+        cases = build_notion_cases(
+            [{"title": "실제 업무", "status": "진행", "database": "업무", "id": "1"}],
+            random.Random(42),
+        )
+
+        no_result = next(case for case in cases if case.id == "notion-title-no-result")
+        self.assertEqual(no_result.expected_kind, "no_results")
+        self.assertIn("존재하지 않는 항목", no_result.question)
+
     def test_follow_up_scenarios_reuse_four_base_cases(self):
         cases = [
             AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "0030916 이슈", "issue_ids", [30916]),
@@ -425,6 +489,47 @@ class AccuracyInsightTests(unittest.TestCase):
         )
         self.assertIsNone(analytics["trend"][0]["score"])
         self.assertEqual(analytics["failureCounts"], [])
+
+    def test_no_result_case_rejects_hallucinated_sources(self):
+        case = AccuracyCase(
+            "mantis-screen-no-result",
+            "mantis",
+            "결과 없음",
+            "화면번호 99999 관련 이슈가 있는지 확인해줘",
+            "no_results",
+            [],
+        )
+
+        empty = grade(case, {"content": "검색 결과가 없습니다.", "sources": []})
+        hallucinated = grade(
+            case,
+            {"content": "#12345가 있습니다.", "sources": [{"issue_id": 12345}]},
+        )
+
+        self.assertTrue(empty["passed"])
+        self.assertFalse(hallucinated["passed"])
+
+    def test_ordered_issue_case_rejects_wrong_latest_order(self):
+        case = AccuracyCase(
+            "mantis-project-platform",
+            "mantis",
+            "고객사·플랫폼·정렬",
+            "테스트증권 HTS 최근 이슈 2개",
+            "ordered_issue_ids",
+            [200, 100],
+        )
+
+        correct = grade(
+            case,
+            {"content": "#200, #100", "sources": [{"issue_id": 200}, {"issue_id": 100}]},
+        )
+        reversed_result = grade(
+            case,
+            {"content": "#100, #200", "sources": [{"issue_id": 100}, {"issue_id": 200}]},
+        )
+
+        self.assertTrue(correct["passed"])
+        self.assertFalse(reversed_result["passed"])
 
     def test_analytics_reports_delta_trend_and_failure_frequency(self):
         reports = [
