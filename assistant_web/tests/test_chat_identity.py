@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.schemas import ChatRequest
 from backend.services import chat_service as chat_service_module
@@ -241,6 +241,45 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
                 self.assertEqual(captured["latest_user_text"], follow_up)
                 self.assertIn("담당자: 석지원", captured["retrieval_text"])
+
+    def test_deterministic_report_builder_priority_is_stable(self):
+        call_order = []
+        builder_names = (
+            "build_unknown_customer_report",
+            "build_similar_resolution_report",
+            "build_monthly_customer_report",
+            "build_customer_profile_report",
+            "build_sla_report",
+            "build_mantis_pivot_report",
+            "build_mantis_spike_report",
+            "build_top_customers_report",
+            "build_effort_trend_report",
+            "build_effort_ranking_report",
+            "build_effort_report",
+        )
+
+        def record(name):
+            def builder(*_args, **_kwargs):
+                call_order.append(name)
+                return None
+
+            return builder
+
+        builders = {
+            name: Mock(side_effect=record(name))
+            for name in builder_names
+        }
+        with patch.multiple(chat_service_module, **builders):
+            result = chat_service_module.build_deterministic_report(
+                "고객사 이슈 현황",
+                "고객사 이슈 현황",
+                {"mantis": True, "vectorDb": True, "notion": False},
+                [],
+                None,
+            )
+
+        self.assertIsNone(result.response)
+        self.assertEqual(call_order, list(builder_names))
 
     def test_follow_up_for_an_explicit_other_person_does_not_inherit_login(self):
         with patch.object(

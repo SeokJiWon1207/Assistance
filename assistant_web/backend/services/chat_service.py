@@ -221,24 +221,35 @@ def build_deterministic_report(
         return DeterministicReportResult()
 
     if enabled_tools.get("mantis"):
+        # 순서 계약: 아래 빌더는 첫 번째 일치 결과가 곧 최종 응답이므로 위치가 동작이다.
+        # 1) 잘못된 고객사를 먼저 차단해 조건 없는 전체 조회로 넓어지는 것을 막는다.
+        # 2) 기준 이슈가 명시된 유사 해결 검색은 일반 집계보다 구체적이라 먼저 처리한다.
+        # 3) 월간 리포트·고객사 프로필처럼 여러 지표를 묶는 요청은 단일 SLA보다 앞선다.
+        # 4) 피벗은 두 축 집계, 급증은 시점 비교이므로 단순 상위 고객사보다 앞선다.
+        # 5) 공수 추이·순위는 이슈 건수 집계가 일치하지 않은 뒤에 평가한다.
         report_builders = [
-            lambda: build_unknown_customer_report(retrieval_text or latest_user_text),
+            (
+                "unknown_customer_guard",
+                lambda: build_unknown_customer_report(retrieval_text or latest_user_text),
+            ),
         ]
         if enabled_tools.get("vectorDb"):
-            report_builders.append(lambda: build_similar_resolution_report(latest_user_text))
+            report_builders.append(
+                ("similar_resolution", lambda: build_similar_resolution_report(latest_user_text))
+            )
         report_builders.extend(
             [
-                lambda: build_monthly_customer_report(latest_user_text),
-                lambda: build_customer_profile_report(latest_user_text),
-                lambda: build_sla_report(latest_user_text),
-                lambda: build_mantis_pivot_report(latest_user_text),
-                lambda: build_mantis_spike_report(latest_user_text),
-                lambda: build_top_customers_report(latest_user_text),
-                lambda: build_effort_trend_report(latest_user_text),
-                lambda: build_effort_ranking_report(latest_user_text),
+                ("monthly_customer", lambda: build_monthly_customer_report(latest_user_text)),
+                ("customer_profile", lambda: build_customer_profile_report(latest_user_text)),
+                ("sla", lambda: build_sla_report(latest_user_text)),
+                ("pivot", lambda: build_mantis_pivot_report(latest_user_text)),
+                ("spike", lambda: build_mantis_spike_report(latest_user_text)),
+                ("top_customers", lambda: build_top_customers_report(latest_user_text)),
+                ("effort_trend", lambda: build_effort_trend_report(latest_user_text)),
+                ("effort_ranking", lambda: build_effort_ranking_report(latest_user_text)),
             ]
         )
-        for build_report in report_builders:
+        for _report_name, build_report in report_builders:
             report = build_report()
             if report:
                 return DeterministicReportResult(response=report)
