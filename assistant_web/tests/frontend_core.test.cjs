@@ -6,6 +6,7 @@ const path = require("node:path");
 const {
   storageSafeMessages,
   deriveConversationTitle,
+  conversationContentChanged,
   buildChatMessages,
   buildTeamTemplateQuestion,
   parseSseBuffer,
@@ -184,4 +185,38 @@ test("storageSafeMessages preserves a bounded playbook candidate", () => {
   }]);
   assert.equal(message.playbookCandidate.title, "세션 만료 대응");
   assert.equal(message.playbookSaved, true);
+});
+
+test("conversationContentChanged ignores reopening a conversation without new messages", () => {
+  const stored = storageSafeMessages([
+    { role: "user", content: "이번 주 잔여 공수", createdAt: "2026-08-20T01:00:00.000Z" },
+    { role: "assistant", content: "12시간 남았습니다.", createdAt: "2026-08-20T01:00:03.000Z" },
+  ]);
+  // 대화를 다시 열면 저장된 메시지를 그대로 state.messages 로 복사한다.
+  assert.equal(conversationContentChanged(stored, [...stored]), false);
+});
+
+test("conversationContentChanged ignores fields the server drops when empty", () => {
+  const stored = storageSafeMessages([{ role: "user", content: "잔여 공수" }]);
+  // 서버는 exclude_none 으로 비어 있는 필드를 지운 채 대화를 돌려준다.
+  const fromServer = [{ role: "user", content: "잔여 공수", sources: [], followUps: [] }];
+  assert.equal(conversationContentChanged(fromServer, stored), false);
+});
+
+test("conversationContentChanged detects new and edited messages", () => {
+  const stored = storageSafeMessages([{ role: "user", content: "잔여 공수" }]);
+  assert.equal(
+    conversationContentChanged(stored, [...stored, { role: "assistant", content: "12시간" }]),
+    true,
+  );
+  assert.equal(
+    conversationContentChanged(stored, [{ role: "user", content: "누적 공수" }]),
+    true,
+  );
+});
+
+test("conversationContentChanged ignores streaming placeholders", () => {
+  const stored = storageSafeMessages([{ role: "user", content: "잔여 공수" }]);
+  const streaming = [...stored, { role: "assistant", content: "", loading: true }];
+  assert.equal(conversationContentChanged(stored, streaming), false);
 });

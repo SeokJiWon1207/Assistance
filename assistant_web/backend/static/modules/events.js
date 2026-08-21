@@ -1,5 +1,5 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
-import { createConversation, showToast, persistConversations, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
+import { createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, setToolToggle, toolToggleEnabled, setSourceMode, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 
@@ -156,6 +156,8 @@ els.conversationList.addEventListener("click", (event) => {
     conversation.favorite = !conversation.favorite;
     conversation.updatedAt = new Date().toISOString();
     persistConversations();
+    // 즐겨찾기는 메시지 변경이 아니므로 persistConversations 가 동기화하지 않는다.
+    scheduleConversationSync(conversation);
     if (state.workspaceTab === "favorites" && !els.workspaceModal?.hidden) renderWorkspace();
     showToast(conversation.favorite ? "대화를 즐겨찾기에 추가했어요." : "즐겨찾기에서 해제했어요.");
     return;

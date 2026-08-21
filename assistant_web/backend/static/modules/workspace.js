@@ -1,4 +1,4 @@
-import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, deriveConversationTitle, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js";
+import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, deriveConversationTitle, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js";
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js";
 import { cancelMessageEdit } from "./events.js";
 
@@ -39,10 +39,12 @@ function showToast(message, tone = "default") {
 
 function persistConversations() {
   const active = state.conversations.find((item) => item.id === state.activeConversationId);
+  // 대화를 열기만 해도 updatedAt 을 올리면 목록 순서가 바뀌므로 내용 변경 여부를 먼저 판단한다.
+  const activeChanged = active ? conversationContentChanged(active.messages, state.messages) : false;
   if (active) {
     active.messages = storageSafeMessages(state.messages);
     active.title = deriveConversationTitle(active.messages);
-    active.updatedAt = new Date().toISOString();
+    if (activeChanged) active.updatedAt = new Date().toISOString();
   }
   state.conversations.sort((a, b) => (
     Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
@@ -61,7 +63,7 @@ function persistConversations() {
       showToast("대화 저장 공간이 가득 차 일부 기록을 정리했어요.", "warning");
     }
   }
-  if (active) scheduleConversationSync(active);
+  if (active && activeChanged) scheduleConversationSync(active);
   renderConversationList();
 }
 

@@ -4,6 +4,7 @@ import { initialCurrentUser } from "./auth.js";
 const {
   storageSafeMessages,
   deriveConversationTitle,
+  conversationContentChanged,
   buildChatMessages,
   buildTeamTemplateQuestion,
   parseSseBuffer,
@@ -201,6 +202,7 @@ export {
   apiFetch,
   buildChatMessages,
   buildTeamTemplateQuestion,
+  conversationContentChanged,
   deriveConversationTitle,
   parseSseBuffer,
   storageSafeMessages,
