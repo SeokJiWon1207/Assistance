@@ -875,11 +875,22 @@ class DemonstrativeReferenceTests(unittest.TestCase):
         # 없지만, 그 자체로는 검색할 대상이 없는 후속 질문이다.
         self.assertTrue(is_follow_up_question("핵심 해결 내용을 한 문장으로 요약해줘"))
 
+    def test_result_transform_requests_without_targets_are_follow_ups(self):
+        for question in (
+            "오래된 순으로 정렬해줘",
+            "정렬해줘",
+            "최신순으로 보여줘",
+            "더 보여줘",
+        ):
+            with self.subTest(question=question):
+                self.assertTrue(is_follow_up_question(question))
+
     def test_summary_request_with_its_own_target_stays_independent(self):
         # 고객사·플랫폼·기간처럼 대상을 특정하는 조건이 있으면 독립 질문이다.
         self.assertFalse(is_follow_up_question("KB증권 이슈를 한 줄씩만 요약해줘"))
         self.assertFalse(is_follow_up_question("신한 MTS 이슈 정리해줘"))
         self.assertFalse(is_follow_up_question("2026년 이슈 요약해줘"))
+        self.assertFalse(is_follow_up_question("KB증권 이슈를 최신순으로 보여줘"))
 
     @patch("backend.understanding.load_audit_sources")
     def test_demonstrative_reference_resolves_to_focused_issue(self, load_sources):

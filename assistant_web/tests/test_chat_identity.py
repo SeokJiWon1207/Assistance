@@ -173,13 +173,74 @@ class AuthenticatedIdentityTests(unittest.TestCase):
         self.assertEqual(scoped, "김담당 주간 업무보고서 작성해줘")
 
     def test_personal_scope_survives_a_follow_up_sort_request(self):
-        retrieval_text = "MTS 미종료 오래된 순으로 정렬해줘"
-        scoped = chat_service_module.apply_authenticated_mantis_scope(
-            retrieval_text,
-            {"mantisUsername": "석지원"},
-            scope_text="오래된 순으로 정렬해줘 내 MTS 미종료 이슈 보여줘",
-        )
-        self.assertEqual(scoped, f"{retrieval_text} 담당자: 석지원")
+        model = {
+            "id": "test-model",
+            "status": "active",
+            "apiKeyEnv": "TEST_MODEL_KEY",
+        }
+        user = {
+            "uid": "firebase-user-1",
+            "displayName": "석지원",
+            "mantisUsername": "석지원",
+        }
+
+        for follow_up in (
+            "오래된 순으로 정렬해줘",
+            "정렬해줘",
+            "최신순으로 보여줘",
+            "더 보여줘",
+        ):
+            with self.subTest(follow_up=follow_up):
+                captured = {}
+
+                def capture_report(
+                    latest_user_text,
+                    retrieval_text,
+                    _enabled_tools,
+                    _messages,
+                    _user,
+                    captured_result=captured,
+                ):
+                    captured_result["latest_user_text"] = latest_user_text
+                    captured_result["retrieval_text"] = retrieval_text
+                    return chat_service_module.DeterministicReportResult(
+                        response={
+                            "content": "테스트 응답",
+                            "sources": [],
+                            "followUps": [],
+                            "raw": {"mode": "test"},
+                        }
+                    )
+
+                request = ChatRequest(
+                    modelId="test-model",
+                    messages=[
+                        {"role": "user", "content": "내 MTS 미종료 이슈 보여줘"},
+                        {"role": "assistant", "content": "담당 이슈를 보여드렸습니다."},
+                        {"role": "user", "content": follow_up},
+                    ],
+                )
+                with patch.object(
+                    chat_service_module,
+                    "get_private_model",
+                    return_value=model,
+                ), patch.object(
+                    chat_service_module,
+                    "get_model_api_key",
+                    return_value="test-key",
+                ), patch.object(
+                    chat_service_module,
+                    "build_deterministic_report",
+                    side_effect=capture_report,
+                ), patch.object(
+                    chat_service_module,
+                    "persist_chat_response",
+                    side_effect=lambda _request, _question, response, user_uid="": response,
+                ):
+                    chat_service_module.chat_service.build_response(request, user=user)
+
+                self.assertEqual(captured["latest_user_text"], follow_up)
+                self.assertIn("담당자: 석지원", captured["retrieval_text"])
 
     def test_follow_up_for_an_explicit_other_person_does_not_inherit_login(self):
         with patch.object(
