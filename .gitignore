@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.coverage
 
 # Local editor / agent state
 .claude/
