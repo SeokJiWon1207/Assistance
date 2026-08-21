@@ -35,6 +35,8 @@ assistant_web/.venv/bin/python assistant_web/scripts/check_dependency_audit.py
 
 - 저장소의 최상위 지침은 `AGENTS.md`이며 충돌 시 이를 우선한다.
 - 커밋은 Conventional Commit 접두사와 한국어 설명을 사용한다.
+- `refactor` 커밋에는 점수·타임아웃·라우팅처럼 사용자 동작이 달라지는 변경을
+  섞지 않고, 각각 별도의 `fix` 커밋으로 분리한다.
 - 사용자 변경과 관련 없는 파일은 수정하거나 커밋하지 않는다.
 - 라우팅·필터 변경에는 `tests/fixtures/routing_cases.jsonl` 회귀 사례를 추가한다.
 - 운영 환경의 CORS, 인증 쿠키, 모델 endpoint 보안 설정을 완화하지 않는다.
