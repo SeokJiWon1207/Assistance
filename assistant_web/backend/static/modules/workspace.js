@@ -258,7 +258,7 @@ function renderPersonalOverview(data) {
     ? `${issues.length}건 모두 표시`
     : `${issues.length} / ${totalOpen}건 표시`;
   const isConnected = Boolean(data.user?.mantisUsername);
-  return `
+  return `<div class="workspace-overview">
     ${renderTeamBriefBanner()}
     <section class="workspace-summary-grid is-three">
       ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", "현재 처리할 전체 업무")}
@@ -276,8 +276,9 @@ function renderPersonalOverview(data) {
         <div><span>Mantis</span><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
         <em class="workspace-visible-count"><strong>${issues.length}</strong>${issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
       </header>
-      <div class="workspace-list workspace-issue-list">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("현재 담당한 미종료 이슈가 없습니다.")}</div>
-    </section>`;
+      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("현재 담당한 미종료 이슈가 없습니다.")}</div>
+    </section>
+  </div>`;
 }
 
 function renderTeamBriefBanner() {
@@ -565,6 +566,8 @@ function updateWorkspaceUnread() {
 
 function renderWorkspace() {
   if (!els.workspaceContent) return;
+  const isPersonalOverview = state.workspaceMode !== "team" && state.workspaceTab === "overview";
+  els.workspaceContent.classList.toggle("is-overview", isPersonalOverview);
   if (state.workspaceMode === "team") {
     els.workspaceModalEyebrow.textContent = "관리자 워크스페이스";
     els.workspaceModalTitle.textContent = "팀 대시보드";

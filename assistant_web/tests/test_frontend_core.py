@@ -150,15 +150,22 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("data-refresh-team-brief", app_js)
         self.assertIn("markTeamWeeklyBriefRead", app_js)
 
-    def test_personal_workspace_shows_every_issue_without_nested_scrolling(self):
+    def test_personal_workspace_keeps_summary_visible_and_scrolls_issue_list(self):
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
         workspace_css = (STATIC_DIR / "workspace.css").read_text(encoding="utf-8")
 
         self.assertIn('class="workspace-list workspace-issue-list"', workspace_js)
+        self.assertIn('class="workspace-overview"', workspace_js)
+        self.assertIn('role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0"', workspace_js)
+        self.assertIn('classList.toggle("is-overview", isPersonalOverview)', workspace_js)
         self.assertIn("`${issues.length} / ${totalOpen}건 표시`", workspace_js)
+        self.assertIn("height: min(860px, calc(100dvh - 40px))", workspace_css)
+        self.assertIn(".workspace-content.is-overview", workspace_css)
+        self.assertIn(".workspace-overview > .workspace-section", workspace_css)
         self.assertIn(".workspace-issue-list {", workspace_css)
         self.assertIn("max-height: none", workspace_css)
-        self.assertIn("overflow: visible", workspace_css)
+        self.assertIn("overflow-y: auto", workspace_css)
+        self.assertIn("scrollbar-gutter: stable", workspace_css)
         self.assertIn(".workspace-summary-grid.is-three", workspace_css)
         self.assertIn('closeMobileSidebar();\n  openWorkspaceModal("personal")', self.application_javascript())
 
