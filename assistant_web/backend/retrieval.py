@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from backend.common import (
     compact_text,
+    display_mantis_status_label,
     extract_chroma_date,
     extract_chroma_field,
     extract_project_from_chroma_text,
@@ -361,7 +362,7 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 "id": issue.get("id"),
                 "project": issue.get("project"),
                 "title": issue.get("summary"),
-                "status": issue.get("status"),
+                "status": display_mantis_status_label(issue.get("status")),
                 "handler": issue.get("handler"),
                 "created_at": issue.get("created_at"),
                 "screen_number": (issue.get("detail") or {}).get("screen_number", ""),

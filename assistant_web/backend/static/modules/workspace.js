@@ -208,14 +208,14 @@ function workspaceStatusLabel(value) {
   const status = String(value || "").trim();
   const normalized = status.toLowerCase().replace(/[\s_-]+/g, "");
   const labels = {
-    new: "신규",
-    assigned: "담당 지정",
-    acknowledged: "접수 확인",
-    confirmed: "검토 중",
-    feedback: "피드백",
-    developed: "개발 완료",
-    resolved: "해결",
-    closed: "종료",
+    new: "신규 이슈",
+    feedback: "정보 부족",
+    acknowledged: "이슈 검토",
+    confirmed: "확인된 이슈",
+    assigned: "할당된 이슈",
+    developed: "개발완료",
+    resolved: "해결된 이슈",
+    closed: "종료된 이슈",
   };
   return labels[normalized] || status || "상태 미상";
 }

@@ -7,7 +7,11 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.common import normalize_chroma_issue_document, normalize_for_match
+from backend.common import (
+    display_mantis_status_label,
+    normalize_chroma_issue_document,
+    normalize_for_match,
+)
 from backend.config import CHROMA_DB_PATH
 from backend.query_filters import filter_clause_label, normalize_filter_clauses
 from backend.query_planning import build_query_plan
@@ -736,16 +740,4 @@ def format_issue_list_criteria(
 
 
 def display_status_label(status: str) -> str:
-    normalized = str(status or "").strip()
-    status_labels = {
-        "open": "미종료",
-        "closed": "종료된 이슈",
-        "confirmed": "확인된 이슈",
-        "assigned": "할당된 이슈",
-        "acknowledged": "이슈 검토",
-        "resolved": "해결된 이슈",
-        "feedback": "정보 부족",
-        "developed": "개발완료",
-        "new": "신규",
-    }
-    return status_labels.get(normalized.casefold(), normalized or "상태 미상")
+    return display_mantis_status_label(status)

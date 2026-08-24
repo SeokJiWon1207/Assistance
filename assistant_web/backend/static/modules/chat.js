@@ -1701,14 +1701,14 @@ function formatMantisDetail(source) {
 
 function displayIssueStatus(status) {
   const statusMap = {
-    closed: "종료된 이슈",
+    new: "신규 이슈",
+    feedback: "정보 부족",
+    acknowledged: "이슈 검토",
     confirmed: "확인된 이슈",
     assigned: "할당된 이슈",
-    acknowledged: "이슈 검토",
-    resolved: "해결된 이슈",
-    feedback: "정보 부족",
     developed: "개발완료",
-    new: "신규",
+    resolved: "해결된 이슈",
+    closed: "종료된 이슈",
   };
   const normalized = String(status || "").trim();
   return statusMap[normalized.toLowerCase()] || normalized || "미상";

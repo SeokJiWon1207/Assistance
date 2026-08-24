@@ -45,6 +45,46 @@ from backend.understanding import (
 
 
 class SearchIntentTests(unittest.TestCase):
+    def test_mantis_status_codes_use_source_ui_labels(self):
+        expected = {
+            "new": "신규 이슈",
+            "feedback": "정보 부족",
+            "acknowledged": "이슈 검토",
+            "confirmed": "확인된 이슈",
+            "assigned": "할당된 이슈",
+            "developed": "개발완료",
+            "resolved": "해결된 이슈",
+            "closed": "종료된 이슈",
+        }
+
+        self.assertEqual(
+            {code: aggregate.display_status_label(code) for code in expected},
+            expected,
+        )
+
+    def test_model_context_does_not_expose_mantis_status_code(self):
+        context = retrieval.build_model_retrieval_context(
+            {
+                "query": "31105 이슈 알려줘",
+                "stages": [
+                    {
+                        "source": "mantis",
+                        "status": "ok",
+                        "issues_list": [
+                            {
+                                "id": 31105,
+                                "summary": "즐겨찾기 아이콘 변경 요청",
+                                "status": "confirmed",
+                            }
+                        ],
+                    }
+                ],
+            },
+            10,
+        )
+
+        self.assertEqual(context["issues"][0]["status"], "확인된 이슈")
+
     def route(self, question: str):
         constraints = extract_query_constraints(question)
         return rule_based_search_intent(question, constraints)

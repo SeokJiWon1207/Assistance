@@ -300,6 +300,28 @@ def is_valid_handler_name(name: str) -> bool:
     return normalized not in STOPWORDS and normalized not in PERSON_BLOCKLIST
 
 
+MANTIS_STATUS_DISPLAY_LABELS = {
+    "new": "신규 이슈",
+    "feedback": "정보 부족",
+    "acknowledged": "이슈 검토",
+    "confirmed": "확인된 이슈",
+    "assigned": "할당된 이슈",
+    "developed": "개발완료",
+    "resolved": "해결된 이슈",
+    "closed": "종료된 이슈",
+    # 검색 결과에서만 사용하는 묶음 상태다.
+    "open": "미종료",
+}
+
+
+def display_mantis_status_label(status: Any) -> str:
+    """Mantis 내부 상태 코드를 사용자용 한국어 라벨로 변환한다."""
+    normalized = str(status or "").strip()
+    return MANTIS_STATUS_DISPLAY_LABELS.get(
+        normalized.casefold(), normalized or "상태 미상"
+    )
+
+
 # known_people(과거 이슈에서 추출한 실제 담당자/보고자 이름) 캐시엔 "파트너매니저"
 # 같은 화면/시스템 이름이 "파트너"+"매니저(직함)"로 잘못 쪼개져 섞여 들어갈 수 있다.
 # 단순 substring 포함 매칭(normalize_for_match 방식)을 쓰면 "파트너사업팀"처럼

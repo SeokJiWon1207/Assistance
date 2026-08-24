@@ -169,6 +169,25 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn(".workspace-summary-grid.is-three", workspace_css)
         self.assertIn('closeMobileSidebar();\n  openWorkspaceModal("personal")', self.application_javascript())
 
+    def test_mantis_status_labels_match_source_ui(self):
+        expected_labels = {
+            "new": "신규 이슈",
+            "feedback": "정보 부족",
+            "acknowledged": "이슈 검토",
+            "confirmed": "확인된 이슈",
+            "assigned": "할당된 이슈",
+            "developed": "개발완료",
+            "resolved": "해결된 이슈",
+            "closed": "종료된 이슈",
+        }
+        workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
+        chat_js = (STATIC_DIR / "modules" / "chat.js").read_text(encoding="utf-8")
+
+        for code, label in expected_labels.items():
+            mapping = f'{code}: "{label}"'
+            self.assertIn(mapping, workspace_js)
+            self.assertIn(mapping, chat_js)
+
     def test_playbook_search_and_curator_actions_are_connected(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()
