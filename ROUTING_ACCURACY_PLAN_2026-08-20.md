@@ -11,6 +11,38 @@
 
 ---
 
+## 이행 현황 (2026-08-24, `efb1892` 기준)
+
+이 문서의 본문은 `a39aa41` 당시의 문제 재현과 설계 판단을 보존한다. 이후 구현은
+아래 표처럼 진행됐으며, 현재 코드의 완료 여부는 이 표를 기준으로 판단한다.
+
+| 단계 | 상태 | 현재 구현과 검증 근거 |
+|---|---|---|
+| 1. 회귀셋·시나리오 검증 | 완료 | `tests/fixtures/routing_cases.jsonl`, `tests/test_notion_routing.py`, `tests/test_routing_accuracy.py`에 대표 실패·역회귀·실행 소스 계약을 고정했다. |
+| 2. `people` 스키마·병합 헬퍼 | 완료 | `backend/intent/people.py`에서 이름 출처와 후보를 보존하고, `merge_query_plan_constraints()`가 모델 조건을 원문에 근거해 병합한다. |
+| 3. 담당자 추출·추론 후보 필터 제외 | 완료 | `known`·`explicit_unverified`만 필터로 허용하고 `inferred`·`account_unverified`는 후보로만 유지한다. |
+| 4. 명부 원천·어휘 근거 역할 분류 | 완료 | `NOTION_DOMAIN_MARKERS`, 대상 객체 표식, `SourceAuthority`와 `evidence`를 도입해 검색 범위와 소스 근거의 우선순위를 분리했다. |
+| 5. 권한 라우팅·실행 소스 단일화 | 완료 | `run_retrieval_pipeline()`은 최종 `plan_source`가 `notion`·`mantis`·`both`일 때만 해당 소스를 실행한다. `should_run_notion_search()`는 검색 필요성 게이트의 보조 신호일 뿐 실행 소스를 추가하지 않는다. |
+| 6. 미확인 담당자 안내·통합 테스트 | 완료 | 0건일 때 `build_unverified_person_note()`가 명부 미확인 사실을 알리고 최종 답변 문자열까지 테스트한다. |
+| 7. 임베딩 라우터 | 조건부 보류 | 1~6단계 적용 후 규칙·모델 조합으로 해결할 수 없는 측정된 실패가 아직 도입 근거로 확정되지 않았다. 기능 플래그 도입 조건이 충족될 때만 재검토한다. |
+
+현재 대표 6개 질문은 `신입사원 문서→Notion`, `김보람 온보딩→Notion`,
+`협력업체 인수인계→Notion`, `올해 규정 문서→Notion`,
+`담당자 김신입 이슈→Mantis`, `svn 접속 문서→Notion`으로 분류된다.
+`tests/test_routing_accuracy.py`는 최종 계획이 Notion이면 Mantis를, Mantis이면
+Notion을 실행하지 않는 계약을 직접 검증한다.
+
+### 남은 후속 작업
+
+- `should_run_notion_search()`라는 이름이 실행 소스 결정 함수처럼 읽히므로,
+  동작 변경 없이 검색 필요성 신호라는 의미가 드러나는 이름으로 정리한다.
+- `backend/intent/constraints.py`에 남은 범위 추출·소스 판정·모델 계획·검색어 생성
+  책임은 현재 계약 테스트를 유지한 채 단계적으로 분리한다.
+- 7단계는 동적 정확도 보고서에서 기존 조합으로 해결되지 않는 실패가 반복 측정될
+  때만 별도 설계·승인 대상으로 연다.
+
+---
+
 ## 1. 요약
 
 `a39aa41`에서 "신입사원 관련 문서 찾아줘"가 Mantis로 빠지는 문제를 고쳤습니다.
