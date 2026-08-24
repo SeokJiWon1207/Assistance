@@ -1,5 +1,5 @@
 import { state } from "./runtime.js";
-import { statusToneClass, renderCriteriaChips, appendAnswerParagraph, cleanMarkdown, escapeHtml } from "./chat.js";
+import { statusToneClass, renderCriteriaChips, appendAnswerParagraph, cleanMarkdown, escapeHtml } from "./chat_rendering.js";
 
 function isMarkdownTableRow(line) {
   const trimmed = String(line || "").trim();

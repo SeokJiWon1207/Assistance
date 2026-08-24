@@ -220,7 +220,9 @@ class FrontendArchitectureContractTests(unittest.TestCase):
         self.assertLessEqual(len(bootstrap.splitlines()), 300)
         expected_owners = {
             "workspace.js": "function renderWorkspace()",
-            "chat.js": "async function requestAssistant(",
+            "chat.js": "function renderMessages()",
+            "chat_controller.js": "async function requestAssistant(",
+            "chat_rendering.js": "function renderAssistantContent(",
             "charts.js": "export function renderDonutChart(",
             "notion.js": "function renderNotionAnswer(",
             "admin.js": "function renderEvaluationContent()",
@@ -234,7 +236,12 @@ class FrontendArchitectureContractTests(unittest.TestCase):
                 self.assertNotIn(marker, bootstrap)
         chat = (modules_dir / "chat.js").read_text(encoding="utf-8")
         self.assertNotIn("function renderDonutChart(", chat)
+        self.assertNotIn("async function requestAssistant(", chat)
+        self.assertNotIn("function renderAssistantContent(", chat)
         self.assertIn('from "./charts.js"', chat)
+        self.assertIn('from "./chat_controller.js"', chat)
+        self.assertIn('from "./chat_rendering.js"', chat)
+        self.assertLessEqual(len(chat.splitlines()), 1_100)
 
     def test_dom_and_api_contracts_are_present(self):
         static_dir = APP_DIR / "backend" / "static"
