@@ -4,13 +4,11 @@ import json
 import os
 import re
 from datetime import date
-from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from backend.common import (
-    is_control_search_term,
     normalize_for_match,
     normalize_search_token,
     text_matches_customer_aliases,
@@ -18,18 +16,10 @@ from backend.common import (
 from backend.config import (
     PLATFORM_ALIASES,
     STATUS_ALIASES,
-    STATUS_MATCH_ALIASES,
     STOPWORDS,
 )
 from backend.intent.constants import (
-    COMBINED_SOURCE_MARKERS,
-    EXPLICIT_MANTIS_MARKERS,
-    EXPLICIT_NOTION_MARKERS,
-    GENERAL_INTENT_KEYWORDS,
-    MANTIS_TARGET_OBJECT_MARKERS,
     NOTION_QUERY_STOPWORDS,
-    NOTION_TARGET_OBJECT_MARKERS,
-    RETRIEVAL_INTENT_KEYWORDS,
     SOURCE_NAME_ALIASES,
 )
 from backend.intent.dates import extract_date_field_constraints, remove_date_field_phrases
@@ -38,7 +28,6 @@ from backend.intent.entities import (
     extract_excluded_issue_ids,
     extract_explicit_keyword_filter_clauses,
     extract_issue_ids,
-    extract_mantis_keyword,
     extract_people_constraints,
     extract_screen_numbers,
     extract_status_constraints,
@@ -50,6 +39,24 @@ from backend.intent.people import (
     drop_people,
     empty_people,
     grounded_model_people,
+)
+from backend.intent.search_terms import (
+    build_keyword_terms,
+    build_similar_issue_search_text,
+    expand_compound_search_term,
+    extract_limit,
+    extract_requested_limit,
+    resolve_result_limit,
+    split_project_search_terms,
+    term_is_covered_by_constraints,
+    wants_all_results,
+    wants_similar_issue_search,
+)
+from backend.intent.source_router import (
+    SourceAuthority,
+    rule_based_search_intent,
+    should_run_notion_search,
+    should_run_retrieval,
 )
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
@@ -471,150 +478,6 @@ def merge_query_plan_constraints(
     return merged
 
 
-class SourceAuthority(str, Enum):
-    AUTHORITATIVE = "authoritative"
-    ADVISORY = "advisory"
-    ABSTAIN = "abstain"
-
-
-def _contains_normalized_marker(normalized: str, markers: Any) -> bool:
-    return any(normalize_for_match(marker) in normalized for marker in markers)
-
-
-def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
-    """소스 대상과 검색 범위를 분리해 규칙 기반 검색 소스를 제안한다."""
-    normalized = normalize_for_match(text)
-    explicit_notion = _contains_normalized_marker(normalized, EXPLICIT_NOTION_MARKERS)
-    explicit_mantis = _contains_normalized_marker(normalized, EXPLICIT_MANTIS_MARKERS)
-    combined_marker = _contains_normalized_marker(normalized, COMBINED_SOURCE_MARKERS)
-    notion_target = _contains_normalized_marker(normalized, NOTION_TARGET_OBJECT_MARKERS)
-    notion_target = notion_target or bool(
-        re.search(
-            r"(?:신입사원|교육|업무|운영).{0,16}(?:문서|자료)"
-            r"|(?:문서|자료).{0,16}(?:신입사원|교육|업무|운영)",
-            normalized,
-        )
-    )
-    mantis_target = _contains_normalized_marker(normalized, MANTIS_TARGET_OBJECT_MARKERS)
-    exact_mantis_target = bool(constraints.get("issue_ids") or constraints.get("screen_numbers"))
-    issue_request = bool(
-        re.search(
-            r"(?:이슈|장애|오류|버그).{0,16}(?:보여|찾아|조회|목록|리스트|건수|몇|상세|알려|정리)"
-            r"|(?:보여|찾아|조회|목록|리스트|건수|몇|상세|알려|정리).{0,16}(?:이슈|장애|오류|버그)",
-            normalized,
-        )
-    )
-    document_hint = _contains_normalized_marker(
-        normalized,
-        ("문서", "자료", "신입사원", "교육"),
-    )
-    filterable_person = bool(constraints.get("people", {}).get("names"))
-    scope_only = bool(
-        constraints.get("customer_key")
-        or constraints.get("platform_key")
-        or constraints.get("people", {}).get("names")
-        or constraints.get("created_at")
-        or constraints.get("statuses")
-        or constraints.get("date_fields")
-    )
-    evidence: List[Dict[str, str]] = []
-
-    if is_simple_greeting(text):
-        return {
-            "source": "general",
-            "terms": [],
-            "reason": "단순 인사",
-            "planned": True,
-            "planner": "rule",
-            "confidence": 1.0,
-            "authority": SourceAuthority.AUTHORITATIVE.value,
-            "evidence": [],
-        }
-    if explicit_notion and explicit_mantis:
-        source, authority, reason = "both", SourceAuthority.AUTHORITATIVE, "두 검색 소스를 모두 명시"
-        evidence.append({"kind": "explicit_source", "source": "both"})
-    elif combined_marker and notion_target and (mantis_target or exact_mantis_target or issue_request):
-        source, authority, reason = "both", SourceAuthority.AUTHORITATIVE, "두 검색 소스의 비교·교차를 명시"
-        evidence.append({"kind": "explicit_combination", "source": "both"})
-    elif explicit_notion:
-        source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "Notion을 검색 대상으로 명시"
-        evidence.append({"kind": "explicit_source", "source": "notion"})
-    elif explicit_mantis:
-        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "Mantis를 검색 대상으로 명시"
-        evidence.append({"kind": "explicit_source", "source": "mantis"})
-    elif exact_mantis_target:
-        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 식별자를 인식"
-        evidence.append({"kind": "exact_identifier", "source": "mantis"})
-    elif notion_target:
-        source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "문서 대상 표현을 인식"
-        evidence.append({"kind": "target_object", "source": "notion"})
-    elif mantis_target or issue_request:
-        source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 대상 표현을 인식"
-        evidence.append({"kind": "target_object", "source": "mantis"})
-    elif document_hint:
-        source, authority, reason = "notion", SourceAuthority.ADVISORY, "문서·자료 표현을 인식"
-        evidence.append({"kind": "topic", "source": "notion"})
-    elif filterable_person:
-        source, authority, reason = "mantis", SourceAuthority.ADVISORY, "담당자 검색 범위를 인식"
-        evidence.append({"kind": "scope", "source": "mantis"})
-    elif scope_only:
-        source, authority, reason = "general", SourceAuthority.ABSTAIN, "검색 범위만 인식해 소스 판단을 보류"
-        evidence.append({"kind": "scope", "source": "general"})
-    elif any(normalize_for_match(keyword) in normalized for keyword in GENERAL_INTENT_KEYWORDS):
-        source, authority, reason = "general", SourceAuthority.AUTHORITATIVE, "일반 대화 키워드를 인식"
-    else:
-        source, authority, reason = "general", SourceAuthority.ABSTAIN, "명확한 검색 소스를 규칙으로 확정하지 못함"
-
-    confidence = {
-        SourceAuthority.AUTHORITATIVE: 1.0,
-        SourceAuthority.ADVISORY: 0.75,
-        SourceAuthority.ABSTAIN: 0.35,
-    }[authority]
-
-    return {
-        "source": source,
-        "terms": [],
-        "reason": reason,
-        "planned": True,
-        "planner": "rule",
-        "confidence": confidence,
-        "authority": authority.value,
-        "evidence": evidence,
-    }
-
-
-def should_run_retrieval(text: str, constraints: Dict[str, Any]) -> bool:
-    if is_simple_greeting(text):
-        return False
-    normalized_text = normalize_for_match(text)
-    if should_run_notion_search(text):
-        return True
-    if constraints.get("customer_key") or constraints.get("platform_key"):
-        return True
-    if (
-        constraints.get("issue_ids")
-        or constraints.get("screen_numbers")
-        or constraints.get("statuses")
-        or constraints.get("date_fields")
-    ):
-        return True
-    if constraints.get("people", {}).get("names"):
-        return True
-    if any(normalize_for_match(keyword) in normalized_text for keyword in RETRIEVAL_INTENT_KEYWORDS):
-        return True
-    if any(normalize_for_match(keyword) in normalized_text for keyword in GENERAL_INTENT_KEYWORDS):
-        return False
-    return False
-
-
-def should_run_notion_search(text: str) -> bool:
-    normalized_text = normalize_for_match(text)
-    return bool(
-        _contains_normalized_marker(normalized_text, EXPLICIT_NOTION_MARKERS)
-        or _contains_normalized_marker(normalized_text, NOTION_TARGET_OBJECT_MARKERS)
-        or _contains_normalized_marker(normalized_text, ("문서", "자료", "신입사원", "교육"))
-    )
-
 
 def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip(), flags=re.IGNORECASE)
@@ -790,209 +653,6 @@ def plan_search_intent_with_model(
         "confidence": 0.85,
         "planned": True,
     }
-
-
-def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bool:
-    aliases = [
-        constraints.get("customer_key") or "",
-        constraints.get("customer_exact") or "",
-        constraints.get("platform_key") or "",
-        *constraints.get("customer_aliases", []),
-        *constraints.get("platform_aliases", []),
-        *constraints.get("excluded_customer_aliases", []),
-        *constraints.get("excluded_platform_aliases", []),
-        *constraints.get("people", {}).get("names", []),
-        *constraints.get("statuses", []),
-        *constraints.get("excluded_statuses", []),
-        *[
-            alias
-            for status in constraints.get("statuses", [])
-            for alias in STATUS_ALIASES.get(status, [])
-        ],
-        *[
-            alias
-            for status in constraints.get("statuses", [])
-            for alias in STATUS_MATCH_ALIASES.get(status, [])
-        ],
-        *[str(issue_id) for issue_id in constraints.get("issue_ids", [])],
-        *constraints.get("screen_numbers", []),
-        *constraints.get("date_fields", {}).keys(),
-        *constraints.get("date_fields", {}).values(),
-        *((constraints.get("created_at") or {}).values()),
-        # "2026년에 등록된 ..."처럼 등록일 조건이 이미 created_at으로 흡수된 경우,
-        # "등록된" 같은 표현이 키워드로 남으면 본문에 그 단어가 없는 이슈가
-        # 전부 걸러진다. 날짜 조건이 있을 때는 등록/접수 계열 표현도 조건에
-        # 포함된 것으로 간주해 키워드에서 제외한다.
-        *(
-            ("등록", "등록된", "접수", "접수된", "생성", "생성된", "올라온", "들어온")
-            if constraints.get("created_at")
-            else ()
-        ),
-        *(
-            ("올해", "금년", "작년", "전년", "지난해", "지난년도", "이번해", "이번년도")
-            if constraints.get("created_at")
-            else ()
-        ),
-    ]
-    normalized_term = normalize_for_match(term)
-    return any(
-        normalized_term == normalize_for_match(alias)
-        or normalized_term in normalize_for_match(alias)
-        or normalize_for_match(alias) in normalized_term
-        for alias in aliases
-        if alias
-    )
-
-
-def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
-    terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
-    personal_scope_text = bool(
-        re.search(
-            r"(?:^|[\s,])(?:내|나의|제|내가|제가|내게|나에게|저에게)(?:\s|[가-힣])",
-            str(text or ""),
-        )
-    )
-    compact_personal_term = re.compile(
-        r"(?:내|나의|제)(?:(?:최근|미종료|장기|열린|진행중|처리중|종료된|완료된))*"
-        r"(?:이슈|업무)(?:를|을|가|은|는|도|만|의)?"
-    )
-    filter_control_terms = {
-        "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
-        "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
-        "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
-        "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
-        # 후속 질문의 대화 제어 표현은 Mantis 본문 검색어가 아니다. 구조화된
-        # 고객사/상태 조건만 남겨야 라이브 페이지 스캔이 최신 이슈를 보완한다.
-        "방금", "아까", "해당", "위", "조건",
-        # 보고서 작성 지시와 상대 기간 표현은 이슈 본문의 검색어가 아니다.
-        # 이 값들이 라이브 페이지 스캔에 AND 키워드로 들어가면 날짜·담당자
-        # 조건에 맞는 실제 이슈가 있어도 0건이 된다.
-        "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
-        "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
-        "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
-        # 로그인 사용자 범위는 chat_service가 Mantis 담당자 조건으로 바꾼다.
-        # 개인 대명사를 본문 키워드로도 남기면 제목·내용에 '내'가 없는 실제 담당
-        # 이슈가 모두 제외되므로 검색어에서는 제거한다.
-        "내", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
-        "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",
-    }
-    personal_control_terms = {"장기"} if personal_scope_text else set()
-    terms = [
-        term
-        for term in terms
-        if term
-        and term.lower() not in STOPWORDS
-        and term not in STOPWORDS
-        and term not in filter_control_terms
-        and term not in personal_control_terms
-        and not compact_personal_term.fullmatch(term)
-        and not is_control_search_term(term)
-    ]
-    if constraints:
-        terms = [term for term in terms if not term_is_covered_by_constraints(term, constraints)]
-    return terms[:4]
-
-
-def wants_similar_issue_search(text: str, constraints: Optional[Dict[str, Any]] = None) -> bool:
-    constraints = constraints or extract_query_constraints(text)
-    if not constraints.get("issue_ids"):
-        return False
-    normalized = normalize_for_match(text)
-    return any(
-        marker in normalized
-        for marker in (
-            "비슷",
-            "유사",
-            "같은",
-            "동일",
-            "관련사례",
-            "과거사례",
-            "과거이슈",
-        )
-    )
-
-
-def split_project_search_terms(project: str) -> List[str]:
-    return [
-        term
-        for term in re.split(r"[\s()/,]+", str(project or ""))
-        if term and term != "미상"
-    ][:2]
-
-
-def expand_compound_search_term(term: str, project_terms: List[str]) -> List[str]:
-    normalized_projects = [normalize_for_match(value) for value in project_terms]
-    match = re.match(r"^([A-Za-z]{2,})([가-힣].+)$", term)
-    if not match:
-        return [term]
-    prefix, suffix = match.groups()
-    expanded = []
-    if not any(normalize_for_match(prefix) in project for project in normalized_projects):
-        expanded.append(prefix)
-    expanded.append(suffix)
-    return expanded
-
-
-def build_similar_issue_search_text(issue: Dict[str, Any]) -> str:
-    title = str(issue.get("summary") or issue.get("title") or "")
-    description = str(issue.get("description") or "")
-
-    # 고객사와 화면번호는 유사 현상의 본질이 아니라 우연히 같은 프로젝트를 상위로
-    # 끌어올리는 강한 편향이 된다. 벡터 질의에는 기능/증상/재현 조건만 담고, 사용자가
-    # 질문에서 고객사나 매체를 명시한 경우에만 별도의 구조화 필터로 적용한다.
-    clean_title = re.sub(r"^\s*(?:\[[^\]]+\]\s*)+", "", title).strip()
-    clean_description = re.sub(r"https?://\S+", " ", description)
-    clean_description = re.sub(r"\s+", " ", clean_description).strip()
-    description_is_useful = bool(
-        clean_description
-        and len(clean_description) <= 400
-        and "메일 수신" not in clean_description
-        and normalize_for_match(clean_description) != normalize_for_match(clean_title)
-    )
-    return " ".join([clean_title, clean_description if description_is_useful else ""]).strip()
-
-
-def extract_requested_limit(text: str) -> Optional[int]:
-    match = re.search(r"(\d+)\s*(개|건)\s*만?", text)
-    if not match:
-        return None
-    return max(1, min(int(match.group(1)), 20))
-
-
-def wants_all_results(text: str) -> bool:
-    normalized = normalize_for_match(text)
-    return any(
-        marker in normalized
-        for marker in (
-            "다보여",
-            "다알려",
-            "전부보여",
-            "전부알려",
-            "모두보여",
-            "모두알려",
-            "전체보여",
-            "전체알려",
-            "전체리스트",
-            "이슈리스트다",
-            "목록다",
-        )
-    )
-
-
-def resolve_result_limit(text: str, sidebar_limit: Optional[int], default: int = 5) -> int:
-    requested_limit = extract_requested_limit(text)
-    if requested_limit:
-        return requested_limit
-    if wants_all_results(text):
-        # 실제 조건에 맞는 이슈가 이 값을 넘으면 format_deterministic_issue_answer가
-        # "총 N건 중 M건 표시" 안내를 붙인다. 그래도 "전체"라고 물었을 때 흔한
-        # 케이스(연간 수십~백여 건)는 잘리지 않도록 넉넉히 잡는다.
-        return 200
-    return sidebar_limit or default
-
-
-def extract_limit(text: str, default: int = 5) -> int:
-    return resolve_result_limit(text, None, default)
 
 
 __all__ = [
