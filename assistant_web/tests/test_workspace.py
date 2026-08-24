@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend import workspace
 
@@ -94,6 +94,111 @@ class ConversationWorkspaceTests(unittest.TestCase):
 
 
 class PersonalWorkspaceTests(unittest.TestCase):
+    def test_mantis_workspace_uses_live_data_and_filters_authenticated_handler(self):
+        raw_issues = [
+            {"id": 1, "handler": "석지원"},
+            {"id": 2, "handler": "다른 담당자"},
+        ]
+        with patch.object(
+            workspace,
+            "fetch_mantis_recent_issues",
+            return_value=raw_issues,
+        ), patch.object(workspace, "normalize_issue", side_effect=lambda issue: issue):
+            person, issues, meta = workspace._my_mantis_issues(
+                {"mantisUsername": "석지원"}
+            )
+
+        self.assertEqual(person, "석지원")
+        self.assertEqual([issue["id"] for issue in issues], [1])
+        self.assertEqual(meta, {"status": "live", "matchedCount": 1})
+
+    def test_mantis_workspace_falls_back_to_snapshot_after_live_failure(self):
+        snapshot_issue = {"id": 10, "handler": "석지원"}
+        with patch.object(
+            workspace,
+            "fetch_mantis_recent_issues",
+            side_effect=TimeoutError("slow"),
+        ), patch.object(
+            workspace,
+            "scan_mantis_documents",
+            return_value={
+                "available": True,
+                "matched_count": 1,
+                "issues": [snapshot_issue],
+                "reason": "live timeout",
+            },
+        ) as scan:
+            person, issues, meta = workspace._my_mantis_issues(
+                {"displayName": "석지원"}
+            )
+
+        self.assertEqual((person, issues), ("석지원", [snapshot_issue]))
+        self.assertEqual(
+            meta,
+            {"status": "snapshot", "matchedCount": 1, "reason": "live timeout"},
+        )
+        self.assertTrue(scan.call_args.kwargs["matches"]("담당자: 석지원"))
+
+    def test_notion_workspace_reports_missing_identity_and_connection(self):
+        self.assertEqual(
+            workspace._my_notion_pages({"displayName": "user@example.com"})["status"],
+            "skipped",
+        )
+        with patch.object(
+            workspace,
+            "get_notion_settings",
+            return_value={"token": "", "database_ids": []},
+        ):
+            result = workspace._my_notion_pages({"displayName": "석지원"})
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("연결 정보", result["reason"])
+
+    def test_notion_workspace_collects_pages_and_reports_partial_database_error(self):
+        success = Mock(status_code=200)
+        success.json.return_value = {
+            "results": [
+                {"id": "page-1", "last_edited_time": "2026-08-24T10:00:00Z"}
+            ]
+        }
+        failure = Mock(status_code=503)
+
+        with patch.object(
+            workspace,
+            "get_notion_settings",
+            return_value={"token": "token", "database_ids": ["db-1", "db-2"]},
+        ), patch.object(
+            workspace,
+            "fetch_notion_users",
+            return_value=[("석지원", "user-1")],
+        ), patch.object(
+            workspace,
+            "fetch_notion_database_schema",
+            return_value={"properties": {"담당자": {"type": "people"}}},
+        ), patch.object(
+            workspace,
+            "fetch_notion_database_title",
+            side_effect=["업무 DB", "오류 DB"],
+        ), patch.object(
+            workspace,
+            "notion_post_json",
+            side_effect=[success, failure],
+        ) as post, patch.object(
+            workspace,
+            "normalize_notion_page",
+            return_value={
+                "id": "page-1",
+                "title": "업무 공유",
+                "last_edited_time": "2026-08-24T10:00:00Z",
+            },
+        ):
+            result = workspace._my_notion_pages({"displayName": "석지원"})
+
+        self.assertEqual(result["status"], "partial_error")
+        self.assertEqual([page["id"] for page in result["notion_pages"]], ["page-1"])
+        self.assertEqual(result["reason"], "오류 DB: 503")
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args.kwargs, {"timeout": 10, "retries": 0})
+
     def test_open_status_excludes_resolved_and_closed_but_keeps_developed(self):
         for status in ("개발완료", "developed", "확인된 이슈"):
             with self.subTest(status=status):

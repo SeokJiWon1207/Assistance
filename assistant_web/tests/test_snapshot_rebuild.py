@@ -5,7 +5,7 @@ import unittest
 from contextlib import closing
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "make_vector_db.py"
@@ -76,6 +76,108 @@ class SnapshotRebuildTests(unittest.TestCase):
             make_vector_db.canonical_document_for_reuse(original),
             make_vector_db.canonical_document_for_reuse(changed),
         )
+
+    def test_issue_page_fetch_retries_transient_failure_and_stops_on_short_page(self):
+        transient = Mock(status_code=503)
+        first_page = Mock(status_code=200)
+        first_page.json.return_value = {"issues": [{"id": 3}, {"id": 2}]}
+        last_page = Mock(status_code=200)
+        last_page.json.return_value = {"issues": [{"id": 1}]}
+
+        with patch.object(
+            make_vector_db.requests,
+            "get",
+            side_effect=[transient, first_page, last_page],
+        ) as get, patch.object(make_vector_db.time, "sleep") as sleep:
+            pages = list(
+                make_vector_db.fetch_issue_pages(
+                    "https://mantis.example/issues",
+                    {"Authorization": "token"},
+                    page_size=2,
+                    max_pages=3,
+                )
+            )
+
+        self.assertEqual(pages, [(1, [{"id": 3}, {"id": 2}]), (2, [{"id": 1}])])
+        self.assertEqual(get.call_count, 3)
+        sleep.assert_called_once_with(1)
+        self.assertEqual(get.call_args.kwargs["params"], {"page_size": 2, "page": 2})
+
+    def test_issue_page_fetch_fails_when_last_page_cannot_be_confirmed(self):
+        full_page = Mock(status_code=200)
+        full_page.json.return_value = {"issues": [{"id": 2}, {"id": 1}]}
+
+        with patch.object(make_vector_db.requests, "get", return_value=full_page):
+            with self.assertRaisesRegex(make_vector_db.SnapshotBuildError, "최대 1페이지"):
+                list(
+                    make_vector_db.fetch_issue_pages(
+                        "https://mantis.example/issues",
+                        {},
+                        page_size=2,
+                        max_pages=1,
+                    )
+                )
+
+    def test_full_rebuild_reuses_only_byte_equivalent_existing_embeddings(self):
+        unchanged = make_vector_db.Document("동일 문서", {"id": 1})
+        changed = make_vector_db.Document("변경 문서", {"id": 2})
+        source_collection = Mock()
+        source_collection.count.return_value = 3
+        source_collection.get.return_value = {
+            "documents": ["동일 문서", "이전 문서", "삭제된 문서"],
+            "metadatas": [{"id": 1}, {"id": 2}, {"id": 99}],
+            "embeddings": [[0.1], [0.2], [0.3]],
+        }
+        source_client = Mock()
+        source_client.get_collection.return_value = source_collection
+        target = Mock()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            current = Path(temporary_directory) / "mantis_chroma_db"
+            current.mkdir()
+            (current / "chroma.sqlite3").touch()
+            with patch.object(make_vector_db, "CHROMA_DIR", current), patch.object(
+                make_vector_db.chromadb,
+                "PersistentClient",
+                return_value=source_client,
+            ):
+                remaining = make_vector_db.reuse_unchanged_embeddings(
+                    target,
+                    [unchanged, changed],
+                )
+
+        self.assertEqual(remaining, [changed])
+        target.add_documents.assert_called_once_with([unchanged], [[0.1]])
+        source_collection.get.assert_called_once_with(
+            limit=500,
+            offset=0,
+            include=["documents", "metadatas", "embeddings"],
+        )
+
+    def test_activation_failure_restores_previous_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            current = root / "mantis_chroma_db"
+            current.mkdir()
+            (current / "existing.marker").write_text("keep", encoding="utf-8")
+            temporary = root / ".mantis-build"
+            temporary.mkdir()
+            (temporary / "new.marker").write_text("new", encoding="utf-8")
+            real_replace = make_vector_db.os.replace
+
+            def fail_activation(source, target):
+                if Path(source) == temporary:
+                    raise OSError("activation failed")
+                return real_replace(source, target)
+
+            with patch.object(make_vector_db, "CHROMA_DIR", current), patch.object(
+                make_vector_db, "BACKUP_DIR", root / "backups"
+            ), patch.object(make_vector_db.os, "replace", side_effect=fail_activation):
+                with self.assertRaisesRegex(OSError, "activation failed"):
+                    make_vector_db.activate_snapshot(temporary)
+
+            self.assertEqual((current / "existing.marker").read_text(encoding="utf-8"), "keep")
+            self.assertTrue(temporary.exists())
 
     def test_validation_rejects_partial_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

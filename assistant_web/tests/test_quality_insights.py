@@ -1,6 +1,8 @@
 import random
+import tempfile
 import unittest
 from datetime import date, timedelta
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import requests
@@ -19,11 +21,22 @@ from scripts.accuracy.dynamic_accuracy_check import (
     complete_mutable_mantis_ids,
     execute_chat,
     exact_screen_numbers,
+    extract_answer_count,
     fetch_mantis_snapshot,
+    fetch_notion_snapshot,
+    filter_recall_matches,
     grade,
+    notion_page_summary,
+    notion_property_text,
+    observed_issue_ids,
+    observed_ordered_issue_ids,
+    observed_route_source,
     run_follow_up_scenario,
     select_rotating_cases,
+    summarize_boolean_dimension,
+    summarize_latency,
     summarize_results,
+    write_report,
 )
 
 
@@ -57,6 +70,180 @@ class DataFreshnessNoteTests(unittest.TestCase):
             ]
         }
         self.assertIn("2026-05-07", retrieval.build_snapshot_note(result))
+
+
+class AccuracyDataParsingTests(unittest.TestCase):
+    def test_notion_property_parser_and_page_summary_cover_supported_types(self):
+        properties = {
+            "제목": {"type": "title", "title": [{"plain_text": "배포 점검"}]},
+            "상태": {"type": "status", "status": {"name": "진행 중"}},
+            "태그": {
+                "type": "multi_select",
+                "multi_select": [{"name": "운영"}, {"name": "배포"}],
+            },
+            "일정": {"type": "date", "date": {"start": "2026-08-24"}},
+            "담당": {"type": "people", "people": [{"name": "석지원"}]},
+            "점수": {"type": "number", "number": 0},
+            "완료": {"type": "checkbox", "checkbox": False},
+            "수식": {"type": "formula", "formula": {"string": "제외"}},
+        }
+
+        self.assertEqual(notion_property_text(properties["태그"]), "운영, 배포")
+        self.assertEqual(notion_property_text(properties["점수"]), "0")
+        self.assertEqual(notion_property_text(properties["완료"]), "False")
+        self.assertEqual(notion_property_text(properties["수식"]), "")
+        summary = notion_page_summary(
+            {
+                "id": "page-1",
+                "last_edited_time": "2026-08-24T10:00:00Z",
+                "properties": properties,
+            },
+            "업무 DB",
+        )
+
+        self.assertEqual(summary["title"], "배포 점검")
+        self.assertEqual(summary["status"], "진행 중")
+        self.assertEqual(summary["database"], "업무 DB")
+        self.assertIn("담당: 석지원", summary["search_text"])
+        self.assertNotIn("수식", summary["search_text"])
+
+    @patch.dict("os.environ", {"NOTION_API_TOKEN": "token"})
+    @patch(
+        "scripts.accuracy.dynamic_accuracy_check.parse_notion_database_ids",
+        return_value=["database-12345678"],
+    )
+    @patch("scripts.accuracy.dynamic_accuracy_check.requests.post")
+    @patch("scripts.accuracy.dynamic_accuracy_check.requests.get")
+    def test_notion_snapshot_follows_pagination_cursor(
+        self,
+        get,
+        post,
+        _database_ids,
+    ):
+        metadata = Mock()
+        metadata.json.return_value = {"title": [{"plain_text": "업무 DB"}]}
+        get.return_value = metadata
+        first = Mock()
+        first.json.return_value = {
+            "results": [
+                {
+                    "id": "page-1",
+                    "properties": {
+                        "제목": {"type": "title", "title": [{"plain_text": "첫 문서"}]}
+                    },
+                }
+            ],
+            "has_more": True,
+            "next_cursor": "cursor-2",
+        }
+        second = Mock()
+        second.json.return_value = {
+            "results": [
+                {
+                    "id": "page-2",
+                    "properties": {
+                        "제목": {"type": "title", "title": [{"plain_text": "둘째 문서"}]}
+                    },
+                }
+            ],
+            "has_more": False,
+        }
+        post.side_effect = [first, second]
+
+        pages = fetch_notion_snapshot()
+
+        self.assertEqual([page["title"] for page in pages], ["첫 문서", "둘째 문서"])
+        self.assertNotIn("start_cursor", post.call_args_list[0].kwargs["json"])
+        self.assertEqual(post.call_args_list[1].kwargs["json"]["start_cursor"], "cursor-2")
+        metadata.raise_for_status.assert_called_once_with()
+        first.raise_for_status.assert_called_once_with()
+        second.raise_for_status.assert_called_once_with()
+
+    def test_observation_and_summary_helpers_preserve_order_and_dimensions(self):
+        response = {
+            "content": "총 2건입니다. #12346, 추가 이슈입니다.",
+            "sources": [{"issue_id": 12345}],
+            "retrieval": {"intent_plan": {"source": "mantis"}},
+        }
+        self.assertEqual(observed_issue_ids(response), {12345, 12346})
+        self.assertEqual(observed_ordered_issue_ids(response), [12345])
+        self.assertEqual(
+            observed_ordered_issue_ids({"content": "#00012346, #12345", "sources": []}),
+            [12346, 12345],
+        )
+        self.assertEqual(extract_answer_count(response["content"]), 2)
+        self.assertEqual(observed_route_source(response), "mantis")
+        self.assertEqual(
+            observed_route_source(
+                {
+                    "retrieval": {
+                        "stages": [{"source": "notion"}, {"source": "mantis_page_scan"}]
+                    }
+                }
+            ),
+            "both",
+        )
+        self.assertEqual(
+            summarize_boolean_dimension(
+                [{"routing_passed": True}, {"routing_passed": False}, {}],
+                "routing_passed",
+            ),
+            {"total": 2, "passed": 1, "score": 50},
+        )
+        self.assertEqual(
+            summarize_latency(
+                [{"latency_ms": 100}, {"latency_ms": 300}, {"latency_ms": 200}]
+            ),
+            {"p50_ms": 200.0, "p95_ms": 300.0},
+        )
+        self.assertEqual(summarize_latency([]), {"p50_ms": None, "p95_ms": None})
+
+    def test_filter_recall_requires_every_question_constraint(self):
+        question = "KB증권 MTS 확인된 이슈 보여줘"
+        expected = understanding.extract_query_constraints(question)
+        self.assertTrue(filter_recall_matches(question, expected))
+        self.assertFalse(filter_recall_matches(question, {**expected, "statuses": []}))
+
+    def test_accuracy_report_writer_persists_json_and_readable_markdown(self):
+        report = {
+            "run_at": "2026-08-24T16:00:00+09:00",
+            "snapshots": {"mantis": 10, "notion": 5},
+            "summary": {
+                "status": "passed",
+                "score": 100,
+                "attempted": 1,
+                "total": 1,
+                "passed": 1,
+                "blocked_by_prerequisite": 0,
+                "dependency_errors": 0,
+                "base": {"score": 100, "passed": 1, "total": 1},
+                "follow_up": {"score": None, "passed": 0, "total": 0},
+                "routing": {"score": 100, "passed": 1, "total": 1},
+                "filter_precision": {"score": 100, "passed": 1, "total": 1},
+                "filter_recall": {"score": 100, "passed": 1, "total": 1},
+                "latency": {"p50_ms": 120.0, "p95_ms": 120.0},
+            },
+            "results": [
+                {
+                    "outcome": "passed",
+                    "source": "mantis",
+                    "category": "정확 ID",
+                    "question": "#31105 알려줘",
+                    "expected": [31105],
+                    "actual": [31105],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory, patch(
+            "scripts.accuracy.dynamic_accuracy_check.REPORT_DIR",
+            new=Path(temporary_directory),
+        ):
+            json_path, markdown_path = write_report(report)
+
+            self.assertIn('"status": "passed"', json_path.read_text(encoding="utf-8"))
+            markdown = markdown_path.read_text(encoding="utf-8")
+        self.assertIn("Accuracy: 100%", markdown)
+        self.assertIn("| PASS | base | mantis | 정확 ID |", markdown)
 
 
 class ConstraintGroundingTests(unittest.TestCase):
