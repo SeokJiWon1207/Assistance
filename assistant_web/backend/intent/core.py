@@ -19,6 +19,7 @@ from backend.intent.constraints import (
     extract_query_constraints as extract_query_constraints,
     extract_requested_limit as extract_requested_limit,
     has_constraint as has_constraint,
+    has_notion_retrieval_signal as has_notion_retrieval_signal,
     has_targeting_constraint as has_targeting_constraint,
     legacy_filters_to_clauses as legacy_filters_to_clauses,
     merge_query_plan_constraints as merge_query_plan_constraints,

@@ -6,6 +6,7 @@ from unittest.mock import patch
 from backend.understanding import (
     extract_query_constraints,
     rule_based_search_intent,
+    has_notion_retrieval_signal,
     should_run_notion_search,
 )
 
@@ -54,7 +55,7 @@ class NotionIntentKeywordTest(unittest.TestCase):
             "온보딩 가이드",
             "휴가 규정",
         ):
-            self.assertTrue(should_run_notion_search(text), msg=text)
+            self.assertTrue(has_notion_retrieval_signal(text), msg=text)
 
     def test_mantis_questions_do_not_trigger_notion(self):
         for text in (
@@ -63,7 +64,10 @@ class NotionIntentKeywordTest(unittest.TestCase):
             "석지원 공수 알려줘",
             "월별 등록건수 추이",
         ):
-            self.assertFalse(should_run_notion_search(text), msg=text)
+            self.assertFalse(has_notion_retrieval_signal(text), msg=text)
+
+    def test_legacy_notion_search_gate_name_remains_compatible(self):
+        self.assertIs(should_run_notion_search, has_notion_retrieval_signal)
 
 
 class RoutingFixtureTest(unittest.TestCase):

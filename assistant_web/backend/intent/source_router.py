@@ -133,7 +133,7 @@ def should_run_retrieval(text: str, constraints: Dict[str, Any]) -> bool:
     if is_simple_greeting(text):
         return False
     normalized_text = normalize_for_match(text)
-    if should_run_notion_search(text):
+    if has_notion_retrieval_signal(text):
         return True
     if constraints.get("customer_key") or constraints.get("platform_key"):
         return True
@@ -153,7 +153,7 @@ def should_run_retrieval(text: str, constraints: Dict[str, Any]) -> bool:
     return False
 
 
-def should_run_notion_search(text: str) -> bool:
+def has_notion_retrieval_signal(text: str) -> bool:
     """Notion 표현이 검색 파이프라인 시작 근거인지 판단한다.
 
     실제 Notion 단계 실행 여부는 최종 ``plan_source``가 결정한다.
@@ -166,9 +166,14 @@ def should_run_notion_search(text: str) -> bool:
     )
 
 
+# 공개 import 호환성은 유지하되 새 호출부는 역할이 드러나는 이름을 사용한다.
+should_run_notion_search = has_notion_retrieval_signal
+
+
 __all__ = [
     "SourceAuthority",
     "rule_based_search_intent",
     "should_run_retrieval",
+    "has_notion_retrieval_signal",
     "should_run_notion_search",
 ]

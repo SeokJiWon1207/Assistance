@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from backend import answers, understanding
+from backend.intent import scope_extraction
 from backend.query_planning import build_query_plan
 from backend.reports import evaluation
 from backend.sources import notion
@@ -35,6 +36,7 @@ PUBLIC_SYMBOLS = {
         "get_latest_user_text",
         "get_recent_user_texts",
         "has_constraint",
+        "has_notion_retrieval_signal",
         "is_follow_up_question",
         "load_known_people",
         "merge_query_plan_constraints",
@@ -121,6 +123,7 @@ class PythonArchitectureContractTests(unittest.TestCase):
             "remove_date_field_phrases": "backend.intent.dates",
             "extract_query_constraints": "backend.intent.constraints",
             "rule_based_search_intent": "backend.intent.source_router",
+            "has_notion_retrieval_signal": "backend.intent.source_router",
             "should_run_retrieval": "backend.intent.source_router",
             "build_keyword_terms": "backend.intent.search_terms",
             "resolve_result_limit": "backend.intent.search_terms",
@@ -131,6 +134,10 @@ class PythonArchitectureContractTests(unittest.TestCase):
         for name, expected_module in expected_modules.items():
             with self.subTest(name=name):
                 self.assertEqual(getattr(understanding, name).__module__, expected_module)
+        self.assertEqual(
+            scope_extraction.extract_scope_constraints.__module__,
+            "backend.intent.scope_extraction",
+        )
 
     def test_notion_facade_uses_functional_modules(self):
         expected_modules = {
