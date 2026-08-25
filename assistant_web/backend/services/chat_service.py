@@ -706,6 +706,7 @@ def deterministic_retrieval_response(
 
 
 def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> None:
+    assert context.retrieval_result is not None, "검색 결과 없이 모델 컨텍스트를 만들 수 없습니다."
     model_retrieval_context = build_model_retrieval_context(context.retrieval_result, limit)
     context.system_notes.append(
         "너는 컨텐츠서비스 AI 비서다. 아래 [검색 파이프라인 결과] JSON에 있는 데이터만 사실로 사용해라. "
