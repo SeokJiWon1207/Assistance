@@ -181,14 +181,14 @@ class FrontendCoreTests(unittest.TestCase):
             "closed": "종료된 이슈",
         }
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
-        chat_rendering_js = (
-            STATIC_DIR / "modules" / "chat_rendering.js"
+        chat_source_detail_js = (
+            STATIC_DIR / "modules" / "chat_source_detail.js"
         ).read_text(encoding="utf-8")
 
         for code, label in expected_labels.items():
             mapping = f'{code}: "{label}"'
             self.assertIn(mapping, workspace_js)
-            self.assertIn(mapping, chat_rendering_js)
+            self.assertIn(mapping, chat_source_detail_js)
 
     def test_playbook_search_and_curator_actions_are_connected(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

@@ -236,7 +236,9 @@ class FrontendArchitectureContractTests(unittest.TestCase):
             "workspace.js": "function renderWorkspace()",
             "chat.js": "function renderMessages()",
             "chat_controller.js": "async function requestAssistant(",
+            "chat_feedback.js": "async function saveMessageFeedback(",
             "chat_rendering.js": "function renderAssistantContent(",
+            "chat_source_detail.js": "async function openSourceDetail(",
             "charts.js": "export function renderDonutChart(",
             "notion.js": "function renderNotionAnswer(",
             "admin.js": "function renderEvaluationContent()",
@@ -255,7 +257,9 @@ class FrontendArchitectureContractTests(unittest.TestCase):
         self.assertIn('from "./charts.js"', chat)
         self.assertIn('from "./chat_controller.js"', chat)
         self.assertIn('from "./chat_rendering.js"', chat)
-        self.assertLessEqual(len(chat.splitlines()), 1_100)
+        self.assertLessEqual(len(chat.splitlines()), 950)
+        rendering = (modules_dir / "chat_rendering.js").read_text(encoding="utf-8")
+        self.assertLessEqual(len(rendering.splitlines()), 850)
 
     def test_dom_and_api_contracts_are_present(self):
         static_dir = APP_DIR / "backend" / "static"
