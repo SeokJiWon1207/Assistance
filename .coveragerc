@@ -6,4 +6,4 @@ omit =
 omit =
     */tests/*
 show_missing = True
-fail_under = 67
+fail_under = 72

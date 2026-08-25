@@ -20,7 +20,7 @@ class ProjectConfigurationTests(unittest.TestCase):
 
         self.assertIn("*/tests/*", config.get("run", "omit"))
         self.assertIn("*/tests/*", config.get("report", "omit"))
-        self.assertEqual(config.getint("report", "fail_under"), 67)
+        self.assertEqual(config.getint("report", "fail_under"), 72)
 
         workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("run: coverage report", workflow)
