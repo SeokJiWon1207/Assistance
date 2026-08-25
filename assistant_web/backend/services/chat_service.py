@@ -445,6 +445,318 @@ def generate_model_response(
     }
 
 
+@dataclass
+class ChatPipelineContext:
+    """한 채팅 요청이 분석·라우팅·검색 단계를 지나며 공유하는 상태."""
+
+    latest_user_text: str
+    model: Dict[str, Any]
+    api_key: str
+    messages: List[Dict[str, Any]]
+    retrieval_text: str
+    enabled_tools: Dict[str, Any]
+    system_notes: List[str]
+    query_constraints: Dict[str, Any]
+    active_limit: int
+    pending_effort_report: Optional[Dict[str, Any]] = None
+    intent_plan: Optional[Dict[str, Any]] = None
+    retrieval_result: Optional[Dict[str, Any]] = None
+
+
+def prepare_chat_pipeline(
+    request: ChatRequest,
+    latest_user_text: str,
+    user: Optional[Dict[str, Any]],
+) -> ChatPipelineContext:
+    """모델·대화 문맥·인증 사용자 범위를 검증하고 검색 입력을 준비한다."""
+    model = get_private_model(request.modelId)
+    if model["status"] == "expired":
+        raise HTTPException(status_code=400, detail="Selected model is expired")
+    if model["status"] == "disabled":
+        raise HTTPException(status_code=400, detail="Selected model is disabled")
+
+    api_key = get_model_api_key(model)
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Missing API key env: {model.get('apiKeyEnv')}",
+        )
+
+    messages = [message.model_dump() for message in request.messages]
+    history_limit = clamp_int(os.getenv("MODEL_HISTORY_MAX_MESSAGES", "20"), 2, 200) or 20
+    if len(messages) > history_limit:
+        messages = messages[-history_limit:]
+
+    retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
+    resolved_reference = resolve_reference_from_context(
+        latest_user_text,
+        request.contextAuditId,
+        user_uid=str((user or {}).get("uid") or "").strip(),
+    )
+    if resolved_reference:
+        retrieval_text = resolved_reference
+        needs_follow_up_rewrite = False
+    else:
+        notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
+        if notion_prefix and not extract_notion_constraints(retrieval_text).get("status"):
+            retrieval_text = f"{notion_prefix} {retrieval_text or latest_user_text}".strip()
+            needs_follow_up_rewrite = False
+
+    if needs_follow_up_rewrite:
+        rewritten = rewrite_follow_up_query_with_model(
+            get_recent_user_texts(request.messages, limit=5),
+            model,
+            api_key,
+        )
+        if rewritten:
+            retrieval_text = rewritten
+
+    retrieval_text = retrieval_text or latest_user_text
+    scope_text = retrieval_text
+    if is_follow_up_question(latest_user_text):
+        scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))
+    retrieval_text = apply_authenticated_mantis_scope(
+        retrieval_text,
+        user,
+        scope_text=scope_text,
+    )
+    enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
+    system_notes = [
+        answer_style_instruction(request.answerStyle),
+        CONVERSATION_TONE_NOTE,
+        build_current_date_note(),
+    ]
+    return ChatPipelineContext(
+        latest_user_text=latest_user_text,
+        model=model,
+        api_key=api_key,
+        messages=messages,
+        retrieval_text=retrieval_text,
+        enabled_tools=enabled_tools,
+        system_notes=system_notes,
+        query_constraints=extract_query_constraints(retrieval_text) if retrieval_text else {},
+        active_limit=clamp_int(request.searchLimit, 1, 20) or 5,
+    )
+
+
+def plan_chat_query(
+    request: ChatRequest,
+    context: ChatPipelineContext,
+    user: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """결정형 리포트와 질의 계획을 평가하고 즉시 응답이 있으면 반환한다."""
+    deterministic = build_deterministic_report(
+        context.latest_user_text,
+        context.retrieval_text,
+        context.enabled_tools,
+        request.messages,
+        user,
+    )
+    if deterministic.response:
+        return {"modelId": request.modelId, **deterministic.response}
+    context.pending_effort_report = deterministic.pending_effort_report
+    if not context.retrieval_text:
+        return None
+
+    rule_plan = rule_based_search_intent(context.retrieval_text, context.query_constraints)
+    model_plan: Dict[str, Any] = {}
+    planner_enabled = os.getenv("QUERY_PLANNER_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "off",
+    }
+    should_plan = (
+        planner_enabled
+        and any(context.enabled_tools.get(key) for key in ("mantis", "notion", "vectorDb"))
+        and (
+            rule_plan.get("source") in {"mantis", "notion", "both"}
+            or should_run_retrieval(context.retrieval_text, context.query_constraints)
+        )
+    )
+    if should_plan:
+        emit_chat_status("질문을 도구 실행 계획으로 변환하고 있습니다", "routing")
+        model_plan = plan_search_intent_with_model(
+            context.retrieval_text,
+            context.model,
+            context.api_key,
+        )
+        if rule_plan.get("authority") == "authoritative":
+            model_plan["source"] = rule_plan["source"]
+
+    query_plan = build_query_plan(
+        context.retrieval_text,
+        rule_plan,
+        context.query_constraints,
+        model_plan if model_plan.get("planned") else None,
+    )
+    context.query_constraints = merge_query_plan_constraints(
+        context.query_constraints,
+        query_plan,
+    )
+    context.intent_plan = {
+        **query_plan,
+        "planned": True,
+        "ruleFallback": rule_plan,
+    }
+
+    if context.enabled_tools.get("mantis") and model_plan.get("planned"):
+        trend_fallback = build_effort_trend_report_from_plan(
+            context.retrieval_text,
+            model_plan,
+            constraints=context.query_constraints,
+        )
+        if trend_fallback:
+            return {"modelId": request.modelId, **trend_fallback}
+
+    if context.pending_effort_report is not None and context.enabled_tools.get("mantis"):
+        effort_fallback = build_effort_report_from_plan(context.retrieval_text, model_plan)
+        if effort_fallback:
+            return {"modelId": request.modelId, **effort_fallback}
+        return {"modelId": request.modelId, **context.pending_effort_report}
+
+    if context.enabled_tools.get("mantis"):
+        count_report = build_mantis_count_report(context.retrieval_text, query_plan)
+        if count_report:
+            return {"modelId": request.modelId, **count_report}
+    return None
+
+
+def should_retrieve_chat_evidence(context: ChatPipelineContext) -> bool:
+    return bool(
+        context.retrieval_text
+        and any(context.enabled_tools.get(key) for key in ("mantis", "vectorDb", "notion"))
+        and (
+            (context.intent_plan or {}).get("source") in {"notion", "mantis", "both"}
+            or should_run_retrieval(context.retrieval_text, context.query_constraints)
+        )
+    )
+
+
+def retrieval_limit(request: ChatRequest, context: ChatPipelineContext) -> tuple[int, Optional[str]]:
+    requested_limit = (context.intent_plan or {}).get("limit")
+    sidebar_limit = clamp_int(request.searchLimit, 1, 20)
+    group_by = (context.intent_plan or {}).get("group_by") or extract_group_by(
+        context.retrieval_text
+    )
+    if group_by == "customer":
+        return 800, group_by
+    if group_by:
+        return requested_limit or 200, group_by
+    return requested_limit or resolve_result_limit(context.latest_user_text, sidebar_limit), group_by
+
+
+def deterministic_retrieval_response(
+    request: ChatRequest,
+    context: ChatPipelineContext,
+    limit: int,
+    group_by: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """검색 결과가 결정형 목록 계약에 해당하면 모델 호출 없이 응답한다."""
+    retrieval_result = context.retrieval_result or {}
+    if (context.intent_plan or {}).get("source") == "both":
+        combined_sources = build_sources(retrieval_result, max_sources=limit)
+        if combined_sources:
+            return {
+                "modelId": request.modelId,
+                "content": format_deterministic_combined_answer(combined_sources),
+                "sources": combined_sources if request.showSources else [],
+                "sourcesForFollowUps": combined_sources,
+                "retrieval": retrieval_result,
+                "raw": {"mode": "deterministic_combined_search"},
+            }
+    if should_return_deterministic_notion_list(context.retrieval_text, retrieval_result):
+        notion_pages = collect_retrieved_notion_pages(retrieval_result, limit)
+        notion_sources = build_sources_from_notion_pages(notion_pages)
+        return {
+            "modelId": request.modelId,
+            "content": format_deterministic_notion_answer(
+                context.retrieval_text,
+                retrieval_result,
+                limit,
+            ),
+            "sources": notion_sources if request.showSources else [],
+            "sourcesForFollowUps": notion_sources,
+            "retrieval": retrieval_result,
+            "raw": {"mode": "deterministic_notion_list"},
+        }
+    if should_return_deterministic_issue_list(
+        context.retrieval_text,
+        context.query_constraints,
+    ):
+        deterministic_issues = select_grouped_issue_rows(
+            collect_retrieved_issues(retrieval_result, limit),
+            group_by,
+        )
+        issue_sources = build_sources_from_issue_rows(deterministic_issues)
+        return {
+            "modelId": request.modelId,
+            "content": format_deterministic_issue_answer(
+                context.retrieval_text,
+                context.query_constraints,
+                retrieval_result,
+                limit,
+                request.answerStyle,
+            ),
+            "sources": issue_sources if request.showSources else [],
+            "sourcesForFollowUps": issue_sources,
+            "retrieval": retrieval_result,
+            "raw": {"mode": "deterministic_issue_list"},
+        }
+    return None
+
+
+def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> None:
+    model_retrieval_context = build_model_retrieval_context(context.retrieval_result, limit)
+    context.system_notes.append(
+        "너는 컨텐츠서비스 AI 비서다. 아래 [검색 파이프라인 결과] JSON에 있는 데이터만 사실로 사용해라. "
+        "검색 파이프라인은 Notion DB 조회, Mantis 저장 필터, Mantis 페이지 스캔, ChromaDB 검색으로 구성된다. "
+        "Notion 결과는 팀 주요 이슈/공지/일정/결재 상태 조회에 사용하고, Mantis 결과는 원본 이슈 목록 조회에 우선 사용하며, ChromaDB 결과는 유사 사례나 보조 맥락으로 사용해라. "
+        "ChromaDB 문서에 latest_issue가 있으면 ChromaDB 스냅샷 대신 latest_issue 값을 최신 Mantis 원본으로 사용해라. "
+        "다만 Mantis 결과가 요청 개수보다 부족하고 ChromaDB 결과가 질문의 고객사/담당자/키워드 조건과 일치하면, ChromaDB 결과도 실제 이슈 목록으로 포함해라. "
+        "질문에 고객사, 담당자, HTS, MTS 같은 조건이 있으면 그 조건과 일치하는 이슈만 답변에 포함해라. "
+        "예를 들어 HTS 질문에는 제목에 MTS가 있더라도 본문이나 제목에 HTS가 함께 있을 때만 포함하고, MTS 전용 이슈는 제외해라. "
+        "실시간 조회를 할 수 없다고 말하지 마라. "
+        "사용자가 검색 과정이나 기준을 묻지 않는 한 mantis_filter, mantis_page_scan, chroma_db 같은 내부 단계명이나 스킵 여부는 말하지 마라. "
+        "대신 필요한 경우 '검색 기준: 고객사/담당자/상태/키워드, 정렬: 최신 이슈 ID 기준'처럼 사용자에게 의미 있는 기준만 짧게 말해라. "
+        "이슈가 있으면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라.\n\n"
+        f"[검색 파이프라인 결과]\n{json.dumps(model_retrieval_context, ensure_ascii=False, indent=2)}"
+    )
+
+
+def retrieve_chat_evidence(
+    request: ChatRequest,
+    context: ChatPipelineContext,
+) -> Optional[Dict[str, Any]]:
+    """최종 계획의 소스만 조회하고 결정형 목록 또는 모델 근거를 준비한다."""
+    if not should_retrieve_chat_evidence(context):
+        context.system_notes.append(
+            "너는 컨텐츠서비스 AI 비서다. 사용자가 일반 대화나 모델/사용법을 묻는 경우에는 Mantis나 ChromaDB 이슈를 언급하지 말고 직접 답하라. "
+            "사용자가 고객사 이슈, 담당자, 화면번호, HTS/MTS, Mantis 조회처럼 사내 데이터 검색을 명확히 요청할 때만 이슈 조회가 필요하다고 이해하라."
+        )
+        return None
+
+    active_source_labels = [
+        label
+        for key, label in (("mantis", "Mantis"), ("notion", "Notion"), ("vectorDb", "Vector DB"))
+        if context.enabled_tools.get(key)
+    ]
+    emit_chat_status(f"{' · '.join(active_source_labels)}에서 자료를 찾고 있습니다", "retrieval")
+    limit, group_by = retrieval_limit(request, context)
+    context.active_limit = limit
+    context.retrieval_result = run_retrieval_pipeline(
+        context.retrieval_text,
+        limit,
+        context.enabled_tools,
+        intent_plan=context.intent_plan,
+    )
+    emit_chat_status("검색 결과를 질문 조건에 맞게 정리하고 있습니다", "filtering")
+    deterministic = deterministic_retrieval_response(request, context, limit, group_by)
+    if deterministic:
+        return deterministic
+    append_retrieval_system_note(context, limit)
+    return None
+
+
 class ChatService:
     """단일 채팅 요청의 전체 검색·답변 파이프라인을 실행한다."""
 
@@ -470,14 +782,10 @@ class ChatService:
         request: ChatRequest,
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        def finalize_chat_response(
-            current_request: ChatRequest,
-            question: str,
-            response: Dict[str, Any],
-        ) -> Dict[str, Any]:
+        def finalize_chat_response(response: Dict[str, Any]) -> Dict[str, Any]:
             return persist_chat_response(
-                current_request,
-                question,
+                request,
+                latest_user_text,
                 response,
                 user_uid=str((user or {}).get("uid") or "").strip(),
             )
@@ -486,8 +794,6 @@ class ChatService:
         latest_user_text = get_latest_user_text(request.messages)
         if is_identity_question(latest_user_text):
             return finalize_chat_response(
-                request,
-                latest_user_text,
                 {
                     "modelId": request.modelId,
                     "content": format_authenticated_identity(user),
@@ -498,281 +804,31 @@ class ChatService:
                         "이번 주 내 업무보고서 작성해줘",
                     ],
                     "raw": {"mode": "authenticated_identity"},
-                },
-            )
-        model = get_private_model(request.modelId)
-
-        if model["status"] == "expired":
-            raise HTTPException(status_code=400, detail="Selected model is expired")
-        if model["status"] == "disabled":
-            raise HTTPException(status_code=400, detail="Selected model is disabled")
-
-        api_key = get_model_api_key(model)
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Missing API key env: {model.get('apiKeyEnv')}",
+                }
             )
 
-        messages = [message.model_dump() for message in request.messages]
-        # 대화가 길어져도 모델에 보내는 히스토리는 최근 N개로 제한한다(속도·컨텍스트 한도 보호).
-        # 검색 라우팅은 request.messages 전체(최근 5턴)를 별도로 참조하므로 영향받지 않는다.
-        history_limit = clamp_int(os.getenv("MODEL_HISTORY_MAX_MESSAGES", "20"), 2, 200) or 20
-        if len(messages) > history_limit:
-            messages = messages[-history_limit:]
-        # 후속 질문이면 직전 대화의 조건을 물려받은 라우팅용 텍스트. 검색/조건 추출에만 쓰고
-        # 감사 로그·중복 판정·Notion 쓰기는 사용자가 실제 입력한 latest_user_text를 그대로 쓴다.
-        retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
-        # "그중 3번째" 같은 서수 참조는 직전 답변이 실제로 보여준 결과 목록(감사 로그)에서
-        # 해당 항목을 직접 찾는다. 재검색 결과가 달라져 다른 항목을 가리키는 문제가 없고
-        # LLM 재작성보다 빠르고 정확하므로 최우선으로 시도한다.
-        resolved_reference = resolve_reference_from_context(
-            latest_user_text,
-            request.contextAuditId,
-            user_uid=str((user or {}).get("uid") or "").strip(),
-        )
-        if resolved_reference:
-            retrieval_text = resolved_reference
-            needs_follow_up_rewrite = False
-        if not resolved_reference:
-            # Mantis 조건 상속은 Notion 상태·DB를 물려주지 않아, 노션 후속 질문이
-            # 소스와 상태를 모두 잃고 모델 재작성으로 엉뚱한 상태가 채워졌다.
-            notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
-            if notion_prefix and not extract_notion_constraints(retrieval_text).get("status"):
-                retrieval_text = f"{notion_prefix} {retrieval_text or latest_user_text}".strip()
-                needs_follow_up_rewrite = False
-        if needs_follow_up_rewrite:
-            # 규칙 기반 마커/상속으로 대상을 못 찾은 후속 질문만 모델에게 재작성시킨다.
-            # 실패하면 원문 그대로 쓰던 기존 동작으로 조용히 폴백한다.
-            rewritten = rewrite_follow_up_query_with_model(
-                get_recent_user_texts(request.messages, limit=5),
-                model,
-                api_key,
-            )
-            if rewritten:
-                retrieval_text = rewritten
-        retrieval_text = retrieval_text or latest_user_text
-        scope_text = retrieval_text
-        if is_follow_up_question(latest_user_text):
-            scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))
-        retrieval_text = apply_authenticated_mantis_scope(
-            retrieval_text,
-            user,
-            scope_text=scope_text,
-        )
-        system_notes = []
-        retrieval_result = None
-        intent_plan = None
-        query_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
-        # Notion은 화면의 기본 소스 선택에서는 숨겨두지만, 노션을 명시한 질문은
-        # 실제 연결된 DB에서 조회할 수 있어야 한다. 클라이언트가 false를 보내면
-        # 기존처럼 해당 요청에서만 비활성화한다.
-        enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
-        system_notes.append(answer_style_instruction(request.answerStyle))
-        system_notes.append(CONVERSATION_TONE_NOTE)
-        system_notes.append(build_current_date_note())
-        active_limit = clamp_int(request.searchLimit, 1, 20) or 5
+        context = prepare_chat_pipeline(request, latest_user_text, user)
+        planned_response = plan_chat_query(request, context, user)
+        if planned_response:
+            return finalize_chat_response(planned_response)
 
-        deterministic = build_deterministic_report(
-            latest_user_text,
-            retrieval_text,
-            enabled_tools,
-            request.messages,
-            user,
-        )
-        if deterministic.response:
-            return finalize_chat_response(
-                request,
-                latest_user_text,
-                {"modelId": request.modelId, **deterministic.response},
-            )
-        pending_effort_report = deterministic.pending_effort_report
+        retrieval_response = retrieve_chat_evidence(request, context)
+        if retrieval_response:
+            return finalize_chat_response(retrieval_response)
 
-        if retrieval_text:
-            rule_plan = rule_based_search_intent(retrieval_text, query_constraints)
-            model_plan: Dict[str, Any] = {}
-            planner_enabled = os.getenv("QUERY_PLANNER_ENABLED", "true").strip().lower() not in {"0", "false", "off"}
-            should_plan = (
-                planner_enabled
-                and any(enabled_tools.get(key) for key in ("mantis", "notion", "vectorDb"))
-                and (
-                    rule_plan.get("source") in {"mantis", "notion", "both"}
-                    or should_run_retrieval(retrieval_text, query_constraints)
-                )
+        if context.system_notes:
+            context.messages.insert(
+                0,
+                {"role": "system", "content": "\n\n".join(context.system_notes)},
             )
-            if should_plan:
-                emit_chat_status("질문을 도구 실행 계획으로 변환하고 있습니다", "routing")
-                model_plan = plan_search_intent_with_model(retrieval_text, model, api_key)
-                if rule_plan.get("authority") == "authoritative":
-                    model_plan["source"] = rule_plan["source"]
-            query_plan = build_query_plan(
-                retrieval_text,
-                rule_plan,
-                query_constraints,
-                model_plan if model_plan.get("planned") else None,
-            )
-            query_constraints = merge_query_plan_constraints(query_constraints, query_plan)
-            intent_plan = {
-                **query_plan,
-                "planned": True,
-                "ruleFallback": rule_plan,
-            }
-
-            # 규칙 경로가 못 잡은 추이 질문을 플래너 분류로 실행한다.
-            # 기간 해석과 집계는 결정형 코어가 그대로 담당한다.
-            #
-            # 규칙 경로가 인물 이름을 기다리는(pending) 상태라도, 플래너가 추이로
-            # 판정하면 추이를 우선한다. "공수 어떻게 변했어"처럼 두 해석이 겹치는
-            # 질문에서 pending 을 이유로 막으면 추이가 영영 나오지 않는다.
-            # 다만 질문에 기간을 여러 달로 넓히는 표현이 있을 때만 추이로 본다.
-            if enabled_tools.get("mantis") and model_plan.get("planned"):
-                trend_fallback = build_effort_trend_report_from_plan(
-                    retrieval_text,
-                    model_plan,
-                    constraints=query_constraints,
-                )
-                if trend_fallback:
-                    return finalize_chat_response(
-                        request,
-                        latest_user_text,
-                        {"modelId": request.modelId, **trend_fallback},
-                    )
-
-            if pending_effort_report is not None and enabled_tools.get("mantis"):
-                effort_fallback = build_effort_report_from_plan(retrieval_text, model_plan)
-                if effort_fallback:
-                    return finalize_chat_response(
-                        request,
-                        latest_user_text,
-                        {"modelId": request.modelId, **effort_fallback},
-                    )
-                # 플래너도 공수 의도를 특정하지 못했다. 규칙 경로가 보류해둔
-                # "인물 이름을 입력해 달라"는 안내를 그대로 반환한다.
-                return finalize_chat_response(
-                    request,
-                    latest_user_text,
-                    {"modelId": request.modelId, **pending_effort_report},
-                )
-
-            if enabled_tools.get("mantis"):
-                count_report = build_mantis_count_report(retrieval_text, query_plan)
-                if count_report:
-                    return finalize_chat_response(
-                        request,
-                        latest_user_text,
-                        {"modelId": request.modelId, **count_report},
-                    )
-
-        if (
-            retrieval_text
-            and (enabled_tools.get("mantis") or enabled_tools.get("vectorDb") or enabled_tools.get("notion"))
-            and (
-                (intent_plan or {}).get("source") in {"notion", "mantis", "both"}
-                or should_run_retrieval(retrieval_text, query_constraints)
-            )
-        ):
-            active_source_labels = [
-                label
-                for key, label in (("mantis", "Mantis"), ("notion", "Notion"), ("vectorDb", "Vector DB"))
-                if enabled_tools.get(key)
-            ]
-            emit_chat_status(f"{' · '.join(active_source_labels)}에서 자료를 찾고 있습니다", "retrieval")
-            requested_limit = (intent_plan or {}).get("limit")
-            sidebar_limit = clamp_int(request.searchLimit, 1, 20)
-            group_by = (intent_plan or {}).get("group_by") or extract_group_by(retrieval_text)
-            # 고객사별 최신 1건은 "하나씩"을 전체 1건 제한으로 해석하지 않고,
-            # 충분한 최근 이슈를 조회한 뒤 고객사마다 한 건씩 선택한다.
-            if group_by == "customer":
-                limit = 800
-            elif group_by:
-                limit = requested_limit or 200
-            else:
-                limit = requested_limit or resolve_result_limit(latest_user_text, sidebar_limit)
-            active_limit = limit
-            retrieval_result = run_retrieval_pipeline(
-                retrieval_text,
-                limit,
-                enabled_tools,
-                intent_plan=intent_plan,
-            )
-            emit_chat_status("검색 결과를 질문 조건에 맞게 정리하고 있습니다", "filtering")
-            if (intent_plan or {}).get("source") == "both":
-                combined_sources = build_sources(retrieval_result, max_sources=limit)
-                if combined_sources:
-                    return finalize_chat_response(request, latest_user_text, {
-                        "modelId": request.modelId,
-                        "content": format_deterministic_combined_answer(combined_sources),
-                        "sources": combined_sources if request.showSources else [],
-                        "sourcesForFollowUps": combined_sources,
-                        "retrieval": retrieval_result,
-                        "raw": {"mode": "deterministic_combined_search"},
-                    })
-            if should_return_deterministic_notion_list(retrieval_text, retrieval_result):
-                notion_pages = collect_retrieved_notion_pages(retrieval_result, limit)
-                notion_sources = build_sources_from_notion_pages(notion_pages)
-                return finalize_chat_response(request, latest_user_text, {
-                    "modelId": request.modelId,
-                    "content": format_deterministic_notion_answer(
-                        retrieval_text,
-                        retrieval_result,
-                        limit,
-                    ),
-                    "sources": notion_sources if request.showSources else [],
-                    "sourcesForFollowUps": notion_sources,
-                    "retrieval": retrieval_result,
-                    "raw": {"mode": "deterministic_notion_list"},
-                })
-            if should_return_deterministic_issue_list(retrieval_text, query_constraints):
-                deterministic_issues = select_grouped_issue_rows(
-                    collect_retrieved_issues(retrieval_result, limit),
-                    group_by,
-                )
-                issue_sources = build_sources_from_issue_rows(deterministic_issues)
-                return finalize_chat_response(request, latest_user_text, {
-                    "modelId": request.modelId,
-                    "content": format_deterministic_issue_answer(
-                        retrieval_text,
-                        query_constraints,
-                        retrieval_result,
-                        limit,
-                        request.answerStyle,
-                    ),
-                    "sources": issue_sources if request.showSources else [],
-                    "sourcesForFollowUps": issue_sources,
-                    "retrieval": retrieval_result,
-                    "raw": {"mode": "deterministic_issue_list"},
-                })
-            model_retrieval_context = build_model_retrieval_context(retrieval_result, limit)
-            system_notes.append(
-                "너는 컨텐츠서비스 AI 비서다. 아래 [검색 파이프라인 결과] JSON에 있는 데이터만 사실로 사용해라. "
-                "검색 파이프라인은 Notion DB 조회, Mantis 저장 필터, Mantis 페이지 스캔, ChromaDB 검색으로 구성된다. "
-                "Notion 결과는 팀 주요 이슈/공지/일정/결재 상태 조회에 사용하고, Mantis 결과는 원본 이슈 목록 조회에 우선 사용하며, ChromaDB 결과는 유사 사례나 보조 맥락으로 사용해라. "
-                "ChromaDB 문서에 latest_issue가 있으면 ChromaDB 스냅샷 대신 latest_issue 값을 최신 Mantis 원본으로 사용해라. "
-                "다만 Mantis 결과가 요청 개수보다 부족하고 ChromaDB 결과가 질문의 고객사/담당자/키워드 조건과 일치하면, ChromaDB 결과도 실제 이슈 목록으로 포함해라. "
-                "질문에 고객사, 담당자, HTS, MTS 같은 조건이 있으면 그 조건과 일치하는 이슈만 답변에 포함해라. "
-                "예를 들어 HTS 질문에는 제목에 MTS가 있더라도 본문이나 제목에 HTS가 함께 있을 때만 포함하고, MTS 전용 이슈는 제외해라. "
-                "실시간 조회를 할 수 없다고 말하지 마라. "
-                "사용자가 검색 과정이나 기준을 묻지 않는 한 mantis_filter, mantis_page_scan, chroma_db 같은 내부 단계명이나 스킵 여부는 말하지 마라. "
-                "대신 필요한 경우 '검색 기준: 고객사/담당자/상태/키워드, 정렬: 최신 이슈 ID 기준'처럼 사용자에게 의미 있는 기준만 짧게 말해라. "
-                "이슈가 있으면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라.\n\n"
-                f"[검색 파이프라인 결과]\n{json.dumps(model_retrieval_context, ensure_ascii=False, indent=2)}"
-            )
-        else:
-            system_notes.append(
-                "너는 컨텐츠서비스 AI 비서다. 사용자가 일반 대화나 모델/사용법을 묻는 경우에는 Mantis나 ChromaDB 이슈를 언급하지 말고 직접 답하라. "
-                "사용자가 고객사 이슈, 담당자, 화면번호, HTS/MTS, Mantis 조회처럼 사내 데이터 검색을 명확히 요청할 때만 이슈 조회가 필요하다고 이해하라."
-            )
-
-        if system_notes:
-            messages.insert(0, {"role": "system", "content": "\n\n".join(system_notes)})
-
         generated_response = generate_model_response(
             request,
-            model,
-            messages,
-            retrieval_result,
-            query_constraints,
-            active_limit,
+            context.model,
+            context.messages,
+            context.retrieval_result,
+            context.query_constraints,
+            context.active_limit,
         )
-        return finalize_chat_response(request, latest_user_text, generated_response)
+        return finalize_chat_response(generated_response)
+
 chat_service = ChatService()

@@ -167,12 +167,19 @@ class PythonArchitectureContractTests(unittest.TestCase):
             for node in chat_service.body
             if isinstance(node, ast.FunctionDef) and node.name == "_build_response"
         )
-        self.assertLessEqual(build_response.end_lineno - build_response.lineno + 1, 320)
+        self.assertLessEqual(build_response.end_lineno - build_response.lineno + 1, 80)
         function_names = {
             node.name for node in tree.body if isinstance(node, ast.FunctionDef)
         }
-        self.assertIn("build_deterministic_report", function_names)
-        self.assertIn("generate_model_response", function_names)
+        for phase_function in (
+            "build_deterministic_report",
+            "prepare_chat_pipeline",
+            "plan_chat_query",
+            "retrieve_chat_evidence",
+            "generate_model_response",
+        ):
+            with self.subTest(phase_function=phase_function):
+                self.assertIn(phase_function, function_names)
 
     def test_query_plan_golden_cases(self):
         for case in FIXTURE["queryPlans"]:
