@@ -1,6 +1,8 @@
 """주간 팀 브리핑 기준본과 확인 상태 테스트."""
 
+import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from datetime import date
@@ -32,9 +34,17 @@ class TeamBriefTests(unittest.TestCase):
         self.assertEqual(result["summary"]["unassigned"], 1)
         self.assertEqual(result["customerSpikes"][0]["name"], "신한")
         self.assertEqual({item["id"] for item in result["priorities"]}, {80, 101})
+        self.assertEqual(result["decisionSummary"]["riskLevel"], "attention")
+        self.assertIn("100% 증가", result["decisionSummary"]["headline"])
+        self.assertTrue(result["decisionSummary"]["recommendedActions"])
+        priority = next(item for item in result["priorities"] if item["id"] == 80)
+        self.assertIn(priority["riskLevel"], {"attention", "high"})
+        self.assertIn("장기 미종료", " ".join(priority["riskReasons"]))
+        self.assertTrue(priority["recommendedAction"])
 
     def test_weekly_snapshot_is_reused_and_read_state_is_per_user(self):
         generated = {
+            "contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
             "weekStart": "2026-08-10",
             "title": "브리핑",
             "summaryPeriod": "2026-08-03 ~ 2026-08-09",
@@ -55,3 +65,33 @@ class TeamBriefTests(unittest.TestCase):
         self.assertEqual(first["generatedAt"], second["generatedAt"])
         self.assertTrue(read["viewed"])
         self.assertFalse(unread["viewed"])
+
+    def test_old_weekly_snapshot_is_regenerated_for_new_content_version(self):
+        old_payload = {
+            "weekStart": "2026-08-10",
+            "title": "이전 브리핑",
+            "summary": {},
+            "source": {"status": "live", "reason": ""},
+            "generatedAt": "2026-08-10T09:00:00+09:00",
+        }
+        upgraded = {
+            **old_payload,
+            "contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
+            "title": "판단 콘텐츠가 포함된 브리핑",
+            "decisionSummary": {"riskLevel": "stable", "headline": "안정적입니다."},
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")}
+        ):
+            team_brief.init_workspace_db()
+            with sqlite3.connect(team_brief.workspace_db_path()) as connection, connection:
+                connection.execute(
+                    "INSERT INTO weekly_team_briefs (week_start, payload_json, generated_at) VALUES (?, ?, ?)",
+                    ("2026-08-10", json.dumps(old_payload, ensure_ascii=False), old_payload["generatedAt"]),
+                )
+            with patch.object(team_brief, "_generate_team_brief", return_value=upgraded) as generate:
+                result = team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+
+        generate.assert_called_once()
+        self.assertEqual(result["contentVersion"], team_brief.TEAM_BRIEF_CONTENT_VERSION)
+        self.assertEqual(result["title"], "판단 콘텐츠가 포함된 브리핑")

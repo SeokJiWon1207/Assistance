@@ -19,9 +19,14 @@ class TeamTemplateConfigTests(unittest.TestCase):
         payload = load_team_templates()
 
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(len(payload["templates"]), 8)
-        self.assertIn("customer-profile", {item["id"] for item in payload["templates"]})
-        self.assertIn("monthly-customer-report", {item["id"] for item in payload["templates"]})
+        self.assertEqual(len(payload["templates"]), 12)
+        template_ids = {item["id"] for item in payload["templates"]}
+        self.assertIn("customer-profile", template_ids)
+        self.assertIn("monthly-customer-report", template_ids)
+        self.assertIn("incident-triage", template_ids)
+        self.assertIn("issue-handoff", template_ids)
+        self.assertIn("incident-review", template_ids)
+        self.assertIn("customer-notice", template_ids)
 
     def test_undefined_question_placeholder_is_rejected(self):
         payload = {

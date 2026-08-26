@@ -106,9 +106,14 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(len(payload["templates"]), 8)
-        self.assertIn("customer-profile", {item["id"] for item in payload["templates"]})
-        self.assertIn("monthly-customer-report", {item["id"] for item in payload["templates"]})
+        self.assertEqual(len(payload["templates"]), 12)
+        template_ids = {item["id"] for item in payload["templates"]}
+        self.assertIn("customer-profile", template_ids)
+        self.assertIn("monthly-customer-report", template_ids)
+        self.assertIn("incident-triage", template_ids)
+        self.assertIn("issue-handoff", template_ids)
+        self.assertIn("incident-review", template_ids)
+        self.assertIn("customer-notice", template_ids)
 
     @patch.object(workspace_api, "get_weekly_team_brief")
     @patch.object(workspace_api, "current_request_user")

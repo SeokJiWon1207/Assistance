@@ -231,6 +231,7 @@ function issueWorkspaceRow(issue) {
   const aging = ageDays >= 30;
   const status = workspaceStatusLabel(issue.status);
   const rowTone = issue.overdue ? "is-overdue" : aging ? "is-aging" : "";
+  const riskLabel = { high: "높은 위험", attention: "주의", watch: "관찰" }[issue.riskLevel] || "";
   return `
     <article class="workspace-item ${rowTone}">
       <div class="workspace-item-main">
@@ -243,7 +244,9 @@ function issueWorkspaceRow(issue) {
           <span class="workspace-meta-status">${escapeHtml(status)}</span>
           ${issue.dueDate ? `<span class="workspace-meta-due ${issue.overdue ? "is-overdue" : ""}">완료 예정 ${escapeHtml(formatWorkspaceDate(issue.dueDate))}</span>` : ""}
           ${ageDays ? `<span class="workspace-meta-age ${aging ? "is-aging" : ""}">등록 ${ageDays}일</span>` : ""}
+          ${riskLabel ? `<span class="workspace-meta-risk is-${escapeHtml(issue.riskLevel)}">${escapeHtml(riskLabel)}</span>` : ""}
         </div>
+        ${issue.recommendedAction ? `<p class="workspace-item-recommendation"><strong>권장 조치</strong> ${escapeHtml(issue.recommendedAction)}</p>` : ""}
       </div>
       <button type="button" class="workspace-item-action" aria-label="#${escapeHtml(String(issue.id || ""))} 이슈를 AI에게 묻기" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">AI 요약</button>
     </article>`;
@@ -331,6 +334,15 @@ function renderTeamWeeklyBrief() {
     ? "비교 기준 없음"
     : `${summary.changeRate > 0 ? "+" : ""}${summary.changeRate}%`;
   const canRefresh = ["manager", "admin"].includes(state.currentUser?.role);
+  const decision = brief.decisionSummary || {};
+  const riskLabel = { high: "높은 위험", attention: "주의 필요", stable: "안정" }[decision.riskLevel] || "판단 대기";
+  const decisionSignals = (decision.signals || []).map((signal) => `<li>${escapeHtml(signal)}</li>`).join("");
+  const decisionActions = (decision.recommendedActions || []).map((action) => `
+    <button type="button" data-workspace-question="${encodeURIComponent(action.question || action.title || "")}">
+      <strong>${escapeHtml(action.title || "권장 조치")}</strong>
+      <span>${escapeHtml(action.reason || "")}</span>
+      <em>AI로 분석 →</em>
+    </button>`).join("");
   return `
     <section class="workspace-brief-hero">
       <span>WEEKLY TEAM BRIEF</span>
@@ -343,6 +355,12 @@ function renderTeamWeeklyBrief() {
       ${workspaceMetric("미종료 이월", summary.carriedOpen)}
       ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
     </section>
+    ${decision.headline ? `<section class="workspace-decision is-${escapeHtml(decision.riskLevel || "stable")}">
+      <header><span>이번 주 판단</span><em>${escapeHtml(riskLabel)}</em></header>
+      <h4>${escapeHtml(decision.headline)}</h4>
+      ${decisionSignals ? `<ul>${decisionSignals}</ul>` : ""}
+      ${decisionActions ? `<div class="workspace-decision-actions">${decisionActions}</div>` : ""}
+    </section>` : ""}
     <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">기준본 · ${brief.source?.status === "live" ? "Mantis 실시간 데이터로 생성" : "로컬 스냅샷으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
     <div class="workspace-columns">
       <section class="workspace-section">

@@ -318,6 +318,7 @@ def _issue_summary(issue: Dict[str, Any]) -> Dict[str, Any]:
         "dueDate": due,
         "overdue": bool(due_value and due_value < today and _is_open(issue.get("status", ""))),
         "ageDays": age_days,
+        "screenNumber": issue.get("screen_number", ""),
     }
 
 

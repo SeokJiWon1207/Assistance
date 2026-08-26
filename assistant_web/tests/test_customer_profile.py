@@ -61,8 +61,12 @@ class CustomerProfileReportTests(unittest.TestCase):
         self.assertIn("2026-06: 1건", content)
         self.assertIn("석지원: 2건", content)
         self.assertIn("#101 오래된 이슈", content)
+        self.assertIn("운영 건강도: **위험**", content)
+        self.assertIn("판단 근거:", content)
+        self.assertIn("권장 확인 항목", content)
         self.assertEqual(report["raw"]["mode"], "deterministic_customer_profile")
         self.assertEqual(report["retrieval"]["stages"][0]["meta"]["matched_count"], 3)
+        self.assertEqual(report["retrieval"]["stages"][0]["meta"]["health_level"], "위험")
 
     def test_fetch_failure_is_visible(self):
         def fail(**kwargs):

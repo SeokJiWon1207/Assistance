@@ -404,6 +404,28 @@
   color: var(--warning);
 }
 
+.workspace-item-meta .workspace-meta-risk.is-high {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.workspace-item-meta .workspace-meta-risk.is-attention {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.workspace-item-recommendation {
+  margin: 7px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.workspace-item-recommendation strong {
+  margin-right: 4px;
+  color: var(--text);
+}
+
 .workspace-item-action,
 .workspace-notification button {
   min-height: 30px;
@@ -475,6 +497,63 @@
   font-size: 12px;
   opacity: 0.8;
 }
+
+.workspace-decision {
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--blue) 5%, var(--surface));
+}
+
+.workspace-decision.is-high {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+
+.workspace-decision > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-decision > header span,
+.workspace-decision > header em {
+  color: var(--blue);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+.workspace-decision.is-high > header span,
+.workspace-decision.is-high > header em { color: var(--danger); }
+.workspace-decision h4 { margin: 9px 0 0; color: var(--text); font-size: 16px; }
+.workspace-decision ul { margin: 12px 0 0; padding-left: 18px; color: var(--text-soft); font-size: 12px; line-height: 1.7; }
+
+.workspace-decision-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.workspace-decision-actions button {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-decision-actions button:hover { border-color: var(--blue); }
+.workspace-decision-actions strong { font-size: 11px; }
+.workspace-decision-actions span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.workspace-decision-actions em { color: var(--blue); font-size: 10px; font-style: normal; font-weight: 900; }
 
 .workspace-primary-action {
   min-height: 46px;
@@ -691,6 +770,10 @@
   }
 
   .workspace-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-decision-actions {
     grid-template-columns: 1fr;
   }
 }
