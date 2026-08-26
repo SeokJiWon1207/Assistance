@@ -257,15 +257,15 @@
             <button id="workspaceModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
           </div>
         </header>
-        <nav id="workspaceTabs" class="workspace-tabs" aria-label="워크스페이스 보기">
-          <button type="button" data-workspace-tab="overview" class="active">업무</button>
-          <button type="button" data-workspace-tab="brief">주간 브리핑</button>
-          <button type="button" data-workspace-tab="team-brief">팀 브리핑</button>
-          <button type="button" data-workspace-tab="playbooks">플레이북</button>
-          <button type="button" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
-          <button type="button" data-workspace-tab="favorites">즐겨찾기</button>
-        </nav>
-        <div id="workspaceContent" class="workspace-content">
+        <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
+          <button type="button" id="workspaceTab-overview" role="tab" aria-selected="true" aria-controls="workspaceContent" data-workspace-tab="overview" class="active">업무</button>
+          <button type="button" id="workspaceTab-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="brief">주간 브리핑</button>
+          <button type="button" id="workspaceTab-team-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="team-brief">팀 브리핑</button>
+          <button type="button" id="workspaceTab-playbooks" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="playbooks">플레이북</button>
+          <button type="button" id="workspaceTab-notifications" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
+          <button type="button" id="workspaceTab-favorites" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="favorites">즐겨찾기</button>
+        </div>
+        <div id="workspaceContent" class="workspace-content" role="tabpanel" aria-labelledby="workspaceTab-overview" tabindex="0">
           <div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>
         </div>
       </section>

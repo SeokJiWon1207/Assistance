@@ -269,16 +269,38 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
     els.workspaceRefreshBtn.disabled = false;
   }
 });
-els.workspaceTabs?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-workspace-tab]");
-  if (!button) return;
-  state.workspaceTab = button.dataset.workspaceTab;
+function selectWorkspaceTab(name) {
+  state.workspaceTab = name;
   renderWorkspace();
   if (state.workspaceTab === "team-brief") {
     loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
   } else if (state.workspaceTab === "playbooks" && !state.playbooks) {
     loadPlaybooks().catch((error) => showToast(error.message, "warning"));
   }
+}
+
+els.workspaceTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-workspace-tab]");
+  if (!button) return;
+  selectWorkspaceTab(button.dataset.workspaceTab);
+});
+
+// role="tablist" 는 좌우 화살표·Home·End 이동을 전제로 한다.
+els.workspaceTabs?.addEventListener("keydown", (event) => {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!keys.includes(event.key)) return;
+  const tabs = [...els.workspaceTabs.querySelectorAll("[data-workspace-tab]")];
+  if (!tabs.length) return;
+  const current = tabs.findIndex((tab) => tab.dataset.workspaceTab === state.workspaceTab);
+  const from = current < 0 ? 0 : current;
+  let next = from;
+  if (event.key === "ArrowLeft") next = (from - 1 + tabs.length) % tabs.length;
+  else if (event.key === "ArrowRight") next = (from + 1) % tabs.length;
+  else if (event.key === "Home") next = 0;
+  else next = tabs.length - 1;
+  event.preventDefault();
+  selectWorkspaceTab(tabs[next].dataset.workspaceTab);
+  tabs[next].focus();
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
   const newPlaybookButton = event.target.closest("[data-new-playbook]");

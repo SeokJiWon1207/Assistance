@@ -622,7 +622,13 @@ function renderWorkspace() {
   els.workspaceModalTitle.textContent = "내 업무";
   els.workspaceTabs.hidden = false;
   els.workspaceTabs.querySelectorAll("[data-workspace-tab]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.workspaceTab === state.workspaceTab);
+    const selected = button.dataset.workspaceTab === state.workspaceTab;
+    button.classList.toggle("active", selected);
+    // 선택 상태를 클래스뿐 아니라 보조 기술에도 알리고, 탭 목록 안에서는
+    // 활성 탭 하나만 Tab 으로 닿도록 roving tabindex 를 유지한다.
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    if (selected && button.id) els.workspaceContent.setAttribute("aria-labelledby", button.id);
   });
   if (!state.myWorkspace) {
     els.workspaceContent.innerHTML = `<div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>`;
