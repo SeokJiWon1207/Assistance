@@ -687,6 +687,7 @@
 .playbook-toolbar form {
   display: flex;
   flex: 1;
+  align-items: center;
   gap: 8px;
 }
 .playbook-toolbar input,
@@ -701,6 +702,24 @@
   padding: 10px 12px;
 }
 .playbook-toolbar input { flex: 1; min-width: 180px; }
+
+/* 전역 select 와 .secondary-button 은 사이드바 세로 배치용이라 width:100% 를
+   갖는다(styles.css). 가로 툴바에서는 입력창을 밀어내므로 내용 폭으로 되돌린다. */
+.playbook-toolbar form > .secondary-button,
+.playbook-toolbar form > select {
+  flex: 0 0 auto;
+  width: auto;
+  margin-top: 0;
+}
+.playbook-toolbar form > .secondary-button { padding: 0 20px; }
+.playbook-toolbar form > select { min-width: 132px; }
+
+/* 검색줄의 입력창·선택·버튼 높이를 새 플레이북 버튼(46px)에 맞춘다. */
+.playbook-toolbar input,
+.playbook-toolbar select,
+.playbook-toolbar form > .secondary-button {
+  min-height: 46px;
+}
 .playbook-list { display: grid; gap: 14px; }
 .playbook-card {
   border: 1px solid var(--line);
@@ -756,6 +775,8 @@
   .playbook-card > footer { align-items: stretch; flex-direction: column; }
   .playbook-toolbar form { flex-wrap: wrap; }
   .playbook-toolbar input { flex-basis: 100%; }
+  /* 좁은 화면에서는 남은 줄을 검색 버튼이 채우게 둔다. */
+  .playbook-toolbar form > .secondary-button { flex: 1 0 auto; }
   .playbook-editor-row { grid-template-columns: 1fr; }
 }
 
