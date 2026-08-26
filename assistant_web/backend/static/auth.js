@@ -145,11 +145,15 @@
     const close = () => {
       modal.hidden = true;
       document.body.classList.remove("modal-open");
+      document.querySelector("#adminInviteBtn")?.focus();
     };
     document.querySelector("#adminInviteBtn")?.addEventListener("click", () => {
       form.reset();
       document.querySelector("#inviteResult").hidden = true;
       document.querySelector("#inviteError").hidden = true;
+      // 이전에 복사했더라도 라벨은 초기 상태로 되돌려 연다.
+      const copyButton = document.querySelector("#copyInviteUrlBtn");
+      if (copyButton) copyButton.textContent = "복사";
       modal.hidden = false;
       document.body.classList.add("modal-open");
       document.querySelector("#inviteEmail")?.focus();
@@ -157,6 +161,9 @@
     document.querySelector("#inviteModalClose")?.addEventListener("click", close);
     document.querySelector("#inviteCancelBtn")?.addEventListener("click", close);
     modal?.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && modal && !modal.hidden) close();
+    });
     document.querySelector("#copyInviteUrlBtn")?.addEventListener("click", async () => {
       const input = document.querySelector("#inviteSetupUrl");
       try {

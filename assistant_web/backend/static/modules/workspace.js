@@ -683,12 +683,19 @@ async function loadTeamDashboard(force = false) {
   renderWorkspace();
 }
 
+// 모달을 연 버튼을 기억해 두었다가 닫을 때 초점을 되돌린다.
+let workspaceModalOpener = null;
+
 function closeWorkspaceModal() {
   els.workspaceModal.hidden = true;
   document.body.classList.remove("modal-open");
+  const opener = workspaceModalOpener;
+  workspaceModalOpener = null;
+  opener?.focus?.();
 }
 
 async function openWorkspaceModal(mode = "personal") {
+  workspaceModalOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   state.workspaceMode = mode;
   if (mode === "personal" && !["overview", "brief", "team-brief", "playbooks", "notifications", "favorites"].includes(state.workspaceTab)) {
     state.workspaceTab = "overview";
@@ -696,6 +703,8 @@ async function openWorkspaceModal(mode = "personal") {
   els.workspaceModal.hidden = false;
   document.body.classList.add("modal-open");
   renderWorkspace();
+  // 다른 모달과 같이 열리는 즉시 모달 안으로 초점을 옮긴다.
+  els.workspaceModalClose?.focus();
   try {
     if (mode === "team") await loadTeamDashboard();
     else if (!state.myWorkspace) await loadMyWorkspace();
