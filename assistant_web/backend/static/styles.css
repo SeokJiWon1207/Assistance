@@ -531,8 +531,8 @@ body.theme-dark .sidebar {
 
 .help-icon {
   display: inline-grid;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   place-items: center;
   border: 1px solid var(--line-strong);
@@ -1269,7 +1269,8 @@ body.theme-dark .chat-header {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  /* 11px 본문이라 --muted(대비 4.22)로는 AA 4.5 에 못 미친다. */
+  color: var(--text-soft);
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
