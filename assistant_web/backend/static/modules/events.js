@@ -128,6 +128,14 @@ els.sidebar?.addEventListener("click", (event) => {
     closeMobileSidebar();
   }
 });
+
+// 어두운 배경을 탭하면 닫히도록 한다. 배경은 body::before 가상 요소라 리스너를
+// 직접 붙일 수 없어, 문서 클릭이 사이드바 바깥인지로 판단한다.
+document.addEventListener("click", (event) => {
+  if (!document.body.classList.contains("sidebar-open")) return;
+  if (event.target.closest(".sidebar") || event.target.closest("#sidebarMenuToggle")) return;
+  closeMobileSidebar();
+});
 els.cancelEditBtn.addEventListener("click", () => {
   cancelMessageEdit();
   els.input.value = "";
@@ -534,6 +542,9 @@ document.addEventListener("keydown", (event) => {
     closeEvaluationModal();
   } else if (event.key === "Escape" && !els.workspaceModal.hidden) {
     closeWorkspaceModal();
+  } else if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
+    // 모달이 모두 닫혀 있을 때만 좁은 화면의 사이드바를 닫는다.
+    closeMobileSidebar();
   }
 });
 
