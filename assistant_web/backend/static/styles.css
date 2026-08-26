@@ -2671,6 +2671,29 @@ body.theme-dark .chat-header {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+/* .toast-stack 이 pointer-events 를 막고 있으므로 실행 취소 버튼만 되살린다. */
+.toast-action {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.toast-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--surface);
+  outline-offset: 2px;
+}
+
 .toast-visible {
   opacity: 1;
   transform: translateY(0);

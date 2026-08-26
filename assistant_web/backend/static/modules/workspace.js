@@ -19,22 +19,45 @@ function createConversation() {
 }
 
 let toastContainer = null;
+const TOAST_DURATION = 2400;
+// 실행 취소는 읽고 누를 시간이 필요해 기본 안내보다 길게 띄운다.
+const TOAST_ACTION_DURATION = 7000;
 
-function showToast(message, tone = "default") {
+function showToast(message, tone = "default", action = null) {
   if (!toastContainer) {
     toastContainer = document.createElement("div");
     toastContainer.className = "toast-stack";
+    // 삭제·저장 결과를 스크린리더도 듣도록 상태 영역으로 노출한다.
+    toastContainer.setAttribute("role", "status");
+    toastContainer.setAttribute("aria-live", "polite");
     document.body.appendChild(toastContainer);
   }
   const toast = document.createElement("div");
   toast.className = `toast toast-${tone}`;
-  toast.textContent = message;
-  toastContainer.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("toast-visible"));
-  setTimeout(() => {
+  const label = document.createElement("span");
+  label.textContent = message;
+  toast.appendChild(label);
+  let hideTimer = null;
+  const dismiss = () => {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = null;
     toast.classList.remove("toast-visible");
     setTimeout(() => toast.remove(), 220);
-  }, 2400);
+  };
+  if (action) {
+    const actionButton = document.createElement("button");
+    actionButton.type = "button";
+    actionButton.className = "toast-action";
+    actionButton.textContent = action.label;
+    actionButton.addEventListener("click", () => {
+      action.onClick();
+      dismiss();
+    });
+    toast.appendChild(actionButton);
+  }
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("toast-visible"));
+  hideTimer = setTimeout(dismiss, action ? TOAST_ACTION_DURATION : TOAST_DURATION);
 }
 
 function persistConversations() {

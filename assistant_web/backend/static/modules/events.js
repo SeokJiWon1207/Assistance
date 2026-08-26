@@ -153,9 +153,15 @@ els.conversationList.addEventListener("click", (event) => {
   if (deleteButton) {
     if (state.busy) return;
     const conversationId = deleteButton.dataset.deleteConversationId;
-    const removed = state.conversations.find((item) => item.id === conversationId);
+    const removedIndex = state.conversations.findIndex((item) => item.id === conversationId);
+    if (removedIndex < 0) return;
+    // 실행 취소로 되돌릴 수 있도록 삭제 직전 위치와 활성 대화를 함께 기억한다.
+    const removed = state.conversations[removedIndex];
+    const previousActiveId = state.activeConversationId;
+    const previousMessages = [...state.messages];
     state.conversations = state.conversations.filter((item) => item.id !== conversationId);
-    if (!state.conversations.length) state.conversations.push(createConversation());
+    const placeholder = state.conversations.length ? null : createConversation();
+    if (placeholder) state.conversations.push(placeholder);
     if (conversationId === state.activeConversationId) {
       state.activeConversationId = state.conversations[0].id;
       state.messages = [...(state.conversations[0].messages || [])];
@@ -165,7 +171,24 @@ els.conversationList.addEventListener("click", (event) => {
     if (state.currentUser?.uid) {
       apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }).catch(() => {});
     }
-    showToast(`"${removed?.title || "대화"}"를 삭제했어요.`);
+    showToast(`"${removed.title || "대화"}"를 삭제했어요.`, "default", {
+      label: "실행 취소",
+      onClick: () => {
+        // 비어서 채워 넣은 임시 대화를 걷어내고 원래 자리에 되돌린다.
+        if (placeholder) {
+          state.conversations = state.conversations.filter((item) => item.id !== placeholder.id);
+        }
+        const restoreIndex = Math.min(removedIndex, state.conversations.length);
+        state.conversations.splice(restoreIndex, 0, removed);
+        state.activeConversationId = previousActiveId;
+        state.messages = previousMessages;
+        persistConversations();
+        // 서버에서도 같은 ID로 다시 저장해 삭제를 되돌린다.
+        scheduleConversationSync(removed);
+        renderMessages();
+        showToast("삭제를 취소했어요.");
+      },
+    });
     return;
   }
   const openButton = event.target.closest("[data-conversation-id]");
