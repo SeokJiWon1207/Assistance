@@ -72,8 +72,6 @@ class FrontendCoreTests(unittest.TestCase):
             "messages",
             "newChatBtn",
             "evaluationModal",
-            "sourceModeSelect",
-            "manualSourceControls",
             "templateModal",
             "templateForm",
             "feedbackModal",

@@ -146,39 +146,8 @@ function abComparisonEnabled() {
   return els.abTestToggle?.getAttribute("aria-pressed") === "true";
 }
 
-function setToolToggle(element, enabled) {
-  element?.setAttribute("aria-pressed", String(enabled));
-}
-
-function toolToggleEnabled(element) {
-  return element?.getAttribute("aria-pressed") === "true";
-}
-
-function setSourceMode(mode) {
-  const selectedMode = mode === "manual" ? "manual" : "auto";
-  if (els.sourceModeSelect) els.sourceModeSelect.value = selectedMode;
-  globalThis.AssistantCustomSelect?.sync(els.sourceModeSelect);
-  if (els.manualSourceControls) els.manualSourceControls.hidden = selectedMode !== "manual";
-  if (els.sourceModeHint) {
-    els.sourceModeHint.textContent = selectedMode === "auto"
-      ? "질문에 맞는 Mantis 이슈, Notion 자료와 유사 사례를 자동으로 찾습니다."
-      : "사용할 검색 소스를 하나 이상 선택해 주세요.";
-  }
-  if (selectedMode === "auto") {
-    setToolToggle(els.mantisToggle, true);
-    setToolToggle(els.vectorToggle, true);
-  }
-}
-
 function sourceToolsPayload() {
-  if (els.sourceModeSelect?.value !== "manual") {
-    return automaticSourceTools();
-  }
-  return {
-    mantis: toolToggleEnabled(els.mantisToggle),
-    notion: true,
-    vectorDb: toolToggleEnabled(els.vectorToggle),
-  };
+  return automaticSourceTools();
 }
 
 const TEAM_TEMPLATES = [];
@@ -722,9 +691,6 @@ function resetOptions() {
   els.stop.value = defaultOptions.stop;
   setShowSources(defaultOptions.showSources);
   setAbComparison(defaultOptions.abTest);
-  setSourceMode(defaultOptions.sourceMode);
-  setToolToggle(els.mantisToggle, defaultOptions.mantis);
-  setToolToggle(els.vectorToggle, defaultOptions.vectorDb);
   els.searchLimit.value = defaultOptions.searchLimit;
   els.searchLimitValue.textContent = `${defaultOptions.searchLimit}건`;
   globalThis.AssistantCustomSelect?.syncAll();
@@ -839,9 +805,6 @@ export {
   showSourcesEnabled,
   setAbComparison,
   abComparisonEnabled,
-  setToolToggle,
-  toolToggleEnabled,
-  setSourceMode,
   sourceToolsPayload,
   TEAM_TEMPLATES,
   loadTeamTemplates,

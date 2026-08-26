@@ -1,7 +1,7 @@
 import "./events.js";
 import { state, els, defaultOptions } from "./runtime.js";
 import { loadConversations, loadMyWorkspace } from "./workspace.js";
-import { loadTheme, setAbComparison, setSourceMode, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
+import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
@@ -27,7 +27,6 @@ async function bootstrapApplication(authState = {}) {
   });
   loadTheme();
   setAbComparison(defaultOptions.abTest);
-  setSourceMode(defaultOptions.sourceMode);
   renderMessages();
 }
 

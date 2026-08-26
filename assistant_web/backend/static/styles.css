@@ -641,66 +641,6 @@ body.theme-dark .sidebar {
   gap: 8px;
 }
 
-.source-toggle-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.source-controls {
-  display: grid;
-  gap: 8px;
-}
-
-.source-mode-hint,
-.manual-source-controls > small {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.manual-source-controls {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-alt);
-}
-
-.source-chip {
-  appearance: none;
-  -webkit-appearance: none;
-  min-height: 34px;
-  padding: 7px 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text-soft);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-
-.source-chip:hover {
-  border-color: var(--line-strong);
-  background: var(--surface-alt);
-}
-
-.source-chip:focus-visible {
-  outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
-}
-
-.source-chip[aria-pressed="true"] {
-  border-color: var(--blue);
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
 .control-group label,
 .section-label {
   color: var(--text-soft);

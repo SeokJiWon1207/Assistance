@@ -1,6 +1,6 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
 import { createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
-import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, setToolToggle, toolToggleEnabled, setSourceMode, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
+import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 
 function cancelMessageEdit() {
@@ -80,19 +80,6 @@ els.abTestToggle.addEventListener("click", () => {
   setAbComparison(!abComparisonEnabled());
   renderMessages();
 });
-[els.mantisToggle, els.vectorToggle].forEach((toggle) => {
-  toggle.addEventListener("click", () => {
-    const enabledTools = [els.mantisToggle, els.vectorToggle]
-      .filter((item) => toolToggleEnabled(item));
-    if (toolToggleEnabled(toggle) && enabledTools.length === 1) {
-      showToast("검색 소스를 하나 이상 선택해 주세요.", "warning");
-      return;
-    }
-    setToolToggle(toggle, !toolToggleEnabled(toggle));
-  });
-});
-els.sourceModeSelect?.addEventListener("change", () => setSourceMode(els.sourceModeSelect.value));
-
 els.modelSelect.addEventListener("change", updateModelMeta);
 els.resetOptionsBtn.addEventListener("click", () => {
   resetOptions();

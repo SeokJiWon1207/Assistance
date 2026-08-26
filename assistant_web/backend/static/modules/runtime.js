@@ -91,11 +91,6 @@ export const els = {
   activeConversationTitle: document.querySelector("#activeConversationTitle"),
   editNotice: document.querySelector("#editNotice"),
   cancelEditBtn: document.querySelector("#cancelEditBtn"),
-  sourceModeSelect: document.querySelector("#sourceModeSelect"),
-  sourceModeHint: document.querySelector("#sourceModeHint"),
-  manualSourceControls: document.querySelector("#manualSourceControls"),
-  mantisToggle: document.querySelector("#mantisToggle"),
-  vectorToggle: document.querySelector("#vectorToggle"),
   evaluationBtn: document.querySelector("#evaluationBtn"),
   evaluationModal: document.querySelector("#evaluationModal"),
   evaluationModalClose: document.querySelector("#evaluationModalClose"),
@@ -149,10 +144,6 @@ export const defaultOptions = {
   showSources: true,
   abTest: false,
   searchLimit: "5",
-  sourceMode: "auto",
-  mantis: true,
-  notion: true,
-  vectorDb: true,
 };
 
 export const themeStorageKey = "team-ai-assistant-theme";
