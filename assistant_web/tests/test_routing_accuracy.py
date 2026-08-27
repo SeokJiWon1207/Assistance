@@ -6,7 +6,9 @@ from backend.intent.constraints import (
     extract_query_constraints,
     merge_query_plan_constraints,
 )
+from backend.query_planning import build_query_plan
 from backend.retrieval import run_retrieval_pipeline
+from backend.understanding import rule_based_search_intent
 
 
 class PeopleFilterGroundingTest(unittest.TestCase):
@@ -132,6 +134,50 @@ class RetrievalSourceContractTest(unittest.TestCase):
         self.assertTrue(result["stages"])
         self.assertNotIn("notion", [stage["source"] for stage in result["stages"]])
         notion_search.assert_not_called()
+
+    @patch("backend.retrieval.execute_chroma_search")
+    @patch("backend.retrieval.execute_mantis_page_scan")
+    @patch("backend.retrieval.execute_mantis_filter_search")
+    def test_verbless_recency_request_scans_mantis_without_a_count_keyword(
+        self,
+        filter_search,
+        page_scan,
+        chroma_search,
+    ):
+        """동사 없이 "가장 최근 이슈 하나만"만 남아도 Mantis를 훑어야 한다."""
+        question = "가장 최근 이슈 하나만"
+        for stub, source in ((filter_search, "mantis_filter"), (page_scan, "mantis_page_scan")):
+            stub.return_value = {
+                "source": source,
+                "status": "ok",
+                "issues_list": [],
+                "meta": {"displayed_count": 0},
+            }
+        chroma_search.return_value = {
+            "source": "chroma_db",
+            "status": "ok",
+            "documents": [],
+            "meta": {"displayed_count": 0},
+        }
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(
+            question,
+            rule_based_search_intent(question, constraints),
+            constraints,
+        )
+
+        result = run_retrieval_pipeline(
+            question,
+            1,
+            {"mantis": True, "notion": True, "vectorDb": True},
+            plan,
+        )
+
+        self.assertEqual(plan["source"], "mantis")
+        self.assertIn("mantis_page_scan", [stage["source"] for stage in result["stages"]])
+        # 개수 표현이 AND 키워드로 남으면 최신 이슈가 있어도 0건이 된다.
+        self.assertEqual(result["keyword"], "")
+        self.assertEqual(page_scan.call_args.args[0], "")
 
 
 class UnverifiedPersonAnswerTest(unittest.TestCase):

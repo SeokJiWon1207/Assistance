@@ -50,6 +50,16 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
             normalized,
         )
     )
+    # "가장 최근 이슈 하나만"처럼 동사 없이 대상과 정렬 표현만 남은 목록 요청도
+    # Mantis 조회다. 규칙이 general로 물러나면 최종 계획의 소스도 general이 되어
+    # 검색 단계가 하나도 실행되지 않고, 근거 없이 "찾지 못했다"는 답변이 나간다.
+    issue_list_request = bool(
+        re.search(
+            r"(?:최근|최신|마지막).{0,8}(?:이슈|장애|오류|버그)"
+            r"|(?:이슈|장애|오류|버그).{0,8}(?:최근|최신)",
+            normalized,
+        )
+    )
     document_hint = _contains_normalized_marker(
         normalized,
         ("문서", "자료", "신입사원", "교육"),
@@ -94,7 +104,7 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
     elif notion_target:
         source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "문서 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "notion"})
-    elif mantis_target or issue_request:
+    elif mantis_target or issue_request or issue_list_request:
         source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "mantis"})
     elif document_hint:
