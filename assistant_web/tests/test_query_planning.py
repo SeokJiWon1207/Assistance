@@ -12,6 +12,7 @@ from backend.answers import (
     should_return_deterministic_issue_list,
 )
 from backend.config import notion_post_json
+from backend.intent.entities import extract_mantis_keyword
 from backend.reports.effort import extract_effort_query
 from backend.reports.evaluation import build_verification_report
 from backend.retrieval import grounded_mantis_terms, run_retrieval_pipeline
@@ -148,6 +149,19 @@ class QueryPlanningTests(unittest.TestCase):
         ):
             constraints = extract_query_constraints(question)
             self.assertEqual(build_keyword_terms(question, constraints), [], msg=question)
+
+    def test_period_expressions_do_not_leave_an_orphan_keyword(self):
+        # "3개월"에서 "3개"만 떼면 "월"이 남아 AND 키워드가 되고, 검색 텍스트의
+        # "월"은 날짜 커스텀 필드가 채워진 이슈에만 있어 결과가 조용히 줄어든다.
+        for question in (
+            "최근 3개월 이슈 보여줘",
+            "KB증권 최근 3개월간 미종료 이슈",
+            "2주 이내 등록된 이슈",
+            "최근 2년 이슈 보여줘",
+        ):
+            constraints = extract_query_constraints(question)
+            self.assertNotIn("월", build_keyword_terms(question, constraints), msg=question)
+            self.assertNotIn("월", extract_mantis_keyword(question).split(), msg=question)
 
     def test_customer_grouping_answer_lists_one_issue_per_customer(self):
         def issue(issue_id, project):

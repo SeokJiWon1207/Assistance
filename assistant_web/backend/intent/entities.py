@@ -42,8 +42,11 @@ from backend.query_filters import add_filter_clause
 def extract_mantis_keyword(text: str) -> str:
     cleaned = re.sub(r"[#,:;!?()\[\]{}\"']", " ", text)
     cleaned = re.sub(r"(?:개발\s*)?문의\s*건?\s*포함(?:해서|하여|해)?", " ", cleaned)
-    cleaned = re.sub(r"\d+\s*(개|건)\s*만?", " ", cleaned)
-    cleaned = re.sub(r"\d+\s*(개|건)", " ", cleaned)
+    # "3개월"에서 "3개"만 떼어내면 "월"이 홀로 남아 라이브 페이지 스캔의 AND
+    # 키워드가 된다. 검색 텍스트의 "월"은 날짜 커스텀 필드가 채워진 이슈에만
+    # 있어서, 기간 조건이 "날짜 필드가 입력된 이슈"로 조용히 바뀐다.
+    cleaned = re.sub(r"\d+\s*(?:개|건)(?!월)\s*만?", " ", cleaned)
+    cleaned = re.sub(r"\d+\s*(?:개|건)(?!월)", " ", cleaned)
     cleaned = re.sub(r"최신\s*\d+\s*건\s*기준(?:으로)?", " ", cleaned)
     tokens = []
     for token in cleaned.split():

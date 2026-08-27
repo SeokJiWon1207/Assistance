@@ -131,6 +131,11 @@ COUNT_EXPRESSION_PATTERN = re.compile(
 )
 
 
+# "3개월", "2주일", "10일간"처럼 기간을 통째로 가리키는 토큰도 검색어가 아니다.
+# 연·월·일 단독 표기는 아래 개별 패턴이 이미 맡고 있다.
+PERIOD_EXPRESSION_PATTERN = re.compile(r"\d+(?:개월|달|주일|주|년|일)간?")
+
+
 def is_control_search_term(term: str) -> bool:
     normalized = normalize_for_match(term)
     if not normalized:
@@ -139,6 +144,7 @@ def is_control_search_term(term: str) -> bool:
         return True
     return bool(
         COUNT_EXPRESSION_PATTERN.fullmatch(normalized)
+        or PERIOD_EXPRESSION_PATTERN.fullmatch(normalized)
         or re.fullmatch(r"\d{4}년?", normalized)
         or re.fullmatch(r"\d{1,2}월", normalized)
         or re.fullmatch(r"\d{1,2}일", normalized)
