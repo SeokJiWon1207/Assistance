@@ -22,6 +22,8 @@ from backend.understanding import (
     build_similar_issue_search_text,
     chroma_text_matches_constraints,
     extract_query_constraints,
+    extract_requested_limit,
+    resolve_result_limit,
 )
 from backend.schemas import ChatMessage, ChatRequest
 from backend.reports.evaluation import generate_candidate_model_answer
@@ -113,6 +115,39 @@ class QueryPlanningTests(unittest.TestCase):
             extract_query_constraints("하나금융 최근 이슈 하나만 보여줘")["customer_key"],
             "하나금융",
         )
+
+    def test_korean_count_words_are_read_as_a_display_limit(self):
+        for question, expected in (
+            ("가장 최근 이슈 하나만", 1),
+            ("가장 최근 이슈 하나", 1),
+            ("최근 이슈 한 건만 보여줘", 1),
+            ("최근 이슈 두 개만 보여줘", 2),
+            ("최근 이슈 세건 보여줘", 3),
+            ("최근 이슈 열 개 보여줘", 10),
+        ):
+            self.assertEqual(resolve_result_limit(question, 5), expected, msg=question)
+
+    def test_period_and_grouping_expressions_are_not_display_limits(self):
+        # "3개월"의 3개, "하나씩"의 묶음 단위, 고객사 앞글자는 표시 개수가 아니다.
+        for question in (
+            "최근 3개월 이슈 보여줘",
+            "고객사별 최근 이슈를 하나씩 보여줘",
+            "하나증권 이슈 보여줘",
+            "한국투자증권 이슈 보여줘",
+        ):
+            self.assertIsNone(extract_requested_limit(question), msg=question)
+            self.assertEqual(resolve_result_limit(question, 5), 5, msg=question)
+
+    def test_count_expressions_do_not_become_mantis_keywords(self):
+        for question in (
+            "가장 최근 이슈 하나만",
+            "최근 이슈 1개만 보여줘",
+            "최근 이슈 1건만 보여줘",
+            "최근 이슈 한 건만 보여줘",
+            "최근 이슈 두 개만 보여줘",
+        ):
+            constraints = extract_query_constraints(question)
+            self.assertEqual(build_keyword_terms(question, constraints), [], msg=question)
 
     def test_customer_grouping_answer_lists_one_issue_per_customer(self):
         def issue(issue_id, project):

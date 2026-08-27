@@ -76,6 +76,7 @@ from backend.sources.notion import (
 from backend.understanding import (
     build_contextual_retrieval_text,
     extract_query_constraints,
+    extract_requested_limit,
     get_latest_user_text,
     get_recent_user_texts,
     merge_query_plan_constraints,
@@ -633,7 +634,11 @@ def should_retrieve_chat_evidence(context: ChatPipelineContext) -> bool:
 
 
 def retrieval_limit(request: ChatRequest, context: ChatPipelineContext) -> tuple[int, Optional[str]]:
-    requested_limit = (context.intent_plan or {}).get("limit")
+    # 질문에 표시 개수가 적혀 있으면 플래너가 내놓은 숫자보다 우선한다. 플래너는
+    # "하나만"처럼 한글로 쓴 개수를 놓치거나 다른 숫자를 지어내는 일이 있다.
+    requested_limit = extract_requested_limit(context.latest_user_text) or (
+        context.intent_plan or {}
+    ).get("limit")
     sidebar_limit = clamp_int(request.searchLimit, 1, 20)
     group_by = (context.intent_plan or {}).get("group_by") or extract_group_by(
         context.retrieval_text

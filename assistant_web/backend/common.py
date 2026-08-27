@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from backend.config import (
     AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES,
     CUSTOMER_ALIASES,
+    KOREAN_COUNT_WORDS,
     PERSON_BLOCKLIST,
     PERSON_ROLE_ALIASES,
     PLATFORM_ALIASES,
@@ -118,6 +119,18 @@ def normalize_search_token(token: str) -> str:
     return normalized
 
 
+# "1개만", "하나만", "세건"처럼 표시 개수에 붙은 토큰은 검색어가 아니다. 이
+# 값이 라이브 페이지 스캔에 AND 키워드로 들어가면 조건에 맞는 최신 이슈가
+# 있어도 0건이 되고, 본문에 그 낱말이 우연히 들어간 이슈만 근거로 남는다.
+# "한 건만"처럼 수사와 단위가 띄어 쓰이면 토큰이 갈라지므로 수사와 단위를
+# 각각 단독으로도 인정한다. 둘 다 없으면 빈 문자열이라 다른 낱말은 걸리지 않는다.
+COUNT_EXPRESSION_PATTERN = re.compile(
+    r"(?:\d+|"
+    + "|".join(sorted(KOREAN_COUNT_WORDS, key=len, reverse=True))
+    + r")?(?:개|건|명|페이지|가지)?(?:만|씩)?"
+)
+
+
 def is_control_search_term(term: str) -> bool:
     normalized = normalize_for_match(term)
     if not normalized:
@@ -125,7 +138,7 @@ def is_control_search_term(term: str) -> bool:
     if normalized in {normalize_for_match(word) for word in STOPWORDS}:
         return True
     return bool(
-        re.fullmatch(r"\d+(?:개|건|명|페이지)?", normalized)
+        COUNT_EXPRESSION_PATTERN.fullmatch(normalized)
         or re.fullmatch(r"\d{4}년?", normalized)
         or re.fullmatch(r"\d{1,2}월", normalized)
         or re.fullmatch(r"\d{1,2}일", normalized)

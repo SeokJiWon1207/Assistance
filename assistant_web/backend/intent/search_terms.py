@@ -4,7 +4,12 @@ import re
 from typing import Any, Dict, List, Optional
 
 from backend.common import is_control_search_term, normalize_for_match, normalize_search_token
-from backend.config import STATUS_ALIASES, STATUS_MATCH_ALIASES, STOPWORDS
+from backend.config import (
+    KOREAN_COUNT_WORDS,
+    STATUS_ALIASES,
+    STATUS_MATCH_ALIASES,
+    STOPWORDS,
+)
 from backend.intent.entities import extract_mantis_keyword
 
 
@@ -155,11 +160,31 @@ def build_similar_issue_search_text(issue: Dict[str, Any]) -> str:
     return " ".join([clean_title, clean_description if description_is_useful else ""]).strip()
 
 
+# 표시 개수는 "5개"처럼 숫자로도, "하나만"처럼 한글 수사로도 들어온다. 단위
+# 뒤의 '월'을 배제해 "최근 3개월"의 3개를 개수로 읽지 않고, 묶음마다 하나를
+# 뜻하는 '하나씩'은 표시 개수가 아니므로 제외한다.
+_COUNT_UNIT = r"(?:개|건)(?!월)"
+_COUNT_WORDS = "|".join(sorted(KOREAN_COUNT_WORDS, key=len, reverse=True))
+_NUMERIC_LIMIT_PATTERN = re.compile(rf"(\d+)\s*{_COUNT_UNIT}\s*만?")
+_KOREAN_LIMIT_PATTERN = re.compile(
+    rf"(?<![가-힣])({_COUNT_WORDS})\s*{_COUNT_UNIT}\s*만?(?!\s*씩)"
+)
+# "이슈 하나만"처럼 단위 없이 쓰는 표현은 대상이 앞에 있을 때만 개수로 읽는다.
+# 그래야 "하나증권"이나 "한국투자증권"의 앞글자를 개수로 오해하지 않는다.
+_BARE_KOREAN_LIMIT_PATTERN = re.compile(
+    rf"(?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*({_COUNT_WORDS})\s*(?:만|를|을|$)"
+)
+
+
 def extract_requested_limit(text: str) -> Optional[int]:
-    match = re.search(r"(\d+)\s*(개|건)\s*만?", text)
-    if not match:
-        return None
-    return max(1, min(int(match.group(1)), 20))
+    numeric_match = _NUMERIC_LIMIT_PATTERN.search(text)
+    if numeric_match:
+        return max(1, min(int(numeric_match.group(1)), 20))
+    for pattern in (_KOREAN_LIMIT_PATTERN, _BARE_KOREAN_LIMIT_PATTERN):
+        match = pattern.search(text)
+        if match:
+            return max(1, min(KOREAN_COUNT_WORDS[match.group(1)], 20))
+    return None
 
 
 def wants_all_results(text: str) -> bool:
