@@ -2,6 +2,7 @@ import "./events.js";
 import { state, els, defaultOptions } from "./runtime.js";
 import { loadConversations, loadMyWorkspace } from "./workspace.js";
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
+import { initDashboard } from "./dashboard.js";
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
@@ -28,6 +29,7 @@ async function bootstrapApplication(authState = {}) {
   loadTheme();
   setAbComparison(defaultOptions.abTest);
   renderMessages();
+  initDashboard();
 }
 
 Promise.resolve(globalThis.AssistantAuthReady || { enabled: false, authenticated: false, user: null })

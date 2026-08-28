@@ -127,6 +127,21 @@ export const els = {
   workspaceTabs: document.querySelector("#workspaceTabs"),
   workspaceTabUnread: document.querySelector("#workspaceTabUnread"),
   workspaceContent: document.querySelector("#workspaceContent"),
+  viewDashboardBtn: document.querySelector("#viewDashboardBtn"),
+  viewChatBtn: document.querySelector("#viewChatBtn"),
+  dashboardPanel: document.querySelector("#dashboardPanel"),
+  chatPanel: document.querySelector("#chatPanel"),
+  dashboardSidebarMenuToggle: document.querySelector("#dashboardSidebarMenuToggle"),
+  dashboardSubtitle: document.querySelector("#dashboardSubtitle"),
+  dashboardSource: document.querySelector("#dashboardSource"),
+  dashboardGeneratedAt: document.querySelector("#dashboardGeneratedAt"),
+  dashboardPeriod: document.querySelector("#dashboardPeriod"),
+  dashboardRefreshBtn: document.querySelector("#dashboardRefreshBtn"),
+  dashboardBody: document.querySelector("#dashboardBody"),
+  dashboardDetail: document.querySelector("#dashboardDetail"),
+  dashboardDetailTitle: document.querySelector("#dashboardDetailTitle"),
+  dashboardDetailClose: document.querySelector("#dashboardDetailClose"),
+  dashboardDetailBody: document.querySelector("#dashboardDetailBody"),
 };
 
 export const defaultOptions = {
@@ -174,6 +189,7 @@ export function automaticSourceTools() {
 
 export const WORKSPACE_ENDPOINTS = Object.freeze({
   personal: "/api/workspace/me",
+  dashboard: "/api/workspace/dashboard",
   team: "/api/workspace/team",
   teamBrief: "/api/workspace/team-brief",
   teamBriefRead: "/api/workspace/team-brief/read",

@@ -127,6 +127,58 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["weekStart"], "2026-08-10")
         get_brief.assert_called_once_with("uid-1")
 
+    @patch.object(workspace_api, "build_operations_dashboard")
+    @patch.object(workspace_api, "current_request_user")
+    def test_dashboard_endpoint_uses_member_scope_without_user_directory(
+        self, current_user, build_dashboard
+    ):
+        current_user.return_value = {
+            "uid": "uid-1",
+            "displayName": "팀원",
+            "role": "member",
+        }
+        build_dashboard.return_value = {"meta": {"scope": "personal", "periodDays": 30}}
+
+        response = self.client.get("/api/workspace/dashboard?days=30")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["meta"]["scope"], "personal")
+        build_dashboard.assert_called_once_with(
+            current_user.return_value, users=[], days=30
+        )
+
+    @patch.object(workspace_api, "list_users")
+    @patch.object(workspace_api, "build_operations_dashboard")
+    @patch.object(workspace_api, "current_request_user")
+    def test_dashboard_endpoint_gives_manager_aggregated_team_context(
+        self, current_user, build_dashboard, list_users_mock
+    ):
+        current_user.return_value = {
+            "uid": "manager-1",
+            "displayName": "팀장",
+            "role": "manager",
+        }
+        list_users_mock.return_value = [{"uid": "member-1", "approved": True}]
+        build_dashboard.return_value = {"meta": {"scope": "team", "periodDays": 14}}
+
+        response = self.client.get("/api/workspace/dashboard?days=14")
+
+        self.assertEqual(response.status_code, 200)
+        build_dashboard.assert_called_once_with(
+            current_user.return_value,
+            users=list_users_mock.return_value,
+            days=14,
+        )
+
+    @patch.object(workspace_api, "current_request_user")
+    def test_dashboard_endpoint_rejects_unsupported_period(self, current_user):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+
+        response = self.client.get("/api/workspace/dashboard?days=15")
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("7일", response.json()["detail"])
+
     @patch.object(workspace_api, "current_request_user")
     def test_member_cannot_refresh_team_brief(self, current_user):
         current_user.return_value = {"uid": "uid-1", "role": "member"}

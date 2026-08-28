@@ -2,6 +2,7 @@ import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
 import { createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
+import { showChatView } from "./dashboard.js";
 
 function cancelMessageEdit() {
   state.editingMessageIndex = null;
@@ -87,6 +88,7 @@ els.resetOptionsBtn.addEventListener("click", () => {
 });
 els.newChatBtn.addEventListener("click", () => {
   if (state.busy) return;
+  showChatView();
   startNewConversation();
   els.input.focus();
   closeMobileSidebar();
@@ -97,6 +99,7 @@ els.newChatBtn.addEventListener("click", () => {
 if (els.brandHome) {
   const goHome = () => {
     if (state.busy) return;
+    showChatView();
     startNewConversation();
     closeMobileSidebar();
     els.input.focus();
@@ -116,6 +119,7 @@ if (els.brandHome) {
 function closeMobileSidebar() {
   document.body.classList.remove("sidebar-open");
   els.sidebarMenuToggle?.setAttribute("aria-expanded", "false");
+  els.dashboardSidebarMenuToggle?.setAttribute("aria-expanded", "false");
 }
 
 els.sidebarMenuToggle?.addEventListener("click", () => {
@@ -200,7 +204,10 @@ els.conversationList.addEventListener("click", (event) => {
     return;
   }
   const openButton = event.target.closest("[data-conversation-id]");
-  if (openButton) openConversation(openButton.dataset.conversationId);
+  if (openButton) {
+    showChatView();
+    openConversation(openButton.dataset.conversationId);
+  }
 });
 els.evaluationBtn.addEventListener("click", openEvaluationModal);
 els.templateModalClose?.addEventListener("click", closeTemplateModal);
@@ -351,6 +358,7 @@ els.workspaceContent?.addEventListener("click", async (event) => {
   }
   const questionButton = event.target.closest("[data-workspace-question]");
   if (questionButton) {
+    showChatView();
     els.input.value = decodeURIComponent(questionButton.dataset.workspaceQuestion || "");
     autoResizeInput();
     closeWorkspaceModal();
@@ -359,6 +367,7 @@ els.workspaceContent?.addEventListener("click", async (event) => {
   }
   const favoriteButton = event.target.closest("[data-open-favorite]");
   if (favoriteButton) {
+    showChatView();
     closeWorkspaceModal();
     openConversation(favoriteButton.dataset.openFavorite);
     return;

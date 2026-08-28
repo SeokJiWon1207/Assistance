@@ -95,7 +95,13 @@ class FrontendCoreTests(unittest.TestCase):
 
     def test_stylesheets_are_split_by_responsibility_in_cascade_order(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        stylesheet_names = ("styles.css", "charts.css", "responsive.css", "workspace.css")
+        stylesheet_names = (
+            "styles.css",
+            "charts.css",
+            "responsive.css",
+            "workspace.css",
+            "dashboard.css",
+        )
         positions = []
         for name in stylesheet_names:
             path = STATIC_DIR / name
@@ -105,6 +111,30 @@ class FrontendCoreTests(unittest.TestCase):
             self.assertIn(marker, html)
             positions.append(html.index(marker))
         self.assertEqual(positions, sorted(positions))
+
+    def test_operations_dashboard_is_connected_to_chat_and_responsive_ui(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(
+            encoding="utf-8"
+        )
+        dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+
+        for element_id in (
+            "viewDashboardBtn",
+            "viewChatBtn",
+            "dashboardPanel",
+            "dashboardPeriod",
+            "dashboardBody",
+            "dashboardDetail",
+        ):
+            self.assertIn(f'id="{element_id}"', html)
+        self.assertIn('dashboard: "/api/workspace/dashboard"', self.application_javascript())
+        self.assertIn("CUSTOMER HEALTH", dashboard_js)
+        self.assertIn("data-dashboard-question", dashboard_js)
+        self.assertIn('showChatView();\n  els.input.value = question', dashboard_js)
+        self.assertIn("dashboardState.customer", dashboard_js)
+        self.assertIn("@media (max-width: 860px)", dashboard_css)
+        self.assertIn("@media (max-width: 560px)", dashboard_css)
 
     def test_notion_controls_are_hidden_in_mantis_focused_ui(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
