@@ -1,8 +1,9 @@
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -52,6 +53,35 @@ class AuthUserStoreTests(unittest.TestCase):
             self.assertIsNotNone(user)
             self.assertEqual(user["role"], "admin")
             self.assertEqual(user["invitedBy"], "bootstrap")
+
+    def test_token_verification_allows_small_clock_skew(self):
+        firebase_auth = Mock()
+        firebase_auth.verify_id_token.return_value = {
+            "uid": "user-1",
+            "auth_time": int(time.time()),
+        }
+        firebase_auth.create_session_cookie.return_value = "session-cookie"
+        firebase_auth.verify_session_cookie.return_value = {"uid": "user-1"}
+
+        with patch.object(
+            auth_module, "_firebase_auth_module", return_value=firebase_auth
+        ), patch.dict(os.environ, {"FIREBASE_CLOCK_SKEW_SECONDS": "10"}):
+            cookie, claims = auth_module.create_firebase_session("id-token")
+            verified = auth_module.verify_firebase_session(cookie)
+
+        self.assertEqual(cookie, "session-cookie")
+        self.assertEqual(claims["uid"], "user-1")
+        self.assertEqual(verified["uid"], "user-1")
+        firebase_auth.verify_id_token.assert_called_once_with(
+            "id-token", check_revoked=True, clock_skew_seconds=10
+        )
+        firebase_auth.verify_session_cookie.assert_called_once_with(
+            "session-cookie", check_revoked=True, clock_skew_seconds=10
+        )
+
+    def test_clock_skew_is_bounded_to_firebase_limit(self):
+        with patch.dict(os.environ, {"FIREBASE_CLOCK_SKEW_SECONDS": "120"}):
+            self.assertEqual(auth_module.firebase_clock_skew_seconds(), 60)
 
 
 class AuthApiTests(unittest.TestCase):
@@ -125,6 +155,27 @@ class AuthApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 403)
         self.assertIn("초대한 계정", response.json()["detail"])
+
+    def test_session_exchange_failure_is_not_reported_as_bad_password(self):
+        with patch.dict(
+            os.environ,
+            {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+        ), patch.object(
+            auth_api,
+            "create_firebase_session",
+            side_effect=ValueError("invalid token audience"),
+        ), self.assertLogs(auth_api.LOGGER, level="ERROR") as logs:
+            config = self.client.get("/api/auth/config")
+            response = self.client.post(
+                "/api/auth/session",
+                headers={"X-CSRF-Token": config.cookies.get("ai_csrf")},
+                json={"idToken": "x" * 40},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("서버 세션", response.json()["detail"])
+        self.assertNotIn("비밀번호", response.json()["detail"])
+        self.assertIn("ValueError", "\n".join(logs.output))
 
     def test_protected_api_rejects_missing_session(self):
         with patch.dict(

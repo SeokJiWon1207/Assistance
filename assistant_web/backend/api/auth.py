@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import secrets
 from typing import Any, Dict, Literal, Optional
@@ -31,6 +32,7 @@ from backend.auth import (
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+LOGGER = logging.getLogger(__name__)
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -113,7 +115,13 @@ def create_session(
     except PermissionError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호를 확인해 주세요.") from exc
+        # 이 단계는 이메일·비밀번호 검증이 성공해 ID 토큰을 받은 이후다.
+        # 서버 구성·토큰 검증 오류를 비밀번호 문제로 오인하지 않게 구분한다.
+        LOGGER.exception("Firebase 세션 생성 실패 (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=401,
+            detail="Firebase 로그인 토큰을 서버 세션으로 전환하지 못했습니다.",
+        ) from exc
 
     user = approve_login_claims(claims)
     if not user:

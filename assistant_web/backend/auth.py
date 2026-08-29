@@ -83,6 +83,15 @@ def session_ttl_seconds() -> int:
     return max(1, min(hours, 24 * 14)) * 60 * 60
 
 
+def firebase_clock_skew_seconds() -> int:
+    """Firebase 토큰 검증 시 허용할 로컬 시계 오차를 반환한다."""
+    try:
+        seconds = int(os.getenv("FIREBASE_CLOCK_SKEW_SECONDS", "10"))
+    except ValueError:
+        seconds = 10
+    return max(0, min(seconds, 60))
+
+
 def firebase_web_api_key() -> str:
     return os.getenv("FIREBASE_WEB_API_KEY", "").strip()
 
@@ -343,7 +352,11 @@ def _firebase_auth_module():
 
 def create_firebase_session(id_token: str) -> Tuple[str, Dict[str, Any]]:
     firebase_auth = _firebase_auth_module()
-    claims = firebase_auth.verify_id_token(id_token, check_revoked=True)
+    claims = firebase_auth.verify_id_token(
+        id_token,
+        check_revoked=True,
+        clock_skew_seconds=firebase_clock_skew_seconds(),
+    )
     auth_time = int(claims.get("auth_time") or 0)
     now = int(datetime.now(timezone.utc).timestamp())
     if not auth_time or now - auth_time > 5 * 60:
@@ -356,7 +369,11 @@ def create_firebase_session(id_token: str) -> Tuple[str, Dict[str, Any]]:
 
 
 def verify_firebase_session(session_cookie: str) -> Dict[str, Any]:
-    return _firebase_auth_module().verify_session_cookie(session_cookie, check_revoked=True)
+    return _firebase_auth_module().verify_session_cookie(
+        session_cookie,
+        check_revoked=True,
+        clock_skew_seconds=firebase_clock_skew_seconds(),
+    )
 
 
 def firebase_invite_user(email: str, display_name: str) -> Tuple[str, str, bool]:
