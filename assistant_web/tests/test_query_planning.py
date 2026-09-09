@@ -1136,13 +1136,14 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["timeout"], 7)
 
     @patch("backend.config.requests.post")
-    def test_notion_tool_default_budget_does_not_retry_timeout(self, post):
-        post.side_effect = requests.Timeout("timeout")
+    def test_notion_tool_default_budget_retries_timeout_once(self, post):
+        success = MagicMock(status_code=200)
+        post.side_effect = [requests.Timeout("timeout"), success]
         with patch.dict("os.environ", {}, clear=True):
-            with self.assertRaises(requests.Timeout):
-                notion_post_json("https://example.invalid", {}, timeout=45, retries=2)
-        self.assertEqual(post.call_count, 1)
-        self.assertEqual(post.call_args.kwargs["timeout"], 8)
+            response = notion_post_json("https://example.invalid", {}, timeout=45, retries=2)
+        self.assertIs(response, success)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args.kwargs["timeout"], 12)
 
     def test_unscored_model_content_does_not_depress_verified_dimension_score(self):
         report = build_verification_report(

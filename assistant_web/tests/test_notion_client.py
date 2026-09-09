@@ -176,6 +176,37 @@ class NotionPostJsonTests(unittest.TestCase):
 
         self.assertEqual(post.call_count, 2)
 
+    def test_post_retries_transient_http_status(self):
+        throttled = Mock(status_code=429)
+        success = Mock(status_code=200)
+        with (
+            patch.dict(
+                os.environ,
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1"},
+            ),
+            patch.object(config.requests, "post", side_effect=[throttled, success]) as post,
+            patch.object(config.time, "sleep") as sleep,
+        ):
+            response = config.notion_post_json("https://api.notion.test/query", {}, retries=2)
+
+        self.assertIs(response, success)
+        self.assertEqual(post.call_count, 2)
+        sleep.assert_called_once_with(0.25)
+
+    def test_post_does_not_retry_non_transient_http_status(self):
+        forbidden = Mock(status_code=403)
+        with (
+            patch.dict(
+                os.environ,
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1"},
+            ),
+            patch.object(config.requests, "post", return_value=forbidden) as post,
+        ):
+            response = config.notion_post_json("https://api.notion.test/query", {}, retries=2)
+
+        self.assertIs(response, forbidden)
+        post.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

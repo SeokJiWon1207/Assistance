@@ -429,20 +429,25 @@ def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retri
     # A single Notion tool call must not monopolize the whole chat request.
     # Callers may request a larger timeout/retry count, but the orchestration
     # budget caps each network attempt. Chat orchestration can issue more than
-    # one Notion query, so the default does not retry a timed-out request.
-    max_timeout = max(3, min(int(os.getenv("NOTION_TOOL_TIMEOUT_SECONDS", "8")), 45))
-    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "0")), 2))
+    # one Notion query. 정확 제목 조회의 간헐적인 8초 초과를 흡수하되 전체 요청을
+    # 장시간 점유하지 않도록 기본 예산은 12초, 네트워크/429/5xx 재시도 1회로 제한한다.
+    max_timeout = max(3, min(int(os.getenv("NOTION_TOOL_TIMEOUT_SECONDS", "12")), 45))
+    max_retries = max(0, min(int(os.getenv("NOTION_TOOL_MAX_RETRIES", "1")), 2))
     timeout = min(timeout, max_timeout)
     retries = min(retries, max_retries)
     last_error: Optional[requests.RequestException] = None
     for attempt in range(max(1, retries + 1)):
         try:
-            return requests.post(
+            response = requests.post(
                 url,
                 headers=get_notion_headers(),
                 json=payload,
                 timeout=timeout,
             )
+            if (response.status_code == 429 or response.status_code >= 500) and attempt < retries:
+                time.sleep(min(0.25 * (2**attempt), 1.0))
+                continue
+            return response
         except requests.RequestException as exc:
             last_error = exc
             if attempt < retries:
