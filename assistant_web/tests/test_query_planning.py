@@ -24,6 +24,7 @@ from backend.understanding import (
     chroma_text_matches_constraints,
     extract_query_constraints,
     extract_requested_limit,
+    is_follow_up_question,
     resolve_result_limit,
 )
 from backend.schemas import ChatMessage, ChatRequest
@@ -109,6 +110,43 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(inherited["customer_key"], "159eBest")
         self.assertEqual(inherited["statuses"], ["closed"])
         self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
+
+    def test_follow_up_condition_correction_keeps_customer_and_replaces_status(self):
+        messages = [
+            ChatMessage(role="user", content="HMC증권에서 상태가 closed인 최근 이슈 2개 보여줘"),
+            ChatMessage(role="assistant", content="결과입니다"),
+            ChatMessage(
+                role="user",
+                content="아니, 고객사는 그대로 두고 상태만 confirmed로 바꿔서 가장 최근 이슈 하나를 알려줘",
+            ),
+        ]
+
+        retrieval_text, needs_rewrite = build_contextual_retrieval_text(messages)
+        inherited = extract_query_constraints(retrieval_text)
+
+        self.assertTrue(is_follow_up_question(messages[-1].content))
+        self.assertFalse(needs_rewrite)
+        self.assertEqual(inherited["customer_key"], "현대차")
+        self.assertEqual(inherited["statuses"], ["confirmed"])
+        self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
+
+    def test_handler_possessive_particle_is_not_part_of_name(self):
+        constraints = extract_query_constraints("담당자 강민성의 최근 이슈 2개 보여줘")
+        self.assertEqual(constraints["people"]["names"], ["강민성"])
+
+    def test_handler_subject_particle_is_not_part_of_name(self):
+        constraints = extract_query_constraints("담당자 홍길동이 맡은 최근 이슈를 보여줘")
+        self.assertEqual(constraints["people"]["names"], ["홍길동"])
+
+    def test_handler_name_accepts_sentence_ending_punctuation(self):
+        question = extract_query_constraints("담당자 홍길동?")
+        exclamation = extract_query_constraints("담당자 홍길동!")
+        self.assertEqual(question["people"]["names"], ["홍길동"])
+        self.assertEqual(exclamation["people"]["names"], ["홍길동"])
+
+    def test_handler_name_ending_in_particle_syllable_is_preserved(self):
+        constraints = extract_query_constraints("담당자 이지은 최근 이슈를 보여줘")
+        self.assertEqual(constraints["people"]["names"], ["이지은"])
 
     def test_explicit_hana_customer_is_not_removed(self):
         self.assertEqual(extract_query_constraints("하나 이슈 보여줘")["customer_key"], "하나")

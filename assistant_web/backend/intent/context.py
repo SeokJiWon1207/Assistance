@@ -56,6 +56,15 @@ def is_follow_up_question(text: str) -> bool:
     normalized = normalize_for_match(text)
     if any(normalize_for_match(marker) in normalized for marker in FOLLOW_UP_STRONG_MARKERS):
         return True
+    # "고객사는 그대로 두고 상태만 confirmed로 바꿔줘"처럼 직전 조건의
+    # 일부를 유지하면서 다른 조건만 교정하는 문장은 길더라도 명백한 후속이다.
+    # 약한 마커의 길이 제한에 맡기면 고객사 상속과 LLM 재작성 모두 건너뛴다.
+    if re.search(
+        r"(?:고객사|프로젝트|플랫폼|매체|상태|담당자)(?:는|은|를|을)?\s*"
+        r"(?:그대로|유지)",
+        text,
+    ) and re.search(r"(?:만\s*)?.*(?:바꿔|변경|수정)", text):
+        return True
     # "핵심 해결 내용을 한 문장으로 요약해줘"처럼 길이 제한을 넘지만 자체
     # 검색 조건이 전혀 없고 직전 결과를 가공해 달라는 요청은 후속 질문이다.
     # 조건이 하나라도 있으면 독립 질문일 수 있으므로 건드리지 않는다.

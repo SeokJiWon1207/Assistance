@@ -295,7 +295,16 @@ _FIRST_PERSON_TOKENS = frozenset({
 
 _EXPLICIT_HANDLER_PATTERN = re.compile(
     r"(?:담당자(?:가|는|를|도)?\s*[:=]?\s*|담당\s*[:=]\s*)"
-    r"([가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31})",
+    r"(?:"
+    # 조사가 뒤의 문법 표지와 함께 나타날 때만 이름에서 분리한다. 단순히 '은/이'로
+    # 끝나는 실제 이름(예: 이지은)을 조사로 오인하지 않도록 bare-name보다 앞에서
+    # 제한된 후속 표현을 요구한다.
+    r"(?P<korean_possessive>[가-힣]{2,4}?)의(?=\s|$|[,.?!:;)\]}])"
+    r"|(?P<korean_subject>[가-힣]{2,4}?)(?:이|가|은|는)"
+    r"(?=\s+(?:맡은|담당|처리|할당|배정))"
+    r"|(?P<korean_name>[가-힣]{2,4})(?=\s|$|[,.?!:;)\]}])"
+    r"|(?P<english_name>[A-Za-z][A-Za-z0-9_.-]{1,31})"
+    r")",
     re.IGNORECASE,
 )
 
@@ -318,7 +327,16 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
 
     explicit_handler = _EXPLICIT_HANDLER_PATTERN.search(person_text)
     if explicit_handler:
-        name = explicit_handler.group(1).strip()
+        name = next(
+            explicit_handler.group(group)
+            for group in (
+                "korean_possessive",
+                "korean_subject",
+                "korean_name",
+                "english_name",
+            )
+            if explicit_handler.group(group)
+        ).strip()
         korean_candidate = bool(re.fullmatch(r"[가-힣]{2,4}", name))
         if (
             is_valid_handler_name(name)
