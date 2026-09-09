@@ -527,6 +527,7 @@ def execute_notion_search(
                     {
                         "database_id": database_id,
                         "database_label": database_label,
+                        "error_kind": "internal",
                         "reason": "Notion title property could not be resolved",
                     }
                 )
@@ -556,6 +557,7 @@ def execute_notion_search(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
+                            "error_kind": "dependency",
                             "reason": f"Notion exact-title query failed: {exc}",
                         }
                     )
@@ -597,6 +599,12 @@ def execute_notion_search(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
+                            "error_kind": (
+                                "dependency"
+                                if exact_response.status_code == 429
+                                or exact_response.status_code >= 500
+                                else "internal"
+                            ),
                             "reason": f"{exact_response.status_code} {exact_response.text[:300]}",
                         }
                     )
@@ -659,6 +667,7 @@ def execute_notion_search(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
+                            "error_kind": "dependency" if isinstance(exc, requests.RequestException) else "internal",
                             "reason": f"Notion targeted-title query failed: {exc}",
                         }
                     )
@@ -685,6 +694,7 @@ def execute_notion_search(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
+                            "error_kind": "dependency",
                             "reason": f"Notion database scan failed: {exc}",
                         }
                     )
@@ -694,6 +704,11 @@ def execute_notion_search(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
+                            "error_kind": (
+                                "dependency"
+                                if response.status_code == 429 or response.status_code >= 500
+                                else "internal"
+                            ),
                             "reason": f"{response.status_code} {response.text[:300]}",
                         }
                     )
@@ -774,6 +789,7 @@ def execute_notion_search(
         return {
             "source": "notion",
             "status": "error",
+            "error_kind": "dependency",
             "reason": f"Notion connection failed: {exc}",
             "notion_pages": [],
             "meta": {"displayed_count": 0},
@@ -800,6 +816,11 @@ def execute_notion_search(
     return {
         "source": "notion",
         "status": status,
+        "error_kind": (
+            "dependency"
+            if errors and all(error.get("error_kind") == "dependency" for error in errors)
+            else "internal" if errors else None
+        ),
         "reason": "; ".join(
             f"{error['database_label']}: {error['reason']}" for error in errors
         )[:500]

@@ -59,6 +59,7 @@ class AccuracyCase:
     question: str
     expected_kind: str
     expected: Any
+    mutable_oracle: bool = False
 
 
 @dataclass
@@ -311,7 +312,7 @@ def build_mantis_cases(
         pair_expected = complete_mutable_mantis_ids(pair_question, issues, 2) or pair_expected
     cases.append(AccuracyCase(
         "mantis-project-status", "mantis", "고객사·상태",
-        pair_question, "issue_ids", pair_expected,
+        pair_question, "issue_ids", pair_expected, mutable_oracle=True,
     ))
 
     project_platform_groups: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
@@ -347,6 +348,7 @@ def build_mantis_cases(
                 platform_question,
                 "ordered_issue_ids",
                 platform_expected,
+                mutable_oracle=True,
             ))
 
     exclusion_candidates: List[tuple[str, str, List[int]]] = []
@@ -382,6 +384,7 @@ def build_mantis_cases(
             exclusion_question,
             "ordered_issue_ids",
             exclusion_expected,
+            mutable_oracle=True,
         ))
 
     screen_groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -409,7 +412,7 @@ def build_mantis_cases(
             handler_expected = complete_mutable_mantis_ids(handler_question, issues, 2) or handler_expected
         cases.append(AccuracyCase(
             "mantis-handler", "mantis", "담당자", handler_question,
-            "issue_ids", handler_expected,
+            "issue_ids", handler_expected, mutable_oracle=True,
         ))
 
     dated = [item for item in project_issues if re.match(r"\d{4}-\d{2}", str(item.get("created_at") or ""))]
@@ -689,6 +692,45 @@ def observed_route_source(response: Dict[str, Any]) -> Optional[str]:
     return next(iter(stage_sources), None)
 
 
+_DEPENDENCY_REASON_MARKERS = (
+    "timeout",
+    "timed out",
+    "readtimeout",
+    "connection failed",
+    "connectionerror",
+    "httpconnectionpool",
+    "httpsconnectionpool",
+    "rate limit",
+    "too many requests",
+    "service unavailable",
+    "연결 실패",
+    "시간 초과",
+)
+
+
+def dependency_reason_from_stage(stage: Dict[str, Any]) -> str:
+    """Return a reason only for an external dependency failure.
+
+    New stages should set ``error_kind=dependency``. The conservative text
+    fallback keeps old reports useful without treating validation, no-result,
+    or internal product failures as unavailable dependencies.
+    """
+    if stage.get("status") not in {"error", "partial_error"}:
+        return ""
+    reason = str(stage.get("reason") or "").strip()
+    error_kind = str(stage.get("error_kind") or "").strip().casefold()
+    if error_kind:
+        return reason or "external dependency failure" if error_kind == "dependency" else ""
+    normalized = reason.casefold()
+    if any(marker in normalized for marker in _DEPENDENCY_REASON_MARKERS):
+        return reason
+    if re.search(r"(?:http(?: status)?|api failed:?)\s*5\d\d\b", normalized):
+        return reason
+    if re.search(r"\b429\b", normalized):
+        return reason
+    return ""
+
+
 def filter_recall_matches(question: str, actual: Dict[str, Any]) -> bool:
     expected = extract_query_constraints(question)
     scalar_keys = ("customer_key", "platform_key")
@@ -765,20 +807,21 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         actual = None
         passed = False
     dependency_reason = ""
-    for stage in response.get("retrievalStages") or []:
-        if stage.get("status") not in {"error", "partial_error"}:
-            continue
-        reason = str(stage.get("reason") or "")
-        if any(token in reason.casefold() for token in ("timeout", "timed out", "connection failed")):
-            dependency_reason = reason
+    retrieval = response.get("retrieval") or {}
+    stages = [
+        *(response.get("retrievalStages") or []),
+        *(retrieval.get("stages") or []),
+    ]
+    for stage in stages:
+        dependency_reason = dependency_reason_from_stage(stage)
+        if dependency_reason:
             break
     if not dependency_reason and any(
         token in content.casefold()
-        for token in ("connection failed", "timed out", "readtimeout", "연결 실패")
+        for token in _DEPENDENCY_REASON_MARKERS
     ):
         dependency_reason = content[:500]
 
-    retrieval = response.get("retrieval") or {}
     observed_route = observed_route_source(response)
     routing_passed = observed_route == case.source if observed_route else None
     actual_constraints = retrieval.get("constraints") or {}
@@ -794,10 +837,12 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         if actual_constraints
         else None
     )
-    outcome = "passed" if passed else "dependency_error" if dependency_reason else "assertion_failed"
+    # 외부 소스가 불완전한 상태에서 우연히 기대값이 포함됐더라도 완전한 성공으로
+    # 집계하면 다음 실행에서 같은 응답을 재현할 수 없다. 의존성 오류를 우선한다.
+    outcome = "dependency_error" if dependency_reason else "passed" if passed else "assertion_failed"
     return {
         **asdict(case),
-        "passed": passed,
+        "passed": passed and not dependency_reason,
         "outcome": outcome,
         "actual": actual,
         "answer_passed": passed,
@@ -811,6 +856,67 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         "source_count": len(sources),
         "audit_id": response.get("auditId"),
         **({"dependency_error": dependency_reason} if dependency_reason else {}),
+    }
+
+
+def reconcile_mutable_mantis_oracle(
+    case: AccuracyCase,
+    response: Dict[str, Any],
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """실패한 최신 목록 케이스의 기대값과 실제값을 같은 시점에 재검증한다."""
+    if (
+        case.source != "mantis"
+        or not case.mutable_oracle
+        or result.get("outcome") != "assertion_failed"
+        or case.expected_kind not in {"issue_ids", "exact_issue_ids", "ordered_issue_ids"}
+        or not isinstance(case.expected, list)
+        or not case.expected
+        or result.get("routing_passed") is False
+        or result.get("filter_precision_passed") is False
+        or result.get("filter_recall_passed") is False
+    ):
+        return result
+
+    actual_order = observed_ordered_issue_ids(response)
+    expected_ids = [int(value) for value in case.expected]
+    limit = len(expected_ids)
+    if len(actual_order) != limit:
+        return result
+
+    # The oracle must be independent from the system under test. Rebuild it
+    # from the question and a fresh live candidate universe; using the returned
+    # constraints or only expected/actual IDs can bless the same retrieval bug
+    # that produced the wrong answer.
+    try:
+        live_issues = fetch_mantis_snapshot()
+        refreshed_expected = complete_mutable_mantis_ids(case.question, live_issues, limit)
+    except Exception as exc:
+        return {
+            **result,
+            "oracle_reconciliation_error": f"{type(exc).__name__}: {str(exc)[:500]}",
+        }
+    if len(refreshed_expected) != limit:
+        return result
+    if refreshed_expected == expected_ids:
+        # The old oracle is still current, so this is a real answer failure.
+        return result
+    if case.expected_kind == "ordered_issue_ids":
+        reconciled = actual_order == refreshed_expected
+    else:
+        reconciled = set(actual_order) == set(refreshed_expected)
+    if not reconciled:
+        return result
+
+    return {
+        **result,
+        "passed": True,
+        "outcome": "passed",
+        "answer_passed": True,
+        "original_expected": case.expected,
+        "expected": refreshed_expected,
+        "oracle_reconciled": True,
+        "oracle_reconciled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
 
 
@@ -833,7 +939,9 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             stream=False,
             tools=tools,
         ))
-        return {**grade(case, response), "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
+        result = grade(case, response)
+        result = reconcile_mutable_mantis_oracle(case, response, result)
+        return {**result, "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
     except Exception as exc:
         error = f"{type(exc).__name__}: {str(exc)[:500]}"
         dependency_error = isinstance(exc, requests.RequestException) or any(

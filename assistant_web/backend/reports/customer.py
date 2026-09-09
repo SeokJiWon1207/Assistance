@@ -93,14 +93,28 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
     return Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0]
 
 
-def _failure(text: str, constraints: Dict[str, Any], message: str) -> Dict[str, Any]:
+def _failure(
+    text: str,
+    constraints: Dict[str, Any],
+    message: str,
+    *,
+    status: str = "error",
+    error_kind: str = "internal",
+) -> Dict[str, Any]:
     return {
         "content": message,
         "sources": [],
         "retrieval": {
             "query": text,
             "constraints": constraints,
-            "stages": [{"source": "mantis_customer_profile", "status": "error", "reason": message}],
+            "stages": [
+                {
+                    "source": "mantis_customer_profile",
+                    "status": status,
+                    "error_kind": error_kind if status != "ok" else None,
+                    "reason": message,
+                }
+            ],
         },
         "raw": {"mode": "deterministic_customer_profile"},
     }
@@ -113,11 +127,21 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
 
     constraints = extract_query_constraints(text)
     if not (constraints.get("customer_aliases") or constraints.get("customer_exact")):
-        return _failure(text, constraints, "고객사 프로필을 만들 고객사명을 입력해 주세요.")
+        return _failure(
+            text,
+            constraints,
+            "고객사 프로필을 만들 고객사명을 입력해 주세요.",
+            error_kind="validation",
+        )
     try:
         raw_issues = fetch_mantis_recent_issues(total_limit=CUSTOMER_PROFILE_FETCH_LIMIT)
     except Exception as exc:
-        return _failure(text, constraints, f"Mantis 고객사 프로필 조회에 실패했습니다: {exc}")
+        return _failure(
+            text,
+            constraints,
+            f"Mantis 고객사 프로필 조회에 실패했습니다: {exc}",
+            error_kind="dependency",
+        )
 
     issues = [
         normalize_issue(issue)
@@ -129,6 +153,8 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
             text,
             constraints,
             "지정한 고객사·기간·플랫폼·상태 조건에 맞는 이슈가 없습니다.",
+            status="ok",
+            error_kind="no_results",
         )
 
     today = date.today()

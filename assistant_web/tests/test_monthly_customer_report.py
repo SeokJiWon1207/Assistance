@@ -35,9 +35,19 @@ class MonthlyCustomerReportTests(unittest.TestCase):
 
     def test_customer_and_full_month_are_required(self):
         monthly_customer.extract_query_constraints = lambda text: {}
-        self.assertIn("고객사명을 입력", monthly_customer.build_monthly_customer_report("월간 고객사 리포트")["content"])
+        missing_customer = monthly_customer.build_monthly_customer_report("월간 고객사 리포트")
+        self.assertIn("고객사명을 입력", missing_customer["content"])
+        self.assertEqual(
+            missing_customer["retrieval"]["stages"][0]["error_kind"],
+            "validation",
+        )
         monthly_customer.extract_query_constraints = lambda text: {"customer_aliases": ["신한"]}
-        self.assertIn("보고할 월", monthly_customer.build_monthly_customer_report("신한 월간 고객사 리포트")["content"])
+        missing_month = monthly_customer.build_monthly_customer_report("신한 월간 고객사 리포트")
+        self.assertIn("보고할 월", missing_month["content"])
+        self.assertEqual(
+            missing_month["retrieval"]["stages"][0]["error_kind"],
+            "validation",
+        )
 
     def test_report_combines_previous_month_effort_duration_and_aging(self):
         monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
@@ -74,3 +84,4 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         monthly_customer.fetch_mantis_recent_issues = fail
         report = monthly_customer.build_monthly_customer_report("2026년 7월 신한 월간 고객사 리포트")
         self.assertIn("연결 실패", report["content"])
+        self.assertEqual(report["retrieval"]["stages"][0]["error_kind"], "dependency")

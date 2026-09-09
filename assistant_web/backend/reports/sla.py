@@ -195,6 +195,9 @@ def _sla_failure(
     constraints: Dict[str, Any],
     headline: str,
     reason: str,
+    *,
+    status: str = "error",
+    error_kind: str = "internal",
 ) -> Dict[str, Any]:
     return {
         "content": f"{headline}\n\n{reason}",
@@ -202,14 +205,27 @@ def _sla_failure(
         "retrieval": {
             "query": text,
             "constraints": constraints,
-            "stages": [{"source": "mantis_sla", "status": "error", "reason": reason}],
+            "stages": [
+                {
+                    "source": "mantis_sla",
+                    "status": status,
+                    "error_kind": error_kind if status != "ok" else None,
+                    "reason": reason,
+                }
+            ],
         },
         "raw": {"mode": "deterministic_mantis_sla"},
     }
 
 
 def _unavailable(text: str, constraints: Dict[str, Any], reason: str) -> Dict[str, Any]:
-    return _sla_failure(text, constraints, "Mantis 처리시간 분석 도구를 사용할 수 없습니다.", reason)
+    return _sla_failure(
+        text,
+        constraints,
+        "Mantis 처리시간 분석 도구를 사용할 수 없습니다.",
+        reason,
+        error_kind="dependency",
+    )
 
 
 def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
@@ -233,6 +249,8 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
             match_constraints,
             "조건에 맞는 이슈가 없습니다.",
             _no_match_reason(raw_issues, match_constraints),
+            status="ok",
+            error_kind="no_results",
         )
 
     axis = _group_axis(text)

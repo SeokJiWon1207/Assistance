@@ -217,6 +217,7 @@ def run_retrieval_pipeline(
                     {
                         "source": "mantis_id_lookup_reference" if similar_issue_search else "mantis_id_lookup",
                         "status": "error",
+                        "error_kind": "dependency",
                         "reason": exc.detail,
                         "issues_list": [],
                         "meta": {"displayed_count": 0},
@@ -283,6 +284,7 @@ def run_retrieval_pipeline(
                         {
                             "source": "mantis_filter",
                             "status": "error",
+                            "error_kind": "dependency",
                             "reason": exc.detail,
                             "issues_list": [],
                             "meta": {"displayed_count": 0},
@@ -296,6 +298,7 @@ def run_retrieval_pipeline(
                     {
                         "source": "mantis_page_scan",
                         "status": "error",
+                        "error_kind": "dependency",
                         "reason": exc.detail,
                         "issues_list": [],
                         "meta": {"displayed_count": 0},

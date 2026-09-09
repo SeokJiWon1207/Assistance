@@ -40,6 +40,15 @@ class CustomerProfileReportTests(unittest.TestCase):
 
         self.assertIn("고객사명을 입력", report["content"])
         self.assertEqual(report["retrieval"]["stages"][0]["status"], "error")
+        self.assertEqual(report["retrieval"]["stages"][0]["error_kind"], "validation")
+
+    def test_no_matches_are_a_successful_empty_result(self):
+        customer.fetch_mantis_recent_issues = lambda **kwargs: []
+
+        report = customer.build_customer_profile_report("신한투자증권 고객사 프로필")
+
+        self.assertIn("조건에 맞는 이슈가 없습니다", report["content"])
+        self.assertEqual(report["retrieval"]["stages"][0]["status"], "ok")
 
     def test_profile_combines_trend_backlog_owner_and_duration(self):
         customer.fetch_mantis_recent_issues = lambda **kwargs: [
@@ -77,3 +86,4 @@ class CustomerProfileReportTests(unittest.TestCase):
 
         self.assertIn("연결 오류", report["content"])
         self.assertEqual(report["sources"], [])
+        self.assertEqual(report["retrieval"]["stages"][0]["error_kind"], "dependency")

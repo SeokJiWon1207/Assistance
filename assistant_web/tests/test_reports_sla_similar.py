@@ -129,9 +129,11 @@ class SlaReportTest(unittest.TestCase):
              "created_at": "2026-01-01", "updated_at": "2026-01-02"},
         ])
 
-        content = sla.build_sla_report("ebest 장기 적체 알려줘")["content"]
+        report = sla.build_sla_report("ebest 장기 적체 알려줘")
+        content = report["content"]
         self.assertIn("조건에 맞는 이슈가 없습니다", content)
         self.assertIn("상태 조건을 빼면 1건", content)
+        self.assertEqual(report["retrieval"]["stages"][0]["status"], "ok")
         # 결과를 비우지 않은 조건은 힌트에 나오면 안 된다.
         self.assertNotIn("고객사 조건을 빼면", content)
 

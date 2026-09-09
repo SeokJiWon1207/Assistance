@@ -66,14 +66,27 @@ def _effort_total(issue: Dict[str, Any]) -> float:
     ), 4)
 
 
-def _failure(text: str, constraints: Dict[str, Any], message: str) -> Dict[str, Any]:
+def _failure(
+    text: str,
+    constraints: Dict[str, Any],
+    message: str,
+    *,
+    error_kind: str = "internal",
+) -> Dict[str, Any]:
     return {
         "content": message,
         "sources": [],
         "retrieval": {
             "query": text,
             "constraints": constraints,
-            "stages": [{"source": "mantis_monthly_customer", "status": "error", "reason": message}],
+            "stages": [
+                {
+                    "source": "mantis_monthly_customer",
+                    "status": "error",
+                    "error_kind": error_kind,
+                    "reason": message,
+                }
+            ],
         },
         "raw": {"mode": "deterministic_monthly_customer_report"},
     }
@@ -85,10 +98,20 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
         return None
     constraints = extract_query_constraints(text)
     if not (constraints.get("customer_aliases") or constraints.get("customer_exact")):
-        return _failure(text, constraints, "월간 리포트를 만들 고객사명을 입력해 주세요.")
+        return _failure(
+            text,
+            constraints,
+            "월간 리포트를 만들 고객사명을 입력해 주세요.",
+            error_kind="validation",
+        )
     bounds = _month_bounds(constraints)
     if not bounds:
-        return _failure(text, constraints, "보고할 월을 '2026년 8월' 또는 '지난달'처럼 입력해 주세요.")
+        return _failure(
+            text,
+            constraints,
+            "보고할 월을 '2026년 8월' 또는 '지난달'처럼 입력해 주세요.",
+            error_kind="validation",
+        )
     start, end = bounds
     previous_start, previous_end = _previous_month(start)
     today = date.today()
@@ -101,7 +124,12 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     try:
         raw_issues = fetch_mantis_recent_issues(total_limit=MONTHLY_CUSTOMER_FETCH_LIMIT)
     except Exception as exc:
-        return _failure(text, constraints, f"Mantis 월간 고객사 조회에 실패했습니다: {exc}")
+        return _failure(
+            text,
+            constraints,
+            f"Mantis 월간 고객사 조회에 실패했습니다: {exc}",
+            error_kind="dependency",
+        )
 
     scope_constraints = {
         key: value for key, value in constraints.items()
