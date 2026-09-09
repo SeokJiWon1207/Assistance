@@ -497,28 +497,24 @@ def collect_mantis_live_ids_in_range(
     constraints: Dict[str, Any],
     max_pages: int = 8,
     page_size: int = 100,
-) -> Optional[Dict[str, Dict[str, Any]]]:
+) -> Dict[str, Any]:
     """라이브 Mantis API를 페이징하며 제약(고객사/상태/등록일 범위 등)에 맞는 이슈를
     ID별로 수집한다. 라이브 이슈는 실제 created_at을 갖고 있어 날짜 필터가 정확하다.
 
     로컬 스냅샷은 재구축 시점(예: 2026-05-07)의 옛 포맷이라 상당수 문서에 등록일이
     없어 월/연 단위 카운트가 0으로 새는 문제가 있다. 날짜 조건이 있는 집계에서는 이
-    함수로 라이브 결과를 병합해 정확도를 보완한다. 실패하면 None을 반환해 호출부가
-    스냅샷 단독 집계로 폴백하게 한다."""
-    settings = get_mantis_settings()
-    headers = get_mantis_headers()
+    함수로 라이브 결과를 병합해 정확도를 보완한다. 실패 이유와 완료 여부를 함께
+    반환해 호출부가 오래된 스냅샷 값을 현재의 확정값처럼 표시하지 않게 한다."""
     collected: Dict[str, Dict[str, Any]] = {}
+    scanned_pages = 0
     try:
         for page in range(1, max_pages + 1):
-            response = requests.get(
-                settings["url"],
-                headers=headers,
-                params={"page_size": page_size, "page": page},
+            issues = fetch_mantis_issues(
+                {"page_size": page_size, "page": page},
                 timeout=30,
+                attempts=2,
             )
-            if response.status_code != 200:
-                return None
-            issues = response.json().get("issues", [])
+            scanned_pages += 1
             if not issues:
                 break
             for issue in issues:
@@ -528,9 +524,21 @@ def collect_mantis_live_ids_in_range(
                         collected[str(issue_id)] = issue
             if len(issues) < page_size:
                 break
-    except requests.RequestException:
-        return None
-    return collected
+    except (requests.RequestException, HTTPException) as exc:
+        return {
+            "status": "error",
+            "error_kind": "dependency",
+            "issues": collected,
+            "reason": f"Mantis live count query failed: {type(exc).__name__}: {exc}",
+            "scanned_pages": scanned_pages,
+        }
+    return {
+        "status": "ok",
+        "error_kind": "",
+        "issues": collected,
+        "reason": "",
+        "scanned_pages": scanned_pages,
+    }
 
 
 def execute_mantis_filter_search(
@@ -751,8 +759,10 @@ def revalidate_mantis_snapshot_stage(
         (constraints.get("people") or {}).get("names")
         or constraints.get("statuses")
         or constraints.get("excluded_statuses")
+        or constraints.get("platform_key")
+        or constraints.get("excluded_platform_keys")
         or any(
-            clause.get("field") in {"owner", "status"}
+            clause.get("field") in {"owner", "status", "platform"}
             for clause in constraints.get("filter_clauses", [])
         )
     )

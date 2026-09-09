@@ -283,6 +283,28 @@ class ConstraintGroundingTests(unittest.TestCase):
 
 
 class ScreenNumberAccuracyTests(unittest.TestCase):
+    @patch.object(mantis, "fetch_mantis_issues")
+    def test_live_count_collection_returns_error_metadata(self, fetch_issues):
+        fetch_issues.side_effect = requests.ReadTimeout("slow")
+
+        result = mantis.collect_mantis_live_ids_in_range({}, max_pages=8)
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["error_kind"], "dependency")
+        self.assertEqual(result["issues"], {})
+        self.assertEqual(result["scanned_pages"], 0)
+        self.assertIn("ReadTimeout", result["reason"])
+
+    @patch.object(mantis, "fetch_mantis_issues")
+    def test_live_count_collection_reports_completed_pages(self, fetch_issues):
+        fetch_issues.side_effect = [[{"id": 2}, {"id": 1}], []]
+
+        result = mantis.collect_mantis_live_ids_in_range({}, max_pages=8, page_size=2)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(set(result["issues"]), {"1", "2"})
+        self.assertEqual(result["scanned_pages"], 2)
+
     @patch.object(mantis, "get_mantis_headers", return_value={})
     @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
     @patch.object(mantis.requests, "get")

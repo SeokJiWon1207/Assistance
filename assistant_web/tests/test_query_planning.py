@@ -662,7 +662,10 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertTrue(issue_matches_constraints(self.issue(1, "2025-10-23"), constraints))
         self.assertFalse(issue_matches_constraints(self.issue(2, "2026-01-21"), constraints))
 
-    @patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value={})
+    @patch(
+        "backend.reports.aggregate.collect_mantis_live_ids_in_range",
+        return_value={"status": "ok", "issues": {}, "reason": "", "scanned_pages": 8},
+    )
     @patch("backend.reports.aggregate.scan_mantis_documents")
     def test_count_report_counts_all_matches_not_top_five(self, scan_documents, _live):
         # 날짜 조건이 있으면 스냅샷 matched_ids와 라이브 결과를 합집합한다.
@@ -727,7 +730,10 @@ class QueryPlanningTests(unittest.TestCase):
             extract_query_constraints(question),
             {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
         )
-        with patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value=live):
+        with patch(
+            "backend.reports.aggregate.collect_mantis_live_ids_in_range",
+            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8},
+        ):
             report = build_mantis_count_report(question, plan)
         self.assertIsNotNone(report)
         self.assertIn("총 2건입니다.", report["content"])
@@ -759,10 +765,48 @@ class QueryPlanningTests(unittest.TestCase):
             extract_query_constraints(question),
             {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
         )
-        with patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value=live):
+        with patch(
+            "backend.reports.aggregate.collect_mantis_live_ids_in_range",
+            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8},
+        ):
             report = build_mantis_count_report(question, plan)
         self.assertIn("총 2건입니다.", report["content"])
         self.assertIn("실시간 최신 800건 기준", report["content"])
+
+    @patch("backend.reports.aggregate.scan_mantis_documents")
+    def test_explicit_month_count_reports_partial_error_when_live_query_fails(self, scan_documents):
+        scan_documents.return_value = {
+            "available": True,
+            "scanned_count": 800,
+            "matched_count": 5,
+            "matched_ids": {1, 2, 3, 4, 5},
+            "issues": [self.normalized_issue(5, "2026-08-10")],
+            "reason": "",
+        }
+        question = "최신 800건 기준으로 2026년 8월 신한 이슈 몇개야?"
+        plan = build_query_plan(
+            question,
+            {"source": "mantis", "planner": "rule", "confidence": 1.0},
+            extract_query_constraints(question),
+            {"planned": True, "source": "mantis", "operation": "count", "reason": "월별"},
+        )
+        with patch(
+            "backend.reports.aggregate.collect_mantis_live_ids_in_range",
+            return_value={
+                "status": "error",
+                "issues": {},
+                "reason": "Mantis live count query failed: ReadTimeout",
+                "scanned_pages": 0,
+            },
+        ):
+            report = build_mantis_count_report(question, plan)
+
+        stage = report["retrieval"]["stages"][0]
+        self.assertEqual(stage["status"], "partial_error")
+        self.assertEqual(stage["error_kind"], "dependency")
+        self.assertFalse(stage["meta"]["scan_complete"])
+        self.assertIn("정확한 건수를 확정할 수 없습니다", report["content"])
+        self.assertNotIn("총 5건입니다", report["content"])
 
     def test_audit_rejects_legacy_plan_that_omits_year_and_count(self):
         question = "2025년 신한 이슈 몇개야?"

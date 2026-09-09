@@ -530,6 +530,9 @@ def build_mantis_count_report(
     total_count = int(snapshot["matched_count"])
     scan_complete = not explicit_snapshot
     merged_live = False
+    live_error = ""
+    live_error_kind = ""
+    live_scanned_pages = 0
     if date_range:
         # 스냅샷 등록일 누락으로 새는 건수를 라이브 결과로 보완한다. 스냅샷 매칭 ID와
         # 라이브 매칭 ID를 합집합해 중복 없이 정확한 총계를 낸다.
@@ -539,8 +542,10 @@ def build_mantis_count_report(
         window_match = re.search(r"최신\s*(\d+)\s*건\s*기준", text)
         if window_match:
             window_pages = max(1, min((int(window_match.group(1)) + 99) // 100, 30))
-        live_map = collect_mantis_live_ids_in_range(constraints, max_pages=window_pages)
-        if live_map is not None:
+        live_result = collect_mantis_live_ids_in_range(constraints, max_pages=window_pages)
+        live_map = live_result.get("issues") or {}
+        live_scanned_pages = int(live_result.get("scanned_pages") or 0)
+        if live_result.get("status") == "ok":
             if explicit_snapshot:
                 # 최신 N건 창을 명시한 요청은 현재 API가 반환한 그 창만 사용한다.
                 # 오래된 로컬 인덱스와 합집합하면 요청 범위를 벗어난 이슈가 다시
@@ -566,6 +571,9 @@ def build_mantis_count_report(
                 )
             scan_complete = True
             merged_live = True
+        else:
+            live_error = str(live_result.get("reason") or "Mantis live count query failed")
+            live_error_kind = str(live_result.get("error_kind") or "dependency")
     criteria = format_issue_list_criteria(constraints, normalized_issues)
     if merged_live and explicit_snapshot:
         scope = f"Mantis 실시간 최신 {snapshot_limit}건 기준"
@@ -575,11 +583,19 @@ def build_mantis_count_report(
         scope = f"최신 {snapshot_limit}건 기준"
     else:
         scope = f"Mantis 인덱스 전체 {snapshot['scanned_count']}건 기준"
-    lines = [
-        f"검색 기준: {criteria}, {scope}",
-        "",
-        f"총 {total_count}건입니다.",
-    ]
+    if live_error:
+        lines = [
+            f"검색 기준: {criteria}, {scope}",
+            "",
+            "Mantis 실시간 조회가 완료되지 않아 정확한 건수를 확정할 수 없습니다.",
+            f"로컬 스냅샷 참고값은 {total_count}건이며 현재 값과 다를 수 있습니다.",
+        ]
+    else:
+        lines = [
+            f"검색 기준: {criteria}, {scope}",
+            "",
+            f"총 {total_count}건입니다.",
+        ]
     group_lines = format_count_group_lines(snapshot.get("group_counts") or {}, group_by)
     if group_lines:
         # 그룹 집계를 요청했으면 총계보다 그룹별 건수가 답의 본문이다.
@@ -602,12 +618,15 @@ def build_mantis_count_report(
         "stages": [
             {
                 "source": "mantis_count",
-                "status": "ok",
+                "status": "partial_error" if live_error else "ok",
+                "error_kind": live_error_kind or None,
+                "reason": live_error or None,
                 "meta": {
                     "operation": "count",
                     "snapshot_limit": snapshot_limit,
                     "scanned_count": snapshot["scanned_count"],
                     "scan_complete": scan_complete,
+                    "live_scanned_pages": live_scanned_pages,
                     "total_count": total_count,
                     "displayed_count": len(representative_issues),
                     "applied_filters": constraints,
