@@ -73,6 +73,15 @@
     return { events, rest };
   }
 
+  function shouldSubmitPromptOnKeydown(event = {}) {
+    return event.key === "Enter"
+      && !event.shiftKey
+      && !event.isComposing
+      && event.keyCode !== 229
+      && event.which !== 229
+      && !event.repeat;
+  }
+
   function buildTeamTemplateQuestion(template, values = {}) {
     if (!template || typeof template.questionTemplate !== "string") return "";
     const fields = new Map((template.fields || []).map((field) => [field.name, field]));
@@ -113,6 +122,7 @@
     buildChatMessages,
     buildTeamTemplateQuestion,
     parseSseBuffer,
+    shouldSubmitPromptOnKeydown,
   });
 
   globalScope.AssistantFrontendCore = api;

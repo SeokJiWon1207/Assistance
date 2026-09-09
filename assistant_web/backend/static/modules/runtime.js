@@ -8,6 +8,7 @@ const {
   buildChatMessages,
   buildTeamTemplateQuestion,
   parseSseBuffer,
+  shouldSubmitPromptOnKeydown,
 } = globalThis.AssistantFrontendCore;
 
 export const state = {
@@ -212,5 +213,6 @@ export {
   conversationContentChanged,
   deriveConversationTitle,
   parseSseBuffer,
+  shouldSubmitPromptOnKeydown,
   storageSafeMessages,
 };

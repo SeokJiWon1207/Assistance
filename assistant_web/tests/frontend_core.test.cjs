@@ -10,6 +10,7 @@ const {
   buildChatMessages,
   buildTeamTemplateQuestion,
   parseSseBuffer,
+  shouldSubmitPromptOnKeydown,
 } = require("../backend/static/frontend_core.js");
 
 const configuredTemplates = JSON.parse(
@@ -100,6 +101,16 @@ test("parseSseBuffer flushes a final frame without a blank terminator", () => {
   const parsed = parseSseBuffer('data: {"type":"done"}', true);
   assert.deepEqual(parsed.events, [{ type: "done" }]);
   assert.equal(parsed.rest, "");
+});
+
+test("shouldSubmitPromptOnKeydown ignores Korean IME composition and repeated Enter", () => {
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter" }), true);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", shiftKey: true }), false);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", isComposing: true }), false);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", keyCode: 229 }), false);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", which: 229 }), false);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", repeat: true }), false);
+  assert.equal(shouldSubmitPromptOnKeydown({ key: "a" }), false);
 });
 
 test("buildTeamTemplateQuestion creates every configured shared template question", () => {

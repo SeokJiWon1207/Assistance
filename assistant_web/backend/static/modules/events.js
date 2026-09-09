@@ -1,4 +1,4 @@
-import { state, els, apiFetch, buildTeamTemplateQuestion } from "./runtime.js";
+import { state, els, apiFetch, buildTeamTemplateQuestion, shouldSubmitPromptOnKeydown } from "./runtime.js";
 import { createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
@@ -35,7 +35,7 @@ els.form.addEventListener("submit", async (event) => {
 
 els.input.addEventListener("input", autoResizeInput);
 els.input.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
+  if (shouldSubmitPromptOnKeydown(event)) {
     event.preventDefault();
     els.form.requestSubmit();
   }
