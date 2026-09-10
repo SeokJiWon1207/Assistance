@@ -132,6 +132,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       followUps: answer.followUps || [],
       verification: answer.verification || null,
       auditId: answer.auditId || "",
+      notionActionId: answer.notionActionId || "",
       abTest: answer.abTest || null,
       effortChart: answer.effortChart || null,
       effortRanking: answer.effortRanking || null,

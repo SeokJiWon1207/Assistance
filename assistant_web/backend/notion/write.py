@@ -13,6 +13,7 @@ from backend.config import (
     get_notion_settings as _get_notion_settings,
 )
 from backend.notion.client import fetch_notion_database_title, fetch_notion_users
+from backend.notion.actions import consume_action, save_action
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import (
     NOTION_WRITE_CANCEL_PHRASES,
@@ -127,11 +128,11 @@ def notion_children_from_content(content: Optional[str]) -> List[Dict[str, Any]]
     ]
 
 
-def create_notion_page(request: NotionPageWriteRequest) -> Dict[str, Any]:
+def create_notion_page(request: NotionPageWriteRequest, *, prepared_properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     database_id = select_notion_database_id(request.databaseId or request.databaseLabel)
     body: Dict[str, Any] = {
         "parent": {"database_id": database_id},
-        "properties": build_notion_write_properties(database_id, request.model_dump(), require_title=True),
+        "properties": prepared_properties if prepared_properties is not None else build_notion_write_properties(database_id, request.model_dump(), require_title=True),
     }
     children = notion_children_from_content(request.content)
     if children:
@@ -156,7 +157,7 @@ def create_notion_page(request: NotionPageWriteRequest) -> Dict[str, Any]:
     )
 
 
-def update_notion_page(page_id: str, request: NotionPageUpdateRequest) -> Dict[str, Any]:
+def update_notion_page(page_id: str, request: NotionPageUpdateRequest, *, expected_database_id: Optional[str] = None, prepared_properties: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     page_id = validate_notion_page_id(page_id)
     page_response = requests.get(
         f"{NOTION_API_BASE}/pages/{page_id}",
@@ -173,8 +174,12 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest) -> Dict[s
     if not database_id:
         raise HTTPException(status_code=400, detail="DB 항목이 아닌 Notion 페이지는 수정할 수 없습니다.")
     ensure_configured_notion_database(database_id)
+    if expected_database_id and database_id.replace("-", "") != expected_database_id.replace("-", ""):
+        raise HTTPException(status_code=409, detail="확인 이후 문서의 DB가 변경되었습니다. 다시 요청해 주세요.")
+    if page.get("archived") or page.get("in_trash"):
+        raise HTTPException(status_code=409, detail="보관되거나 삭제된 문서는 수정하지 않습니다.")
 
-    properties = build_notion_write_properties(database_id, request.model_dump(), require_title=False)
+    properties = prepared_properties if prepared_properties is not None else build_notion_write_properties(database_id, request.model_dump(), require_title=False)
     if not properties:
         raise HTTPException(status_code=400, detail="수정할 수 있는 Notion 속성이 없습니다.")
 
@@ -380,8 +385,8 @@ def resolve_notion_write_action(text: str, write_intent: str) -> Dict[str, Any]:
     }
 
 
-def build_notion_write_preview(text: str, write_intent: str) -> Dict[str, Any]:
-    resolved = resolve_notion_write_action(text, write_intent)
+def build_notion_write_preview(text: str, write_intent: str, *, resolved: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    resolved = resolved or resolve_notion_write_action(text, write_intent)
     if not resolved["ready"]:
         return resolved["response"]
 
@@ -397,7 +402,7 @@ def build_notion_write_preview(text: str, write_intent: str) -> Dict[str, Any]:
         for key in ("owner", "dueDate", "memo"):
             if fields.get(key):
                 lines.append(f"- {NOTION_WRITE_FIELD_LABELS[key]}: {fields[key]}")
-        lines.extend(["", "이대로 진행하려면 '네', 취소하려면 '취소'라고 답해주세요."])
+        lines.extend(["", "10분 안에 '네'로 확인하거나 '취소'라고 답해주세요."])
         return {
             "content": "\n".join(lines),
             "sources": [],
@@ -417,7 +422,7 @@ def build_notion_write_preview(text: str, write_intent: str) -> Dict[str, Any]:
     for key, label in NOTION_WRITE_FIELD_LABELS.items():
         if fields.get(key):
             lines.append(f"  · {label}: {fields[key]}")
-    lines.extend(["", "이대로 진행하려면 '네', 취소하려면 '취소'라고 답해주세요."])
+    lines.extend(["", "10분 안에 '네'로 확인하거나 '취소'라고 답해주세요."])
     return {
         "content": "\n".join(lines),
         "sources": build_sources_from_notion_pages([page]),
@@ -438,17 +443,23 @@ def execute_notion_write_command(text: str) -> Dict[str, Any]:
     if not resolved["ready"]:
         return resolved["response"]
 
+    return execute_resolved_notion_action(resolved)
+
+
+def execute_resolved_notion_action(resolved: Dict[str, Any]) -> Dict[str, Any]:
     if resolved["action"] == "create":
         fields = resolved["fields"]
         page = create_notion_page(
             NotionPageWriteRequest(
+                databaseId=resolved.get("database_id"),
                 databaseLabel=resolved["database_label"],
                 title=resolved["title"],
                 status=fields.get("status") or "등록됨",
                 owner=fields.get("owner"),
                 dueDate=fields.get("dueDate"),
                 memo=fields.get("memo"),
-            )
+            ),
+            prepared_properties=resolved.get("prepared_properties"),
         )
         return {
             "content": (
@@ -463,7 +474,9 @@ def execute_notion_write_command(text: str) -> Dict[str, Any]:
         }
 
     fields = resolved["fields"]
-    page = update_notion_page(resolved["target_page"]["id"], NotionPageUpdateRequest(**fields))
+    page = update_notion_page(resolved["target_page"]["id"], NotionPageUpdateRequest(**fields),
+                             expected_database_id=resolved["target_page"].get("database_id"),
+                             prepared_properties=resolved.get("prepared_properties"))
     changed_labels = [NOTION_WRITE_FIELD_LABELS[key] for key in NOTION_WRITE_FIELD_LABELS if fields.get(key)]
     return {
         "content": (
@@ -485,40 +498,41 @@ def run_notion_write_command(
     messages: List[ChatMessage],
     *,
     allow_write: bool = True,
+    user_uid: str = "",
 ) -> Optional[Dict[str, Any]]:
-    find_pending = compat_dependency(
-        "find_pending_notion_write_command", find_pending_notion_write_command
-    )
-    is_confirm = compat_dependency(
-        "is_notion_write_confirm_phrase", is_notion_write_confirm_phrase
-    )
-    execute_write = compat_dependency(
-        "execute_notion_write_command", execute_notion_write_command
-    )
-    pending_command = find_pending(messages)
-    if pending_command:
-        if is_notion_write_cancel_phrase(text):
-            return {
-                "content": "🚫 Notion 작업을 취소했습니다.",
-                "sources": [],
-                "raw": {"mode": "notion_write_cancelled"},
-            }
-        if is_confirm(text):
-            if not allow_write:
-                return {
-                    "content": "Notion 수정은 매니저 이상만 가능합니다.",
-                    "sources": [],
-                    "raw": {"mode": "notion_write_forbidden"},
-                }
-            return execute_write(pending_command)
-        # 확인/취소 문구가 아니면 대기 중이던 작업은 그대로 소멸시킨다(서버에 상태를
-        # 남기지 않으므로 다시 언급하지 않는 한 실행되지 않는다). 현재 입력은 아래에서
-        # 새 명령으로 다시 판별한다.
-
+    pending = compat_dependency("find_pending_notion_write_command", find_pending_notion_write_command)(messages)
+    action_id = messages[-2].notionActionId if len(messages) >= 2 and messages[-2].role == "assistant" else ""
+    if (pending or action_id) and (is_notion_write_confirm_phrase(text) or is_notion_write_cancel_phrase(text)):
+        if not allow_write or not user_uid:
+            return {"content": "Notion 수정은 로그인한 매니저 이상만 가능합니다.", "sources": [],
+                    "raw": {"mode": "notion_write_forbidden"}}
+        return consume_action(action_id, user_uid, execute_resolved_notion_action,
+                              cancel=is_notion_write_cancel_phrase(text))
     write_intent = notion_write_intent(text)
     if not write_intent:
         return None
-    return build_notion_write_preview(text, write_intent)
+    if not allow_write or not user_uid:
+        return {"content": "Notion 수정은 로그인한 매니저 이상만 가능합니다.", "sources": [],
+                "raw": {"mode": "notion_write_forbidden"}}
+    resolved = resolve_notion_write_action(text, write_intent)
+    if not resolved["ready"]:
+        return resolved["response"]
+    if resolved["action"] == "create":
+        resolved["database_id"] = select_notion_database_id(resolved["database_label"])
+    database_id = resolved.get("database_id") or resolved["target_page"].get("database_id")
+    database_id = ensure_configured_notion_database(str(database_id or ""))
+    request_data = dict(resolved["fields"])
+    if resolved["action"] == "create":
+        request_data.update(title=resolved["title"], status=request_data.get("status") or "등록됨")
+    properties = build_notion_write_properties(database_id, request_data, require_title=resolved["action"] == "create")
+    if not properties:
+        raise HTTPException(status_code=400, detail="수정할 수 있는 Notion 속성이 없습니다.")
+    schema = notion_property_schema(database_id)
+    # 속성 이름이 바뀌더라도 다른 속성으로 재해석하지 않도록 안정적인 ID를 저장한다.
+    resolved["prepared_properties"] = {str(schema[name].get("id") or name): value for name, value in properties.items()}
+    preview = build_notion_write_preview(text, write_intent, resolved=resolved)
+    preview["notionActionId"] = save_action(user_uid, resolved)
+    return preview
 
 
 __all__ = [

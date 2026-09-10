@@ -235,20 +235,10 @@ class NotionWriteCommandTests(unittest.TestCase):
             ChatMessage(role="assistant", content=f"{NOTION_WRITE_CONFIRM_HEADER_CREATE}\n미리보기"),
             ChatMessage(role="user", content="취소"),
         ]
-        self.assertEqual(write.run_notion_write_command("취소", messages)["raw"]["mode"], "notion_write_cancelled")
-        with (
-            patch.object(
-                write,
-                "compat_dependency",
-                side_effect=lambda _name, default: default,
-            ),
-            patch.object(
-                write,
-                "execute_notion_write_command",
-                return_value={"raw": {"mode": "done"}},
-            ),
-        ):
-            self.assertEqual(write.run_notion_write_command("네", messages)["raw"]["mode"], "done")
+        self.assertEqual(write.run_notion_write_command("네", messages)["raw"]["mode"], "notion_write_forbidden")
+        with self.assertRaises(HTTPException) as raised:
+            write.run_notion_write_command("네", messages, user_uid="manager")
+        self.assertEqual(raised.exception.status_code, 409)
         self.assertIsNone(write.run_notion_write_command("일반 질문", []))
 
 

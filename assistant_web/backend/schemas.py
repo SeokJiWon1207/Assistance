@@ -68,6 +68,7 @@ class StructuredQueryPlan(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    notionActionId: str = Field(default="", max_length=32)
     role: Literal["system", "user", "assistant"]
     content: str = Field(max_length=30000)
 
@@ -168,6 +169,7 @@ class PlaybookCandidate(BaseModel):
 
 
 class ConversationMessage(BaseModel):
+    notionActionId: str = Field(default="", max_length=32)
     role: Literal["user", "assistant"]
     content: str = Field(default="", max_length=30000)
     sources: List[ConversationSource] = Field(default_factory=list, max_length=20)
