@@ -9,6 +9,8 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import socket
+from unittest.mock import patch
 from contextlib import closing
 from pathlib import Path
 
@@ -68,12 +70,38 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="assistant-tests-") as temporary_directory:
         snapshot_path = Path(temporary_directory) / "mantis_fixture.sqlite3"
         create_snapshot(snapshot_path)
-        os.environ["CHROMA_DB_PATH"] = str(snapshot_path)
+        isolated_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key in {"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "PYTHONWARNINGS"}
+        }
+        isolated_env.update(
+            {
+                "CHROMA_DB_PATH": str(snapshot_path),
+                "ASSISTANT_RUNTIME_DIR": temporary_directory,
+                "AUTH_USERS_DB_PATH": str(Path(temporary_directory) / "users.sqlite3"),
+                "WORKSPACE_DB_PATH": str(Path(temporary_directory) / "workspace.sqlite3"),
+                "AUDIT_DB_PATH": str(Path(temporary_directory) / "audit.sqlite3"),
+                "ANONYMIZED_TELEMETRY": "False",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+        )
         os.chdir(APP_DIR)
         sys.path.insert(0, str(APP_DIR))
-        suite = unittest.defaultTestLoader.discover(str(APP_DIR / "tests"), pattern="test_*.py")
-        result = unittest.TextTestRunner(verbosity=2).run(suite)
-        return 0 if result.wasSuccessful() else 1
+        sys.dont_write_bytecode = True
+        with patch.dict(os.environ, isolated_env, clear=True):
+            from backend import environment
+            from pydantic_settings.sources.providers.dotenv import DotEnvSettingsSource
+
+            with (
+                patch.object(environment, "load_dotenv"),
+                patch.object(DotEnvSettingsSource, "_read_env_files", return_value={}),
+                patch.object(socket.socket, "connect", side_effect=RuntimeError("Test network access blocked")),
+                patch.object(socket.socket, "connect_ex", side_effect=RuntimeError("Test network access blocked")),
+            ):
+                suite = unittest.defaultTestLoader.discover(str(APP_DIR / "tests"), pattern="test_*.py")
+                result = unittest.TextTestRunner(verbosity=2).run(suite)
+                return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == "__main__":
