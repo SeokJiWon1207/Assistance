@@ -22,18 +22,20 @@ def run_sqlite_migrations(
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(database_path)) as connection:
         connection.execute("PRAGMA busy_timeout = 5000")
-        current_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
         latest_version = len(migrations)
-        if current_version > latest_version:
-            raise RuntimeError(
-                f"{database_name} DB version {current_version} is newer than supported "
-                f"version {latest_version}"
-            )
-
-        for target_version in range(current_version + 1, latest_version + 1):
+        while int(connection.execute("PRAGMA user_version").fetchone()[0]) != latest_version:
+            # 버전 조회도 쓰기 잠금 안에서 수행해 동시 시작의 중복 DDL을 막는다.
             with connection:
-                migrations[target_version - 1](connection)
-                connection.execute(f"PRAGMA user_version = {target_version}")
+                connection.execute("BEGIN IMMEDIATE")
+                current_version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                if current_version > latest_version:
+                    raise RuntimeError(
+                        f"{database_name} DB version {current_version} is newer than supported version {latest_version}"
+                    )
+                if current_version == latest_version:
+                    break
+                migrations[current_version](connection)
+                connection.execute(f"PRAGMA user_version = {current_version + 1}")
     try:
         os.chmod(database_path, 0o600)
     except OSError:

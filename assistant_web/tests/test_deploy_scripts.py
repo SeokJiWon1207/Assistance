@@ -30,6 +30,26 @@ class DeploymentScriptTests(unittest.TestCase):
         )
         self.assertIn("Activation failed; rolling current back", script)
 
+    def test_shared_database_changes_are_quiesced_backed_up_and_recoverable(self):
+        script = (DEPLOY_DIR / "setup_server.sh").read_text(encoding="utf-8")
+        preflight = script.index("scripts/runtime_databases.py check")
+        trap = script.index("trap rollback_deployment ERR")
+        backup = script.index('scripts/runtime_databases.py" backup')
+        migration = script.index('scripts/runtime_databases.py" initialize')
+        activation = script.index('atomic_switch_current "$RELEASE_DIR"')
+        self.assertLess(preflight, trap)
+        self.assertLess(trap, backup)
+        self.assertLess(backup, migration)
+        self.assertLess(migration, activation)
+        self.assertIn('scripts/runtime_databases.py" restore', script)
+        self.assertIn('scripts/runtime_databases.py" import', script)
+        self.assertIn("database_change_started=1", script)
+        self.assertIn("flock -n 9", script)
+
+    def test_manual_rollback_checks_schema_before_switching_code(self):
+        script = (DEPLOY_DIR / "rollback_release.sh").read_text(encoding="utf-8")
+        self.assertLess(script.index('scripts/runtime_databases.py" check'), script.index('ln -s "$target"'))
+
     def test_deploy_passes_validated_index_mode_to_setup(self):
         script = (DEPLOY_DIR / "deploy_to_ec2.sh").read_text(encoding="utf-8")
 

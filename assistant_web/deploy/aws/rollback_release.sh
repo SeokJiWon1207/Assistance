@@ -6,6 +6,9 @@ APP_PORT="${APP_PORT:-8787}"
 TARGET_RELEASE="${TARGET_RELEASE:-}"
 RELEASES_DIR="$APP_ROOT/releases"
 CURRENT_LINK="$APP_ROOT/current"
+STATE_DIR="${STATE_DIR:-/var/lib/content-ai-assistant}"
+exec 9>"$APP_ROOT/.deployment.lock"
+flock -n 9 || { echo "Another deployment or rollback is running." >&2; exit 1; }
 
 if [[ -z "$TARGET_RELEASE" ]]; then
   echo "Usage: TARGET_RELEASE=YYYYMMDDTHHMMSSZ $0" >&2
@@ -23,6 +26,11 @@ if [[ ! -x "$target/assistant_web/.venv/bin/python" || ! -e "$target/data/mantis
   echo "Target release is incomplete: $target" >&2
   exit 1
 fi
+# 대상 코드가 현재 DB의 복제본을 읽을 수 없으면 링크를 바꾸지 않는다.
+# 오래된 백업으로 자동 복원해 최신 사용자 기록을 잃지 않도록 실패 시 중단한다.
+"$CURRENT_LINK/assistant_web/.venv/bin/python" \
+  "$CURRENT_LINK/assistant_web/scripts/runtime_databases.py" check \
+  --state "$STATE_DIR" --app "$target/assistant_web"
 previous="$(readlink -f "$CURRENT_LINK")"
 temporary_link="$APP_ROOT/.current-rollback-$$"
 

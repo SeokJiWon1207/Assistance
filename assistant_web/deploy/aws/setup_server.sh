@@ -41,6 +41,9 @@ APP_DIR="$RELEASE_DIR/assistant_web"
 
 sudo apt-get update
 sudo apt-get install -y python3 python3-venv python3-pip nginx sqlite3 curl
+# 배포와 수동 롤백은 같은 호스트 잠금을 사용한다.
+exec 9>"$APP_ROOT/.deployment.lock"
+flock -n 9 || { echo "Another deployment or rollback is running." >&2; exit 1; }
 sudo install -d -m 755 -o "$APP_USER" -g "$APP_USER" "$APP_ROOT" "$RELEASES_DIR"
 sudo install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$STATE_DIR"
 
@@ -83,20 +86,20 @@ from backend.environment import load_dotenv
 load_dotenv(Path.cwd() / ".env")
 
 from backend.startup_validation import validate_runtime_security
-from backend.auth import init_users_db
-from backend.audit import init_audit_db
-from backend.workspace import init_workspace_db
 
 validate_runtime_security()
-init_users_db()
-init_workspace_db()
-init_audit_db()
 print("Release preflight passed")
 PY
+
+# 사전 검사는 복제본에만 마이그레이션을 적용한다.
+.venv/bin/python scripts/runtime_databases.py check --state "$STATE_DIR" \
+  --legacy "$APP_ROOT/assistant_web/runtime" --app "$APP_DIR"
 
 rollback_dir="$(mktemp -d /tmp/content-ai-assistant-deploy.XXXXXX)"
 service_existed=0
 nginx_existed=0
+maintenance_created=0
+database_change_started=0
 if sudo test -f "$SERVICE_FILE"; then
   sudo cp -a "$SERVICE_FILE" "$rollback_dir/service"
   service_existed=1
@@ -119,6 +122,17 @@ rollback_deployment() {
   trap - ERR
   set +e
   echo "Activation failed; rolling current back to $previous_current" >&2
+  if [[ "$database_change_started" == "1" ]]; then
+    if ! sudo systemctl stop content-ai-assistant; then
+      echo "Could not stop service; DB restore skipped. Recovery files: $rollback_dir" >&2
+      exit "$exit_code"
+    fi
+    if ! "$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/runtime_databases.py" restore \
+      --state "$STATE_DIR" --backup "$rollback_dir/databases"; then
+      echo "DB restore failed; service remains stopped. Recovery files: $rollback_dir" >&2
+      exit "$exit_code"
+    fi
+  fi
   atomic_switch_current "$previous_current"
   if [[ "$service_existed" == "1" ]]; then
     sudo cp -a "$rollback_dir/service" "$SERVICE_FILE"
@@ -135,6 +149,7 @@ rollback_deployment() {
   if sudo nginx -t; then
     sudo systemctl reload nginx
   fi
+  if [[ "$maintenance_created" == "1" ]]; then rm -f -- "$APP_ROOT/maintenance.on"; fi
   rm -rf -- "$rollback_dir"
   exit "$exit_code"
 }
@@ -291,6 +306,20 @@ SERVICE
 
 sudo systemctl daemon-reload
 sudo systemctl enable content-ai-assistant
+# 공유 DB를 변경하는 동안에는 외부 요청을 막고 기존 프로세스를 중지한다.
+if [[ ! -e "$APP_ROOT/maintenance.on" ]]; then
+  touch "$APP_ROOT/maintenance.on"
+  maintenance_created=1
+fi
+sudo systemctl reload nginx
+sudo systemctl stop content-ai-assistant
+"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/runtime_databases.py" backup \
+  --state "$STATE_DIR" --backup "$rollback_dir/databases"
+database_change_started=1
+"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/runtime_databases.py" import \
+  --state "$STATE_DIR" --legacy "$APP_ROOT/assistant_web/runtime"
+"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/runtime_databases.py" initialize \
+  --state "$STATE_DIR" --app "$APP_DIR"
 atomic_switch_current "$RELEASE_DIR"
 sudo systemctl restart content-ai-assistant
 
@@ -309,6 +338,7 @@ if [[ "$ready" != "1" ]]; then
 fi
 
 sudo systemctl reload nginx
+if [[ "$maintenance_created" == "1" ]]; then rm -f -- "$APP_ROOT/maintenance.on"; fi
 trap - ERR
 rm -rf -- "$rollback_dir"
 
