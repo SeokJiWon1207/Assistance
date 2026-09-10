@@ -52,13 +52,20 @@ from backend.intent.source_router import (
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
 from backend.query_planning import infer_operation
+from backend.intent.request_scope import AUTHENTICATED_OWNER
 
 
 def extract_query_constraints(text: str) -> Dict[str, Any]:
     # "하이"는 하이투자증권의 현업 약칭이기도 하지만, 단독 입력은 인사로 취급한다.
     if is_simple_greeting(text):
         return empty_query_constraints()
-    return extract_scope_constraints(text)
+    constraints = extract_scope_constraints(text)
+    owner = AUTHENTICATED_OWNER.get()
+    if owner:
+        constraints["people"] = {"names": [owner], "role": "handler", "name_origins": {owner: "known"}, "candidates": []}
+        constraints["filter_clauses"] = [item for item in constraints.get("filter_clauses", []) if item["field"] != "owner"]
+        add_filter_clause(constraints["filter_clauses"], "owner", "equals", owner)
+    return constraints
 
 
 def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:

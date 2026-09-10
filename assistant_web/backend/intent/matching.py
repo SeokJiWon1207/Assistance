@@ -15,7 +15,7 @@ from backend.common import (
     text_matches_customer_aliases,
 )
 from backend.config import STATUS_MATCH_ALIASES
-from backend.query_filters import normalize_filter_clauses
+from backend.query_filters import normalize_filter_clauses, matches_source_filters, screen_filter_values
 from backend.query_planning import plan_created_at_matches
 
 
@@ -199,9 +199,17 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         extract_chroma_field(text, "담당자"),
     ):
         return False
-    if not text_matches_constraints(text, {"filter_clauses": constraints.get("filter_clauses", [])}):
-        return False
-    return True
+    return matches_source_filters("chroma", {
+        "customer": extract_project_from_chroma_text(text),
+        "platform": extract_chroma_field(text, "매체구분") or text,
+        "status": extract_chroma_field(text, "현재 상태"),
+        "owner": extract_chroma_field(text, "담당자"),
+        "issue_id": str(issue_id),
+        "screen_number": screen_filter_values(extract_chroma_field(text, "화면번호"), extract_title_from_chroma_text(text)),
+        "created_at": extract_chroma_date(text),
+        "title": extract_title_from_chroma_text(text), "keyword": text,
+    }, constraints.get("filter_clauses") or [])
+
 
 
 __all__ = [

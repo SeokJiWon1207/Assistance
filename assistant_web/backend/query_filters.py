@@ -7,6 +7,11 @@
 
 from __future__ import annotations
 
+import re
+from datetime import date
+from backend.common import normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
+from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_MATCH_ALIASES
+
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
@@ -42,18 +47,142 @@ NEGATIVE_OPERATORS = {"not_equals", "not_in", "not_contains", "not_exists"}
 
 SOURCE_FILTER_FIELDS = {
     "mantis": {
-        "customer", "platform", "status", "owner", "reporter", "issue_id",
-        "screen_number", "created_at", "title", "keyword",
+        "customer",
+        "platform",
+        "status",
+        "owner",
+        "reporter",
+        "issue_id",
+        "screen_number",
+        "created_at",
+        "title",
+        "keyword",
     },
     "notion": {
-        "customer", "platform", "status", "owner", "created_at", "title",
-        "keyword", "database",
+        "customer",
+        "platform",
+        "status",
+        "owner",
+        "created_at",
+        "title",
+        "keyword",
+        "database",
     },
     "chroma": {
-        "customer", "platform", "status", "owner", "issue_id", "screen_number",
-        "created_at", "title", "keyword",
+        "customer",
+        "platform",
+        "status",
+        "owner",
+        "issue_id",
+        "screen_number",
+        "created_at",
+        "title",
+        "keyword",
     },
 }
+
+
+TEXT_OPERATORS = {"equals", "not_equals", "in", "not_in", "contains", "not_contains", "exists", "not_exists"}
+SOURCE_FILTER_OPERATORS = {
+    family: {
+        field: (TEXT_OPERATORS | {"gte", "lte", "between"} if field == "created_at" else TEXT_OPERATORS)
+        for field in fields
+    }
+    for family, fields in SOURCE_FILTER_FIELDS.items()
+}
+
+
+def clause_supported(source: str, clause: Dict[str, Any]) -> bool:
+    field, operator = clause["field"], clause["operator"]
+    if operator not in SOURCE_FILTER_OPERATORS.get(source, {}).get(field, set()):
+        return False
+    if field == "created_at" and operator in {"gte", "lte", "between"}:
+        values = values_for_clause(clause.get("value"))
+        if len(values) != (2 if operator == "between" else 1):
+            return False
+        try:
+            dates = [date.fromisoformat(value) for value in values]
+            return len(dates) == 1 or dates[0] <= dates[1]
+        except ValueError:
+            return False
+    return True
+
+
+def _canonical_filter_value(field: str, value: Any) -> str:
+    normalized = normalize_for_match(str(value or ""))
+    aliases = {"customer": CUSTOMER_ALIASES, "platform": PLATFORM_ALIASES, "status": STATUS_MATCH_ALIASES}.get(
+        field, {}
+    )
+    for key, variants in aliases.items():
+        if normalized in {normalize_for_match(str(item)) for item in [key, *variants]} or (
+            field == "customer" and text_matches_customer_aliases(str(value), [key, *variants])
+        ):
+            return normalize_for_match(key)
+    return normalized
+
+
+def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) -> bool:
+    """실행기와 감사가 같은 필드/연산자 계약을 사용한다."""
+    for clause in normalize_filter_clauses(clauses):
+        if not clause_supported(source, clause):
+            continue
+        field, operator = clause["field"], clause["operator"]
+        raw = fields.get(field, "")
+        candidates = raw if isinstance(raw, list) else [raw]
+        values = values_for_clause(clause.get("value"))
+        if field == "created_at":
+            candidates = [str(item or "")[:10] for item in candidates]
+        raw_candidates, raw_values = candidates, values
+        candidates = [_canonical_filter_value(field, item) for item in candidates if item not in (None, "")]
+        values = [_canonical_filter_value(field, item) for item in values]
+        present = any(candidates)
+        equal = any(candidate == value for candidate in candidates for value in values)
+        contains = any(
+            normalize_for_match(str(value)) in normalize_for_match(str(candidate))
+            for candidate in raw_candidates
+            for value in raw_values
+        )
+        if field == "status":
+            equal = any(
+                text_matches_any_alias(str(candidate), STATUS_MATCH_ALIASES.get(value, [value]))
+                for candidate in raw_candidates
+                for value in raw_values
+            )
+        elif field == "customer":
+            equal = any(
+                text_matches_customer_aliases(str(candidate), [value, _canonical_filter_value(field, value)])
+                for candidate in raw_candidates
+                for value in raw_values
+            )
+        elif field == "platform":
+            equal = any(
+                text_matches_any_alias(str(candidate), PLATFORM_ALIASES.get(value, [value]))
+                for candidate in raw_candidates
+                for value in raw_values
+            )
+        if operator in {"equals", "in"} and not equal:
+            return False
+        if operator in {"not_equals", "not_in"} and equal:
+            return False
+        if operator == "contains" and not contains:
+            return False
+        if operator == "not_contains" and contains:
+            return False
+        if operator == "exists" and not present:
+            return False
+        if operator == "not_exists" and present:
+            return False
+        if operator == "gte" and (not present or candidates[0] < values[0]):
+            return False
+        if operator == "lte" and (not present or candidates[0] > values[0]):
+            return False
+        if operator == "between" and (not present or not values[0] <= candidates[0] <= values[1]):
+            return False
+    return True
+
+
+def screen_filter_values(value: str, title: str) -> List[str]:
+    return [value, *re.findall(r"\[\s*(\d+)\s*\]", title)]
 
 
 def _normalized_values(value: Any) -> List[Any]:
@@ -145,10 +274,10 @@ def values_for_clause(value: Any) -> List[str]:
 
 def filter_audit_for_source(source: str, clauses: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     family = "chroma" if "chroma" in source else "notion" if "notion" in source else "mantis"
-    applied, unapplied = partition_supported_clauses(
-        clauses,
-        tuple(SOURCE_FILTER_FIELDS.get(family, ())),
-    )
+    applied: List[Dict[str, Any]] = []
+    unapplied: List[Dict[str, Any]] = []
+    for clause in normalize_filter_clauses(list(clauses)):
+        (applied if clause_supported(family, clause) else unapplied).append(clause)
     return {
         "source_family": family,
         "applied_filters": applied,

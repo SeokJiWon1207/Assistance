@@ -39,7 +39,7 @@ from backend.notion.schema import (
     notion_property_schema as _notion_property_schema,
     notion_title_property,
 )
-from backend.query_filters import normalize_filter_clauses, values_for_clause
+from backend.query_filters import clause_supported, matches_source_filters, normalize_filter_clauses, values_for_clause
 from backend.query_planning import extract_group_by
 
 
@@ -259,7 +259,11 @@ def notion_page_matches_common_filters(page: Dict[str, Any], clauses: List[Dict[
         "database": page.get("database_label", ""),
     }
     for clause in normalize_filter_clauses(clauses):
-        if clause["field"] not in field_values:
+        if not clause_supported("notion", clause) or clause["field"] not in field_values:
+            continue
+        if clause["field"] == "created_at":
+            if not matches_source_filters("notion", field_values, [clause]):
+                return False
             continue
         candidate_raw = str(field_values[clause["field"]] or "")
         candidate = normalize_for_match(candidate_raw)

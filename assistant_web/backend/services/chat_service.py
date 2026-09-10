@@ -23,6 +23,7 @@ from backend.answers import (
     select_grouped_issue_rows,
     should_return_deterministic_issue_list,
 )
+from backend.intent.request_scope import AUTHENTICATED_OWNER, authenticated_owner_scope
 from backend.admission import CHAT_ADMISSION
 from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status
 from backend.common import clamp_int
@@ -196,7 +197,7 @@ def apply_authenticated_mantis_scope(
     scope_text: Optional[str] = None,
 ) -> str:
     """개인 Mantis 요청에 인증 계정의 담당자명을 검색 조건으로 명시한다."""
-    mantis_username = str((user or {}).get("mantisUsername") or "").strip()
+    mantis_username = str((user or {}).get("mantisUsername") or (user or {}).get("displayName") or "").strip()
     if not mantis_username or not should_scope_to_authenticated_mantis_user(scope_text or text):
         return text
     return f"{text} 담당자: {mantis_username}".strip()
@@ -211,6 +212,21 @@ class DeterministicReportResult:
 
 
 def build_deterministic_report(
+    latest_user_text: str,
+    retrieval_text: str,
+    enabled_tools: Dict[str, Any],
+    messages: List[Any],
+    user: Optional[Dict[str, Any]],
+) -> DeterministicReportResult:
+    scope_text = " ".join(get_recent_user_texts(messages, limit=5)) if is_follow_up_question(latest_user_text) else latest_user_text
+    owner = AUTHENTICATED_OWNER.get()
+    if not owner and should_scope_to_authenticated_mantis_user(scope_text):
+        owner = str((user or {}).get("mantisUsername") or (user or {}).get("displayName") or "").strip()
+    with authenticated_owner_scope(owner):
+        return _build_deterministic_report(latest_user_text, retrieval_text, enabled_tools, messages, user)
+
+
+def _build_deterministic_report(
     latest_user_text: str,
     retrieval_text: str,
     enabled_tools: Dict[str, Any],
@@ -236,18 +252,18 @@ def build_deterministic_report(
         ]
         if enabled_tools.get("vectorDb"):
             report_builders.append(
-                ("similar_resolution", lambda: build_similar_resolution_report(latest_user_text))
+                ("similar_resolution", lambda: build_similar_resolution_report(retrieval_text or latest_user_text))
             )
         report_builders.extend(
             [
-                ("monthly_customer", lambda: build_monthly_customer_report(latest_user_text)),
-                ("customer_profile", lambda: build_customer_profile_report(latest_user_text)),
-                ("sla", lambda: build_sla_report(latest_user_text)),
-                ("pivot", lambda: build_mantis_pivot_report(latest_user_text)),
-                ("spike", lambda: build_mantis_spike_report(latest_user_text)),
-                ("top_customers", lambda: build_top_customers_report(latest_user_text)),
-                ("effort_trend", lambda: build_effort_trend_report(latest_user_text)),
-                ("effort_ranking", lambda: build_effort_ranking_report(latest_user_text)),
+                ("monthly_customer", lambda: build_monthly_customer_report(retrieval_text or latest_user_text)),
+                ("customer_profile", lambda: build_customer_profile_report(retrieval_text or latest_user_text)),
+                ("sla", lambda: build_sla_report(retrieval_text or latest_user_text)),
+                ("pivot", lambda: build_mantis_pivot_report(retrieval_text or latest_user_text)),
+                ("spike", lambda: build_mantis_spike_report(retrieval_text or latest_user_text)),
+                ("top_customers", lambda: build_top_customers_report(retrieval_text or latest_user_text)),
+                ("effort_trend", lambda: build_effort_trend_report(retrieval_text or latest_user_text)),
+                ("effort_ranking", lambda: build_effort_ranking_report(retrieval_text or latest_user_text)),
             ]
         )
         for _report_name, build_report in report_builders:
@@ -255,7 +271,7 @@ def build_deterministic_report(
             if report:
                 return DeterministicReportResult(response=report)
 
-        effort_report = build_effort_report(latest_user_text)
+        effort_report = build_effort_report(retrieval_text or latest_user_text)
         if effort_report:
             if effort_report.pop("needsPerson", False):
                 pending_effort_report = effort_report
@@ -270,7 +286,8 @@ def build_deterministic_report(
         notion_write_result = run_notion_write_command(
             latest_user_text,
             messages,
-            allow_write=not user or user.get("role") in {"manager", "admin"},
+            allow_write=bool(user and user.get("role") in {"manager", "admin"}),
+            user_uid=str((user or {}).get("uid") or ""),
         )
         if notion_write_result:
             return DeterministicReportResult(response=notion_write_result)
@@ -459,6 +476,7 @@ class ChatPipelineContext:
     system_notes: List[str]
     query_constraints: Dict[str, Any]
     active_limit: int
+    authenticated_owner: str = ""
     pending_effort_report: Optional[Dict[str, Any]] = None
     intent_plan: Optional[Dict[str, Any]] = None
     retrieval_result: Optional[Dict[str, Any]] = None
@@ -483,7 +501,7 @@ def prepare_chat_pipeline(
             detail=f"Missing API key env: {model.get('apiKeyEnv')}",
         )
 
-    messages = [message.model_dump() for message in request.messages]
+    messages = [message.model_dump(exclude={"notionActionId"}) for message in request.messages]
     history_limit = clamp_int(os.getenv("MODEL_HISTORY_MAX_MESSAGES", "20"), 2, 200) or 20
     if len(messages) > history_limit:
         messages = messages[-history_limit:]
@@ -516,6 +534,11 @@ def prepare_chat_pipeline(
     scope_text = retrieval_text
     if is_follow_up_question(latest_user_text):
         scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))
+    owner = str((user or {}).get("mantisUsername") or (user or {}).get("displayName") or "").strip()
+    if not should_scope_to_authenticated_mantis_user(scope_text):
+        owner = ""
+    with authenticated_owner_scope(owner):
+        scoped_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
     retrieval_text = apply_authenticated_mantis_scope(
         retrieval_text,
         user,
@@ -535,12 +558,21 @@ def prepare_chat_pipeline(
         retrieval_text=retrieval_text,
         enabled_tools=enabled_tools,
         system_notes=system_notes,
-        query_constraints=extract_query_constraints(retrieval_text) if retrieval_text else {},
+        query_constraints=scoped_constraints,
+        authenticated_owner=owner,
         active_limit=clamp_int(request.searchLimit, 1, 20) or 5,
     )
 
 
-def plan_chat_query(
+def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if user and not context.authenticated_owner and should_scope_to_authenticated_mantis_user(context.latest_user_text):
+        return {"modelId": request.modelId, "content": "개인 이슈를 조회할 담당자명이 등록되어 있지 않습니다. 관리자에게 Mantis 담당자명 등록을 요청해 주세요.",
+                "sources": [], "raw": {"mode": "missing_personal_scope"}}
+    with authenticated_owner_scope(context.authenticated_owner):
+        return _plan_chat_query(request, context, user)
+
+
+def _plan_chat_query(
     request: ChatRequest,
     context: ChatPipelineContext,
     user: Optional[Dict[str, Any]],
