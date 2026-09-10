@@ -12,6 +12,7 @@ from backend.auth import current_request_user, list_users
 from backend.schemas import ConversationMessage
 from backend.workspace import (
     ConversationQuotaError,
+    ConversationConflictError,
     build_my_workspace,
     build_team_dashboard,
     delete_conversation,
@@ -28,6 +29,7 @@ ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 class ConversationWriteRequest(BaseModel):
+    expectedUpdatedAt: str = Field(default="", max_length=64)
     title: str = Field(default="새 대화", max_length=120)
     messages: List[ConversationMessage] = Field(default_factory=list, max_length=80)
     favorite: bool = False
@@ -90,7 +92,10 @@ def put_conversation(
             [message.model_dump(exclude_none=True) for message in payload.messages],
             payload.favorite,
             payload.createdAt,
+            payload.expectedUpdatedAt,
         )
+    except ConversationConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ConversationQuotaError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     return {"conversation": conversation}

@@ -17,6 +17,7 @@
         followUps: message.followUps || [],
         verification: message.verification || null,
         auditId: message.auditId || "",
+        notionActionId: message.notionActionId || "",
         templateId: message.templateId || "",
         feedback: message.feedback || null,
         abTest: message.abTest || null,
@@ -51,9 +52,34 @@
     const history = messages
       .filter((message) => !message.loading && !message.streaming)
       .slice(0, -1)
-      .map((message) => ({ role: message.role, content: message.content }))
+      .map((message) => ({ role: message.role, content: message.content, ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
       .slice(-safeLimit);
     return [...history, { role: "user", content: currentContent }];
+  }
+
+  function mergeConversations(localItems, serverItems, makeId = () => globalScope.crypto.randomUUID()) {
+    const localById = new Map(localItems.map((item) => [item.id, item]));
+    const merged = [];
+    for (const server of serverItems) {
+      const local = localById.get(server.id);
+      localById.delete(server.id);
+      const changed = local && (conversationContentChanged(local.messages, server.messages)
+        || local.title !== server.title || Boolean(local.favorite) !== Boolean(server.favorite));
+      const pending = local && (local.syncPending || (!local.serverUpdatedAt && String(local.updatedAt) > String(server.updatedAt)));
+      if (changed && pending) {
+        if (local.serverUpdatedAt && local.serverUpdatedAt !== server.updatedAt) {
+          merged.push({ ...local, id: makeId(), title: `${local.title || "대화"} (복구본)`, serverUpdatedAt: "", syncPending: true });
+          merged.push({ ...server, serverUpdatedAt: server.updatedAt, syncPending: false });
+        } else {
+          merged.push({ ...local, serverUpdatedAt: server.updatedAt, syncPending: true });
+        }
+      } else {
+        merged.push({ ...server, serverUpdatedAt: server.updatedAt, syncPending: false });
+      }
+    }
+    // 서버 목록은 페이지 일부일 수도 있다. 누락을 삭제로 해석하지 않는다.
+    merged.push(...localById.values());
+    return merged;
   }
 
   function parseSseBuffer(buffer, flush = false) {
@@ -117,6 +143,7 @@
 
   const api = Object.freeze({
     storageSafeMessages,
+    mergeConversations,
     deriveConversationTitle,
     conversationContentChanged,
     buildChatMessages,

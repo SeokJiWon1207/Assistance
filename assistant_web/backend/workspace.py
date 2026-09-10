@@ -33,6 +33,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+class ConversationConflictError(ValueError):
+    """다른 기기에서 변경된 대화를 덮어쓰지 않는다."""
+
+
 class ConversationQuotaError(ValueError):
     """A user exceeded the configured server-side conversation storage quota."""
 
@@ -174,6 +178,7 @@ def save_conversation(
     messages: Iterable[Dict[str, Any]],
     favorite: bool,
     created_at: str = "",
+    expected_updated_at: Optional[str] = None,
 ) -> Dict[str, Any]:
     init_workspace_db()
     now = _now()
@@ -197,6 +202,13 @@ def save_conversation(
         raise ConversationQuotaError("대화 한 건의 저장 크기 제한을 초과했습니다.")
     with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
         connection.execute("BEGIN IMMEDIATE")
+        revision = connection.execute(
+            "SELECT updated_at FROM conversations WHERE user_uid=? AND conversation_id=?",
+            (user_uid, conversation_id),
+        ).fetchone()
+        if expected_updated_at is not None and expected_updated_at != (revision[0] if revision else ""):
+            raise ConversationConflictError("다른 기기에서 대화가 변경되었습니다. 현재 기록을 보존한 뒤 다시 동기화해 주세요.")
+        now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         current = connection.execute(
             """
             SELECT COUNT(*), COALESCE(SUM(
@@ -239,7 +251,6 @@ def save_conversation(
                 now,
             ),
         )
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(
             """

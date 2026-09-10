@@ -31,7 +31,7 @@ class FrontendCoreTests(unittest.TestCase):
         if not node:
             self.skipTest("Node.js가 없어 프런트엔드 단위 테스트를 건너뜁니다.")
         result = subprocess.run(
-            [node, "--test", str(APP_DIR / "tests" / "frontend_core.test.cjs")],
+            [node, "--experimental-vm-modules", "--test", *map(str, sorted((APP_DIR / "tests").glob("frontend*.test.cjs")))],
             cwd=APP_DIR,
             capture_output=True,
             text=True,

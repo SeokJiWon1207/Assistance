@@ -1,5 +1,5 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion, shouldSubmitPromptOnKeydown } from "./runtime.js";
-import { createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 import { showChatView } from "./dashboard.js";
@@ -169,6 +169,7 @@ els.conversationList.addEventListener("click", (event) => {
     if (removedIndex < 0) return;
     // 실행 취소로 되돌릴 수 있도록 삭제 직전 위치와 활성 대화를 함께 기억한다.
     const removed = state.conversations[removedIndex];
+    const deletingUid = state.currentUser?.uid;
     const previousActiveId = state.activeConversationId;
     const previousMessages = [...state.messages];
     state.conversations = state.conversations.filter((item) => item.id !== conversationId);
@@ -181,11 +182,17 @@ els.conversationList.addEventListener("click", (event) => {
     persistConversations();
     renderMessages();
     if (state.currentUser?.uid) {
-      apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" }).catch(() => {});
+      deleteConversationFromServer(removed).catch(() => {
+        if (state.currentUser?.uid !== deletingUid) return;
+        if (!state.conversations.some((item) => item.id === removed.id)) state.conversations.push(removed);
+        persistConversations();
+        showToast("서버에서 삭제하지 못해 대화를 복원했습니다.", "warning");
+      });
     }
     showToast(`"${removed.title || "대화"}"를 삭제했어요.`, "default", {
       label: "실행 취소",
       onClick: () => {
+        if (state.currentUser?.uid !== deletingUid) return;
         // 비어서 채워 넣은 임시 대화를 걷어내고 원래 자리에 되돌린다.
         if (placeholder) {
           state.conversations = state.conversations.filter((item) => item.id !== placeholder.id);
