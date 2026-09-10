@@ -34,7 +34,7 @@ from backend.config import (
     get_mantis_settings,
 )
 from backend.query_planning import plan_created_at_matches
-from backend.query_filters import normalize_filter_clauses, values_for_clause
+from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.understanding import (
     chroma_text_matches_constraints,
@@ -151,7 +151,7 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "id": issue.get("id"),
-        "project": issue.get("project", {}).get("name", "미상"),
+        "project": (issue.get("project") or {}).get("name", "미상"),
         "summary": issue.get("summary", "제목 없음"),
         "status": mantis_enum_label(issue.get("status"), "상태 미상"),
         "priority": mantis_enum_label(issue.get("priority"), ""),
@@ -161,8 +161,8 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
         "work_subject": work_subject,
         "effort_fields": effort_fields,
         "date_fields": date_fields,
-        "reporter": issue.get("reporter", {}).get("real_name", "미상"),
-        "handler": issue.get("handler", {}).get("real_name", "담당자 미지정"),
+        "reporter": (issue.get("reporter") or {}).get("real_name", "미상"),
+        "handler": (issue.get("handler") or {}).get("real_name", "담당자 미지정"),
         "created_at": str(issue.get("created_at", ""))[:10],
         "updated_at": str(issue.get("updated_at", ""))[:10],
         "description": str(issue.get("description", ""))[:2400],
@@ -259,8 +259,10 @@ def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
                 status_code=502,
                 detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
             )
-        if response.status_code != 200:
+        if response.status_code == 404:
             return None
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Mantis 이슈 접근이 거절되었습니다.")
 
         issues = response.json().get("issues", [])
         return issues[0] if issues else None
@@ -322,12 +324,12 @@ def issue_to_search_text(issue: Dict[str, Any]) -> str:
     notes_text = " ".join(note.get("text", "") for note in issue.get("notes", []))
     return " ".join(
         [
-            str(issue.get("project", {}).get("name", "")),
+            str((issue.get("project") or {}).get("name", "")),
             str(issue.get("summary", "")),
             str(issue.get("description", "")),
             str(issue.get("steps_to_reproduce", "")),
-            str(issue.get("reporter", {}).get("real_name", "")),
-            str(issue.get("handler", {}).get("real_name", "")),
+            str((issue.get("reporter") or {}).get("real_name", "")),
+            str((issue.get("handler") or {}).get("real_name", "")),
             custom_text,
             notes_text,
         ]
@@ -338,7 +340,7 @@ def mantis_keyword_match_score(issue: Dict[str, Any], keywords: List[str]) -> in
     if not keywords:
         return 0
     title = normalize_for_match(str(issue.get("summary", "")))
-    project = normalize_for_match(str(issue.get("project", {}).get("name", "")))
+    project = normalize_for_match(str((issue.get("project") or {}).get("name", "")))
     custom_fields = normalize_for_match(
         " ".join(
             f"{field.get('field', {}).get('name', '')} {field.get('value', '')}"
@@ -391,15 +393,15 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     if max_issue_id and int(issue.get("id") or 0) >= int(max_issue_id):
         return False
     if constraints.get("customer_exact") and normalize_for_match(
-        str(issue.get("project", {}).get("name", ""))
+        str((issue.get("project") or {}).get("name", ""))
     ) != normalize_for_match(constraints["customer_exact"]):
         return False
     if constraints.get("customer_aliases") and not text_matches_customer_aliases(
-        str(issue.get("project", {}).get("name", "")),
+        str((issue.get("project") or {}).get("name", "")),
         constraints["customer_aliases"],
     ):
         return False
-    project_name = str(issue.get("project", {}).get("name", ""))
+    project_name = str((issue.get("project") or {}).get("name", ""))
     if constraints.get("excluded_customer_aliases") and text_matches_customer_aliases(
         project_name,
         constraints["excluded_customer_aliases"],
@@ -416,7 +418,7 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     ):
         return False
     combined_text = issue_to_search_text(issue)
-    status_text = str(issue.get("status", {}).get("name") or issue.get("status", {}).get("label", ""))
+    status_text = str((issue.get("status") or {}).get("name") or (issue.get("status") or {}).get("label", ""))
     if not text_matches_status(
         status_text,
         constraints.get("statuses", []),
@@ -435,7 +437,7 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         return False
     if not issue_matches_created_at(issue, constraints.get("created_at")):
         return False
-    handler_text = str(issue.get("handler", {}).get("real_name", ""))
+    handler_text = str((issue.get("handler") or {}).get("real_name", ""))
     if constraints.get("unassigned_people") and handler_text.strip() not in {
         "",
         "담당자 미지정",
@@ -445,32 +447,17 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         return False
     if not text_matches_people(combined_text, constraints.get("people", {}), handler_text):
         return False
-    reporter_text = str(issue.get("reporter", {}).get("real_name", ""))
-    field_text = {
-        "title": str(issue.get("summary", "")),
-        "keyword": combined_text,
-        "owner": handler_text,
-        "reporter": reporter_text,
-    }
-    for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
-        if clause["field"] not in field_text:
-            continue
-        candidate = normalize_for_match(field_text[clause["field"]])
-        values = [normalize_for_match(value) for value in values_for_clause(clause.get("value"))]
-        operator = clause["operator"]
-        if operator in {"equals", "in"} and not any(value == candidate for value in values):
-            return False
-        if operator in {"not_equals", "not_in"} and any(value == candidate for value in values):
-            return False
-        if operator == "contains" and not any(value in candidate for value in values):
-            return False
-        if operator == "not_contains" and any(value in candidate for value in values):
-            return False
-        if operator == "exists" and not candidate:
-            return False
-        if operator == "not_exists" and candidate:
-            return False
-    return True
+    reporter_text = str((issue.get("reporter") or {}).get("real_name", ""))
+    return matches_source_filters("mantis", {
+        "customer": project_name,
+        "platform": get_issue_custom_field_value(issue, "매체구분") or combined_text,
+        "status": status_text,
+        "issue_id": str(issue.get("id") or ""),
+        "screen_number": screen_filter_values(get_issue_custom_field_value(issue, "화면번호"), str(issue.get("summary") or "")),
+        "created_at": issue.get("created_at", ""),
+        "title": str(issue.get("summary", "")), "keyword": combined_text,
+        "owner": handler_text, "reporter": reporter_text,
+    }, constraints.get("filter_clauses") or [])
 
 
 def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -497,6 +484,7 @@ def collect_mantis_live_ids_in_range(
     constraints: Dict[str, Any],
     max_pages: int = 8,
     page_size: int = 100,
+    scan_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """라이브 Mantis API를 페이징하며 제약(고객사/상태/등록일 범위 등)에 맞는 이슈를
     ID별로 수집한다. 라이브 이슈는 실제 created_at을 갖고 있어 날짜 필터가 정확하다.
@@ -506,39 +494,32 @@ def collect_mantis_live_ids_in_range(
     함수로 라이브 결과를 병합해 정확도를 보완한다. 실패 이유와 완료 여부를 함께
     반환해 호출부가 오래된 스냅샷 값을 현재의 확정값처럼 표시하지 않게 한다."""
     collected: Dict[str, Dict[str, Any]] = {}
+    scanned_ids: set[int] = set()
     scanned_pages = 0
+    complete = False
     try:
         for page in range(1, max_pages + 1):
-            issues = fetch_mantis_issues(
-                {"page_size": page_size, "page": page},
-                timeout=30,
-                attempts=2,
-            )
+            issues = fetch_mantis_issues({"page_size": page_size, "page": page}, timeout=30, attempts=2)
             scanned_pages += 1
-            if not issues:
-                break
             for issue in issues:
+                issue_id = int(issue.get("id") or 0)
+                if not issue_id or issue_id in scanned_ids:
+                    continue
+                scanned_ids.add(issue_id)
                 if issue_matches_constraints(issue, constraints):
-                    issue_id = issue.get("id")
-                    if issue_id is not None:
-                        collected[str(issue_id)] = issue
-            if len(issues) < page_size:
+                    collected[str(issue_id)] = issue
+                if scan_limit is not None and len(scanned_ids) >= scan_limit:
+                    complete = True
+                    break
+            if complete or len(issues) < page_size:
+                complete = True
                 break
     except (requests.RequestException, HTTPException) as exc:
-        return {
-            "status": "error",
-            "error_kind": "dependency",
-            "issues": collected,
-            "reason": f"Mantis live count query failed: {type(exc).__name__}: {exc}",
-            "scanned_pages": scanned_pages,
-        }
-    return {
-        "status": "ok",
-        "error_kind": "",
-        "issues": collected,
-        "reason": "",
-        "scanned_pages": scanned_pages,
-    }
+        return {"status": "error", "error_kind": "dependency", "issues": collected,
+                "reason": f"Mantis live count query failed: {type(exc).__name__}",
+                "scanned_pages": scanned_pages, "scanned_ids": sorted(scanned_ids), "complete": False}
+    return {"status": "ok", "error_kind": "", "issues": collected, "reason": "",
+            "scanned_pages": scanned_pages, "scanned_ids": sorted(scanned_ids), "complete": complete}
 
 
 def execute_mantis_filter_search(
@@ -780,10 +761,18 @@ def revalidate_mantis_snapshot_stage(
     fallback_count = 0
     for snapshot_issue in stage.get("issues_list", []):
         issue_id = int(snapshot_issue.get("id") or 0)
-        live_issue = fetch_mantis_issue_by_id(issue_id) if issue_id else None
+        try:
+            live_issue = fetch_mantis_issue_by_id(issue_id) if issue_id else None
+        except (requests.RequestException, HTTPException) as exc:
+            if isinstance(exc, HTTPException) and exc.status_code < 500 and exc.status_code != 429:
+                live_issue = None
+            else:
+                refreshed.append(snapshot_issue)
+                fallback_count += 1
+                continue
         if live_issue is None:
-            refreshed.append(snapshot_issue)
-            fallback_count += 1
+            removed_count += 1
+            matched_issue_ids.discard(issue_id)
             continue
         revalidated_count += 1
         if issue_matches_constraints(live_issue, constraints):
@@ -804,6 +793,8 @@ def revalidate_mantis_snapshot_stage(
             "live_revalidated_count": revalidated_count,
             "stale_removed_count": removed_count,
             "live_fallback_count": fallback_count,
+            "live_revalidation_complete": fallback_count == 0,
+            "freshness_warning": "실시간 확인 실패: 스냅샷 참고값입니다." if fallback_count else "",
         },
     }
 

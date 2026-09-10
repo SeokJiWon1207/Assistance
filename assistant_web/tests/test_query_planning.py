@@ -664,7 +664,7 @@ class QueryPlanningTests(unittest.TestCase):
 
     @patch(
         "backend.reports.aggregate.collect_mantis_live_ids_in_range",
-        return_value={"status": "ok", "issues": {}, "reason": "", "scanned_pages": 8},
+        return_value={"status": "ok", "issues": {}, "reason": "", "scanned_pages": 8, "complete": True},
     )
     @patch("backend.reports.aggregate.scan_mantis_documents")
     def test_count_report_counts_all_matches_not_top_five(self, scan_documents, _live):
@@ -732,7 +732,7 @@ class QueryPlanningTests(unittest.TestCase):
         )
         with patch(
             "backend.reports.aggregate.collect_mantis_live_ids_in_range",
-            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8},
+            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8, "complete": True},
         ):
             report = build_mantis_count_report(question, plan)
         self.assertIsNotNone(report)
@@ -767,7 +767,7 @@ class QueryPlanningTests(unittest.TestCase):
         )
         with patch(
             "backend.reports.aggregate.collect_mantis_live_ids_in_range",
-            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8},
+            return_value={"status": "ok", "issues": live, "reason": "", "scanned_pages": 8, "complete": True},
         ):
             report = build_mantis_count_report(question, plan)
         self.assertIn("총 2건입니다.", report["content"])

@@ -52,6 +52,7 @@ def _scan_documents(
     scanned_ids: set[int] = set()
     matched_ids: set[int] = set()
     group_counts: Dict[str, int] = {}
+    matched_groups: Dict[int, str] = {}
     examples: list[Dict[str, Any]] = []
 
     for content in documents:
@@ -68,6 +69,7 @@ def _scan_documents(
         if group_key:
             label = str(group_key(issue) or "").strip() or "미지정"
             group_counts[label] = group_counts.get(label, 0) + 1
+            matched_groups[issue_id] = label
         if len(examples) < example_limit:
             examples.append(issue)
         elif issue_id > min(int(item.get("id") or 0) for item in examples):
@@ -85,6 +87,7 @@ def _scan_documents(
         "matched_ids": matched_ids,
         "issues": examples,
         "group_counts": group_counts,
+        "matched_groups": matched_groups,
         "reason": "",
     }
 

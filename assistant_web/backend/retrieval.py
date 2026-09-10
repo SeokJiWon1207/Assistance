@@ -655,6 +655,8 @@ def build_snapshot_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
     )
     if not snapshot_stage:
         return None
+    if snapshot_stage.get("meta", {}).get("live_fallback_count"):
+        return "실시간 확인에 실패해 로컬 스냅샷 참고값을 표시합니다. 현재 상태나 담당자가 다를 수 있습니다."
     as_of = snapshot_stage.get("meta", {}).get("snapshot_as_of") or get_mantis_snapshot_freshness()
     if not as_of:
         return None

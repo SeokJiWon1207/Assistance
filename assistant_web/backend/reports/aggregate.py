@@ -13,7 +13,7 @@ from backend.common import (
     normalize_for_match,
 )
 from backend.config import CHROMA_DB_PATH
-from backend.query_filters import filter_clause_label, normalize_filter_clauses
+from backend.query_filters import filter_clause_label, normalize_filter_clauses, filter_audit_for_source
 from backend.query_planning import build_query_plan
 from backend.retrieval import collect_retrieved_issues
 from backend.sources.mantis import (
@@ -513,7 +513,7 @@ def build_mantis_count_report(
         group_key=count_group_key(group_by),
         constraints=constraints,
     )
-    if not snapshot["available"]:
+    if not snapshot["available"] and not (date_range or explicit_snapshot):
         return {
             "content": f"Mantis 집계 도구를 사용할 수 없습니다.\n\n{snapshot['reason']}",
             "sources": [],
@@ -527,13 +527,14 @@ def build_mantis_count_report(
             "raw": {"mode": "deterministic_mantis_count"},
         }
     normalized_issues = snapshot["issues"]
+    group_counts = dict(snapshot.get("group_counts") or {})
     total_count = int(snapshot["matched_count"])
     scan_complete = not explicit_snapshot
     merged_live = False
     live_error = ""
     live_error_kind = ""
     live_scanned_pages = 0
-    if date_range:
+    if date_range or explicit_snapshot:
         # 스냅샷 등록일 누락으로 새는 건수를 라이브 결과로 보완한다. 스냅샷 매칭 ID와
         # 라이브 매칭 ID를 합집합해 중복 없이 정확한 총계를 낸다.
         # 질문에 "최신 N건 기준"이 있으면 그 창(페이지 수)을 그대로 따른다. 없으면
@@ -542,7 +543,7 @@ def build_mantis_count_report(
         window_match = re.search(r"최신\s*(\d+)\s*건\s*기준", text)
         if window_match:
             window_pages = max(1, min((int(window_match.group(1)) + 99) // 100, 30))
-        live_result = collect_mantis_live_ids_in_range(constraints, max_pages=window_pages)
+        live_result = collect_mantis_live_ids_in_range(constraints, max_pages=window_pages, scan_limit=snapshot_limit)
         live_map = live_result.get("issues") or {}
         live_scanned_pages = int(live_result.get("scanned_pages") or 0)
         if live_result.get("status") == "ok":
@@ -551,6 +552,12 @@ def build_mantis_count_report(
                 # 오래된 로컬 인덱스와 합집합하면 요청 범위를 벗어난 이슈가 다시
                 # 포함되므로, 라이브 결과가 성공한 경우 이를 완전한 기준으로 본다.
                 total_count = len(live_map)
+                group_counts = {}
+                group_key = count_group_key(group_by)
+                if group_key:
+                    for issue in live_map.values():
+                        label = str(group_key(normalize_issue(issue)) or "미지정")
+                        group_counts[label] = group_counts.get(label, 0) + 1
                 normalized_issues = sorted(
                     (normalize_issue(issue) for issue in live_map.values()),
                     key=lambda issue: int(issue.get("id") or 0),
@@ -558,20 +565,30 @@ def build_mantis_count_report(
                 )
             else:
                 snapshot_ids = {str(i) for i in snapshot.get("matched_ids") or set()}
-                union_ids = snapshot_ids | set(live_map.keys())
+                scanned_ids = {str(i) for i in live_result.get("scanned_ids", live_map.keys())}
+                union_ids = (snapshot_ids - scanned_ids) | set(live_map.keys())
                 total_count = len(union_ids)
-                # 대표 이슈: 라이브에만 있는 건 중 최신 ID를 스냅샷 예시와 함께 노출한다.
-                live_only = [live_map[i] for i in live_map if i not in snapshot_ids]
-                live_only_norm = [normalize_issue(i) for i in live_only]
-                combined = {int(i["id"]): i for i in normalized_issues}
-                for i in live_only_norm:
-                    combined.setdefault(int(i["id"]), i)
-                normalized_issues = sorted(
-                    combined.values(), key=lambda i: int(i.get("id") or 0), reverse=True
-                )
-            scan_complete = True
+                group_key = count_group_key(group_by)
+                if group_key:
+                    old_groups = {str(key): label for key, label in (snapshot.get("matched_groups") or {}).items()}
+                    for issue_id in snapshot_ids & scanned_ids:
+                        label = old_groups.get(issue_id, "")
+                        if label in group_counts:
+                            group_counts[label] -= 1
+                    for issue in live_map.values():
+                        label = str(group_key(normalize_issue(issue)) or "미지정")
+                        group_counts[label] = group_counts.get(label, 0) + 1
+                    group_counts = {key: value for key, value in group_counts.items() if value > 0}
+                combined = {int(i["id"]): i for i in normalized_issues if str(i["id"]) not in scanned_ids}
+                combined.update({int(i): normalize_issue(issue) for i, issue in live_map.items()})
+                normalized_issues = sorted(combined.values(), key=lambda issue: int(issue.get("id") or 0), reverse=True)
+            scan_complete = bool(live_result.get("complete"))
+            if not scan_complete:
+                live_error = "조회 페이지 상한에 도달해 전체 범위를 확인하지 못했습니다."
+                live_error_kind = "incomplete"
             merged_live = True
         else:
+            scan_complete = False
             live_error = str(live_result.get("reason") or "Mantis live count query failed")
             live_error_kind = str(live_result.get("error_kind") or "dependency")
     criteria = format_issue_list_criteria(constraints, normalized_issues)
@@ -588,7 +605,7 @@ def build_mantis_count_report(
             f"검색 기준: {criteria}, {scope}",
             "",
             "Mantis 실시간 조회가 완료되지 않아 정확한 건수를 확정할 수 없습니다.",
-            f"로컬 스냅샷 참고값은 {total_count}건이며 현재 값과 다를 수 있습니다.",
+            f"확인된 범위의 참고값은 {total_count}건이며 현재 전체 값과 다를 수 있습니다.",
         ]
     else:
         lines = [
@@ -596,7 +613,10 @@ def build_mantis_count_report(
             "",
             f"총 {total_count}건입니다.",
         ]
-    group_lines = format_count_group_lines(snapshot.get("group_counts") or {}, group_by)
+    filter_audit = filter_audit_for_source("mantis", constraints.get("filter_clauses", []))
+    if not filter_audit["fully_applied"]:
+        lines.append("적용하지 못한 조건: " + ", ".join(filter_clause_label(item) for item in filter_audit["unapplied_filters"]))
+    group_lines = format_count_group_lines(group_counts, group_by)
     if group_lines:
         # 그룹 집계를 요청했으면 총계보다 그룹별 건수가 답의 본문이다.
         lines.extend(group_lines)
@@ -623,6 +643,7 @@ def build_mantis_count_report(
                 "reason": live_error or None,
                 "meta": {
                     "operation": "count",
+                    "filter_audit": filter_audit,
                     "snapshot_limit": snapshot_limit,
                     "scanned_count": snapshot["scanned_count"],
                     "scan_complete": scan_complete,
