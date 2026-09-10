@@ -128,6 +128,9 @@ class FrontendCoreTests(unittest.TestCase):
             "dashboardDetail",
         ):
             self.assertIn(f'id="{element_id}"', html)
+        self.assertLess(
+            html.index('id="viewChatBtn"'), html.index('id="viewDashboardBtn"')
+        )
         self.assertIn('dashboard: "/api/workspace/dashboard"', self.application_javascript())
         self.assertIn("CUSTOMER HEALTH", dashboard_js)
         self.assertIn("data-dashboard-question", dashboard_js)
