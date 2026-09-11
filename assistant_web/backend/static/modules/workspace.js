@@ -654,9 +654,9 @@ function renderWorkspace() {
 }
 
 async function loadMyWorkspace(force = false) {
-  if (force) state.myWorkspace = null;
   renderWorkspace();
-  const response = await apiFetch(WORKSPACE_ENDPOINTS.personal);
+  const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : WORKSPACE_ENDPOINTS.personal;
+  const response = await apiFetch(endpoint);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
   state.myWorkspace = data;

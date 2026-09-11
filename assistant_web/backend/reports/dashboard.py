@@ -261,13 +261,14 @@ def build_operations_dashboard(
     users: Optional[List[Dict[str, Any]]] = None,
     days: int = 30,
     today: Optional[date] = None,
+    refresh: bool = False,
 ) -> Dict[str, Any]:
     """대시보드 한 화면에 필요한 데이터를 같은 조회 기준으로 계산한다."""
     if days not in DASHBOARD_PERIOD_OPTIONS:
         raise ValueError("조회 기간은 7일, 14일, 30일, 90일 중 하나여야 합니다.")
     base = today or date.today()
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
-    issues, source = _load_issues()
+    issues, source = _load_issues(prefer_snapshot=not refresh)
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
     priorities = _priorities(scoped_open, base)

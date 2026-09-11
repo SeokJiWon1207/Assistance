@@ -29,7 +29,7 @@ async function harness(role, stored) {
   });
   const dependencies = {
     './runtime.js': { state, els, WORKSPACE_ENDPOINTS: { dashboard: '/dashboard' },
-      apiFetch: async () => { calls.push('team'); return { ok: false }; } },
+      apiFetch: async (url) => { calls.push(url); return { ok: false }; } },
     './api.js': { responseJson: async () => ({ detail: '연결 오류' }) },
     './workspace.js': {
       loadMyWorkspace: async () => { calls.push('personal'); }, renderWorkspace() {},
@@ -71,7 +71,13 @@ test('member can open and load the team dashboard', async () => {
   assert.equal(h.els.viewDashboardBtn.hidden, false);
   assert.equal(h.els.dashboardPanel.hidden, false);
   assert.equal(h.els.personalPanel.hidden, true);
-  assert.deepEqual(h.calls, ['team']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30']);
+});
+
+test('manual dashboard refresh bypasses the server fast path', async () => {
+  const h = await harness('member');
+  await h.api.loadDashboard(true);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true']);
 });
 
 test('keyboard navigation follows visible tab order and moves focus', async () => {

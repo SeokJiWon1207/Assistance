@@ -154,6 +154,7 @@ class ApiIntegrationTests(unittest.TestCase):
             current_user.return_value,
             users=list_users_mock.return_value,
             days=30,
+            refresh=False,
         )
 
     @patch.object(workspace_api, "list_users")
@@ -170,14 +171,26 @@ class ApiIntegrationTests(unittest.TestCase):
         list_users_mock.return_value = [{"uid": "member-1", "approved": True}]
         build_dashboard.return_value = {"meta": {"scope": "team", "periodDays": 14}}
 
-        response = self.client.get("/api/workspace/dashboard?days=14")
+        response = self.client.get("/api/workspace/dashboard?days=14&refresh=true")
 
         self.assertEqual(response.status_code, 200)
         build_dashboard.assert_called_once_with(
             current_user.return_value,
             users=list_users_mock.return_value,
             days=14,
+            refresh=True,
         )
+
+    @patch.object(workspace_api, "build_my_workspace")
+    @patch.object(workspace_api, "current_request_user")
+    def test_personal_workspace_refresh_bypasses_fast_snapshot(self, current_user, build_workspace):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        build_workspace.return_value = {"summary": {"open": 0}}
+
+        response = self.client.get("/api/workspace/me?refresh=true")
+
+        self.assertEqual(response.status_code, 200)
+        build_workspace.assert_called_once_with(current_user.return_value, refresh=True)
 
     @patch.object(workspace_api, "current_request_user")
     def test_dashboard_endpoint_rejects_unsupported_period(self, current_user):

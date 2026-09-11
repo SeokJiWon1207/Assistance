@@ -261,7 +261,8 @@ async function loadDashboard(force = false) {
   els.dashboardRefreshBtn.disabled = true;
   renderDashboard();
   try {
-    const response = await apiFetch(`${WORKSPACE_ENDPOINTS.dashboard}?days=${dashboardState.period}`);
+    const refresh = force ? "&refresh=true" : "";
+    const response = await apiFetch(`${WORKSPACE_ENDPOINTS.dashboard}?days=${dashboardState.period}${refresh}`);
     const payload = await responseJson(response);
     if (!response.ok) throw new Error(payload.detail || "운영 데이터를 불러오지 못했습니다.");
     dashboardState.data = payload;

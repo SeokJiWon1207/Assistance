@@ -112,6 +112,25 @@ class PersonalWorkspaceTests(unittest.TestCase):
         self.assertEqual([issue["id"] for issue in issues], [1])
         self.assertEqual(meta, {"status": "live", "matchedCount": 1})
 
+    def test_default_workspace_uses_snapshot_without_waiting_for_live_data(self):
+        snapshot_issues = [
+            {"id": 1, "handler": "석지원"},
+            {"id": 2, "handler": "다른 담당자"},
+        ]
+        with patch.object(
+            workspace,
+            "load_workspace_snapshot",
+            return_value=(snapshot_issues, {"status": "snapshot", "matchedCount": 2}),
+        ), patch.object(workspace, "fetch_mantis_recent_issues") as fetch_live:
+            person, issues, meta = workspace._my_mantis_issues(
+                {"mantisUsername": "석지원"}, prefer_snapshot=True
+            )
+
+        fetch_live.assert_not_called()
+        self.assertEqual(person, "석지원")
+        self.assertEqual([issue["id"] for issue in issues], [1])
+        self.assertEqual(meta, {"status": "snapshot", "matchedCount": 1})
+
     def test_mantis_workspace_falls_back_to_snapshot_after_live_failure(self):
         snapshot_issue = {"id": 10, "handler": "석지원"}
         with patch.object(

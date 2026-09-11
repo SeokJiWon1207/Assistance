@@ -2,7 +2,7 @@ import "./events.js";
 import { state, els, defaultOptions } from "./runtime.js";
 import { loadConversations, loadMyWorkspace } from "./workspace.js";
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
-import { initDashboard } from "./dashboard.js";
+import { initDashboard, loadDashboard } from "./dashboard.js";
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
@@ -13,9 +13,9 @@ async function bootstrapApplication(authState = {}) {
     loadConversations(),
     loadTeamTemplates().catch(() => {}),
   ]);
-  if (state.currentUser?.uid) {
-    loadMyWorkspace().catch(() => {});
-  }
+  const workspaceReady = state.currentUser?.uid
+    ? loadMyWorkspace().catch(() => {})
+    : Promise.resolve();
   loadDataStatus().catch(() => {
     els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
     els.statusLine.className = "status-warning";
@@ -29,6 +29,7 @@ async function bootstrapApplication(authState = {}) {
   setAbComparison(defaultOptions.abTest);
   renderMessages();
   initDashboard();
+  if (state.currentUser?.uid) workspaceReady.finally(() => loadDashboard());
 }
 
 Promise.resolve(globalThis.AssistantAuthReady || { enabled: false, authenticated: false, user: null })

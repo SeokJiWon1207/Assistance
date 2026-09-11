@@ -12,6 +12,7 @@ from backend.sources.mantis import fetch_mantis_recent_issues, normalize_issue
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
+from backend.workspace_data import load_workspace_snapshot
 
 
 TEAM_BRIEF_FETCH_LIMIT = 1000
@@ -165,7 +166,14 @@ def _inside(issue: Dict[str, Any], start: date, end: date) -> bool:
     return start <= created <= end
 
 
-def _load_issues() -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+def _load_issues(*, prefer_snapshot: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+    if prefer_snapshot:
+        issues, source = load_workspace_snapshot(TEAM_BRIEF_FETCH_LIMIT)
+        if source.get("status") == "snapshot":
+            return issues, {
+                "status": "snapshot",
+                "reason": str(source.get("reason") or ""),
+            }
     try:
         raw = fetch_mantis_recent_issues(total_limit=TEAM_BRIEF_FETCH_LIMIT, request_timeout=8)
         return [normalize_issue(issue) for issue in raw], {"status": "live", "reason": ""}

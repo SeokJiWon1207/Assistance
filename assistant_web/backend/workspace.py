@@ -22,6 +22,7 @@ from backend.sources.notion import (
 )
 from backend.schemas import ConversationMessage
 from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.workspace_data import load_workspace_snapshot
 
 
 def workspace_db_path() -> Path:
@@ -348,11 +349,20 @@ def user_mantis_name(user: Dict[str, Any]) -> str:
 
 
 def _my_mantis_issues(
-    user: Dict[str, Any], total_limit: int = 600
+    user: Dict[str, Any], total_limit: int = 600, *, prefer_snapshot: bool = False
 ) -> tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
     person = user_mantis_name(user)
     if not person:
         return "", [], {"status": "unlinked", "matchedCount": 0}
+    if prefer_snapshot:
+        snapshot_issues, snapshot_meta = load_workspace_snapshot(max(total_limit, 1000))
+        if snapshot_meta.get("status") == "snapshot":
+            matched = [
+                issue
+                for issue in snapshot_issues
+                if _matches_person(issue.get("handler", ""), person)
+            ]
+            return person, matched, {**snapshot_meta, "matchedCount": len(matched)}
     try:
         raw_issues = fetch_mantis_recent_issues(
             total_limit=total_limit, request_timeout=6
@@ -525,8 +535,10 @@ def mark_notification_read(user_uid: str, notification_id: str) -> None:
         )
 
 
-def build_my_workspace(user: Dict[str, Any]) -> Dict[str, Any]:
-    person, all_issues, mantis_meta = _my_mantis_issues(user)
+def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False) -> Dict[str, Any]:
+    person, all_issues, mantis_meta = _my_mantis_issues(
+        user, prefer_snapshot=not refresh
+    )
     issues = [_issue_summary(issue) for issue in all_issues]
     issues.sort(
         key=lambda item: (
