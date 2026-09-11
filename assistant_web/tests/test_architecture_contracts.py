@@ -11,11 +11,7 @@ from backend.sources import notion
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
-FIXTURE = json.loads(
-    (APP_DIR / "tests" / "fixtures" / "architecture_contracts.json").read_text(
-        encoding="utf-8"
-    )
-)
+FIXTURE = json.loads((APP_DIR / "tests" / "fixtures" / "architecture_contracts.json").read_text(encoding="utf-8"))
 
 
 PUBLIC_SYMBOLS = {
@@ -166,18 +162,12 @@ class PythonArchitectureContractTests(unittest.TestCase):
     def test_chat_orchestrator_stays_phase_oriented(self):
         path = APP_DIR / "backend" / "services" / "chat_service.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        chat_service = next(
-            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatService"
-        )
+        chat_service = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChatService")
         build_response = next(
-            node
-            for node in chat_service.body
-            if isinstance(node, ast.FunctionDef) and node.name == "_build_response"
+            node for node in chat_service.body if isinstance(node, ast.FunctionDef) and node.name == "_build_response"
         )
         self.assertLessEqual(build_response.end_lineno - build_response.lineno + 1, 80)
-        function_names = {
-            node.name for node in tree.body if isinstance(node, ast.FunctionDef)
-        }
+        function_names = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
         for phase_function in (
             "build_deterministic_report",
             "prepare_chat_pipeline",
@@ -221,9 +211,7 @@ class PythonArchitectureContractTests(unittest.TestCase):
                 }
             ],
         }
-        answer = notion.format_deterministic_notion_answer(
-            "노션에서 배포 문서 보여줘", retrieval_result, 5
-        )
+        answer = notion.format_deterministic_notion_answer("노션에서 배포 문서 보여줘", retrieval_result, 5)
         self.assertEqual(answer, FIXTURE["notionAnswer"])
 
 
@@ -264,17 +252,15 @@ class FrontendArchitectureContractTests(unittest.TestCase):
     def test_dom_and_api_contracts_are_present(self):
         static_dir = APP_DIR / "backend" / "static"
         html = (static_dir / "index.html").read_text(encoding="utf-8")
-        javascript = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(static_dir.rglob("*.js"))
-        )
+        javascript = "\n".join(path.read_text(encoding="utf-8") for path in sorted(static_dir.rglob("*.js")))
         for element_id in (
             "chatForm",
             "promptInput",
             "messages",
             "signedInUser",
             "evaluationModal",
-            "workspaceModal",
+            "personalPanel",
+            "dashboardPanel",
             "inviteModal",
         ):
             self.assertIn(f'id="{element_id}"', html)

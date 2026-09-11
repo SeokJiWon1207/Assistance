@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="/static/styles.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/charts.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20260820-1" />
-    <link rel="stylesheet" href="/static/workspace.css?v=20260824-1" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20260827-1" />
+    <link rel="stylesheet" href="/static/workspace.css?v=20260911-1" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20260911-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -56,16 +56,6 @@
           </div>
           <div id="conversationList" class="conversation-list"></div>
         </section>
-
-        <nav class="workspace-navigation" aria-label="개인 워크스페이스">
-          <button id="myWorkBtn" class="workspace-nav-button" type="button">
-            <span aria-hidden="true">▦</span><strong>내 업무</strong>
-            <em id="workspaceUnreadBadge" hidden>0</em>
-          </button>
-          <button id="teamDashboardBtn" class="workspace-nav-button" type="button" hidden>
-            <span aria-hidden="true">◫</span><strong>팀 대시보드</strong>
-          </button>
-        </nav>
 
         <!-- 모델 선택 UI는 노출하지 않는다. 활성 모델이 자동 선택되어 요청에 실리도록
              select/meta 요소는 숨긴 채 DOM에는 남겨 둔다(app.js가 값을 참조). -->
@@ -192,18 +182,45 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 3Z"/><path d="M8 9h8M8 12h5"/></svg>
             대화
           </button>
-          <button id="viewDashboardBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel">
+          <button id="viewPersonalBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="personalPanel" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 3h8v4H8zM8 12h8M8 16h5"/></svg>
+            내 업무 <em id="workspaceUnreadBadge" hidden>0</em>
+          </button>
+          <button id="viewDashboardBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel" tabindex="-1" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            운영 대시보드
+            팀 대시보드
           </button>
         </nav>
 
-        <section id="dashboardPanel" class="dashboard-panel" aria-label="운영 대시보드" hidden>
+        <section id="personalPanel" class="personal-panel" role="tabpanel" aria-labelledby="viewPersonalBtn" hidden>
+        <header class="modal-header workspace-modal-header">
+          <button id="personalSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+          <div>
+            <p id="workspaceModalEyebrow">개인 워크스페이스</p>
+            <h3 id="workspaceModalTitle">내 업무</h3>
+          </div>
+          <div class="workspace-header-actions">
+            <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
+          </div>
+        </header>
+        <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
+          <button type="button" id="workspaceTab-overview" role="tab" aria-selected="true" aria-controls="workspaceContent" data-workspace-tab="overview" class="active">업무</button>
+          <button type="button" id="workspaceTab-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="brief">내 주간 보고</button>
+          <button type="button" id="workspaceTab-playbooks" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="playbooks">플레이북</button>
+          <button type="button" id="workspaceTab-notifications" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
+          <button type="button" id="workspaceTab-favorites" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="favorites">즐겨찾기</button>
+        </div>
+        <div id="workspaceContent" class="workspace-content" role="tabpanel" aria-labelledby="workspaceTab-overview" tabindex="0">
+          <div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>
+        </div>
+        </section>
+
+        <section id="dashboardPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="viewDashboardBtn" hidden>
           <header class="dashboard-header">
             <button id="dashboardSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
             <div class="dashboard-heading">
-              <h2>운영 대시보드</h2>
-              <p id="dashboardSubtitle">운영 현황과 위험 신호를 한눈에 확인합니다.</p>
+              <h2>팀 대시보드</h2>
+              <p id="dashboardSubtitle">팀 전체 업무량과 고객사 위험 신호를 확인합니다.</p>
             </div>
             <div class="dashboard-toolbar">
               <span id="dashboardSource" class="dashboard-source"><span class="dashboard-source-dot" aria-hidden="true"></span><em>확인 중</em></span>
@@ -230,7 +247,7 @@
           </aside>
         </section>
 
-        <section id="chatPanel" class="chat-panel">
+        <section id="chatPanel" class="chat-panel" role="tabpanel" aria-labelledby="viewChatBtn">
         <header class="chat-header">
           <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
           <div>
@@ -287,32 +304,6 @@
             <button id="logoutCancelBtn" class="secondary-button" type="button">취소</button>
             <button id="logoutConfirmBtn" class="logout-confirm-button" type="button">로그아웃</button>
           </div>
-        </div>
-      </section>
-    </div>
-
-    <div id="workspaceModal" class="modal-backdrop" hidden>
-      <section class="modal workspace-modal" role="dialog" aria-modal="true" aria-labelledby="workspaceModalTitle">
-        <header class="modal-header workspace-modal-header">
-          <div>
-            <p id="workspaceModalEyebrow">개인 워크스페이스</p>
-            <h3 id="workspaceModalTitle">내 업무</h3>
-          </div>
-          <div class="workspace-header-actions">
-            <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
-            <button id="workspaceModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
-          </div>
-        </header>
-        <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
-          <button type="button" id="workspaceTab-overview" role="tab" aria-selected="true" aria-controls="workspaceContent" data-workspace-tab="overview" class="active">업무</button>
-          <button type="button" id="workspaceTab-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="brief">주간 브리핑</button>
-          <button type="button" id="workspaceTab-team-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="team-brief">팀 브리핑</button>
-          <button type="button" id="workspaceTab-playbooks" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="playbooks">플레이북</button>
-          <button type="button" id="workspaceTab-notifications" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
-          <button type="button" id="workspaceTab-favorites" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="favorites">즐겨찾기</button>
-        </div>
-        <div id="workspaceContent" class="workspace-content" role="tabpanel" aria-labelledby="workspaceTab-overview" tabindex="0">
-          <div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>
         </div>
       </section>
     </div>
@@ -465,6 +456,6 @@
     <script src="/static/frontend_core.js?v=20260909-1"></script>
     <script src="/static/custom_select.js?v=20260727-4"></script>
     <script src="/static/auth.js?v=20260811-1"></script>
-    <script type="module" src="/static/app.js?v=20260828-1"></script>
+    <script type="module" src="/static/app.js?v=20260911-1"></script>
   </body>
 </html>

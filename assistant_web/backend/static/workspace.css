@@ -1,12 +1,4 @@
 /* 로그인 사용자 워크스페이스 */
-.workspace-modal {
-  grid-template-rows: auto auto minmax(0, 1fr);
-  width: min(1180px, 100%);
-  height: min(860px, calc(100vh - 40px));
-  height: min(860px, calc(100dvh - 40px));
-  max-height: min(860px, calc(100vh - 40px));
-}
-
 .workspace-modal-header {
   align-items: center;
 }

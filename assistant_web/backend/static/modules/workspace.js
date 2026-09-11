@@ -339,7 +339,6 @@ function renderPersonalOverview(data) {
     : `${issues.length} / ${totalOpen}건 표시`;
   const isConnected = Boolean(data.user?.mantisUsername);
   return `<div class="workspace-overview">
-    ${renderTeamBriefBanner()}
     <section class="workspace-summary-grid is-three">
       ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", "현재 처리할 전체 업무")}
       ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "", summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중")}
@@ -359,16 +358,6 @@ function renderPersonalOverview(data) {
       <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("현재 담당한 미종료 이슈가 없습니다.")}</div>
     </section>
   </div>`;
-}
-
-function renderTeamBriefBanner() {
-  const brief = state.teamWeeklyBrief;
-  if (!brief || brief.viewed || new Date().getDay() !== 1) return "";
-  return `<button type="button" class="workspace-brief-banner" data-open-team-brief>
-    <span>월요일 팀 브리핑이 도착했습니다</span>
-    <strong>${escapeHtml(brief.title || "이번 주 팀 현황을 확인하세요")}</strong>
-    <em>열어보기 →</em>
-  </button>`;
 }
 
 function renderWeeklyBrief(data) {
@@ -624,32 +613,6 @@ async function changePlaybookStatus(playbookId, status) {
   return data.playbook;
 }
 
-function renderTeamDashboard(data) {
-  const summary = data.summary || {};
-  const members = data.members || [];
-  const aging = data.agingIssues || [];
-  return `
-    <section class="workspace-summary-grid">
-      ${workspaceMetric("승인 사용자", summary.members)}
-      ${workspaceMetric("미종료 이슈", summary.open, "is-blue")}
-      ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "")}
-      ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "")}
-    </section>
-    <p class="workspace-connection ${data.source?.status === "live" ? "" : "is-warning"}">Mantis 데이터: ${data.source?.status === "live" ? "실시간" : data.source?.status === "snapshot" ? "로컬 스냅샷" : "연결 오류"}</p>
-    <div class="workspace-columns">
-      <section class="workspace-section">
-        <header><div><span>Workload</span><h4>담당자별 현황</h4></div></header>
-        <div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>담당자</th><th>미종료</th><th>지연</th><th>장기</th></tr></thead><tbody>
-          ${members.map((member) => `<tr><td><strong>${escapeHtml(member.displayName || "")}</strong><small>${escapeHtml(member.mantisUsername || "미연결")}</small></td><td>${member.open}</td><td class="${member.overdue ? "danger-text" : ""}">${member.overdue}</td><td>${member.aging}</td></tr>`).join("")}
-        </tbody></table></div>
-      </section>
-      <section class="workspace-section">
-        <header><div><span>Aging</span><h4>장기 미종료 이슈</h4></div><em>${aging.length}건 표시</em></header>
-        <div class="workspace-list">${aging.length ? aging.map(issueWorkspaceRow).join("") : workspaceEmpty("30일 이상 미종료 이슈가 없습니다.")}</div>
-      </section>
-    </div>`;
-}
-
 function updateWorkspaceUnread() {
   const unread = state.myWorkspace?.summary?.unreadNotifications || 0;
   if (els.workspaceUnreadBadge) {
@@ -661,17 +624,8 @@ function updateWorkspaceUnread() {
 
 function renderWorkspace() {
   if (!els.workspaceContent) return;
-  const isPersonalOverview = state.workspaceMode !== "team" && state.workspaceTab === "overview";
+  const isPersonalOverview = state.workspaceTab === "overview";
   els.workspaceContent.classList.toggle("is-overview", isPersonalOverview);
-  if (state.workspaceMode === "team") {
-    els.workspaceModalEyebrow.textContent = "관리자 워크스페이스";
-    els.workspaceModalTitle.textContent = "팀 대시보드";
-    els.workspaceTabs.hidden = true;
-    els.workspaceContent.innerHTML = state.teamDashboard
-      ? renderTeamDashboard(state.teamDashboard)
-      : `<div class="workspace-loading">팀 현황을 불러오는 중입니다.</div>`;
-    return;
-  }
   els.workspaceModalEyebrow.textContent = "개인 워크스페이스";
   els.workspaceModalTitle.textContent = "내 업무";
   els.workspaceTabs.hidden = false;
@@ -691,7 +645,6 @@ function renderWorkspace() {
   const renderers = {
     overview: () => renderPersonalOverview(state.myWorkspace),
     brief: () => renderWeeklyBrief(state.myWorkspace),
-    "team-brief": renderTeamWeeklyBrief,
     playbooks: renderPlaybooks,
     notifications: () => renderNotifications(state.myWorkspace),
     favorites: renderFavoriteConversations,
@@ -709,12 +662,10 @@ async function loadMyWorkspace(force = false) {
   state.myWorkspace = data;
   updateWorkspaceUnread();
   renderWorkspace();
-  loadTeamWeeklyBrief().catch(() => {});
 }
 
 async function loadTeamWeeklyBrief(refresh = false) {
   if (refresh) state.teamWeeklyBrief = null;
-  renderWorkspace();
   const response = await apiFetch(
     refresh ? WORKSPACE_ENDPOINTS.teamBriefRefresh : WORKSPACE_ENDPOINTS.teamBrief,
     refresh ? { method: "POST" } : undefined,
@@ -722,7 +673,6 @@ async function loadTeamWeeklyBrief(refresh = false) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.detail || "팀 브리핑을 불러오지 못했습니다.");
   state.teamWeeklyBrief = data;
-  renderWorkspace();
 }
 
 async function markTeamWeeklyBriefRead() {
@@ -730,47 +680,6 @@ async function markTeamWeeklyBriefRead() {
   const response = await apiFetch(WORKSPACE_ENDPOINTS.teamBriefRead, { method: "POST" });
   if (!response.ok) throw new Error("팀 브리핑 확인 상태를 저장하지 못했습니다.");
   state.teamWeeklyBrief.viewed = true;
-  renderWorkspace();
-}
-
-async function loadTeamDashboard(force = false) {
-  if (force) state.teamDashboard = null;
-  renderWorkspace();
-  const response = await apiFetch(WORKSPACE_ENDPOINTS.team);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "팀 현황을 불러오지 못했습니다.");
-  state.teamDashboard = data;
-  renderWorkspace();
-}
-
-// 모달을 연 버튼을 기억해 두었다가 닫을 때 초점을 되돌린다.
-let workspaceModalOpener = null;
-
-function closeWorkspaceModal() {
-  els.workspaceModal.hidden = true;
-  document.body.classList.remove("modal-open");
-  const opener = workspaceModalOpener;
-  workspaceModalOpener = null;
-  opener?.focus?.();
-}
-
-async function openWorkspaceModal(mode = "personal") {
-  workspaceModalOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  state.workspaceMode = mode;
-  if (mode === "personal" && !["overview", "brief", "team-brief", "playbooks", "notifications", "favorites"].includes(state.workspaceTab)) {
-    state.workspaceTab = "overview";
-  }
-  els.workspaceModal.hidden = false;
-  document.body.classList.add("modal-open");
-  renderWorkspace();
-  // 다른 모달과 같이 열리는 즉시 모달 안으로 초점을 옮긴다.
-  els.workspaceModalClose?.focus();
-  try {
-    if (mode === "team") await loadTeamDashboard();
-    else if (!state.myWorkspace) await loadMyWorkspace();
-  } catch (error) {
-    els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
-  }
 }
 
 export {
@@ -795,7 +704,6 @@ export {
   issueWorkspaceRow,
   renderPersonalOverview,
   renderWeeklyBrief,
-  renderTeamBriefBanner,
   briefSpikeRows,
   renderTeamWeeklyBrief,
   renderNotifications,
@@ -808,15 +716,11 @@ export {
   savePlaybookCandidate,
   savePlaybookEditor,
   changePlaybookStatus,
-  renderTeamDashboard,
   updateWorkspaceUnread,
   renderWorkspace,
   loadMyWorkspace,
   loadTeamWeeklyBrief,
   markTeamWeeklyBriefRead,
-  loadTeamDashboard,
-  closeWorkspaceModal,
-  openWorkspaceModal,
 };
 
 export { scopedStorageKey, WORKSPACE_ENDPOINTS } from "./runtime.js";

@@ -9,7 +9,6 @@ async function bootstrapApplication(authState = {}) {
   if (authState.enabled && state.currentUser?.role !== "admin") {
     els.evaluationBtn.hidden = true;
   }
-  if (els.teamDashboardBtn) els.teamDashboardBtn.hidden = state.currentUser?.role !== "admin";
   await Promise.all([
     loadConversations(),
     loadTeamTemplates().catch(() => {}),

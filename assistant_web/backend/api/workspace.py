@@ -63,6 +63,8 @@ def my_workspace(request: Request) -> Dict[str, Any]:
 @router.get("/dashboard")
 def operations_dashboard(request: Request, days: int = 30) -> Dict[str, Any]:
     user = _user(request)
+    if user.get("role") not in {"manager", "admin"}:
+        raise HTTPException(status_code=403, detail="팀 대시보드는 매니저 이상만 조회할 수 있습니다.")
     if days not in DASHBOARD_PERIOD_OPTIONS:
         raise HTTPException(
             status_code=422,
@@ -104,19 +106,13 @@ def put_conversation(
 @router.delete("/conversations/{conversation_id}")
 def remove_conversation(conversation_id: str, request: Request) -> Dict[str, bool]:
     user = _user(request)
-    return {
-        "deleted": delete_conversation(
-            user["uid"], _valid_id(conversation_id, "대화 ID")
-        )
-    }
+    return {"deleted": delete_conversation(user["uid"], _valid_id(conversation_id, "대화 ID"))}
 
 
 @router.post("/notifications/{notification_id}/read")
 def read_notification(notification_id: str, request: Request) -> Dict[str, bool]:
     user = _user(request)
-    mark_notification_read(
-        user["uid"], _valid_id(notification_id, "알림 ID")
-    )
+    mark_notification_read(user["uid"], _valid_id(notification_id, "알림 ID"))
     return {"read": True}
 
 

@@ -1,5 +1,6 @@
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js";
 import { responseJson } from "./api.js";
+import { loadMyWorkspace, renderWorkspace, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
@@ -238,18 +239,22 @@ function renderDashboard() {
   updateSourceMeta(data.meta);
   const scopeLabel = data.meta.scope === "team" ? "팀 전체 기준" : "내 담당 업무 기준";
   els.dashboardSubtitle.textContent = `${scopeLabel} · ${data.meta.periodFrom} ~ ${data.meta.periodTo}`;
-  const linkWarning = data.user.linked ? "" : '<div class="workspace-connection is-warning"><span class="workspace-connection-dot"></span><strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>사용자 설정에서 담당자명을 등록하면 개인 지표가 표시됩니다.</span></div>';
   els.dashboardBody.innerHTML = `
-    <div class="dashboard-welcome"><div><h3>${escapeHtml(data.user.displayName)}님의 운영 현황</h3><p>${escapeHtml(data.meta.periodFrom)}부터 ${escapeHtml(data.meta.periodTo)}까지, 직전 동일 기간과 비교합니다.</p></div><span class="dashboard-scope">${escapeHtml(scopeLabel)} · ${escapeHtml(roleLabels[data.user.role] || data.user.role)}</span></div>
-    ${linkWarning}
+    <div class="dashboard-welcome"><div><h3>팀 전체 업무 현황</h3><p>${escapeHtml(data.meta.periodFrom)}부터 ${escapeHtml(data.meta.periodTo)}까지, 직전 동일 기간과 비교합니다.</p></div><span class="dashboard-scope">${escapeHtml(scopeLabel)} · ${escapeHtml(roleLabels[data.user.role] || data.user.role)}</span></div>
     ${renderMetrics(data.summary)}
     ${renderDecision(data.decisionSummary, data.meta.periodDays)}
     <div class="dashboard-grid">${renderTodos(data.todos || [])}${renderCustomerHealth(data.customerHealth || [], data.customerHealthSummary || {})}${renderSpikes(data.customerSpikes || [], data.screenSpikes || [])}</div>
     ${renderMembers(data.members || [])}
-    ${renderPriorities(data.priorities || [])}`;
+    ${renderPriorities(data.priorities || [])}
+    <details class="team-brief-section"><summary>팀 주간 브리핑</summary><div class="team-brief-content"></div></details>`;
+  const brief = els.dashboardBody.querySelector(".team-brief-section");
+  brief.addEventListener("toggle", () => {
+    if (brief.open) updateTeamBrief();
+  });
 }
 
 async function loadDashboard(force = false) {
+  if (!canViewTeamDashboard()) return;
   if (dashboardState.loading || (dashboardState.data && !force)) return;
   dashboardState.loading = true;
   dashboardState.error = "";
@@ -269,18 +274,58 @@ async function loadDashboard(force = false) {
   }
 }
 
+function canViewTeamDashboard() {
+  return ["manager", "admin"].includes(state.currentUser?.role);
+}
+
+function mainViews() {
+  return [
+    ["chat", els.viewChatBtn, els.chatPanel],
+    ["personal", els.viewPersonalBtn, els.personalPanel],
+    ["dashboard", els.viewDashboardBtn, els.dashboardPanel],
+  ];
+}
+
 function setActiveView(view, { remember = true, load = true } = {}) {
-  const dashboard = view === "dashboard";
-  els.dashboardPanel.hidden = !dashboard;
-  els.chatPanel.hidden = dashboard;
-  els.viewDashboardBtn.classList.toggle("is-active", dashboard);
-  els.viewChatBtn.classList.toggle("is-active", !dashboard);
-  els.viewDashboardBtn.setAttribute("aria-selected", String(dashboard));
-  els.viewChatBtn.setAttribute("aria-selected", String(!dashboard));
-  els.viewDashboardBtn.tabIndex = dashboard ? 0 : -1;
-  els.viewChatBtn.tabIndex = dashboard ? -1 : 0;
-  if (remember) localStorage.setItem(dashboardViewStorageKey, view);
-  if (dashboard && load) loadDashboard();
+  if (view === "dashboard" && !canViewTeamDashboard()) view = "personal";
+  if (!["chat", "personal", "dashboard"].includes(view)) view = "chat";
+  els.viewDashboardBtn.hidden = !canViewTeamDashboard();
+  for (const [name, button, panel] of mainViews()) {
+    const selected = name === view;
+    panel.hidden = !selected;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  if (remember) localStorage.setItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`, view);
+  document.body.classList.remove("sidebar-open");
+  for (const button of [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle]) {
+    button?.setAttribute("aria-expanded", "false");
+  }
+  if (view === "dashboard" && load) loadDashboard();
+  if (view === "personal" && load) {
+    renderWorkspace();
+    if (!state.myWorkspace) loadMyWorkspace().catch((error) => {
+      els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
+    });
+  }
+}
+
+function showPersonalView(options) {
+  setActiveView("personal", options);
+}
+
+async function updateTeamBrief(refresh = false) {
+  const container = els.dashboardBody.querySelector(".team-brief-content");
+  if (!container || !canViewTeamDashboard()) return;
+  container.innerHTML = '<p class="workspace-loading">팀 브리핑을 불러오는 중입니다.</p>';
+  try {
+    await loadTeamWeeklyBrief(refresh);
+    container.innerHTML = renderTeamWeeklyBrief();
+    await markTeamWeeklyBriefRead();
+  } catch (error) {
+    container.innerHTML = `<p class="workspace-error">${escapeHtml(error.message)}</p>`;
+  }
 }
 
 function showDashboardView(options) {
@@ -334,6 +379,10 @@ function closeIssueDetail() {
 }
 
 function handleDashboardAction(target) {
+  const refreshBrief = target.closest("[data-refresh-team-brief]");
+  if (refreshBrief) return updateTeamBrief(true);
+  const briefQuestion = target.closest("[data-workspace-question]");
+  if (briefQuestion) return askFromDashboard(decodeURIComponent(briefQuestion.dataset.workspaceQuestion));
   const retry = target.closest("[data-dashboard-retry]");
   if (retry) return loadDashboard(true);
   const metric = target.closest("[data-dashboard-metric]");
@@ -366,12 +415,17 @@ function initDashboard() {
   if (dashboardState.initialized || !els.dashboardPanel) return;
   dashboardState.initialized = true;
   els.viewDashboardBtn.addEventListener("click", () => showDashboardView());
+  els.viewPersonalBtn.addEventListener("click", () => showPersonalView());
   els.viewChatBtn.addEventListener("click", () => showChatView());
-  [els.viewDashboardBtn, els.viewChatBtn].forEach((button) => button.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  mainViews().forEach(([, button]) => button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    if (button === els.viewDashboardBtn) showChatView();
-    else showDashboardView();
+    const visible = mainViews().filter(([, tab]) => !tab.hidden);
+    const index = visible.findIndex(([, tab]) => tab === button);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? visible.length - 1
+      : (index + (event.key === "ArrowLeft" ? -1 : 1) + visible.length) % visible.length;
+    setActiveView(visible[next][0]);
+    visible[next][1].focus();
   }));
   els.dashboardPeriod.addEventListener("change", () => {
     dashboardState.period = Number(els.dashboardPeriod.value) || 30;
@@ -387,17 +441,18 @@ function initDashboard() {
   });
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);
-  els.dashboardSidebarMenuToggle?.addEventListener("click", () => {
+  [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle].forEach((button) => button?.addEventListener("click", () => {
     const open = document.body.classList.toggle("sidebar-open");
     els.dashboardSidebarMenuToggle.setAttribute("aria-expanded", String(open));
     els.sidebarMenuToggle?.setAttribute("aria-expanded", String(open));
-  });
+    els.personalSidebarMenuToggle?.setAttribute("aria-expanded", String(open));
+  }));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.dashboardDetail.hidden) closeIssueDetail();
   });
-  const stored = localStorage.getItem(dashboardViewStorageKey);
-  const initialView = stored === "chat" || stored === "dashboard" ? stored : (state.currentUser?.uid ? "dashboard" : "chat");
+  const stored = localStorage.getItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`);
+  const initialView = ["chat", "personal", "dashboard"].includes(stored) ? stored : "chat";
   setActiveView(initialView, { remember: false, load: true });
 }
 
-export { initDashboard, loadDashboard, renderDashboard, showDashboardView, showChatView };
+export { initDashboard, loadDashboard, renderDashboard, showDashboardView, showPersonalView, showChatView };

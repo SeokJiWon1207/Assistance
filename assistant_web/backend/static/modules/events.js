@@ -1,5 +1,5 @@
 import { state, els, apiFetch, buildTeamTemplateQuestion, shouldSubmitPromptOnKeydown } from "./runtime.js";
-import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadTeamDashboard, loadTeamWeeklyBrief, markTeamWeeklyBriefRead, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, closeWorkspaceModal, openWorkspaceModal } from "./workspace.js";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js";
 import { showChatView } from "./dashboard.js";
@@ -119,6 +119,7 @@ if (els.brandHome) {
 function closeMobileSidebar() {
   document.body.classList.remove("sidebar-open");
   els.sidebarMenuToggle?.setAttribute("aria-expanded", "false");
+  els.personalSidebarMenuToggle?.setAttribute("aria-expanded", "false");
   els.dashboardSidebarMenuToggle?.setAttribute("aria-expanded", "false");
 }
 
@@ -157,7 +158,7 @@ els.conversationList.addEventListener("click", (event) => {
     persistConversations();
     // 즐겨찾기는 메시지 변경이 아니므로 persistConversations 가 동기화하지 않는다.
     scheduleConversationSync(conversation);
-    if (state.workspaceTab === "favorites" && !els.workspaceModal?.hidden) renderWorkspace();
+    if (state.workspaceTab === "favorites" && !els.personalPanel?.hidden) renderWorkspace();
     showToast(conversation.favorite ? "대화를 즐겨찾기에 추가했어요." : "즐겨찾기에서 해제했어요.");
     return;
   }
@@ -258,24 +259,10 @@ els.evaluationContent.addEventListener("click", (event) => {
 els.evaluationModal.addEventListener("click", (event) => {
   if (event.target === els.evaluationModal) closeEvaluationModal();
 });
-els.myWorkBtn?.addEventListener("click", () => {
-  closeMobileSidebar();
-  openWorkspaceModal("personal");
-});
-els.teamDashboardBtn?.addEventListener("click", () => {
-  closeMobileSidebar();
-  openWorkspaceModal("team");
-});
-els.workspaceModalClose?.addEventListener("click", closeWorkspaceModal);
-els.workspaceModal?.addEventListener("click", (event) => {
-  if (event.target === els.workspaceModal) closeWorkspaceModal();
-});
 els.workspaceRefreshBtn?.addEventListener("click", async () => {
   els.workspaceRefreshBtn.disabled = true;
   try {
-    if (state.workspaceMode === "team") await loadTeamDashboard(true);
-    else if (state.workspaceTab === "team-brief") await loadTeamWeeklyBrief(false);
-    else if (state.workspaceTab === "playbooks") await loadPlaybooks(true);
+    if (state.workspaceTab === "playbooks") await loadPlaybooks(true);
     else await loadMyWorkspace(true);
   } catch (error) {
     showToast(error.message, "warning");
@@ -286,9 +273,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
 function selectWorkspaceTab(name) {
   state.workspaceTab = name;
   renderWorkspace();
-  if (state.workspaceTab === "team-brief") {
-    loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
-  } else if (state.workspaceTab === "playbooks" && !state.playbooks) {
+  if (state.workspaceTab === "playbooks" && !state.playbooks) {
     loadPlaybooks().catch((error) => showToast(error.message, "warning"));
   }
 }
@@ -350,32 +335,17 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
     return;
   }
-  const teamBriefButton = event.target.closest("[data-open-team-brief]");
-  if (teamBriefButton) {
-    state.workspaceTab = "team-brief";
-    renderWorkspace();
-    loadTeamWeeklyBrief().then(markTeamWeeklyBriefRead).catch((error) => showToast(error.message, "warning"));
-    return;
-  }
-  const refreshTeamBriefButton = event.target.closest("[data-refresh-team-brief]");
-  if (refreshTeamBriefButton) {
-    refreshTeamBriefButton.disabled = true;
-    loadTeamWeeklyBrief(true).catch((error) => showToast(error.message, "warning"));
-    return;
-  }
   const questionButton = event.target.closest("[data-workspace-question]");
   if (questionButton) {
     showChatView();
     els.input.value = decodeURIComponent(questionButton.dataset.workspaceQuestion || "");
     autoResizeInput();
-    closeWorkspaceModal();
     els.input.focus();
     return;
   }
   const favoriteButton = event.target.closest("[data-open-favorite]");
   if (favoriteButton) {
     showChatView();
-    closeWorkspaceModal();
     openConversation(favoriteButton.dataset.openFavorite);
     return;
   }
@@ -578,8 +548,6 @@ document.addEventListener("keydown", (event) => {
     closeChromaModal();
   } else if (event.key === "Escape" && !els.evaluationModal.hidden) {
     closeEvaluationModal();
-  } else if (event.key === "Escape" && !els.workspaceModal.hidden) {
-    closeWorkspaceModal();
   } else if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     // 모달이 모두 닫혀 있을 때만 좁은 화면의 사이드바를 닫는다.
     closeMobileSidebar();

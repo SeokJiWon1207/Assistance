@@ -31,7 +31,12 @@ class FrontendCoreTests(unittest.TestCase):
         if not node:
             self.skipTest("Node.js가 없어 프런트엔드 단위 테스트를 건너뜁니다.")
         result = subprocess.run(
-            [node, "--experimental-vm-modules", "--test", *map(str, sorted((APP_DIR / "tests").glob("frontend*.test.cjs")))],
+            [
+                node,
+                "--experimental-vm-modules",
+                "--test",
+                *map(str, sorted((APP_DIR / "tests").glob("frontend*.test.cjs"))),
+            ],
             cwd=APP_DIR,
             capture_output=True,
             text=True,
@@ -107,16 +112,14 @@ class FrontendCoreTests(unittest.TestCase):
             path = STATIC_DIR / name
             self.assertTrue(path.is_file(), name)
             self.assertLessEqual(len(path.read_text(encoding="utf-8").splitlines()), 4500)
-            marker = f'/static/{name}?v='
+            marker = f"/static/{name}?v="
             self.assertIn(marker, html)
             positions.append(html.index(marker))
         self.assertEqual(positions, sorted(positions))
 
     def test_operations_dashboard_is_connected_to_chat_and_responsive_ui(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(
-            encoding="utf-8"
-        )
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
 
         for element_id in (
@@ -128,13 +131,16 @@ class FrontendCoreTests(unittest.TestCase):
             "dashboardDetail",
         ):
             self.assertIn(f'id="{element_id}"', html)
-        self.assertLess(
-            html.index('id="viewChatBtn"'), html.index('id="viewDashboardBtn"')
-        )
+        self.assertLess(html.index('id="viewChatBtn"'), html.index('id="viewPersonalBtn"'))
+        self.assertLess(html.index('id="viewPersonalBtn"'), html.index('id="viewDashboardBtn"'))
+        self.assertIn('id="personalPanel" class="personal-panel" role="tabpanel"', html)
+        self.assertNotIn('id="workspaceModal"', html)
+        self.assertNotIn('id="teamDashboardBtn"', html)
+        self.assertNotIn('id="myWorkBtn"', html)
         self.assertIn('dashboard: "/api/workspace/dashboard"', self.application_javascript())
         self.assertIn("CUSTOMER HEALTH", dashboard_js)
         self.assertIn("data-dashboard-question", dashboard_js)
-        self.assertIn('showChatView();\n  els.input.value = question', dashboard_js)
+        self.assertIn("showChatView();\n  els.input.value = question", dashboard_js)
         self.assertIn("dashboardState.customer", dashboard_js)
         self.assertIn("@media (max-width: 860px)", dashboard_css)
         self.assertIn("@media (max-width: 560px)", dashboard_css)
@@ -176,7 +182,8 @@ class FrontendCoreTests(unittest.TestCase):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()
 
-        self.assertIn('data-workspace-tab="team-brief"', html)
+        self.assertNotIn('data-workspace-tab="team-brief"', html)
+        self.assertIn('class="team-brief-section"', app_js)
         self.assertIn('teamBrief: "/api/workspace/team-brief"', app_js)
         self.assertIn("data-refresh-team-brief", app_js)
         self.assertIn("markTeamWeeklyBriefRead", app_js)
@@ -184,13 +191,15 @@ class FrontendCoreTests(unittest.TestCase):
     def test_personal_workspace_keeps_summary_visible_and_scrolls_issue_list(self):
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
         workspace_css = (STATIC_DIR / "workspace.css").read_text(encoding="utf-8")
+        dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
 
         self.assertIn('class="workspace-list workspace-issue-list"', workspace_js)
         self.assertIn('class="workspace-overview"', workspace_js)
         self.assertIn('role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0"', workspace_js)
         self.assertIn('classList.toggle("is-overview", isPersonalOverview)', workspace_js)
         self.assertIn("`${issues.length} / ${totalOpen}건 표시`", workspace_js)
-        self.assertIn("height: min(860px, calc(100dvh - 40px))", workspace_css)
+        self.assertIn(".personal-panel {", dashboard_css)
+        self.assertIn("grid-template-rows: auto auto minmax(0, 1fr)", dashboard_css)
         self.assertIn(".workspace-content.is-overview", workspace_css)
         self.assertIn(".workspace-overview > .workspace-section", workspace_css)
         self.assertIn(".workspace-issue-list {", workspace_css)
@@ -198,7 +207,9 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("overflow-y: auto", workspace_css)
         self.assertIn("scrollbar-gutter: stable", workspace_css)
         self.assertIn(".workspace-summary-grid.is-three", workspace_css)
-        self.assertIn('closeMobileSidebar();\n  openWorkspaceModal("personal")', self.application_javascript())
+        self.assertIn(
+            'els.viewPersonalBtn.addEventListener("click", () => showPersonalView())', self.application_javascript()
+        )
 
     def test_mantis_status_labels_match_source_ui(self):
         expected_labels = {
@@ -212,9 +223,7 @@ class FrontendCoreTests(unittest.TestCase):
             "closed": "종료된 이슈",
         }
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
-        chat_source_detail_js = (
-            STATIC_DIR / "modules" / "chat_source_detail.js"
-        ).read_text(encoding="utf-8")
+        chat_source_detail_js = (STATIC_DIR / "modules" / "chat_source_detail.js").read_text(encoding="utf-8")
 
         for code, label in expected_labels.items():
             mapping = f'{code}: "{label}"'

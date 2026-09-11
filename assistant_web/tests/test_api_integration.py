@@ -47,9 +47,12 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(app_js.status_code, 200)
 
     def test_readiness_reports_missing_dependency_without_affecting_liveness(self):
-        with tempfile.TemporaryDirectory() as directory, patch(
-            "backend.api.operations.CHROMA_DB_PATH",
-            Path(directory) / "missing.sqlite3",
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch(
+                "backend.api.operations.CHROMA_DB_PATH",
+                Path(directory) / "missing.sqlite3",
+            ),
         ):
             response = self.client.get("/ready")
 
@@ -64,10 +67,13 @@ class ApiIntegrationTests(unittest.TestCase):
                 return {"status": "error", "reason": "missing"}
             return {"status": "ok"}
 
-        with patch.object(operations_api, "_sqlite_check", side_effect=check_database), patch.object(
-            operations_api,
-            "get_model_transport_security_status",
-            return_value={"status": "secure"},
+        with (
+            patch.object(operations_api, "_sqlite_check", side_effect=check_database),
+            patch.object(
+                operations_api,
+                "get_model_transport_security_status",
+                return_value={"status": "secure"},
+            ),
         ):
             response = self.client.get("/ready")
 
@@ -129,9 +135,7 @@ class ApiIntegrationTests(unittest.TestCase):
 
     @patch.object(workspace_api, "build_operations_dashboard")
     @patch.object(workspace_api, "current_request_user")
-    def test_dashboard_endpoint_uses_member_scope_without_user_directory(
-        self, current_user, build_dashboard
-    ):
+    def test_dashboard_endpoint_rejects_member_without_loading_team_data(self, current_user, build_dashboard):
         current_user.return_value = {
             "uid": "uid-1",
             "displayName": "팀원",
@@ -141,11 +145,8 @@ class ApiIntegrationTests(unittest.TestCase):
 
         response = self.client.get("/api/workspace/dashboard?days=30")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["meta"]["scope"], "personal")
-        build_dashboard.assert_called_once_with(
-            current_user.return_value, users=[], days=30
-        )
+        self.assertEqual(response.status_code, 403)
+        build_dashboard.assert_not_called()
 
     @patch.object(workspace_api, "list_users")
     @patch.object(workspace_api, "build_operations_dashboard")
@@ -172,7 +173,7 @@ class ApiIntegrationTests(unittest.TestCase):
 
     @patch.object(workspace_api, "current_request_user")
     def test_dashboard_endpoint_rejects_unsupported_period(self, current_user):
-        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        current_user.return_value = {"uid": "uid-1", "role": "manager"}
 
         response = self.client.get("/api/workspace/dashboard?days=15")
 
@@ -360,8 +361,9 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_missing_accuracy_report_returns_not_found(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(
-            quality_api, "ACCURACY_REPORT_DIR", Path(directory)
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(quality_api, "ACCURACY_REPORT_DIR", Path(directory)),
         ):
             response = self.client.get("/api/accuracy/reports/accuracy-20260722-000000.json")
         self.assertEqual(response.status_code, 404)
@@ -369,14 +371,15 @@ class ApiIntegrationTests(unittest.TestCase):
     def test_feedback_is_saved_updated_and_summarized_by_audit_log(self):
         with tempfile.TemporaryDirectory() as directory:
             audit_path = Path(directory) / "audit.sqlite3"
-            with patch.object(audit_module, "AUDIT_DB_PATH", audit_path), patch.object(
-                quality_api, "AUDIT_DB_PATH", audit_path
+            with (
+                patch.object(audit_module, "AUDIT_DB_PATH", audit_path),
+                patch.object(quality_api, "AUDIT_DB_PATH", audit_path),
             ):
                 audit_module.init_audit_db()
                 audit_id = "a" * 32
                 with closing(sqlite3.connect(audit_path)) as connection, connection:
                     connection.execute(
-                """
+                        """
                 INSERT INTO validation_logs (
                     id, created_at, question, model_id, mode, score, status, payload
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -426,8 +429,9 @@ class ApiIntegrationTests(unittest.TestCase):
     def test_feedback_rejects_an_unknown_audit_log(self):
         with tempfile.TemporaryDirectory() as directory:
             audit_path = Path(directory) / "audit.sqlite3"
-            with patch.object(audit_module, "AUDIT_DB_PATH", audit_path), patch.object(
-                quality_api, "AUDIT_DB_PATH", audit_path
+            with (
+                patch.object(audit_module, "AUDIT_DB_PATH", audit_path),
+                patch.object(quality_api, "AUDIT_DB_PATH", audit_path),
             ):
                 response = self.client.post(
                     "/api/feedback",
@@ -438,10 +442,12 @@ class ApiIntegrationTests(unittest.TestCase):
     @patch.object(quality_api.subprocess, "Popen")
     def test_accuracy_runner_passes_follow_up_scenario_count(self, popen):
         process = Mock()
-        process.stdout = iter([
-            'PROGRESS {"type":"run_start","total":14}\n',
-            'PROGRESS {"type":"summary","summary":{"passed":14,"total":14}}\n',
-        ])
+        process.stdout = iter(
+            [
+                'PROGRESS {"type":"run_start","total":14}\n',
+                'PROGRESS {"type":"summary","summary":{"passed":14,"total":14}}\n',
+            ]
+        )
         process.wait.return_value = 0
         popen.return_value = process
 
