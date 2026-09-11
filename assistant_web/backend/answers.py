@@ -476,6 +476,8 @@ def format_deterministic_issue_answer(
     criteria = format_issue_list_criteria(display_constraints, issues)
     if group_by == "customer":
         criteria = f"{criteria}, 고객사별 최신 이슈 1건" if criteria != "요청 조건" else "고객사별 최신 이슈 1건"
+    elif group_by == "platform":
+        criteria = f"{criteria}, 매체별 구분" if criteria != "요청 조건" else "매체별 구분"
     status_note = build_status_excluded_note(display_constraints, retrieval_result)
     unapplied_note = build_unapplied_filters_note(retrieval_result)
     unverified_person_note = build_unverified_person_note(display_constraints, len(issues))
@@ -494,11 +496,13 @@ def format_deterministic_issue_answer(
             parts.extend(["", snapshot_note])
         return "\n".join(parts)
 
-    intro = (
-        f"🔍 고객사 {len(issues)}곳의 최신 이슈를 하나씩 정리했어요."
-        if group_by == "customer"
-        else build_issue_intro_line(display_constraints, issues, len(issues))
-    )
+    if group_by == "customer":
+        intro = f"🔍 고객사 {len(issues)}곳의 최신 이슈를 하나씩 정리했어요."
+    elif group_by == "platform":
+        platform_count = len({_issue_group_value(issue, group_by) for issue in issues})
+        intro = f"🔍 조건에 맞는 이슈 {len(issues)}건을 매체 {platform_count}개로 나눠 정리했어요."
+    else:
+        intro = build_issue_intro_line(display_constraints, issues, len(issues))
 
     if display_constraints.get("issue_ids"):
         lines = [intro, "", f"검색 기준: {criteria}, 정렬: 최신 이슈 ID 기준", ""]
@@ -553,7 +557,18 @@ def format_deterministic_issue_answer(
                 f"{issue['created_at'] or '미상'} |"
             )
     else:
+        group_counts: Dict[str, int] = {}
+        if group_by == "platform":
+            for issue in issues:
+                label = _issue_group_value(issue, group_by)
+                group_counts[label] = group_counts.get(label, 0) + 1
+        current_group = ""
         for index, issue in enumerate(issues, start=1):
+            if group_by == "platform":
+                label = _issue_group_value(issue, group_by)
+                if label != current_group:
+                    current_group = label
+                    lines.extend([f"**{label} · {group_counts[label]}건**", ""])
             lines.append(
                 f"{index}. **ID**: {issue['id']} | "
                 f"**프로젝트**: {issue['project']} | "
@@ -571,6 +586,8 @@ def format_deterministic_issue_answer(
     requested_limit = extract_requested_limit(query_text)
     if group_by == "customer":
         lines.extend(["", f"총 {len(issues)}개 고객사의 최신 이슈를 확인했습니다."])
+    elif group_by == "platform":
+        lines.extend(["", f"매체별 이슈를 합해 총 {len(issues)}건을 확인했습니다."])
     elif found_count and found_count > len(issues):
         lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건까지 표시했습니다. 더 보려면 표시 개수를 늘리거나 기간을 좁혀 다시 요청해 주세요."])
     elif requested_limit and found_count and found_count < requested_limit:
@@ -589,6 +606,14 @@ def select_grouped_issue_rows(
     group_by: Optional[str],
 ) -> List[Dict[str, Any]]:
     """For customer grouping, retain the newest issue for each project."""
+    if group_by == "platform":
+        return sorted(
+            issues,
+            key=lambda issue: (
+                _issue_group_value(issue, group_by).casefold(),
+                -int(issue.get("id") or 0),
+            ),
+        )
     if group_by != "customer":
         return issues
 
@@ -606,6 +631,13 @@ def select_grouped_issue_rows(
         seen_projects.add(project_key)
         selected.append(issue)
     return selected
+
+
+def _issue_group_value(issue: Dict[str, Any], group_by: str) -> str:
+    if group_by == "platform":
+        detail = issue.get("detail") or {}
+        return str(issue.get("media_type") or detail.get("media_type") or "기타/미상").strip() or "기타/미상"
+    return "기타/미상"
 
 
 def format_model_timeout_fallback(

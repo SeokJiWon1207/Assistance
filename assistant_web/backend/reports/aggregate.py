@@ -51,6 +51,7 @@ def extract_month_count_query(text: str) -> Optional[Dict[str, int]]:
 
 COUNT_GROUP_LABELS = {
     "customer": "고객사",
+    "platform": "매체",
     "status": "상태",
     "owner": "담당자",
     "month": "월",
@@ -61,6 +62,8 @@ def count_group_key(group_by: str):
     """건수 집계에 쓸 그룹 값을 이슈에서 뽑는 함수를 돌려준다."""
     if group_by == "customer":
         return lambda issue: str(issue.get("project") or "")
+    if group_by == "platform":
+        return lambda issue: str(issue.get("media_type") or "기타/미상")
     if group_by == "status":
         return lambda issue: display_status_label(issue.get("status"))
     if group_by == "owner":

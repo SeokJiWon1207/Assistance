@@ -13,6 +13,7 @@ from backend.answers import (
 )
 from backend.config import notion_post_json
 from backend.intent.entities import extract_mantis_keyword
+from backend.intent.source_router import rule_based_search_intent
 from backend.reports.effort import extract_effort_query
 from backend.reports.evaluation import build_verification_report
 from backend.retrieval import grounded_mantis_terms, run_retrieval_pipeline
@@ -33,6 +34,7 @@ from backend.sources.notion import notion_page_matches_constraints
 from backend.query_planning import (
     build_query_plan,
     extract_created_at_range,
+    extract_group_by,
     extract_relative_created_at_range,
     infer_operation,
     plan_created_at_matches,
@@ -42,6 +44,51 @@ from backend.query_planning import (
 
 
 class QueryPlanningTests(unittest.TestCase):
+    def test_weekly_media_grouping_routes_to_mantis_without_keyword_pollution(self):
+        question = "금주 접수된 건 보여줘 매체별로"
+        constraints = extract_query_constraints(question)
+        source_plan = rule_based_search_intent(question, constraints)
+        plan = build_query_plan(question, source_plan, constraints)
+
+        self.assertEqual(extract_group_by(question), "platform")
+        self.assertEqual(build_keyword_terms(question, constraints), [])
+        self.assertEqual(source_plan["source"], "mantis")
+        self.assertEqual(source_plan["authority"], "authoritative")
+        self.assertEqual(plan["group_by"], "platform")
+        self.assertEqual(plan["filters"]["created_at"]["precision"], "this_week")
+
+    def test_media_grouped_issue_list_keeps_all_rows_under_media_headings(self):
+        def issue(issue_id, media):
+            return {
+                "id": issue_id,
+                "project": "고객사",
+                "summary": f"테스트 이슈 {issue_id}",
+                "status": "confirmed",
+                "handler": "담당자",
+                "created_at": "2026-09-10",
+                "media_type": media,
+            }
+
+        question = "금주 접수된 건 보여줘 매체별로"
+        constraints = extract_query_constraints(question)
+        retrieval = {
+            "intent_plan": {"source": "mantis", "group_by": "platform"},
+            "stages": [{
+                "source": "mantis_page_scan",
+                "status": "ok",
+                "issues_list": [issue(3, "HTS"), issue(2, "MTS"), issue(1, "HTS")],
+                "meta": {"found_count": 3},
+            }],
+        }
+
+        answer = format_deterministic_issue_answer(question, constraints, retrieval, 200)
+
+        self.assertIn("매체 2개로 나눠", answer)
+        self.assertIn("**HTS · 2건**", answer)
+        self.assertIn("**MTS · 1건**", answer)
+        self.assertEqual(answer.count("**ID**:"), 3)
+        self.assertIn("총 3건을 확인했습니다", answer)
+
     def test_weekly_report_control_words_do_not_become_mantis_keywords(self):
         question = "저번주 업무보고서 작성해줘 담당자: 석지원"
         constraints = extract_query_constraints(question)

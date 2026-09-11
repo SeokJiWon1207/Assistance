@@ -320,7 +320,7 @@ def plan_search_intent_with_model(
         '예: \'MTS는 빼고\'는 {"field":"platform","operator":"not_equals","value":"mts"}다. '
         '\'종료 안 된/종료되지 않은/미종료\'는 {"field":"status","operator":"not_equals","value":"closed"}다. '
         "'고객사별로/담당자별로/상태별로/유형별로'처럼 결과를 묶어 달라는 요청은 필터로 만들지 말고 "
-        "각각 group_by를 customer/owner/status/type으로 출력해라. "
+        "각각 group_by를 customer/platform/owner/status/type으로 출력해라. "
         "created_at은 등록일 기준이며 from/to를 YYYY-MM-DD로 출력한다. 예를 들어 2025년은 "
         '{"from":"2025-01-01","to":"2025-12-31"}이다. '
         "'오늘/어제/이번 주/지난주/최근 N일'처럼 상대적인 시점도 위 오늘 날짜를 기준으로 "

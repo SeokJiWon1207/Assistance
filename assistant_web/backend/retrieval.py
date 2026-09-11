@@ -168,13 +168,9 @@ def run_retrieval_pipeline(
     plan_source = str((intent_plan or {}).get("source", ""))
     if plan_source not in {"notion", "mantis", "both", "general"}:
         plan_source = str(rule_based_search_intent(query_text, constraints).get("source") or "general")
-    # 고객사별 최신 목록은 특정 검색어가 아니라 전체 이슈 집합이 대상이다.
-    # 플래너가 "최근"·"하나씩" 같은 표현을 검색어로 되돌려도 적용하지 않는다.
-    planned_terms = (
-        []
-        if (intent_plan or {}).get("group_by") == "customer"
-        else (intent_plan or {}).get("terms") or []
-    )
+    # 그룹별 목록은 특정 검색어가 아니라 전체 이슈 집합이 대상이다.
+    # 플래너가 "최근"·"하나씩"·"매체별" 같은 표현을 검색어로 되돌려도 적용하지 않는다.
+    planned_terms = [] if (intent_plan or {}).get("group_by") else (intent_plan or {}).get("terms") or []
     notion_intent = plan_source in {"notion", "both"}
     mantis_intent = plan_source in {"mantis", "both"}
     normalized_query = normalize_for_match(query_text)
@@ -568,6 +564,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> Li
                 "severity": issue.get("severity", ""),
                 "handler": issue.get("handler", "담당자 미지정"),
                 "created_at": issue.get("created_at", ""),
+                "media_type": issue.get("media_type", "기타/미상"),
                 "preview": issue.get("description", "")[:260],
                 "detail": issue,
             }
@@ -589,6 +586,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> Li
                     "severity": latest_issue.get("severity", ""),
                     "handler": latest_issue.get("handler", "담당자 미지정"),
                     "created_at": latest_issue.get("created_at", ""),
+                    "media_type": latest_issue.get("media_type", "기타/미상"),
                     "preview": latest_issue.get("description", "")[:260],
                     "detail": latest_issue,
                     "_retrieval_rank": int(doc.get("similarity_rank") or document_index),
@@ -606,6 +604,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> Li
                 "severity": "",
                 "handler": extract_chroma_field(content, "담당자") or "담당자 미지정",
                 "created_at": extract_chroma_date(content),
+                "media_type": extract_chroma_field(content, "매체구분") or "기타/미상",
                 "preview": re.sub(r"\s+", " ", content)[:260],
                 "detail": {"content": content},
                 "_retrieval_rank": int(doc.get("similarity_rank") or document_index),

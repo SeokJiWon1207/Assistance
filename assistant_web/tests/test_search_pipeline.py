@@ -1152,6 +1152,11 @@ class CountGroupingTests(unittest.TestCase):
         self.assertIsNone(count_group_key("type"))
         self.assertIsNone(count_group_key(""))
 
+    def test_platform_group_uses_media_type(self):
+        key = count_group_key("platform")
+        self.assertIsNotNone(key)
+        self.assertEqual(key({"media_type": "MTS"}), "MTS")
+
 
 if __name__ == "__main__":
     unittest.main()
