@@ -47,6 +47,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(core.status_code, 200)
         self.assertIn("AssistantFrontendCore", core.text)
         self.assertEqual(app_js.status_code, 200)
+        self.assertEqual(app_js.headers["cache-control"], "no-store, max-age=0")
 
     def test_app_version_uses_release_environment(self):
         with patch.dict(os.environ, {"APP_RELEASE_ID": "20260911T050000Z"}):

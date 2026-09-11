@@ -1,5 +1,5 @@
-import { state, els, apiFetch, ADMIN_ENDPOINTS } from "./runtime.js";
-import { statusLabel, TEAM_TEMPLATES, escapeHtml } from "./chat.js";
+import { state, els, apiFetch, ADMIN_ENDPOINTS } from "./runtime.js?v=20260911-6";
+import { statusLabel, TEAM_TEMPLATES, escapeHtml } from "./chat.js?v=20260911-6";
 
 async function loadEvaluationData() {
   const [casesResponse, logsResponse, summaryResponse, historyResponse, feedbackResponse] = await Promise.all([
@@ -753,4 +753,4 @@ export {
   runEvaluations,
 };
 
-export { ADMIN_ENDPOINTS } from "./runtime.js";
+export { ADMIN_ENDPOINTS } from "./runtime.js?v=20260911-6";

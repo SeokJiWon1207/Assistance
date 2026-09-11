@@ -55,7 +55,13 @@ class CacheRevalidatedStaticFiles(StaticFiles):
 
     def file_response(self, *args, **kwargs):
         response = super().file_response(*args, **kwargs)
-        response.headers.setdefault("Cache-Control", "no-cache")
+        full_path = kwargs.get("full_path") or (args[0] if args else "")
+        if Path(str(full_path)).suffix.lower() == ".js":
+            # ES module 하위 import는 최상위 파일의 쿼리 버전을 상속하지 않는다.
+            # 브라우저 메모리 캐시에 서로 다른 배포의 모듈이 섞이지 않게 한다.
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+        else:
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
 

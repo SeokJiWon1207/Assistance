@@ -1,6 +1,6 @@
-import { state, els, defaultOptions, themeStorageKey, apiFetch, buildTeamTemplateQuestion, automaticSourceTools } from "./runtime.js";
-import { showToast, persistConversations } from "./workspace.js";
-import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js";
+import { state, els, defaultOptions, themeStorageKey, apiFetch, buildTeamTemplateQuestion, automaticSourceTools } from "./runtime.js?v=20260911-6";
+import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
+import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js?v=20260911-6";
 import {
   configureChatFeedback,
   MESSAGE_ACTION_ICONS,
@@ -9,7 +9,7 @@ import {
   openFeedbackModal,
   closeFeedbackModal,
   saveMessageFeedback,
-} from "./chat_feedback.js";
+} from "./chat_feedback.js?v=20260911-6";
 import {
   hasIssueSummaryList,
   shouldHideSourceList,
@@ -43,7 +43,7 @@ import {
   formatMantisDetail,
   displayIssueStatus,
   openSourceDetail,
-} from "./chat_rendering.js";
+} from "./chat_rendering.js?v=20260911-6";
 import {
   CHART_COLORS,
   renderBarChartSVG,
@@ -51,8 +51,8 @@ import {
   renderEffortChart,
   renderEffortRankingChart,
   truncateChartLabel,
-} from "./charts.js";
-import { renderEffortTrendChart } from "./trend_chart.js";
+} from "./charts.js?v=20260911-6";
+import { renderEffortTrendChart } from "./trend_chart.js?v=20260911-6";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -886,4 +886,4 @@ export {
   requestAssistant,
 };
 
-export { createConversationRecord } from "./runtime.js";
+export { createConversationRecord } from "./runtime.js?v=20260911-6";

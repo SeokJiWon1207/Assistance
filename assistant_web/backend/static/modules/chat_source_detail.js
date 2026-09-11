@@ -1,5 +1,5 @@
-import { els, apiFetch } from "./runtime.js";
-import { formatNotionDetail } from "./notion.js";
+import { els, apiFetch } from "./runtime.js?v=20260911-6";
+import { formatNotionDetail } from "./notion.js?v=20260911-6";
 
 function openChromaModal({ issueId, title, content, meta }) {
   els.chromaModalMeta.textContent = meta || `이슈 상세 · #${issueId}`;

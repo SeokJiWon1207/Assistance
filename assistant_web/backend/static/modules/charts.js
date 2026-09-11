@@ -1,4 +1,4 @@
-import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js";
+import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js?v=20260911-6";
 
 function escapeHtml(value) {
   const span = document.createElement("span");

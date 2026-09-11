@@ -1,8 +1,8 @@
-import "./events.js";
-import { state, els, defaultOptions } from "./runtime.js";
-import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js";
-import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
-import { initDashboard, loadDashboard } from "./dashboard.js";
+import "./events.js?v=20260911-6";
+import { state, els, defaultOptions } from "./runtime.js?v=20260911-6";
+import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=20260911-6";
+import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js?v=20260911-6";
+import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
 
 let loadedAppVersion = "";
 let appUpdateNotified = false;

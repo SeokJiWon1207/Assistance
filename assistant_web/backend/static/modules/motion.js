@@ -2,7 +2,7 @@
 // 빌드 스텝 없이 vendor에 넣은 ESM 번들을 그대로 불러온다.
 // 모든 애니메이션은 prefers-reduced-motion 설정을 존중하며, 해당 설정이 켜져
 // 있으면 애니메이션을 건너뛰고 최종 상태만 즉시 적용한다.
-import { animate, stagger, utils } from "../vendor/anime.esm.min.js";
+import { animate, stagger, utils } from "../vendor/anime.esm.min.js?v=20260911-6";
 
 export { animate, stagger, utils };
 

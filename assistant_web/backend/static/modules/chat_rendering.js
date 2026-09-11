@@ -1,4 +1,4 @@
-import { state } from "./runtime.js";
+import { state } from "./runtime.js?v=20260911-6";
 import {
   isMarkdownTableRow,
   isMarkdownTableSeparatorRow,
@@ -6,7 +6,7 @@ import {
   renderMarkdownTable,
   extractInlineMarkdownTable,
   renderNotionAnswer,
-} from "./notion.js";
+} from "./notion.js?v=20260911-6";
 import {
   openChromaModal,
   parseDetailSections,
@@ -17,7 +17,7 @@ import {
   formatMantisDetail,
   displayIssueStatus,
   openSourceDetail,
-} from "./chat_source_detail.js";
+} from "./chat_source_detail.js?v=20260911-6";
 
 function hasIssueSummaryList(content) {
   return String(content || "")

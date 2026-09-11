@@ -1,6 +1,6 @@
-import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, deriveConversationTitle, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js";
-import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js";
-import { cancelMessageEdit } from "./events.js";
+import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, deriveConversationTitle, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
+import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
+import { cancelMessageEdit } from "./events.js?v=20260911-6";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -782,4 +782,4 @@ export {
   markTeamWeeklyBriefRead,
 };
 
-export { scopedStorageKey, WORKSPACE_ENDPOINTS } from "./runtime.js";
+export { scopedStorageKey, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";

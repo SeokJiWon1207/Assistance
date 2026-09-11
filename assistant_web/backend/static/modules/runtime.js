@@ -1,5 +1,5 @@
-import { apiFetch } from "./api.js";
-import { initialCurrentUser } from "./auth.js";
+import { apiFetch } from "./api.js?v=20260911-6";
+import { initialCurrentUser } from "./auth.js?v=20260911-6";
 
 const {
   storageSafeMessages,

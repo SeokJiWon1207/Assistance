@@ -38,7 +38,7 @@ async function harness(role, stored, fetcher) {
   };
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard.js'), 'utf8'), { context });
   await module.link((specifier) => {
-    const values = dependencies[specifier];
+    const values = dependencies[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
     }, { context });

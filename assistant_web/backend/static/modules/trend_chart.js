@@ -3,7 +3,7 @@
 // ECharts 번들은 1MB가 넘어 모든 사용자가 부담할 이유가 없다. 추이 차트가 실제로
 // 응답에 포함될 때만 동적 import 로 불러오고, 한 번 불러온 모듈은 재사용한다.
 // 기존 도넛/막대 차트는 그대로 인라인 SVG를 쓰며 이 모듈과 무관하다.
-import { prefersReducedMotion } from "./motion.js";
+import { prefersReducedMotion } from "./motion.js?v=20260911-6";
 
 const SERIES_COLOR_VARIABLES = [
   "--chart-1",

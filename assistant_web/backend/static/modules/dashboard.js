@@ -1,6 +1,6 @@
-import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js";
-import { responseJson } from "./api.js";
-import { ensureMyWorkspaceFresh, renderWorkspace, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js";
+import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
+import { responseJson } from "./api.js?v=20260911-6";
+import { ensureMyWorkspaceFresh, renderWorkspace, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };

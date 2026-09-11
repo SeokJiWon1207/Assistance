@@ -1,5 +1,5 @@
-import { state, els, apiFetch, buildChatMessages, parseSseBuffer } from "./runtime.js";
-import { persistConversations } from "./workspace.js";
+import { state, els, apiFetch, buildChatMessages, parseSseBuffer } from "./runtime.js?v=20260911-6";
+import { persistConversations } from "./workspace.js?v=20260911-6";
 
 const controllerHooks = {
   selectedModel: null,

@@ -1,6 +1,6 @@
-import { state, els, apiFetch } from "./runtime.js";
-import { showToast, persistConversations } from "./workspace.js";
-import { refreshFeedbackSummary } from "./admin.js";
+import { state, els, apiFetch } from "./runtime.js?v=20260911-6";
+import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
+import { refreshFeedbackSummary } from "./admin.js?v=20260911-6";
 
 let renderMessagesCallback = () => {};
 

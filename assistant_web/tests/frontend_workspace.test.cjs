@@ -39,7 +39,7 @@ async function harness(apiFetch) {
   const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace.js'), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
   await module.link((specifier) => {
-    const exports = modules[specifier];
+    const exports = modules[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
     }, { context });
