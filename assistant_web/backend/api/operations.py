@@ -1,5 +1,6 @@
 """Liveness/readiness checks and the static application entry point."""
 
+import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -90,4 +91,16 @@ def readiness() -> JSONResponse:
 
 @router.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+@router.get("/api/app-version")
+def app_version() -> Dict[str, str]:
+    """열려 있는 화면이 새 운영 릴리스를 감지할 수 있게 한다."""
+    return {"version": os.getenv("APP_RELEASE_ID", "development").strip() or "development"}

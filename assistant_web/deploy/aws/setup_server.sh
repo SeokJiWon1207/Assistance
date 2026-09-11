@@ -285,6 +285,7 @@ User=$APP_USER
 WorkingDirectory=$CURRENT_LINK/assistant_web
 Environment=PYTHONUNBUFFERED=1
 Environment=APP_ENV=production
+Environment=APP_RELEASE_ID=$RELEASE_ID
 Environment=PUBLIC_BASE_URL=https://$SERVER_NAME
 Environment=AUTH_COOKIE_SECURE=true
 Environment=ASSISTANT_RUNTIME_DIR=$STATE_DIR

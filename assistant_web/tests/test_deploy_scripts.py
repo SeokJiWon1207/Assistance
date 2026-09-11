@@ -28,6 +28,7 @@ class DeploymentScriptTests(unittest.TestCase):
             "Environment=MANTIS_INDEX_MODE=$MANTIS_INDEX_MODE",
             script,
         )
+        self.assertIn("Environment=APP_RELEASE_ID=$RELEASE_ID", script)
         self.assertIn("Activation failed; rolling current back", script)
 
     def test_shared_database_changes_are_quiesced_backed_up_and_recoverable(self):

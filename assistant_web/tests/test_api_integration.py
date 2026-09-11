@@ -40,11 +40,20 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(health.status_code, 200)
         self.assertEqual(health.json(), {"status": "ok"})
         self.assertEqual(index.status_code, 200)
+        self.assertEqual(index.headers["cache-control"], "no-store, max-age=0")
+        self.assertEqual(index.headers["pragma"], "no-cache")
         self.assertIn('id="chatForm"', index.text)
         self.assertIn("/static/frontend_core.js", index.text)
         self.assertEqual(core.status_code, 200)
         self.assertIn("AssistantFrontendCore", core.text)
         self.assertEqual(app_js.status_code, 200)
+
+    def test_app_version_uses_release_environment(self):
+        with patch.dict(os.environ, {"APP_RELEASE_ID": "20260911T050000Z"}):
+            response = self.client.get("/api/app-version")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"version": "20260911T050000Z"})
 
     def test_readiness_reports_missing_dependency_without_affecting_liveness(self):
         with (

@@ -1,8 +1,28 @@
 import "./events.js";
 import { state, els, defaultOptions } from "./runtime.js";
-import { loadConversations, loadMyWorkspace } from "./workspace.js";
+import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js";
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js";
 import { initDashboard, loadDashboard } from "./dashboard.js";
+
+let loadedAppVersion = "";
+let appUpdateNotified = false;
+
+async function checkAppVersion() {
+  const response = await fetch("/api/app-version", { credentials: "same-origin", cache: "no-store" });
+  if (!response.ok) return;
+  const version = String((await response.json()).version || "");
+  if (!version) return;
+  if (!loadedAppVersion) {
+    loadedAppVersion = version;
+    return;
+  }
+  if (version === loadedAppVersion || appUpdateNotified) return;
+  appUpdateNotified = true;
+  showToast("새 버전이 배포되었습니다. 화면을 새로고침해 주세요.", "warning", {
+    label: "새로고침",
+    onClick: () => globalThis.location.reload(),
+  });
+}
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
@@ -12,6 +32,7 @@ async function bootstrapApplication(authState = {}) {
   await Promise.all([
     loadConversations(),
     loadTeamTemplates().catch(() => {}),
+    checkAppVersion().catch(() => {}),
   ]);
   const workspaceReady = state.currentUser?.uid
     ? loadMyWorkspace().catch(() => {})
@@ -30,6 +51,7 @@ async function bootstrapApplication(authState = {}) {
   renderMessages();
   initDashboard();
   if (state.currentUser?.uid) workspaceReady.finally(() => loadDashboard());
+  globalThis.setInterval(() => checkAppVersion().catch(() => {}), 60_000);
 }
 
 Promise.resolve(globalThis.AssistantAuthReady || { enabled: false, authenticated: false, user: null })
