@@ -879,27 +879,33 @@ class QueryPlanningTests(unittest.TestCase):
     @patch("backend.retrieval.execute_mantis_page_scan")
     @patch("backend.retrieval.execute_mantis_snapshot_search")
     @patch("backend.retrieval.execute_chroma_search")
+    @patch("backend.retrieval.get_chroma_document")
     @patch("backend.sources.mantis.fetch_mantis_issue_by_id")
     def test_similar_issue_query_uses_reference_issue_for_chroma(
         self,
         fetch_issue,
+        get_document,
         chroma_search,
         snapshot_search,
         page_scan,
         filter_search,
     ):
-        fetch_issue.return_value = {
-            "id": 30967,
-            "project": {"name": "146케이프증권(CAPE증권)"},
-            "summary": "[7600] 차트 지표 실시간 미갱신 현상",
-            "status": {"name": "assigned"},
-            "handler": {"real_name": "석지원"},
-            "created_at": "2026-04-01T00:00:00+09:00",
-            "description": "차트 지표가 실시간으로 갱신되지 않는 현상",
-            "custom_fields": [
-                {"field": {"name": "화면번호"}, "value": "7600"},
-                {"field": {"name": "매체구분"}, "value": "HTS"},
-            ],
+        get_document.return_value = {
+            "issue_id": 30967,
+            "content": """[Mantis 이슈 정보]
+- 이슈 ID: #30967
+- 프로젝트(고객사): 146케이프증권(CAPE증권)
+- 현재 상태: assigned
+- 담당자: 석지원
+- 등록일: 2026-04-01
+- 매체구분: HTS
+- 화면번호: 7600
+
+[제목]
+[7600] 차트 지표 실시간 미갱신 현상
+
+[고객사 본문 요청 내용]
+차트 지표가 실시간으로 갱신되지 않는 현상""",
         }
         chroma_search.return_value = {
             "source": "chroma_db",
@@ -919,6 +925,8 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertEqual([stage["source"] for stage in result["stages"]], ["mantis_id_lookup_reference", "chroma_similar"])
         self.assertEqual(result["stages"][0]["issues_list"], [])
+        self.assertEqual(result["stages"][0]["meta"]["local_reference_count"], 1)
+        fetch_issue.assert_not_called()
         similar_constraints = chroma_search.call_args.args[2]
         self.assertEqual(similar_constraints["issue_ids"], [])
         self.assertEqual(similar_constraints["exclude_issue_ids"], [30967])

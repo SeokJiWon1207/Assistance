@@ -9,6 +9,7 @@
 import re
 from typing import Any, Dict, List, Optional
 
+import requests
 from fastapi import HTTPException
 
 from backend.common import (
@@ -19,11 +20,12 @@ from backend.common import (
     extract_project_from_chroma_text,
     extract_quoted_value,
     extract_title_from_chroma_text,
+    normalize_chroma_issue_document,
     normalize_for_match,
     remove_quoted_value,
 )
 from backend.query_filters import filter_audit_for_source
-from backend.sources.chroma import execute_chroma_search
+from backend.sources.chroma import execute_chroma_search, get_chroma_document
 from backend.sources.mantis import (
     execute_mantis_filter_search,
     execute_mantis_id_lookup,
@@ -43,12 +45,55 @@ from backend.understanding import (
     EXPLICIT_NOTION_MARKERS,
     build_keyword_terms,
     build_similar_issue_search_text,
+    chroma_text_matches_constraints,
     extract_query_constraints,
     has_constraint,
     merge_query_plan_constraints,
     rule_based_search_intent,
     wants_similar_issue_search,
 )
+
+
+def _similar_reference_lookup(
+    issue_ids: List[int], constraints: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Resolve similarity base issues locally before trying the live API."""
+    reference_issues: List[Dict[str, Any]] = []
+    missing_ids: List[int] = []
+    for issue_id in issue_ids:
+        document = get_chroma_document(issue_id)
+        content = str((document or {}).get("content") or "")
+        issue = normalize_chroma_issue_document(content)
+        if issue and chroma_text_matches_constraints(content, constraints):
+            reference_issues.append(issue)
+        elif not document:
+            missing_ids.append(issue_id)
+
+    local_reference_count = len(reference_issues)
+    reason = ""
+    if missing_ids:
+        try:
+            live_stage = execute_mantis_id_lookup(missing_ids, constraints)
+            reference_issues.extend(live_stage.get("issues_list") or [])
+            missing_ids = list((live_stage.get("meta") or {}).get("missing_ids") or [])
+        except (HTTPException, requests.RequestException) as exc:
+            reason = exc.detail if isinstance(exc, HTTPException) else type(exc).__name__
+
+    reference_issues.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
+    return {
+        "source": "mantis_id_lookup_reference",
+        "status": "ok" if reference_issues else ("error" if reason else "not_found"),
+        "reason": str(reason),
+        "issues_list": [],
+        "meta": {
+            "issue_ids": issue_ids,
+            "missing_ids": missing_ids,
+            "displayed_count": 0,
+            "reference_issues": reference_issues,
+            "reference_only": True,
+            "local_reference_count": local_reference_count,
+        },
+    }
 
 
 def source_specific_terms(query_text: str, source: str, constraints: Dict[str, Any]) -> List[str]:
@@ -199,26 +244,22 @@ def run_retrieval_pipeline(
     if tools.get("mantis") and mantis_intent:
         if constraints.get("issue_ids"):
             try:
-                id_stage = execute_mantis_id_lookup(constraints["issue_ids"], constraints)
                 if similar_issue_search:
-                    id_stage = {
-                        **id_stage,
-                        "source": "mantis_id_lookup_reference",
-                        "issues_list": [],
-                        "meta": {
-                            **id_stage.get("meta", {}),
-                            "reference_issues": id_stage.get("issues_list", []),
-                            "reference_only": True,
-                        },
-                    }
+                    id_stage = _similar_reference_lookup(
+                        constraints["issue_ids"], constraints
+                    )
+                else:
+                    id_stage = execute_mantis_id_lookup(
+                        constraints["issue_ids"], constraints
+                    )
                 stages.append(id_stage)
-            except HTTPException as exc:
+            except (HTTPException, requests.RequestException) as exc:
                 stages.append(
                     {
                         "source": "mantis_id_lookup_reference" if similar_issue_search else "mantis_id_lookup",
                         "status": "error",
                         "error_kind": "dependency",
-                        "reason": exc.detail,
+                        "reason": exc.detail if isinstance(exc, HTTPException) else type(exc).__name__,
                         "issues_list": [],
                         "meta": {"displayed_count": 0},
                     }
