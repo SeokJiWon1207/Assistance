@@ -73,13 +73,23 @@ class OperationsDashboardTests(unittest.TestCase):
                 today=date(2026, 8, 27),
             )
 
-    def test_member_dashboard_uses_personal_metrics_and_team_health(self):
+    def test_member_dashboard_uses_team_metrics_and_workload(self):
+        users = [
+            {
+                "uid": "u1",
+                "displayName": "석지원",
+                "role": "member",
+                "mantisUsername": "석지원",
+                "approved": True,
+            }
+        ]
         result = self._build(
-            {"uid": "u1", "displayName": "석지원", "role": "member", "mantisUsername": "석지원"}
+            {"uid": "u1", "displayName": "석지원", "role": "member", "mantisUsername": "석지원"},
+            users,
         )
 
-        self.assertEqual(result["meta"]["scope"], "personal")
-        self.assertEqual(result["summary"]["open"], 1)
+        self.assertEqual(result["meta"]["scope"], "team")
+        self.assertEqual(result["summary"]["open"], 2)
         self.assertEqual(result["summary"]["overdue"], 1)
         self.assertEqual(result["summary"]["highRisk"], 1)
         self.assertEqual(result["priorities"][0]["id"], 101)
@@ -87,7 +97,7 @@ class OperationsDashboardTests(unittest.TestCase):
         self.assertNotIn("지난주", result["decisionSummary"]["headline"])
         self.assertEqual(result["customerHealth"][0]["customer"], "신한")
         self.assertEqual(result["customerHealth"][0]["level"], "high")
-        self.assertEqual(result["members"], [])
+        self.assertEqual(len(result["members"]), 1)
 
     def test_manager_dashboard_includes_team_workload_without_account_details(self):
         users = [
@@ -121,6 +131,4 @@ class OperationsDashboardTests(unittest.TestCase):
 
     def test_period_must_be_one_of_the_supported_options(self):
         with self.assertRaisesRegex(ValueError, "7일"):
-            dashboard.build_operations_dashboard(
-                {"role": "member"}, days=15, today=date(2026, 8, 27)
-            )
+            dashboard.build_operations_dashboard({"role": "member"}, days=15, today=date(2026, 8, 27))

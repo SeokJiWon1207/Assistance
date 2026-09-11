@@ -86,15 +86,9 @@ def _priorities(open_rows: List[Dict[str, Any]], today: date) -> List[Dict[str, 
     return enriched[:DASHBOARD_PRIORITY_LIMIT]
 
 
-def _todo_rows(
-    open_rows: List[Dict[str, Any]], priorities: List[Dict[str, Any]], today: date
-) -> List[Dict[str, Any]]:
+def _todo_rows(open_rows: List[Dict[str, Any]], priorities: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
     priority_ids = {str(row.get("id")) for row in priorities}
-    remaining = [
-        _priority_content(row, today)
-        for row in open_rows
-        if str(row.get("id")) not in priority_ids
-    ]
+    remaining = [_priority_content(row, today) for row in open_rows if str(row.get("id")) not in priority_ids]
     remaining.sort(key=lambda row: str(row.get("updatedAt") or ""), reverse=True)
     return (priorities + remaining)[:DASHBOARD_TODO_LIMIT]
 
@@ -149,9 +143,7 @@ def _customer_health(
             handling_days,
             _monthly_counts(customer_issues),
         )
-        level = {"안정": "stable", "주의": "attention", "위험": "high"}.get(
-            str(health.get("level") or ""), "stable"
-        )
+        level = {"안정": "stable", "주의": "attention", "위험": "high"}.get(str(health.get("level") or ""), "stable")
         recent_count = sum(_inside(issue, current_start, today) for issue in customer_issues)
         previous_count = sum(_inside(issue, previous_start, previous_end) for issue in customer_issues)
         reasons = list(health.get("reasons") or [])
@@ -162,16 +154,12 @@ def _customer_health(
         if unassigned_count:
             reasons.append(f"담당자 미지정 {unassigned_count}건")
             level = _higher_health_level(level, "attention")
-        growing = recent_count >= 2 and (
-            previous_count == 0 or recent_count >= previous_count * 2
-        )
+        growing = recent_count >= 2 and (previous_count == 0 or recent_count >= previous_count * 2)
         if growing:
             reasons.append(f"최근 이슈 {previous_count}건→{recent_count}건")
             level = _higher_health_level(level, "attention")
 
-        average_handling = (
-            round(sum(handling_days) / len(handling_days), 1) if handling_days else None
-        )
+        average_handling = round(sum(handling_days) / len(handling_days), 1) if handling_days else None
         unique_reasons = list(dict.fromkeys(str(reason) for reason in reasons if reason))[:3]
         rows.append(
             {
@@ -185,9 +173,9 @@ def _customer_health(
                 "averageHandlingDays": average_handling,
                 "recentCount": recent_count,
                 "previousCount": previous_count,
-                "trend": "worsening" if recent_count > previous_count else (
-                    "improving" if recent_count < previous_count else "steady"
-                ),
+                "trend": "worsening"
+                if recent_count > previous_count
+                else ("improving" if recent_count < previous_count else "steady"),
                 "reasons": unique_reasons,
             }
         )
@@ -204,9 +192,7 @@ def _customer_health(
     return rows[:DASHBOARD_CUSTOMER_LIMIT]
 
 
-def _member_rows(
-    users: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date
-) -> List[Dict[str, Any]]:
+def _member_rows(users: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
     representatives: Dict[str, Dict[str, Any]] = {}
     for user in (item for item in users if item.get("approved")):
         person = user_mantis_name(user)
@@ -218,16 +204,8 @@ def _member_rows(
     members: List[Dict[str, Any]] = []
     for user in representatives.values():
         person = user_mantis_name(user)
-        assigned = [
-            issue
-            for issue in issues
-            if person and _matches_person(str(issue.get("handler") or ""), person)
-        ]
-        open_rows = [
-            row
-            for row in _summary_rows(assigned, today)
-            if _is_open(str(row.get("status") or ""))
-        ]
+        assigned = [issue for issue in issues if person and _matches_person(str(issue.get("handler") or ""), person)]
+        open_rows = [row for row in _summary_rows(assigned, today) if _is_open(str(row.get("status") or ""))]
         priorities = _priorities(open_rows, today)
         members.append(
             {
@@ -236,10 +214,7 @@ def _member_rows(
                 "role": user.get("role") or "member",
                 "open": len(open_rows),
                 "overdue": sum(bool(row.get("overdue")) for row in open_rows),
-                "aging": sum(
-                    int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS
-                    for row in open_rows
-                ),
+                "aging": sum(int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS for row in open_rows),
                 "highRisk": sum(row.get("riskLevel") == "high" for row in priorities),
             }
         )
@@ -254,19 +229,9 @@ def _member_rows(
     return members
 
 
-def _scope_issues(
-    user: Dict[str, Any], issues: List[Dict[str, Any]]
-) -> tuple[str, str, List[Dict[str, Any]]]:
-    role = str(user.get("role") or "member")
+def _scope_issues(user: Dict[str, Any], issues: List[Dict[str, Any]]) -> tuple[str, str, List[Dict[str, Any]]]:
     person = user_mantis_name(user)
-    if role in {"manager", "admin"}:
-        return "team", person, issues
-    personal = [
-        issue
-        for issue in issues
-        if person and _matches_person(str(issue.get("handler") or ""), person)
-    ]
-    return "personal", person, personal
+    return "team", person, issues
 
 
 def _period_decision_summary(
@@ -280,9 +245,7 @@ def _period_decision_summary(
     decision = _decision_summary(summary, customer_spikes, screen_spikes, priorities)
 
     def period_copy(value: Any) -> str:
-        return str(value or "").replace("지난주", f"최근 {days}일").replace(
-            "직전 주", "직전 동일 기간"
-        )
+        return str(value or "").replace("지난주", f"최근 {days}일").replace("직전 주", "직전 동일 기간")
 
     decision["headline"] = period_copy(decision.get("headline"))
     decision["recommendedActions"] = [
@@ -306,11 +269,7 @@ def build_operations_dashboard(
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
     issues, source = _load_issues()
     scope, person, scoped_issues = _scope_issues(user, issues)
-    scoped_open = [
-        row
-        for row in _summary_rows(scoped_issues, base)
-        if _is_open(str(row.get("status") or ""))
-    ]
+    scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
     priorities = _priorities(scoped_open, base)
     recent = [issue for issue in issues if _inside(issue, current_start, current_end)]
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
@@ -318,33 +277,27 @@ def build_operations_dashboard(
     screen_spikes = _spikes(recent, previous, "screen_number")
     scoped_recent = [issue for issue in scoped_issues if _inside(issue, current_start, current_end)]
     scoped_previous = [issue for issue in scoped_issues if _inside(issue, previous_start, previous_end)]
-    change_rate = None if not scoped_previous else round(
-        (len(scoped_recent) - len(scoped_previous)) / len(scoped_previous) * 100, 1
+    change_rate = (
+        None
+        if not scoped_previous
+        else round((len(scoped_recent) - len(scoped_previous)) / len(scoped_previous) * 100, 1)
     )
     summary = {
         "open": len(scoped_open),
         "overdue": sum(bool(row.get("overdue")) for row in scoped_open),
-        "aging": sum(
-            int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS
-            for row in scoped_open
-        ),
+        "aging": sum(int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS for row in scoped_open),
         "highRisk": sum(row.get("riskLevel") == "high" for row in priorities),
         "highPriority": sum(_is_high_priority(row) for row in scoped_open),
         "unassigned": sum(_is_unassigned(row) for row in scoped_open),
         "newIssues": len(scoped_recent),
         "previousNewIssues": len(scoped_previous),
         "changeRate": change_rate,
-        "carriedOpen": sum(
-            (_parse_issue_date(row.get("createdAt")) or base) < current_start
-            for row in scoped_open
-        ),
+        "carriedOpen": sum((_parse_issue_date(row.get("createdAt")) or base) < current_start for row in scoped_open),
         "closedNow": sum(not _is_open(str(issue.get("status") or "")) for issue in scoped_recent),
     }
-    decision = _period_decision_summary(
-        summary, customer_spikes, screen_spikes, priorities, days
-    )
+    decision = _period_decision_summary(summary, customer_spikes, screen_spikes, priorities, days)
     role = str(user.get("role") or "member")
-    member_rows = _member_rows(users or [], issues, base) if role in {"manager", "admin"} else []
+    member_rows = _member_rows(users or [], issues, base)
     health = _customer_health(issues, base, current_start, previous_start, previous_end)
     health_counts = Counter(str(row.get("level") or "stable") for row in health)
     return {

@@ -65,14 +65,13 @@ test('manager can switch among three panels without losing personal tab state', 
   assert.equal(h.els.viewDashboardBtn.tabIndex, -1);
 });
 
-test('member cannot load team dashboard even through a saved view or direct call', async () => {
+test('member can open and load the team dashboard', async () => {
   const h = await harness('member', 'dashboard');
-  h.api.showDashboardView();
   await h.api.loadDashboard();
-  assert.equal(h.els.viewDashboardBtn.hidden, true);
-  assert.equal(h.els.dashboardPanel.hidden, true);
-  assert.equal(h.els.personalPanel.hidden, false);
-  assert.deepEqual(h.calls, []);
+  assert.equal(h.els.viewDashboardBtn.hidden, false);
+  assert.equal(h.els.dashboardPanel.hidden, false);
+  assert.equal(h.els.personalPanel.hidden, true);
+  assert.deepEqual(h.calls, ['team']);
 });
 
 test('keyboard navigation follows visible tab order and moves focus', async () => {
@@ -82,7 +81,7 @@ test('keyboard navigation follows visible tab order and moves focus', async () =
     key('viewChatBtn', 'ArrowRight');
     assert.equal(h.focus(), 'viewPersonalBtn');
     key('viewPersonalBtn', 'End');
-    assert.equal(h.focus(), role === 'admin' ? 'viewDashboardBtn' : 'viewPersonalBtn');
+    assert.equal(h.focus(), 'viewDashboardBtn');
     key(h.focus(), 'Home');
     assert.equal(h.focus(), 'viewChatBtn');
   }

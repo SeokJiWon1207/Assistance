@@ -133,20 +133,28 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["weekStart"], "2026-08-10")
         get_brief.assert_called_once_with("uid-1")
 
+    @patch.object(workspace_api, "list_users")
     @patch.object(workspace_api, "build_operations_dashboard")
     @patch.object(workspace_api, "current_request_user")
-    def test_dashboard_endpoint_rejects_member_without_loading_team_data(self, current_user, build_dashboard):
+    def test_dashboard_endpoint_gives_member_aggregated_team_context(
+        self, current_user, build_dashboard, list_users_mock
+    ):
         current_user.return_value = {
             "uid": "uid-1",
             "displayName": "팀원",
             "role": "member",
         }
-        build_dashboard.return_value = {"meta": {"scope": "personal", "periodDays": 30}}
+        list_users_mock.return_value = [{"uid": "uid-1", "approved": True}]
+        build_dashboard.return_value = {"meta": {"scope": "team", "periodDays": 30}}
 
         response = self.client.get("/api/workspace/dashboard?days=30")
 
-        self.assertEqual(response.status_code, 403)
-        build_dashboard.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        build_dashboard.assert_called_once_with(
+            current_user.return_value,
+            users=list_users_mock.return_value,
+            days=30,
+        )
 
     @patch.object(workspace_api, "list_users")
     @patch.object(workspace_api, "build_operations_dashboard")

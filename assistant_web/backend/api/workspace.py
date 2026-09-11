@@ -63,14 +63,12 @@ def my_workspace(request: Request) -> Dict[str, Any]:
 @router.get("/dashboard")
 def operations_dashboard(request: Request, days: int = 30) -> Dict[str, Any]:
     user = _user(request)
-    if user.get("role") not in {"manager", "admin"}:
-        raise HTTPException(status_code=403, detail="팀 대시보드는 매니저 이상만 조회할 수 있습니다.")
     if days not in DASHBOARD_PERIOD_OPTIONS:
         raise HTTPException(
             status_code=422,
             detail="조회 기간은 7일, 14일, 30일, 90일 중 하나여야 합니다.",
         )
-    users = list_users() if user.get("role") in {"manager", "admin"} else []
+    users = list_users()
     return build_operations_dashboard(user, users=users, days=days)
 
 

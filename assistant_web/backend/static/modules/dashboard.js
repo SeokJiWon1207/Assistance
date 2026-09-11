@@ -275,7 +275,7 @@ async function loadDashboard(force = false) {
 }
 
 function canViewTeamDashboard() {
-  return ["manager", "admin"].includes(state.currentUser?.role);
+  return Boolean(state.currentUser?.uid);
 }
 
 function mainViews() {
