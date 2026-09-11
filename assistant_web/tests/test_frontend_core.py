@@ -145,6 +145,14 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (max-width: 860px)", dashboard_css)
         self.assertIn("@media (max-width: 560px)", dashboard_css)
 
+    def test_chat_composer_stays_inside_tabbed_main_view(self):
+        dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+
+        self.assertIn(".main-view-shell > .chat-panel {", dashboard_css)
+        self.assertIn("height: auto", dashboard_css)
+        self.assertIn("min-height: 0", dashboard_css)
+        self.assertNotIn(".main-view-shell > .chat-panel { height: 100%; }", dashboard_css)
+
     def test_notion_controls_are_hidden_in_mantis_focused_ui(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()
