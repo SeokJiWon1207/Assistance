@@ -260,14 +260,19 @@ els.evaluationModal.addEventListener("click", (event) => {
   if (event.target === els.evaluationModal) closeEvaluationModal();
 });
 els.workspaceRefreshBtn?.addEventListener("click", async () => {
-  els.workspaceRefreshBtn.disabled = true;
   try {
-    if (state.workspaceTab === "playbooks") await loadPlaybooks(true);
-    else await loadMyWorkspace(true);
+    if (state.workspaceTab === "playbooks") {
+      els.workspaceRefreshBtn.disabled = true;
+      els.workspaceRefreshBtn.textContent = "불러오는 중…";
+      els.workspaceRefreshBtn.setAttribute("aria-busy", "true");
+      await loadPlaybooks(true);
+    } else await loadMyWorkspace(true);
   } catch (error) {
     showToast(error.message, "warning");
   } finally {
     els.workspaceRefreshBtn.disabled = false;
+    els.workspaceRefreshBtn.textContent = "새로고침";
+    els.workspaceRefreshBtn.setAttribute("aria-busy", "false");
   }
 });
 function selectWorkspaceTab(name) {

@@ -125,6 +125,7 @@
 .dashboard-source.is-live .dashboard-source-dot { background: #20b878; box-shadow: 0 0 0 3px color-mix(in srgb, #20b878 15%, transparent); }
 .dashboard-source.is-snapshot .dashboard-source-dot { background: var(--warning); }
 .dashboard-source.is-error .dashboard-source-dot { background: var(--danger); }
+.dashboard-source.is-loading .dashboard-source-dot { background: var(--blue); animation: dashboard-pulse 1s ease-in-out infinite; }
 .dashboard-generated { color: var(--muted); font-size: 10px; white-space: nowrap; }
 
 .dashboard-period {
@@ -337,6 +338,27 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-state.is-error strong { color: var(--danger); }
 .dashboard-spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: dashboard-spin .75s linear infinite; }
 @keyframes dashboard-spin { to { transform: rotate(360deg); } }
+@keyframes dashboard-pulse { 50% { opacity: .35; } }
+
+.dashboard-refresh-status {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--blue-soft) 94%, var(--surface));
+  color: var(--blue);
+  font-size: 11px;
+  box-shadow: 0 5px 18px rgba(25, 31, 40, .06);
+}
+
+.dashboard-refresh-status .dashboard-spinner { width: 16px; height: 16px; border-width: 2px; }
+.dashboard-refresh-status.is-error { border-color: color-mix(in srgb, var(--danger) 22%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
 
 @media (max-width: 1180px) {
   .dashboard-header { align-items: flex-start; }

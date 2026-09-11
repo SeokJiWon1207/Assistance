@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const core = require('../backend/static/frontend_core.js');
 
 async function harness(apiFetch) {
-  const state = { currentUser: { uid: 'user-a' }, conversations: [], messages: [], activeConversationId: null };
+  const state = { currentUser: { uid: 'user-a' }, conversations: [], messages: [], activeConversationId: null, workspaceTab: 'overview' };
   const storage = new Map();
   const timers = new Map();
   let timerId = 0;
@@ -18,10 +18,19 @@ async function harness(apiFetch) {
     setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; },
     clearTimeout: (id) => timers.delete(id),
   });
-  const runtime = { state, els: {}, conversationsStorageKeyBase: 'chats', activeConversationStorageKeyBase: 'active',
+  const workspaceContent = { innerHTML: '', attributes: {}, classList: { toggle() {} }, setAttribute(key, value) { this.attributes[key] = value; } };
+  const workspaceRefreshBtn = { disabled: false, textContent: '새로고침', attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } };
+  const els = {
+    workspaceContent,
+    workspaceRefreshBtn,
+    workspaceModalEyebrow: { textContent: '' },
+    workspaceModalTitle: { textContent: '' },
+    workspaceTabs: { hidden: false, querySelectorAll: () => [] },
+  };
+  const runtime = { state, els, conversationsStorageKeyBase: 'chats', activeConversationStorageKeyBase: 'active',
     maxStoredConversations: 20, conversationSyncTimers: new Map(), apiFetch,
     ...core, scopedStorageKey: (base, uid) => `${base}:${uid}`,
-    createConversationRecord: () => ({ id: 'new', messages: [] }), WORKSPACE_ENDPOINTS: {} };
+    createConversationRecord: () => ({ id: 'new', messages: [] }), WORKSPACE_ENDPOINTS: { personal: '/personal' } };
   const modules = {
     './runtime.js': runtime,
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
@@ -36,7 +45,7 @@ async function harness(apiFetch) {
     }, { context });
   });
   await module.evaluate();
-  return { state, storage, timers, api: module.namespace };
+  return { state, storage, timers, els, api: module.namespace };
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -109,4 +118,29 @@ test('late response from previous account cannot replace the next account histor
   await loading;
   assert.equal(h.state.conversations[0].id, 'b-only');
   assert.equal(h.storage.has('chats:user-b'), false);
+});
+
+test('personal workspace shows refresh progress and replaces snapshot with live data', async () => {
+  const calls = [];
+  const payloads = [
+    { summary: { open: 5 }, mantis: { status: 'snapshot', issues: [] }, user: { mantisUsername: '석지원' } },
+    { summary: { open: 2 }, mantis: { status: 'live', issues: [] }, user: { mantisUsername: '석지원' } },
+  ];
+  let releaseLive;
+  const h = await harness(async (url) => {
+    calls.push(url);
+    if (url.includes('refresh=true')) await new Promise((resolve) => { releaseLive = resolve; });
+    return { ok: true, json: async () => payloads.shift() };
+  });
+  const loading = h.api.ensureMyWorkspaceFresh();
+  await new Promise(setImmediate);
+  assert.equal(h.els.workspaceRefreshBtn.disabled, true);
+  assert.equal(h.els.workspaceRefreshBtn.textContent, '불러오는 중…');
+  assert.match(h.els.workspaceContent.innerHTML, /Mantis 최신 데이터를 확인하고 있습니다/);
+  releaseLive();
+  await loading;
+  assert.deepEqual(calls, ['/personal', '/personal?refresh=true']);
+  assert.equal(h.state.myWorkspace.summary.open, 2);
+  assert.equal(h.els.workspaceRefreshBtn.disabled, false);
+  assert.equal(h.els.workspaceRefreshBtn.attributes['aria-busy'], 'false');
 });

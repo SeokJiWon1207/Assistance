@@ -622,10 +622,26 @@ function updateWorkspaceUnread() {
   if (els.workspaceTabUnread) els.workspaceTabUnread.textContent = unread ? String(unread) : "";
 }
 
+let workspaceLoadPromise = null;
+let workspaceLoadIsRefresh = false;
+let workspaceLoading = false;
+let workspaceLoadingMessage = "";
+let workspaceLoadingError = "";
+let workspaceLastLiveAt = 0;
+const workspaceLiveTtlMs = 60_000;
+
+function updateWorkspaceLoadingControl() {
+  if (!els.workspaceRefreshBtn) return;
+  els.workspaceRefreshBtn.disabled = workspaceLoading;
+  els.workspaceRefreshBtn.textContent = workspaceLoading ? "불러오는 중…" : "새로고침";
+  els.workspaceRefreshBtn.setAttribute("aria-busy", String(workspaceLoading));
+}
+
 function renderWorkspace() {
   if (!els.workspaceContent) return;
   const isPersonalOverview = state.workspaceTab === "overview";
   els.workspaceContent.classList.toggle("is-overview", isPersonalOverview);
+  els.workspaceContent.classList.toggle("has-status", Boolean(state.myWorkspace) && Boolean(workspaceLoading || workspaceLoadingError));
   els.workspaceModalEyebrow.textContent = "개인 워크스페이스";
   els.workspaceModalTitle.textContent = "내 업무";
   els.workspaceTabs.hidden = false;
@@ -639,7 +655,7 @@ function renderWorkspace() {
     if (selected && button.id) els.workspaceContent.setAttribute("aria-labelledby", button.id);
   });
   if (!state.myWorkspace) {
-    els.workspaceContent.innerHTML = `<div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>`;
+    els.workspaceContent.innerHTML = `<div class="workspace-loading"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage || "업무 정보를 불러오는 중입니다.")}</strong></div>`;
     return;
   }
   const renderers = {
@@ -649,19 +665,61 @@ function renderWorkspace() {
     notifications: () => renderNotifications(state.myWorkspace),
     favorites: renderFavoriteConversations,
   };
-  els.workspaceContent.innerHTML = (renderers[state.workspaceTab] || renderers.overview)();
+  const loadingStatus = workspaceLoading
+    ? `<div class="workspace-refresh-status" role="status"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage)}</strong></div>`
+    : workspaceLoadingError
+      ? `<div class="workspace-refresh-status is-error" role="status"><strong>${escapeHtml(workspaceLoadingError)}</strong></div>`
+      : "";
+  els.workspaceContent.innerHTML = `${loadingStatus}${(renderers[state.workspaceTab] || renderers.overview)()}`;
   updateWorkspaceUnread();
 }
 
 async function loadMyWorkspace(force = false) {
+  if (workspaceLoadPromise) {
+    const awaitedRefresh = workspaceLoadIsRefresh;
+    await workspaceLoadPromise;
+    if (force && !awaitedRefresh) return loadMyWorkspace(true);
+    return state.myWorkspace;
+  }
+  if (state.myWorkspace && !force) return state.myWorkspace;
+
+  workspaceLoadIsRefresh = force;
+  workspaceLoading = true;
+  workspaceLoadingError = "";
+  workspaceLoadingMessage = force ? "Mantis 최신 데이터를 확인하고 있습니다." : "업무 정보를 불러오는 중입니다.";
+  updateWorkspaceLoadingControl();
   renderWorkspace();
-  const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : WORKSPACE_ENDPOINTS.personal;
-  const response = await apiFetch(endpoint);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
-  state.myWorkspace = data;
-  updateWorkspaceUnread();
-  renderWorkspace();
+  workspaceLoadPromise = (async () => {
+    const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : WORKSPACE_ENDPOINTS.personal;
+    const response = await apiFetch(endpoint);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
+    state.myWorkspace = data;
+    if (data.mantis?.status === "live") workspaceLastLiveAt = Date.now();
+    updateWorkspaceUnread();
+    return data;
+  })();
+  try {
+    return await workspaceLoadPromise;
+  } catch (error) {
+    workspaceLoadingError = error.message || "최신 업무 데이터를 확인하지 못했습니다.";
+    throw error;
+  } finally {
+    workspaceLoadPromise = null;
+    workspaceLoadIsRefresh = false;
+    workspaceLoading = false;
+    workspaceLoadingMessage = "";
+    updateWorkspaceLoadingControl();
+    renderWorkspace();
+  }
+}
+
+async function ensureMyWorkspaceFresh() {
+  if (!state.myWorkspace) await loadMyWorkspace();
+  const sourceIsLive = state.myWorkspace?.mantis?.status === "live";
+  const liveDataIsRecent = sourceIsLive && Date.now() - workspaceLastLiveAt < workspaceLiveTtlMs;
+  if (!liveDataIsRecent && state.myWorkspace?.user?.mantisUsername) await loadMyWorkspace(true);
+  return state.myWorkspace;
 }
 
 async function loadTeamWeeklyBrief(refresh = false) {
@@ -719,6 +777,7 @@ export {
   updateWorkspaceUnread,
   renderWorkspace,
   loadMyWorkspace,
+  ensureMyWorkspaceFresh,
   loadTeamWeeklyBrief,
   markTeamWeeklyBriefRead,
 };

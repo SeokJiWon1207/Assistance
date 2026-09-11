@@ -1,6 +1,6 @@
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js";
 import { responseJson } from "./api.js";
-import { loadMyWorkspace, renderWorkspace, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js";
+import { ensureMyWorkspaceFresh, renderWorkspace, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
@@ -15,7 +15,11 @@ const dashboardState = {
   customer: "",
   selectedIssueId: "",
   initialized: false,
+  lastLiveAt: 0,
 };
+const dashboardLiveTtlMs = 60_000;
+let dashboardLoadPromise = null;
+let dashboardLoadIsRefresh = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -237,9 +241,22 @@ function renderDashboard() {
   const data = dashboardState.data;
   if (!data) return;
   updateSourceMeta(data.meta);
+  if (dashboardState.loading) {
+    els.dashboardSource.className = "dashboard-source is-loading";
+    els.dashboardSource.querySelector("em").textContent = "최신 데이터 확인 중";
+    els.dashboardGeneratedAt.textContent = "";
+  } else if (dashboardState.error) {
+    els.dashboardSource.className = "dashboard-source is-error";
+    els.dashboardSource.querySelector("em").textContent = "실시간 연결 오류";
+  }
   const scopeLabel = data.meta.scope === "team" ? "팀 전체 기준" : "내 담당 업무 기준";
   els.dashboardSubtitle.textContent = `${scopeLabel} · ${data.meta.periodFrom} ~ ${data.meta.periodTo}`;
   els.dashboardBody.innerHTML = `
+    ${dashboardState.loading
+      ? '<div class="dashboard-refresh-status" role="status"><span class="dashboard-spinner" aria-hidden="true"></span><strong>Mantis 최신 데이터를 확인하고 있습니다.</strong></div>'
+      : dashboardState.error
+        ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시합니다.</strong></div>`
+        : ""}
     <div class="dashboard-welcome"><div><h3>팀 전체 업무 현황</h3><p>${escapeHtml(data.meta.periodFrom)}부터 ${escapeHtml(data.meta.periodTo)}까지, 직전 동일 기간과 비교합니다.</p></div><span class="dashboard-scope">${escapeHtml(scopeLabel)} · ${escapeHtml(roleLabels[data.user.role] || data.user.role)}</span></div>
     ${renderMetrics(data.summary)}
     ${renderDecision(data.decisionSummary, data.meta.periodDays)}
@@ -255,24 +272,52 @@ function renderDashboard() {
 
 async function loadDashboard(force = false) {
   if (!canViewTeamDashboard()) return;
-  if (dashboardState.loading || (dashboardState.data && !force)) return;
+  if (dashboardLoadPromise) {
+    const awaitedRefresh = dashboardLoadIsRefresh;
+    await dashboardLoadPromise;
+    if (force && !awaitedRefresh) return loadDashboard(true);
+    return dashboardState.data;
+  }
+  if (dashboardState.data && !force) return dashboardState.data;
+  dashboardLoadIsRefresh = force;
   dashboardState.loading = true;
   dashboardState.error = "";
   els.dashboardRefreshBtn.disabled = true;
+  els.dashboardRefreshBtn.textContent = "불러오는 중…";
+  els.dashboardRefreshBtn.setAttribute("aria-busy", "true");
   renderDashboard();
-  try {
+  dashboardLoadPromise = (async () => {
     const refresh = force ? "&refresh=true" : "";
-    const response = await apiFetch(`${WORKSPACE_ENDPOINTS.dashboard}?days=${dashboardState.period}${refresh}`);
-    const payload = await responseJson(response);
-    if (!response.ok) throw new Error(payload.detail || "운영 데이터를 불러오지 못했습니다.");
-    dashboardState.data = payload;
-  } catch (error) {
-    dashboardState.error = error.message || "운영 데이터를 불러오지 못했습니다.";
+    try {
+      const response = await apiFetch(`${WORKSPACE_ENDPOINTS.dashboard}?days=${dashboardState.period}${refresh}`);
+      const payload = await responseJson(response);
+      if (!response.ok) throw new Error(payload.detail || "운영 데이터를 불러오지 못했습니다.");
+      dashboardState.data = payload;
+      if (payload.meta?.source === "live") dashboardState.lastLiveAt = Date.now();
+    } catch (error) {
+      dashboardState.error = error.message || "운영 데이터를 불러오지 못했습니다.";
+    }
+    return dashboardState.data;
+  })();
+  try {
+    return await dashboardLoadPromise;
   } finally {
+    dashboardLoadPromise = null;
+    dashboardLoadIsRefresh = false;
     dashboardState.loading = false;
     els.dashboardRefreshBtn.disabled = false;
+    els.dashboardRefreshBtn.textContent = "새로고침";
+    els.dashboardRefreshBtn.setAttribute("aria-busy", "false");
     renderDashboard();
   }
+}
+
+async function ensureDashboardFresh() {
+  if (!dashboardState.data) await loadDashboard();
+  if (!dashboardState.data) return;
+  const sourceIsLive = dashboardState.data?.meta?.source === "live";
+  const liveDataIsRecent = sourceIsLive && Date.now() - dashboardState.lastLiveAt < dashboardLiveTtlMs;
+  if (!liveDataIsRecent) await loadDashboard(true);
 }
 
 function canViewTeamDashboard() {
@@ -303,11 +348,13 @@ function setActiveView(view, { remember = true, load = true } = {}) {
   for (const button of [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle]) {
     button?.setAttribute("aria-expanded", "false");
   }
-  if (view === "dashboard" && load) loadDashboard();
+  if (view === "dashboard" && load) ensureDashboardFresh();
   if (view === "personal" && load) {
     renderWorkspace();
-    if (!state.myWorkspace) loadMyWorkspace().catch((error) => {
-      els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
+    ensureMyWorkspaceFresh().catch((error) => {
+      if (!state.myWorkspace) {
+        els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
+      }
     });
   }
 }
@@ -456,4 +503,4 @@ function initDashboard() {
   setActiveView(initialView, { remember: false, load: true });
 }
 
-export { initDashboard, loadDashboard, renderDashboard, showDashboardView, showPersonalView, showChatView };
+export { initDashboard, loadDashboard, ensureDashboardFresh, renderDashboard, showDashboardView, showPersonalView, showChatView };
