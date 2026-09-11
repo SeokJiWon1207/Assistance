@@ -120,7 +120,7 @@ PERSONAL_SCOPE_DIRECT_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PERSONAL_SCOPE_SPACED_PATTERN = re.compile(
-    r"(?:^|[\s,])(?:내|나의|제)\s+(?P<qualifiers>.{0,40}?)(?:이슈|업무|건)"
+    r"(?:^|[\s,])(?:내|나의|제|나|저)\s+(?P<qualifiers>.{0,40}?)(?:이슈|업무|건)"
     r"(?:를|을|가|은|는|도|만|의)?(?=$|[\s?!.,])",
     re.IGNORECASE,
 )

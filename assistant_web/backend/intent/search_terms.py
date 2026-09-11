@@ -65,7 +65,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
     personal_scope_text = bool(
         re.search(
-            r"(?:^|[\s,])(?:내|나의|제|내가|제가|내게|나에게|저에게)(?:\s|[가-힣])",
+            r"(?:^|[\s,])(?:내|나의|제|나|저|내가|제가|내게|나에게|저에게)(?:\s|[가-힣])",
             str(text or ""),
         )
     )
@@ -85,7 +85,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
         "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
         "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
-        "내", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
+        "내", "나", "저", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
         "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",
     }
     personal_control_terms = {"장기"} if personal_scope_text else set()

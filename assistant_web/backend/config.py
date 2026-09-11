@@ -245,7 +245,10 @@ PLATFORM_ALIASES = {
 }
 
 STATUS_ALIASES = {
-    "open": ["오픈", "열린", "미종료", "진행중", "진행 중", "처리중", "처리 중", "open", "opened", "new"],
+    "open": [
+        "오픈", "열린", "미종료", "진행중", "진행 중", "처리중", "처리 중",
+        "안끝난", "안 끝난", "끝나지 않은", "open", "opened", "new",
+    ],
     "closed": ["종료", "종료된", "닫힌", "완료", "closed", "close"],
     "confirmed": ["확인", "확인된", "confirmed", "confirm"],
     "assigned": ["할당", "할당된", "assigned", "assign"],

@@ -3,6 +3,7 @@ from datetime import date
 
 from backend.intent.matching import chroma_text_matches_constraints
 from backend.query_planning import extract_relative_created_at_range, plan_created_at_matches
+from backend.intent.search_terms import build_keyword_terms
 from backend.services.chat_service import (
     apply_authenticated_mantis_scope,
     should_scope_to_authenticated_mantis_user,
@@ -17,6 +18,7 @@ class PersonalScopeDetectionTest(unittest.TestCase):
         self.assertTrue(should_scope_to_authenticated_mantis_user("내가 지금 처리해야 하는 이슈만 보여줘"))
         self.assertTrue(should_scope_to_authenticated_mantis_user("제가 맡은 건"))
         self.assertTrue(should_scope_to_authenticated_mantis_user("내 담당 미종료 이슈"))
+        self.assertTrue(should_scope_to_authenticated_mantis_user("나 안끝난거 이슈 알려줘"))
 
     def test_detects_speaker_as_assignee(self):
         self.assertTrue(should_scope_to_authenticated_mantis_user("나한테 배정됐는데 한 달 넘은 건만 볼래"))
@@ -47,6 +49,7 @@ class ActionableStatusTest(unittest.TestCase):
     def test_todo_wordings_mean_not_closed(self):
         self.assertEqual(extract_query_constraints("지금 처리해야 하는 이슈")["statuses"], ["open"])
         self.assertEqual(extract_query_constraints("대응해야 할 건")["statuses"], ["open"])
+        self.assertEqual(extract_query_constraints("나 안끝난거 이슈 알려줘")["statuses"], ["open"])
 
     def test_contrastive_assignment_means_not_closed(self):
         # "배정됐는데"는 아직 안 끝난 일을 뜻한다.
@@ -134,6 +137,15 @@ class PersonalQuestionEndToEndTest(unittest.TestCase):
                 self.document(created_at="2026-08-01", handler="우동헌", status="확인된 이슈"), cons
             )
         )
+
+    def test_colloquial_my_unfinished_question_applies_owner_without_keywords(self):
+        question = "나 안끝난거 이슈 알려줘"
+        scoped = apply_authenticated_mantis_scope(question, USER)
+        cons = extract_query_constraints(scoped)
+
+        self.assertEqual(cons["people"]["names"], ["석지원"])
+        self.assertEqual(cons["statuses"], ["open"])
+        self.assertEqual(build_keyword_terms(scoped, cons), [])
 
     def test_other_person_question_excludes_me(self):
         cons = self.constraints_for("내 이슈 말고 우동헌 담당 건 보여줘")
