@@ -150,7 +150,12 @@ class SimilarResolutionReportTest(unittest.TestCase):
             "sources": similar.build_sources_from_issue_rows,
             "chroma": similar.execute_chroma_search,
         }
-        similar.extract_query_constraints = lambda text: {"issue_ids": [12345]}
+        similar.extract_query_constraints = lambda text: {
+            "issue_ids": [12345],
+            "filter_clauses": [
+                {"field": "issue_id", "operator": "in", "value": [12345]}
+            ],
+        }
         similar.wants_similar_issue_search = lambda text, constraints: True
         similar.fetch_mantis_issue_by_id = lambda issue_id: {"id": issue_id, "summary": "[1200] 세션 만료"}
         similar.normalize_issue = lambda raw: {"id": raw["id"], "summary": raw["summary"], "description": ""}
@@ -192,19 +197,25 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("타임아웃", summary)
 
     def test_report_lists_similar_cases_with_resolution(self):
-        similar.execute_chroma_search = lambda q, limit, cons, semantic=False: {
-            "status": "ok",
-            "documents": [
-                {"issue_id": 9001, "latest_issue": {
-                    "id": 9001, "summary": "세션 만료 재로그인", "project": "유진증권",
-                    "status": "종료된 이슈",
-                    "notes": [{"text": "타임아웃 30분으로 조정."}],
-                    "history": [{"created_at": "2026-05-02", "field": "상태",
-                                 "change": "할당 => 종료"}],
-                }},
-                {"issue_id": 12345, "latest_issue": {"id": 12345, "summary": "자기자신"}},
-            ],
-        }
+        captured = {}
+
+        def search(q, limit, cons, semantic=False):
+            captured["constraints"] = cons
+            return {
+                "status": "ok",
+                "documents": [
+                    {"issue_id": 9001, "latest_issue": {
+                        "id": 9001, "summary": "세션 만료 재로그인", "project": "유진증권",
+                        "status": "종료된 이슈",
+                        "notes": [{"text": "타임아웃 30분으로 조정."}],
+                        "history": [{"created_at": "2026-05-02", "field": "상태",
+                                     "change": "할당 => 종료"}],
+                    }},
+                    {"issue_id": 12345, "latest_issue": {"id": 12345, "summary": "자기자신"}},
+                ],
+            }
+
+        similar.execute_chroma_search = search
         report = similar.build_similar_resolution_report("#12345랑 비슷한 이슈 어떻게 해결했어?")
         content = report["content"]
         self.assertIn("#9001", content)
@@ -215,6 +226,8 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("세션 만료", candidate["title"])
         self.assertIn("타임아웃", candidate["resolution"])
         self.assertEqual(candidate["sourceIssueIds"], [12345, 9001])
+        self.assertEqual(captured["constraints"]["issue_ids"], [])
+        self.assertEqual(captured["constraints"]["filter_clauses"], [])
 
     def test_returns_none_without_resolution_intent(self):
         self.assertIsNone(similar.build_similar_resolution_report("#12345 비슷한 이슈 목록"))

@@ -148,6 +148,11 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
         "exclude_issue_ids": base_ids,
         "max_issue_id_exclusive": base_id,
         "semantic_focus_terms": build_keyword_terms(text, constraints),
+        "filter_clauses": [
+            clause
+            for clause in constraints.get("filter_clauses", [])
+            if clause.get("field") != "issue_id"
+        ],
     }
     result = execute_chroma_search(similar_query, SIMILAR_TOP_N, similar_constraints, semantic=True)
     if result.get("status") not in {"ok"}:

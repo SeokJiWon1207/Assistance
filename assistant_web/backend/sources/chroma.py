@@ -13,6 +13,7 @@ from contextlib import closing
 from typing import Any, Dict, List, Optional
 
 import requests
+from fastapi import HTTPException
 
 from backend.common import (
     clamp_int,
@@ -295,12 +296,20 @@ def execute_chroma_search(
     documents: List[Dict[str, Any]] = []
     refreshed_count = 0
     skipped_after_refresh = 0
+    live_refresh_failures = 0
+    live_refresh_available = True
     candidate_window = max(limit * 3, 30)
     for document in candidate_documents[:candidate_window]:
         issue_id = int(document.get("issue_id") or 0)
         if not issue_id:
             continue
-        latest_issue = fetch_mantis_issue_by_id(issue_id)
+        latest_issue = None
+        if live_refresh_available:
+            try:
+                latest_issue = fetch_mantis_issue_by_id(issue_id)
+            except (HTTPException, requests.RequestException):
+                live_refresh_failures += 1
+                live_refresh_available = False
         if latest_issue:
             refreshed_count += 1
             if has_constraint(constraints) and not issue_matches_constraints(latest_issue, constraints):
@@ -322,6 +331,7 @@ def execute_chroma_search(
             "displayed_count": len(documents),
             "candidate_count": ranking_meta.get("candidate_count", len(candidate_documents)),
             "mantis_refreshed_count": refreshed_count,
+            "mantis_refresh_failures": live_refresh_failures,
             "skipped_after_refresh": skipped_after_refresh,
             "terms": terms[:4],
             "constraints": constraints,

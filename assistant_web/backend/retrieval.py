@@ -277,6 +277,11 @@ def run_retrieval_pipeline(
                     "exclude_issue_ids": list(constraints.get("issue_ids") or []),
                     "max_issue_id_exclusive": int(base_issue.get("id") or 0),
                     "semantic_focus_terms": build_keyword_terms(query_text, constraints),
+                    "filter_clauses": [
+                        clause
+                        for clause in constraints.get("filter_clauses", [])
+                        if clause.get("field") != "issue_id"
+                    ],
                 }
                 similar_query = build_similar_issue_search_text(base_issue) or query_text
                 similar_stage = execute_chroma_search(

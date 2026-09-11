@@ -121,6 +121,30 @@ class ChromaSourceTests(unittest.TestCase):
         self.assertEqual(result["meta"]["mantis_refreshed_count"], 1)
         self.assertEqual(result["meta"]["skipped_after_refresh"], 1)
 
+    def test_execute_search_keeps_snapshot_results_when_live_refresh_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "chroma.sqlite3"
+            create_chroma_database(
+                database_path,
+                [issue_document(101, "테스트 검색"), issue_document(202, "테스트 검색")],
+            )
+            with (
+                patch.object(chroma, "CHROMA_DB_PATH", database_path),
+                patch.object(chroma, "build_keyword_terms", return_value=["테스트"]),
+                patch.object(chroma, "chroma_text_matches_constraints", return_value=True),
+                patch.object(
+                    chroma,
+                    "fetch_mantis_issue_by_id",
+                    side_effect=requests.Timeout("live timeout"),
+                ) as fetch_live,
+            ):
+                result = chroma.execute_chroma_search("테스트 검색", limit=2)
+
+        self.assertEqual([document["issue_id"] for document in result["documents"]], [202, 101])
+        self.assertTrue(all(document["latest_source"] == "chroma_snapshot" for document in result["documents"]))
+        self.assertEqual(result["meta"]["mantis_refresh_failures"], 1)
+        self.assertEqual(fetch_live.call_count, 1)
+
     def test_execute_search_reports_missing_and_corrupt_databases(self):
         with tempfile.TemporaryDirectory() as directory:
             missing_path = Path(directory) / "missing.sqlite3"

@@ -931,6 +931,12 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(similar_constraints["issue_ids"], [])
         self.assertEqual(similar_constraints["exclude_issue_ids"], [30967])
         self.assertEqual(similar_constraints["max_issue_id_exclusive"], 30967)
+        self.assertFalse(
+            any(
+                clause.get("field") == "issue_id"
+                for clause in similar_constraints["filter_clauses"]
+            )
+        )
         self.assertIn("차트 지표", chroma_search.call_args.args[0])
         self.assertTrue(chroma_search.call_args.kwargs["semantic"])
         snapshot_search.assert_not_called()
