@@ -44,6 +44,7 @@ class LocalScriptSafetyTests(unittest.TestCase):
             '"$PROJECT_DIR/assistant_web/deploy/aws/deploy_to_ec2.sh"',
             script,
         )
+        self.assertIn("RELEASE_KEEP=1", script)
 
 
 if __name__ == "__main__":
