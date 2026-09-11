@@ -110,11 +110,16 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
   setBusy(true);
   const abortController = new AbortController();
   state.chatAbortController = abortController;
+  state.chatCanAbort = false;
 
   try {
     const answer = await sendChat(content, (streamEvent) => {
       const assistant = state.messages[assistantIndex];
       if (!assistant) return;
+      if (!state.chatCanAbort) {
+        state.chatCanAbort = true;
+        setBusy(true);
+      }
       if (streamEvent.type === "status") {
         assistant.progress = streamEvent.message;
         assistant.stage = streamEvent.stage;
@@ -164,6 +169,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
     }
   } finally {
     state.chatAbortController = null;
+    state.chatCanAbort = false;
     setBusy(false);
     persistConversations();
     renderMessages();

@@ -13,7 +13,7 @@ function cancelMessageEdit() {
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (state.busy) {
-    state.chatAbortController?.abort();
+    if (state.chatCanAbort) state.chatAbortController?.abort();
     return;
   }
   const content = els.input.value.trim();

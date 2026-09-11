@@ -38,6 +38,7 @@ export const state = {
   activeConversationId: null,
   editingMessageIndex: null,
   chatAbortController: null,
+  chatCanAbort: false,
   activeTemplateId: null,
   pendingTemplateId: null,
   teamTemplatesError: "",

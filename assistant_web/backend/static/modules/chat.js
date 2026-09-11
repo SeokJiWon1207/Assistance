@@ -663,12 +663,13 @@ function renderAbComparison(message, aBubble, messageIndex) {
 function setBusy(busy) {
   state.busy = busy;
   els.input.disabled = busy;
-  // 생성 중에는 전송 버튼이 중지 버튼으로 바뀐다(비활성화하지 않는다).
-  els.sendBtn.disabled = false;
-  els.sendBtn.classList.toggle("stop-mode", busy);
-  els.sendBtn.setAttribute("aria-label", busy ? "답변 생성 중지" : "전송");
+  // 첫 서버 응답 전에는 중복 submit이 최초 요청을 취소하지 못하게 한다.
+  const canStop = busy && state.chatCanAbort;
+  els.sendBtn.disabled = busy && !canStop;
+  els.sendBtn.classList.toggle("stop-mode", canStop);
+  els.sendBtn.setAttribute("aria-label", canStop ? "답변 생성 중지" : (busy ? "전송 중" : "전송"));
   const label = els.sendBtn.querySelector("span");
-  if (label) label.textContent = busy ? "중지" : "전송";
+  if (label) label.textContent = canStop ? "중지" : (busy ? "전송 중" : "전송");
 }
 
 function autoResizeInput() {
