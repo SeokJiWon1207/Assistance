@@ -67,18 +67,19 @@ assistant_web/.venv/bin/python scripts/make_vector_db.py --rebuild-index-only
 ```
 
 배포 검증은 `chroma.sqlite3`, `mantis_index.sqlite3`, `freshness.json`의 문서 건수와
-SQLite 무결성을 함께 확인합니다. 운영 서비스는 먼저 `MANTIS_INDEX_MODE=shadow`로
-실행되어 기존 결과를 반환하고, 결과가 다르면 systemd 로그에 경고를 남깁니다.
+SQLite 무결성을 함께 확인합니다. 검증을 통과한 운영 서비스는 기본적으로
+`MANTIS_INDEX_MODE=primary`를 사용하고 시작 단계에서 업무 화면 데이터를 미리 읽습니다.
+보조 인덱스가 누락되거나 손상되면 애플리케이션은 기존 Chroma 순회로 자동 전환합니다.
+
+구조화 인덱스를 기존 결과와 비교해야 하는 점검 배포에서는 `shadow`를 명시하고
+결과 차이를 systemd 로그에서 확인합니다.
 
 ```bash
 sudo journalctl -u content-ai-assistant | grep 'shadow 결과 불일치'
 ```
 
-충분한 운영 비교 기간 동안 불일치가 없을 때만 다음 배포부터 `primary`를 명시합니다.
-보조 인덱스가 누락되거나 손상되면 애플리케이션은 기존 Chroma 순회로 자동 폴백합니다.
-
 ```bash
-MANTIS_INDEX_MODE=primary \
+MANTIS_INDEX_MODE=shadow \
 EC2_HOST=EC2_PUBLIC_IP \
 SSH_KEY=~/.ssh/your-key.pem \
 SERVER_NAME=EC2_PUBLIC_IP \

@@ -1,5 +1,6 @@
 """FastAPI 애플리케이션 조립 지점."""
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from backend.api.workspace import router as workspace_router  # noqa: E402
 from backend.config import STATIC_DIR  # noqa: E402
 from backend.startup_validation import get_cors_allowed_origins, validate_runtime_security  # noqa: E402
 from backend.workspace import init_workspace_db  # noqa: E402
+from backend.workspace_data import load_workspace_snapshot  # noqa: E402
 
 
 @asynccontextmanager
@@ -36,6 +38,8 @@ async def lifespan(_application: FastAPI):
     init_workspace_db()
     init_audit_db()
     prune_audit_logs()
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        load_workspace_snapshot()
     yield
 
 

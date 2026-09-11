@@ -53,7 +53,7 @@ class DeploymentScriptTests(unittest.TestCase):
     def test_deploy_passes_validated_index_mode_to_setup(self):
         script = (DEPLOY_DIR / "deploy_to_ec2.sh").read_text(encoding="utf-8")
 
-        self.assertIn('MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-shadow}"', script)
+        self.assertIn('MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-primary}"', script)
         self.assertIn("MANTIS_INDEX_MODE='$MANTIS_INDEX_MODE'", script)
         self.assertIn("MANTIS_INDEX_MODE must be off, shadow, or primary", script)
 

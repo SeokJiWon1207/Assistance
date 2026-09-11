@@ -13,7 +13,7 @@ Optional:
   INCLUDE_ENV=1
   FIREBASE_CREDENTIALS=/secure/path/service-account.json
   RELEASE_KEEP=2
-  MANTIS_INDEX_MODE=shadow
+  MANTIS_INDEX_MODE=primary
 USAGE
   exit 1
 fi
@@ -22,7 +22,7 @@ EC2_USER="${EC2_USER:-ubuntu}"
 APP_ROOT="${APP_ROOT:-/opt/content-ai-assistant}"
 SERVER_NAME="${SERVER_NAME:-$EC2_HOST}"
 RELEASE_KEEP="${RELEASE_KEEP:-2}"
-MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-shadow}"
+MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-primary}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
