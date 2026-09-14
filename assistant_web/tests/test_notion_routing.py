@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.notion.search import build_notion_terms, extract_notion_constraints
+
 from backend.understanding import (
     extract_query_constraints,
     rule_based_search_intent,
@@ -85,6 +87,15 @@ class RoutingFixtureTest(unittest.TestCase):
                     self.assertEqual(plan["source"], case["source"])
                     self.assertEqual(plan["authority"], case["authority"])
                     self.assertNotIn("needs_model", plan)
+                    if "notion_terms" in case:
+                        self.assertEqual(build_notion_terms(case["q"]), case["notion_terms"])
+                    if "statuses" in case:
+                        self.assertEqual(constraints["statuses"], case["statuses"])
+                    with patch("backend.notion.search.load_known_people", return_value=(
+                        tuple(case.get("notion_known_people", ["김보람", "svn"])), (),
+                    )):
+                        for key, value in case.get("notion_constraints", {}).items():
+                            self.assertEqual(extract_notion_constraints(case["q"])[key], value)
                     self.assertEqual(constraints["people"]["names"], case["people"])
                     self.assertEqual(
                         [item["name"] for item in constraints["people"]["candidates"]],

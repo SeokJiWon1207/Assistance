@@ -16,3 +16,53 @@
 {"q":"signalmaker 관련 자료 찾아줘","source":"notion","authority":"advisory","people":[],"candidate_people":[]}
 {"q":"가장 최근 이슈 하나만","source":"mantis","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"최근 회의록 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 담당자 김지은 항목 찾아줘", "source": "notion", "people": ["김지은"], "notion_constraints": {"owner": "김지은"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 담당자 김지인 항목 찾아줘", "source": "notion", "people": ["김지인"], "notion_constraints": {"owner": "김지인"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 담당자 김지이 항목 찾아줘", "source": "notion", "people": ["김지이"], "notion_constraints": {"owner": "김지이"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 대기시간 개선 문서 찾아줘", "source": "notion", "people": [], "notion_constraints": {"status": ""}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 상태가 변경된 항목 찾아줘", "source": "notion", "people": [], "notion_constraints": {"status": ""}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 상태가 오래된 문서 찾아줘", "source": "notion", "people": [], "notion_constraints": {"status": ""}}
+{"authority": "authoritative", "candidate_people": [], "q": "feedback 팝업 관련 이슈 찾아줘", "source": "mantis", "people": [], "statuses": []}
+{"authority": "authoritative", "candidate_people": [], "q": "상태가 feedback인 이슈 찾아줘", "source": "mantis", "people": [], "statuses": ["need_info"]}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 상태가 검토대기인 항목 찾아줘", "source": "notion", "people": [], "notion_constraints": {"status": "검토대기"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 상태가 완료인 항목 찾아줘", "source": "notion", "people": [], "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 진행중인거 보여줘", "source": "notion", "people": [], "notion_constraints": {"status": "진행중"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 결재요청건 보여줘", "source": "notion", "people": [], "notion_constraints": {"status": "결재요청"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 완료된거 몇개야", "source": "notion", "people": [], "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 시작전인것만", "source": "notion", "people": [], "notion_constraints": {"status": "시작전"}}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 상태가 완료인것", "source": "notion", "people": [], "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "candidate_people": [], "q": "feedback 로그 누락 이슈 찾아줘", "source": "mantis", "people": [], "statuses": []}
+{"authority": "authoritative", "candidate_people": [], "q": "feedback 인앱 팝업 이슈 찾아줘", "source": "mantis", "people": [], "statuses": []}
+{"authority": "authoritative", "candidate_people": [], "q": "노션에서 담당자 김지은이 맡은 항목", "source": "notion", "people": ["김지은"], "notion_constraints": {"owner": "김지은"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 완료건수 알려줘", "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 완료한 거", "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 완료처리된 거", "notion_constraints": {"status": "완료"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 결재요청중인 항목", "notion_constraints": {"status": "결재요청"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 진행중이던 거", "notion_constraints": {"status": "진행중"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 시작전이었던 항목", "notion_constraints": {"status": "시작전"}}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 김지은이 맡은거", "notion_constraints": {"owner": "김지은"}, "notion_known_people": ["김지은"]}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 김지은이 맡고있는", "notion_constraints": {"owner": "김지은"}, "notion_known_people": ["김지은"]}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 김지은의 문서", "notion_constraints": {"owner": "김지은"}, "notion_known_people": ["김지은"]}
+{"authority": "authoritative", "source": "notion", "people": [], "candidate_people": [], "q": "노션에서 담당자는 김지은이고 시작전인 항목", "notion_constraints": {"owner": "김지은", "status": "시작전"}}
+{"q": "노션에서 결제오류 처리 방법 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 로그인 처리 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 환불요청 처리 절차", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 배포작업 처리 현황", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 결제모듈의 이슈", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 프로젝트의 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 운영팀의 업무", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}}
+{"q": "노션에서 담당자 남궁지은 항목", "source": "notion", "authority": "authoritative", "people": ["남궁지은"], "candidate_people": [], "notion_constraints": {"owner": "남궁지은"}}
+{"q": "노션에서 보류인 항목 보여줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["보류"]}
+{"q": "노션에서 긴급인 항목 보여줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["긴급"]}
+{"q": "노션에서 필수인 항목 보여줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["필수"]}
+{"q": "노션에서 로그인 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["로그인"]}
+{"q": "노션에서 디자인 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["디자인"]}
+{"q": "노션에서 온라인 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["온라인"]}
+{"q": "노션에서 승인 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["승인"]}
+{"q": "노션에서 원인 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_terms": ["원인"]}
+{"q": "노션에서 svn 처리 방법 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": ["svn"], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
+{"q": "노션에서 signalmaker의 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
+{"q": "노션에서 signalmaker 등록 방법", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
+{"q": "노션에서 slackmanager 처리 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
+{"q": "노션에서 DRFN_SM 처리 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
+{"q": "노션에서 담당자 svn 항목", "source": "notion", "authority": "authoritative", "people": ["svn"], "candidate_people": [], "notion_constraints": {"owner": "svn"}, "notion_known_people": ["김보람", "svn"]}

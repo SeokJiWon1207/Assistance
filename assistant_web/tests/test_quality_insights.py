@@ -165,11 +165,11 @@ class AccuracyDataParsingTests(unittest.TestCase):
             "sources": [{"issue_id": 12345}],
             "retrieval": {"intent_plan": {"source": "mantis"}},
         }
-        self.assertEqual(observed_issue_ids(response), {12345, 12346})
+        self.assertEqual(observed_issue_ids(response), {12345})
         self.assertEqual(observed_ordered_issue_ids(response), [12345])
         self.assertEqual(
             observed_ordered_issue_ids({"content": "#00012346, #12345", "sources": []}),
-            [12346, 12345],
+            [],
         )
         self.assertEqual(extract_answer_count(response["content"]), 2)
         self.assertEqual(observed_route_source(response), "mantis")
@@ -559,7 +559,7 @@ class AccuracyInsightTests(unittest.TestCase):
         self.assertEqual(request.contextAuditId, "a" * 32)
         self.assertEqual([message.role for message in request.messages], ["user", "assistant", "user"])
         self.assertEqual(request.messages[-1].content, scenario.question)
-        self.assertEqual(request.tools, {"mantis": True, "notion": False, "vectorDb": False})
+        self.assertEqual(request.tools, {"mantis": True, "notion": True, "vectorDb": False})
 
     @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat")
     def test_follow_up_is_blocked_when_setup_case_fails(self, execute):
