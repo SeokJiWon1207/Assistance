@@ -168,6 +168,17 @@ def merge_query_plan_constraints(
     for clause in planned_clauses:
         field, operator, value = clause["field"], clause["operator"], clause.get("value")
         values = value if isinstance(value, list) else [value]
+        if field == "issue_id" and operator in {"equals", "in", "not_equals", "not_in"}:
+            planned_issue_ids = [int(str(item).lstrip("#")) for item in values if str(item).lstrip("#").isdigit()]
+            grounding_text = str((query_plan or {}).get("grounding_text") or "")
+            if grounding_text:
+                grounded = extract_query_constraints(grounding_text)
+                allowed_ids = set(grounded.get("issue_ids", []) + grounded.get("exclude_issue_ids", []))
+                planned_issue_ids = [item for item in planned_issue_ids if item in allowed_ids]
+            if not planned_issue_ids:
+                continue
+            values = planned_issue_ids
+            clause = {**clause, "value": planned_issue_ids if isinstance(value, list) else planned_issue_ids[0]}
         grounded_people = None
         if field in {"owner", "reporter"} and operator in {"equals", "in"}:
             grounded_people = grounded_model_people(

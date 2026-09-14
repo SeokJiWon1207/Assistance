@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
-from backend.common import extract_quoted_value, normalize_for_match
+from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
 from backend.config import (
     NOTION_API_BASE,
     get_notion_headers,
@@ -249,8 +249,11 @@ def clean_notion_update_target(text: str) -> str:
 
 
 def notion_write_intent(text: str) -> Optional[str]:
-    normalized_text = normalize_for_match(text)
+    # 제목 안의 '수정해주세요'는 명령이 아니라 검색 대상의 일부다.
+    normalized_text = normalize_for_match(remove_quoted_value(text))
     if not any(keyword in normalized_text for keyword in ("노션", "notion", "노선")):
+        return None
+    if re.search(r"바꿔서(?:다시)?(?:찾아|조회|검색)", normalized_text):
         return None
     command_suffix = r"(?:해줘|해주세요|해볼래|해줘볼래|해라|하자|할래|해)"
     if re.search(rf"(?:추가|등록|생성|만들|작성){command_suffix}", normalized_text):

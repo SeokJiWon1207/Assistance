@@ -182,10 +182,21 @@ def get_customer_alias_groups() -> List[List[str]]:
 
 
 def extract_status_constraints(text: str) -> List[str]:
-    normalized_text = normalize_for_match(remove_date_field_phrases(text))
+    status_text = re.sub(
+        r"확인\s*(?:해\s*(?:줘|주세요|줄래(?:요)?)|부탁(?:해|드려)?|할\s*수\s*있)",
+        " ", remove_date_field_phrases(text),
+    )
+    normalized_text = normalize_for_match(status_text)
     statuses = []
     for status_key, aliases in STATUS_ALIASES.items():
-        if any(normalize_for_match(alias) in normalized_text for alias in aliases):
+        if any(
+            bool(re.search(
+                r"(?:상태\s*(?:가|는|만|를|=|:)?\s*feedback\b|"
+                r"\bfeedback\s*(?:인|상태(?:인)?|로|으로)(?=\s|$|[,.;!?]))",
+                status_text, re.IGNORECASE,
+            )) if alias == "feedback" else normalize_for_match(alias) in normalized_text
+            for alias in aliases
+        ):
             statuses.append(status_key)
     if any(pattern.search(normalized_text) for pattern in NON_CLOSED_STATUS_PATTERNS):
         statuses = [status for status in statuses if status != "closed"]
@@ -199,6 +210,8 @@ def extract_status_constraints(text: str) -> List[str]:
 def extract_issue_ids(text: str) -> List[int]:
     issue_ids = set()
     for pattern in (
+        r"(?<![\w])0*(\d{3,7})\s*번\s*(?:이슈|건|티켓)",
+        r"이슈\s*#?0*(\d{3,7})\s*번",
         r"(?:이슈\s*)?#\s*(\d{3,})",
         r"(?:이슈\s*ID|id)\s*:?\s*#?\s*(\d{3,})",
         r"^\s*0*(\d{3,7})\s*(?:번\s*)?(?:이슈\s*)?(?:알려\s*줘|알려주세요|보여\s*줘|보여주세요|조회(?:해\s*줘|해주세요)?)\s*[?.!]?\s*$",
@@ -206,6 +219,8 @@ def extract_issue_ids(text: str) -> List[int]:
         r"\b(30\d{3}|29\d{3}|28\d{3}|27\d{3}|26\d{3})\b",
     ):
         for match in re.finditer(pattern, text, re.IGNORECASE):
+            if re.search(r"화면(?:\s*번호)?\s*[:#]?\s*$", text[:match.start()]):
+                continue
             issue_ids.add(int(match.group(1)))
     return sorted(issue_ids, reverse=True)
 

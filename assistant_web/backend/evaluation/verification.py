@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 
 from backend.answers import display_constraints
 from backend.common import normalize_for_match
+from backend.notion.search import extract_notion_constraints, notion_page_matches_constraints
 from backend.query_planning import plan_created_at_matches, validate_query_plan
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.retrieval import (
@@ -67,6 +68,14 @@ def ungrounded_constraint_labels(
         if str(number) not in str(grounding_text):
             labels.append(f"화면번호={number}")
 
+    expected = extract_query_constraints(grounding_text)
+    for status in constraints.get("statuses") or []:
+        if status not in (expected.get("statuses") or []):
+            labels.append(f"상태={status}")
+    for issue_id in constraints.get("issue_ids") or []:
+        if issue_id not in (expected.get("issue_ids") or []):
+            labels.append(f"이슈 ID={issue_id}")
+
     return labels
 
 
@@ -125,8 +134,17 @@ def build_verification_report(
         match_constraints = {**constraints, "issue_ids": []}
 
     matched_sources = []
+    definite_mismatches = 0
+    notion_constraints = extract_notion_constraints(str((retrieval_result or {}).get("query") or question))
     for source in sources:
-        if not has_constraint(match_constraints) or source.get("type") == "notion":
+        if source.get("type") == "notion":
+            matched = notion_page_matches_constraints(
+                {**(source.get("detail") or {}), **source}, notion_constraints,
+            )
+            matched_sources.append(matched)
+            definite_mismatches += int(not matched)
+            continue
+        if not has_constraint(match_constraints):
             matched_sources.append(True)
             continue
         source_text = json.dumps(source, ensure_ascii=False, default=str)
@@ -146,8 +164,12 @@ def build_verification_report(
         {
             "id": "constraints",
             "label": "검색 조건",
-            "status": "pass" if not matched_sources or all(matched_sources) else "warning",
-            "detail": "조건 일치" if not matched_sources or all(matched_sources) else f"조건 불일치 가능성 {matched_sources.count(False)}건",
+            "status": "fail" if definite_mismatches else "warning" if not all(matched_sources) else "pass",
+            "detail": (
+                f"원문 속성의 조건 불일치 {definite_mismatches}건"
+                if definite_mismatches else f"원문 텍스트 기준 조건 불일치 가능성 {matched_sources.count(False)}건"
+                if not all(matched_sources) else "조건 일치"
+            ),
         }
     )
 
@@ -176,6 +198,15 @@ def build_verification_report(
         count_status = "pass"
         count_detail = f"확인 {len(sources)}건"
     retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
+    incomplete_stages = [
+        stage for stage in (retrieval_result or {}).get("stages", [])
+        if stage.get("status") == "partial_error" or stage.get("meta", {}).get("search_complete") is False
+    ]
+    if incomplete_stages:
+        retrieval_checks.append({
+            "id": "search_completeness", "label": "조회 완전성", "status": "warning",
+            "detail": "일부 조회가 완료되지 않아 전체 결과를 검증할 수 없음",
+        })
 
     def score_checks(checks: List[Dict[str, str]]) -> tuple[int, str]:
         weights = {"pass": 1.0, "warning": 0.5, "fail": 0.0, "review": 0.0}

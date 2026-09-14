@@ -1,6 +1,12 @@
 """Notion 검색·쓰기 모듈이 공유하는 상수."""
 
+# 관형 조사 '인'과 달리 끝 글자까지 검색해야 하는 명사만 보존한다.
+NOTION_IN_ENDING_NOUNS = frozenset({"로그인", "디자인", "온라인", "승인", "원인"})
+
 NOTION_STATUS_QUERY_TERMS = {
+    "시작전",
+    "미완료",
+    "대기",
     "등록됨",
     "보관됨",
     "결재요청",
@@ -59,6 +65,7 @@ NOTION_WRITE_FIELD_LABELS = {"status": "상태", "owner": "담당자", "dueDate"
 
 
 __all__ = [
+    "NOTION_IN_ENDING_NOUNS",
     "NOTION_STATUS_QUERY_TERMS",
     "NOTION_STATUS_TYPOS",
     "NOISY_PROPERTY_NAME_KEYWORDS",

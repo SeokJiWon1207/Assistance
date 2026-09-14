@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List
 
-from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
+from backend.common import extract_quoted_value, has_lookup_request, normalize_for_match, remove_quoted_value
 from backend.intent.constants import ISSUE_LIST_INTENT_KEYWORDS
 from backend.notion.search import collect_retrieved_notion_pages
 from backend.query_filters import filter_clause_label
@@ -18,6 +18,7 @@ def build_sources_from_notion_pages(pages: List[Dict[str, Any]]) -> List[Dict[st
             "title": page.get("title", "제목 없음"),
             "database_label": page.get("database_label", "Notion DB"),
             "status": page.get("status", "상태 미상"),
+            "status_property": page.get("status_property", ""),
             "owner": page.get("owner", "담당자 미지정"),
             "due_date": page.get("due_date", ""),
             "updated_at": page.get("last_edited_time", ""),
@@ -50,7 +51,7 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
         for marker in ("상세", "자세히", "요약", "내용 정리", "정리해줘")
     ):
         return False
-    has_list_intent = any(
+    has_list_intent = has_lookup_request(intent_text) or any(
         normalize_for_match(keyword) in normalized_text
         for keyword in ISSUE_LIST_INTENT_KEYWORDS
     )
@@ -76,7 +77,10 @@ def format_grouped_notion_answer(
 
     meta = notion_stage.get("meta", {})
     total_matches = int(meta.get("candidate_count", len(pages)))
-    lines = [f"📊 조건에 맞는 Notion 항목은 총 {total_matches}건입니다. 담당자별로 정리했습니다."]
+    scope = "조회한 범위에서 확인된" if meta.get("search_complete") is False else "총"
+    lines = [f"📊 조건에 맞는 Notion 항목은 {scope} {total_matches}건입니다. 담당자별로 정리했습니다."]
+    if meta.get("search_complete") is False:
+        lines.append("일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.")
     if total_matches > len(pages):
         lines.append(f"현재 조회 범위에서는 최근 수정순 {len(pages)}건까지 담당자별로 표시합니다.")
     lines.append("")
@@ -116,7 +120,16 @@ def format_deterministic_notion_answer(
         )
     if notion_stage.get("status") == "error":
         return f"Notion 조회 중 오류가 발생했습니다.\n\n{notion_stage.get('reason', '원인 미상')}"
+    scope_meta = notion_stage.get("meta", {})
+    scope_notice = ""
+    if scope_meta.get("incomplete_reasons") == ["page_limit"] and scope_meta.get("scan_limit_per_database"):
+        scope_notice = (
+            f"검색 범위는 제목 검색 결과와 DB별 최근 수정 항목 최대 {scope_meta['scan_limit_per_database']}건입니다. "
+            "전체 항목을 확인한 결과는 아닙니다."
+        )
     if not pages:
+        if notion_stage.get("meta", {}).get("search_complete") is False:
+            return "Notion에서 조회한 범위에는 일치하는 항목이 없습니다. " + (scope_notice or "전체 조회가 끝나지 않아 결과가 없다고 확정할 수 없습니다.")
         return (
             "🔍 Notion DB에서는 조건에 맞는 항목을 찾지 못했어요. "
             "키워드를 바꾸거나 조회할 DB를 좁혀서 다시 찾아볼까요?"
@@ -152,6 +165,12 @@ def format_deterministic_notion_answer(
     if notion_constraints.get("unassigned_owner"):
         # 필터가 적용됐는데 기준에 안 보이면 결과가 왜 줄었는지 알 수 없다.
         criteria += ", 담당자=미지정"
+    if notion_constraints.get("status"):
+        criteria += f", 상태={notion_constraints['status']}"
+    if notion_constraints.get("excluded_statuses"):
+        criteria += f", 제외 상태={', '.join(notion_constraints['excluded_statuses'])}"
+    if notion_constraints.get("owner"):
+        criteria += f", 담당자={notion_constraints['owner']}"
     status_typo = notion_constraints.get("status_typo")
     if status_typo:
         # 조용히 바꾸지 않고 무엇을 무엇으로 봤는지 밝힌다.
@@ -163,7 +182,13 @@ def format_deterministic_notion_answer(
         for marker in ("몇개", "몇건", "건수", "총몇")
     )
     total_matches = int(notion_stage.get("meta", {}).get("candidate_count", len(pages)))
-    if count_intent:
+    if notion_stage.get("meta", {}).get("search_complete") is False or notion_stage.get("status") == "partial_error":
+        intro = (
+            f"🔍 조회한 범위에서 조건에 맞는 Notion 항목 {total_matches}건을 확인했습니다. "
+            f"최근 수정순으로 {len(pages)}건을 표시합니다. "
+            + (scope_notice or "일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.")
+        )
+    elif count_intent:
         intro = f"📊 조건에 맞는 Notion 항목은 총 {total_matches}건입니다. 대표 항목을 함께 표시합니다."
     elif total_matches > len(pages):
         # 화면엔 limit만큼만 표시되지만 실제로는 더 많은 후보가 있는 경우,
@@ -181,6 +206,8 @@ def format_deterministic_notion_answer(
             f"상태 {page.get('status', '상태 미상')}",
             f"담당 {page.get('owner', '담당자 미지정')}",
         ]
+        if page.get("status_property") and page["status_property"] != "상태":
+            meta_items.append(f"상태 필드 {page['status_property']}")
         if page.get("due_date"):
             meta_items.append(f"기한 {page['due_date']}")
         if page.get("last_edited_time"):

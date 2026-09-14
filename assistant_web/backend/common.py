@@ -136,6 +136,16 @@ COUNT_EXPRESSION_PATTERN = re.compile(
 PERIOD_EXPRESSION_PATTERN = re.compile(r"\d+(?:개월|달|주일|주|년|일)간?")
 
 
+LOOKUP_REQUEST_PATTERN = re.compile(
+    r"(?:보여|알려|찾아|뽑아|조회해|검색해)"
+    r"(?:줘(?:요)?|주세요|줄래(?:요)?|주실래(?:요)?|줄\s*수\s*있(?:어|나요|을까)|주실\s*수\s*있나요)"
+)
+
+
+def has_lookup_request(text: str) -> bool:
+    return bool(LOOKUP_REQUEST_PATTERN.search(normalize_for_match(text)))
+
+
 def is_control_search_term(term: str) -> bool:
     normalized = normalize_for_match(term)
     if not normalized:
@@ -144,6 +154,8 @@ def is_control_search_term(term: str) -> bool:
         return True
     return bool(
         COUNT_EXPRESSION_PATTERN.fullmatch(normalized)
+        or LOOKUP_REQUEST_PATTERN.fullmatch(normalized)
+        or normalized == "좀"
         or PERIOD_EXPRESSION_PATTERN.fullmatch(normalized)
         or re.fullmatch(r"\d{4}년?", normalized)
         or re.fullmatch(r"\d{1,2}월", normalized)

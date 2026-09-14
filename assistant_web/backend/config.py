@@ -253,8 +253,8 @@ STATUS_ALIASES = {
     "confirmed": ["확인", "확인된", "confirmed", "confirm"],
     "assigned": ["할당", "할당된", "assigned", "assign"],
     "resolved": ["해결", "해결된", "resolved", "resolve"],
-    "review": ["검토", "이슈 검토"],
-    "need_info": ["정보 부족", "정보부족"],
+    "review": ["검토", "이슈 검토", "acknowledged"],
+    "need_info": ["정보 부족", "정보부족", "feedback"],
     "dev_done": ["개발완료", "개발 완료", "developed"],
 }
 
@@ -269,8 +269,8 @@ STATUS_MATCH_ALIASES = {
     "confirmed": ["확인된 이슈", "확인", "confirmed"],
     "assigned": ["할당된 이슈", "할당", "assigned"],
     "resolved": ["해결된 이슈", "해결", "resolved"],
-    "review": ["이슈 검토", "검토"],
-    "need_info": ["정보 부족", "정보부족"],
+    "review": ["이슈 검토", "검토", "acknowledged"],
+    "need_info": ["정보 부족", "정보부족", "feedback"],
     "dev_done": ["개발완료", "개발 완료", "developed"],
 }
 

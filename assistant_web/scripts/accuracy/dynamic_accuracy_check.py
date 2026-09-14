@@ -12,7 +12,7 @@ import statistics
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -31,6 +31,7 @@ import requests
 
 from backend.environment import load_dotenv
 from backend.evaluation.verification import ungrounded_constraint_labels
+from backend.notion.search import extract_notion_constraints
 
 load_dotenv(APP_DIR / ".env")
 
@@ -60,6 +61,7 @@ class AccuracyCase:
     expected_kind: str
     expected: Any
     mutable_oracle: bool = False
+    expected_constraints: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -140,7 +142,7 @@ def complete_mutable_mantis_ids(
     return sorted(expected_ids, reverse=True)[:limit]
 
 
-def fetch_mantis_snapshot() -> List[Dict[str, Any]]:
+def fetch_mantis_snapshot(progress: bool = False) -> List[Dict[str, Any]]:
     url = os.getenv("MANTIS_API_URL", "").strip()
     token = os.getenv("MANTIS_API_TOKEN", "").strip()
     if not url or not token:
@@ -173,6 +175,7 @@ def fetch_mantis_snapshot() -> List[Dict[str, Any]]:
         if not batch:
             break
         issues.extend(batch)
+        emit_progress(progress, {"type": "status", "message": f"Mantis 원문 {len(issues)}건 수집 완료"})
         if len(batch) < MANTIS_PAGE_SIZE:
             break
     return sorted(issues, key=lambda item: int(item.get("id") or 0), reverse=True)
@@ -285,7 +288,7 @@ def build_mantis_cases(
     exact = rng.choice(candidates)
     cases.append(AccuracyCase(
         "mantis-exact-id", "mantis", "정확 ID", f"{int(exact['id']):07d} 이슈 내용을 알려줘",
-        "issue_ids", [int(exact["id"])],
+        "exact_issue_ids", [int(exact["id"])],
     ))
 
     project_counts = Counter(str(item.get("project", {}).get("name") or "") for item in issues)
@@ -295,7 +298,7 @@ def build_mantis_cases(
     project_issues = [item for item in issues if item.get("project", {}).get("name") == project]
     cases.append(AccuracyCase(
         "mantis-project-latest", "mantis", "고객사 최신 이슈",
-        f"{human_project_name(project)} 최근 이슈 3개 보여줘", "issue_ids",
+        f"{human_project_name(project)} 최근 이슈 3개 보여줘", "ordered_issue_ids",
         [int(item["id"]) for item in project_issues[:3]],
     ))
 
@@ -312,7 +315,7 @@ def build_mantis_cases(
         pair_expected = complete_mutable_mantis_ids(pair_question, issues, 2) or pair_expected
     cases.append(AccuracyCase(
         "mantis-project-status", "mantis", "고객사·상태",
-        pair_question, "issue_ids", pair_expected, mutable_oracle=True,
+        pair_question, "ordered_issue_ids", pair_expected, mutable_oracle=True,
     ))
 
     project_platform_groups: Dict[tuple[str, str], List[Dict[str, Any]]] = {}
@@ -412,7 +415,7 @@ def build_mantis_cases(
             handler_expected = complete_mutable_mantis_ids(handler_question, issues, 2) or handler_expected
         cases.append(AccuracyCase(
             "mantis-handler", "mantis", "담당자", handler_question,
-            "issue_ids", handler_expected, mutable_oracle=True,
+            "ordered_issue_ids", handler_expected, mutable_oracle=True,
         ))
 
     dated = [item for item in project_issues if re.match(r"\d{4}-\d{2}", str(item.get("created_at") or ""))]
@@ -480,6 +483,18 @@ def build_notion_cases(pages: List[Dict[str, str]], rng: random.Random) -> List[
             f"노션에서 상태가 {page['status']}인 '{page['title']}' 항목을 정확히 찾아줘",
             "titles",
             [page["title"]],
+            expected_constraints={"exact_title": page["title"], "status": page["status"]},
+        ))
+        # 같은 제목에 상반된 상태를 요구해도 제목 일치만으로 성공할 수 없어야 한다.
+        cases.append(AccuracyCase(
+            f"notion-title-excluded-status-{index + 1}", "notion", "제목·상태 제외",
+            f"노션에서 '{page['title']}' 항목을 찾아줘. {page['status']} 상태는 빼고",
+            "titles" if any(
+                other["title"] == page["title"] and other.get("status") != page["status"]
+                for other in pages
+            ) else "no_results",
+            [page["title"]],
+            expected_constraints={"exact_title": page["title"], "excluded_statuses": [page["status"]]},
         ))
     nonce = rng.randrange(100000, 1000000)
     cases.append(AccuracyCase(
@@ -532,6 +547,29 @@ def select_rotating_cases(
     rng.shuffle(remainder)
     selected.extend(remainder[: max(0, limit - len(selected))])
     return selected[:limit]
+
+
+def build_natural_language_cases(cases: List[AccuracyCase]) -> List[AccuracyCase]:
+    """독립 정답을 유지한 채 팀원이 쓰는 구어체·한글 개수 표현도 검사한다."""
+    variants = []
+    for case in cases:
+        question = ""
+        if case.id == "mantis-exact-id":
+            question = f"{int(case.expected[0]):07d}번 이슈 내용 좀 알려줄래?"
+        elif case.id in {"mantis-project-latest", "mantis-project-status", "mantis-handler"}:
+            question = case.question.replace("3개", "세 개").replace("2개", "두 개").replace("보여줘", "보여줄래?")
+        elif case.id == "mantis-project-platform-exclusion":
+            question = case.question.replace("는 빼고", "는 제외하고").replace("3개", "세 건").replace("보여줘", "보여주세요")
+        elif case.id == "mantis-month-count":
+            question = case.question.replace("몇 개야?", "총 몇 건인지 알려주세요")
+        elif case.id == "notion-title-1":
+            question = f"노션에서 '{case.expected[0]}' 문서 좀 찾아줄래?"
+        elif case.id == "notion-title-status-1":
+            filters = case.expected_constraints or {}
+            question = f"노션에서 '{case.expected[0]}' 찾아주세요. 상태가 {filters['status']}인 것만요"
+        if question:
+            variants.append(replace(case, id=f"natural-{case.id}", question=question, category=f"자연어·{case.category}"))
+    return variants
 
 
 def build_follow_up_scenarios(
@@ -640,13 +678,12 @@ def build_follow_up_scenarios(
 
 
 def observed_issue_ids(response: Dict[str, Any]) -> set[int]:
-    ids = {
+    # '이슈 #31397을 찾지 못했습니다'에 번호가 있어도 검색 성공이 아니다.
+    return {
         int(source["issue_id"])
         for source in response.get("sources") or []
         if source.get("issue_id")
     }
-    ids.update(int(value) for value in re.findall(r"#?0*(\d{5,7})\b", response.get("content", "")))
-    return ids
 
 
 def observed_ordered_issue_ids(response: Dict[str, Any]) -> List[int]:
@@ -655,12 +692,6 @@ def observed_ordered_issue_ids(response: Dict[str, Any]) -> List[int]:
         issue_id = source.get("issue_id")
         if issue_id and int(issue_id) not in ordered:
             ordered.append(int(issue_id))
-    if ordered:
-        return ordered
-    for value in re.findall(r"#0*(\d{5,7})\b", str(response.get("content") or "")):
-        issue_id = int(value)
-        if issue_id not in ordered:
-            ordered.append(issue_id)
     return ordered
 
 
@@ -773,18 +804,14 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         actual = observed_ordered_issue_ids(response)
         passed = expected_order == actual
     elif case.expected_kind == "titles":
-        haystacks = [content, *(str(source.get("title") or "") for source in sources)]
         expected_titles = [str(value) for value in case.expected]
-        missing = [title for title in expected_titles if not any(normalize(title) in normalize(text) for text in haystacks)]
+        source_titles = {normalize(source.get("title")) for source in sources}
+        missing = [title for title in expected_titles
+                   if normalize(title) not in source_titles or normalize(title) not in normalize(content)]
         passed = not missing
         actual = {"matched": len(expected_titles) - len(missing), "missing": missing}
     elif case.expected_kind == "text_any":
-        haystack = normalize(
-            " ".join([
-                content,
-                json.dumps(sources, ensure_ascii=False, default=str),
-            ])
-        )
+        haystack = normalize(content)
         alternatives = [str(value) for value in case.expected]
         matched = next(
             (value for value in alternatives if normalize(value) in haystack),
@@ -802,7 +829,9 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
             if source.get("issue_id")
         )
         actual = {"source_issue_ids": actual_ids, "source_count": len(sources)}
-        passed = not actual_ids and not sources
+        passed = not actual_ids and not sources and any(
+            marker in normalize(content) for marker in ("없", "찾지못", "0건", "0개")
+        )
     else:
         actual = None
         passed = False
@@ -837,6 +866,53 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         if actual_constraints
         else None
     )
+    source_constraints_passed = None
+    if case.source == "notion":
+        # Notion 제목 속 숫자·고객사명을 Mantis 필터로 해석하지 않는다.
+        expected_notion = case.expected_constraints or extract_notion_constraints(grounding_text)
+        observed_notion = next((
+            stage.get("meta", {}).get("constraints", {})
+            for stage in stages if stage.get("source") == "notion"
+        ), {})
+        scalar_keys = ("exact_title", "status", "owner", "database_label")
+        filter_recall_passed = all(
+            not expected_notion.get(key)
+            or normalize(expected_notion[key]) == normalize(observed_notion.get(key))
+            for key in scalar_keys
+        ) and all(
+            normalize(value) in {normalize(item) for item in observed_notion.get("excluded_statuses", [])}
+            for value in expected_notion.get("excluded_statuses", [])
+        ) and (not expected_notion.get("unassigned_owner") or bool(observed_notion.get("unassigned_owner")))
+        filter_precision_passed = all(
+            not observed_notion.get(key)
+            or normalize(observed_notion[key]) == normalize(expected_notion.get(key))
+            for key in scalar_keys
+        )
+        # 실제 원문 속성을 독립적으로 확인한다. 계획끼리 일치해도 오답이면 실패다.
+        source_constraints_passed = all(
+            source.get("type") == "notion"
+            and all(not expected_notion.get(key)
+                    or normalize(source.get(field)) == normalize(expected_notion[key])
+                    for key, field in (("exact_title", "title"), ("status", "status"), ("owner", "owner")))
+            and normalize(source.get("status")) not in {
+                normalize(value) for value in expected_notion.get("excluded_statuses", [])
+            }
+            and (not expected_notion.get("unassigned_owner")
+                 or normalize(source.get("owner")) in {"", "미지정", "담당자미지정"})
+            for source in sources
+        )
+    answer_passed = passed
+    incomplete_search = any(stage.get("meta", {}).get("search_complete") is False for stage in stages)
+    internal_error = any(stage.get("error_kind") == "internal" for stage in stages)
+    passed = passed and not any(value is False for value in (
+        routing_passed, filter_precision_passed, filter_recall_passed, source_constraints_passed,
+    )) and not incomplete_search and not internal_error
+    failed_checks = [label for label, value in (
+        ("답변 내용", answer_passed), ("검색 소스", routing_passed),
+        ("추가 조건", filter_precision_passed), ("조건 누락", filter_recall_passed),
+        ("원문 속성", source_constraints_passed), ("조회 완전성", not incomplete_search),
+        ("실행 오류", not internal_error),
+    ) if value is False]
     # 외부 소스가 불완전한 상태에서 우연히 기대값이 포함됐더라도 완전한 성공으로
     # 집계하면 다음 실행에서 같은 응답을 재현할 수 없다. 의존성 오류를 우선한다.
     outcome = "dependency_error" if dependency_reason else "passed" if passed else "assertion_failed"
@@ -845,7 +921,11 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         "passed": passed and not dependency_reason,
         "outcome": outcome,
         "actual": actual,
-        "answer_passed": passed,
+        "answer_passed": answer_passed,
+        "source_constraints_passed": source_constraints_passed,
+        "incomplete_search": incomplete_search,
+        "failed_checks": failed_checks,
+        "observed_constraints": observed_notion if case.source == "notion" else actual_constraints,
         "expected_route": case.source,
         "observed_route": observed_route,
         "routing_passed": routing_passed,
@@ -875,6 +955,7 @@ def reconcile_mutable_mantis_oracle(
         or result.get("routing_passed") is False
         or result.get("filter_precision_passed") is False
         or result.get("filter_recall_passed") is False
+        or result.get("incomplete_search")
     ):
         return result
 
@@ -924,8 +1005,8 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
     started = time.perf_counter()
     try:
         tools = {
-            "mantis": case.source == "mantis",
-            "notion": case.source == "notion",
+            "mantis": True,
+            "notion": True,
             "vectorDb": False,
         }
         response = execute_chat(ChatRequest(
@@ -994,8 +1075,8 @@ def run_follow_up_scenario(
     started = time.perf_counter()
     try:
         tools = {
-            "mantis": scenario.source == "mantis",
-            "notion": scenario.source == "notion",
+            "mantis": True,
+            "notion": True,
             "vectorDb": False,
         }
         response = execute_chat(ChatRequest(
@@ -1170,6 +1251,7 @@ def main() -> int:
     parser.add_argument("--seed", default=datetime.now().astimezone().strftime("%Y-%m-%d"))
     parser.add_argument("--model-id", default="")
     parser.add_argument("--progress", action="store_true", help="print PROGRESS json lines while running")
+    parser.add_argument("--all-cases", action="store_true", help="run every generated question, without daily sampling")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -1178,7 +1260,7 @@ def main() -> int:
     errors: List[str] = []
     emit_progress(args.progress, {"type": "status", "message": "Mantis·Notion 실시간 스냅샷을 수집하고 있습니다"})
     try:
-        mantis_issues = fetch_mantis_snapshot()
+        mantis_issues = fetch_mantis_snapshot(progress=args.progress)
     except Exception as exc:
         mantis_issues = []
         errors.append(f"Mantis snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
@@ -1193,7 +1275,10 @@ def main() -> int:
         rng,
         augment_mutable_oracle=True,
     ) + build_notion_cases(notion_pages, rng)
-    cases = select_rotating_cases(candidate_cases, args.questions, rng)
+    if args.all_cases:
+        candidate_cases += build_natural_language_cases(candidate_cases)
+    cases = candidate_cases if args.all_cases else select_rotating_cases(candidate_cases, args.questions, rng)
+    requested_questions = len(candidate_cases) if args.all_cases else args.questions
     follow_up_scenarios = build_follow_up_scenarios(
         cases,
         mantis_issues,
@@ -1264,7 +1349,7 @@ def main() -> int:
     filter_recall_summary = summarize_boolean_dimension(results, "filter_recall_passed")
     latency_summary = summarize_latency(results)
     incomplete = (
-        len(cases) < args.questions
+        len(cases) < requested_questions
         or len(follow_up_scenarios) < args.follow_up_scenarios
         or totals["dependency_errors"] > 0
         or totals["execution_errors"] > 0
@@ -1275,7 +1360,7 @@ def main() -> int:
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "seed": args.seed,
         "model_id": model_id,
-        "requested_questions": args.questions,
+        "requested_questions": requested_questions,
         "generated_questions": len(cases),
         "requested_follow_up_scenarios": args.follow_up_scenarios,
         "generated_follow_up_scenarios": len(follow_up_scenarios),

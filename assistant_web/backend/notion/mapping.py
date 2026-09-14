@@ -326,6 +326,11 @@ def normalize_notion_page(
         "id": page.get("id", ""),
         "title": title,
         "status": status,
+        "status_fields": {
+            name: notion_property_to_text(prop) for name, prop in properties.items()
+            if prop.get("type") in {"status", "select"}
+            and any(key in normalize_for_match(name) for key in ("상태", "status", "진행"))
+        },
         "owner": owner,
         "owner_relation_ids": notion_owner_relation_ids(properties),
         "owner_user_ids": notion_owner_user_ids(properties),

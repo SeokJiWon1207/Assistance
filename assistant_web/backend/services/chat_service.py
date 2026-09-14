@@ -68,7 +68,6 @@ from backend.sources.mantis import build_sources_from_issue_rows
 from backend.sources.notion import (
     build_sources_from_notion_pages,
     collect_retrieved_notion_pages,
-    extract_notion_constraints,
     format_deterministic_notion_answer,
     inherit_notion_context,
     run_notion_write_command,
@@ -517,8 +516,8 @@ def prepare_chat_pipeline(
         needs_follow_up_rewrite = False
     else:
         notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
-        if notion_prefix and not extract_notion_constraints(retrieval_text).get("status"):
-            retrieval_text = f"{notion_prefix} {retrieval_text or latest_user_text}".strip()
+        if notion_prefix:
+            retrieval_text = f"{notion_prefix} {latest_user_text}".strip()
             needs_follow_up_rewrite = False
 
     if needs_follow_up_rewrite:
@@ -716,7 +715,7 @@ def deterministic_retrieval_response(
             "retrieval": retrieval_result,
             "raw": {"mode": "deterministic_notion_list"},
         }
-    if should_return_deterministic_issue_list(
+    if (context.intent_plan or {}).get("source") != "notion" and should_return_deterministic_issue_list(
         context.retrieval_text,
         context.query_constraints,
     ):

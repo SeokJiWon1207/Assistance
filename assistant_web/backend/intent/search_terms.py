@@ -3,7 +3,7 @@
 import re
 from typing import Any, Dict, List, Optional
 
-from backend.common import is_control_search_term, normalize_for_match, normalize_search_token
+from backend.common import LOOKUP_REQUEST_PATTERN, is_control_search_term, normalize_for_match, normalize_search_token
 from backend.config import (
     KOREAN_COUNT_WORDS,
     STATUS_ALIASES,
@@ -62,6 +62,7 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
     personal_scope_text = bool(
         re.search(

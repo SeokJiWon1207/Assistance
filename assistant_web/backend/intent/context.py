@@ -137,6 +137,9 @@ def resolve_reference_from_context(
         # 여러 건을 보여준 뒤라면 어느 것인지 알 수 없으므로 추측하지 않는다.
         issue_sources = [source for source in sources if source.get("issue_id")]
         unique_ids = {int(source["issue_id"]) for source in issue_sources}
+        notion_sources = [source for source in sources if source.get("type") == "notion" and source.get("title")]
+        if not unique_ids and len(notion_sources) == 1:
+            return f'노션에서 "{notion_sources[0]["title"]}" {text}'
         if len(unique_ids) != 1:
             return None
         return f"{unique_ids.pop():07d} {text}"

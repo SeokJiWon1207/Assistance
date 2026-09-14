@@ -110,6 +110,8 @@ def clause_supported(source: str, clause: Dict[str, Any]) -> bool:
 
 def _canonical_filter_value(field: str, value: Any) -> str:
     normalized = normalize_for_match(str(value or ""))
+    if field == "issue_id" and normalized.lstrip("#").isdigit():
+        return str(int(normalized.lstrip("#")))
     aliases = {"customer": CUSTOMER_ALIASES, "platform": PLATFORM_ALIASES, "status": STATUS_MATCH_ALIASES}.get(
         field, {}
     )
