@@ -242,9 +242,8 @@ class FrontendArchitectureContractTests(unittest.TestCase):
         self.assertNotIn("function renderDonutChart(", chat)
         self.assertNotIn("async function requestAssistant(", chat)
         self.assertNotIn("function renderAssistantContent(", chat)
-        self.assertIn('from "./charts.js"', chat)
-        self.assertIn('from "./chat_controller.js"', chat)
-        self.assertIn('from "./chat_rendering.js"', chat)
+        for module in ("charts", "chat_controller", "chat_rendering"):
+            self.assertRegex(chat, rf'from "\./{module}\.js(?:\?v=[^"\s]+)?"')
         self.assertLessEqual(len(chat.splitlines()), 950)
         rendering = (modules_dir / "chat_rendering.js").read_text(encoding="utf-8")
         self.assertLessEqual(len(rendering.splitlines()), 850)
