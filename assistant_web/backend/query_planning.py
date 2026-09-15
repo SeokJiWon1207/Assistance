@@ -471,10 +471,20 @@ def build_query_plan(
             continue
         if clause not in filter_clauses:
             filter_clauses.append(clause)
+    from backend.query_filters import notion_temporal_field
+    temporal_field = notion_temporal_field(question) if source == "notion" else "created_at"
+    if temporal_field != "created_at":
+        filters["created_at"] = None
+        filter_clauses = [clause for clause in filter_clauses if clause["field"] != "created_at"]
+    # 날짜 종류를 모델이 임의로 추가하지 않도록 질문의 표현과 맞춘다.
+    filter_clauses = [
+        clause for clause in filter_clauses
+        if clause["field"] not in {"due_at", "deployed_at"}
+    ]
     if created_at:
         add_filter_clause(
             filter_clauses,
-            "created_at",
+            temporal_field,
             "between",
             [created_at["from"], created_at["to"]],
         )
@@ -505,14 +515,22 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
 
     expected_date = extract_created_at_range(question)
     if expected_date:
+        from backend.query_filters import notion_temporal_field
+        temporal_field = notion_temporal_field(question) if plan.get("source") == "notion" else "created_at"
         passed = bool(
             created_at
             and created_at.get("from") == expected_date["from"]
             and created_at.get("to") == expected_date["to"]
         )
+        if temporal_field != "created_at":
+            passed = any(
+                clause["field"] == temporal_field and clause["operator"] == "between"
+                and clause.get("value") == [expected_date["from"], expected_date["to"]]
+                for clause in normalize_filter_clauses(plan.get("filter_clauses", []))
+            )
         checks.append({
             "id": "date_intent",
-            "label": "등록일 기간 해석",
+            "label": {"created_at": "등록일 기간 해석", "due_at": "기한 기간 해석", "deployed_at": "운영반영일 기간 해석"}[temporal_field],
             "status": "pass" if passed else "fail",
             "detail": (
                 f"{expected_date['from']}~{expected_date['to']}"

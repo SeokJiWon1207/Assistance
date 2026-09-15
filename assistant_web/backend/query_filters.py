@@ -38,6 +38,8 @@ SUPPORTED_FIELDS = {
     "issue_id",
     "screen_number",
     "created_at",
+    "due_at",
+    "deployed_at",
     "title",
     "keyword",
     "database",
@@ -64,6 +66,8 @@ SOURCE_FILTER_FIELDS = {
         "status",
         "owner",
         "created_at",
+        "due_at",
+        "deployed_at",
         "title",
         "keyword",
         "database",
@@ -85,7 +89,7 @@ SOURCE_FILTER_FIELDS = {
 TEXT_OPERATORS = {"equals", "not_equals", "in", "not_in", "contains", "not_contains", "exists", "not_exists"}
 SOURCE_FILTER_OPERATORS = {
     family: {
-        field: (TEXT_OPERATORS | {"gte", "lte", "between"} if field == "created_at" else TEXT_OPERATORS)
+        field: (TEXT_OPERATORS | {"gte", "lte", "between"} if field in {"created_at", "due_at", "deployed_at"} else TEXT_OPERATORS)
         for field in fields
     }
     for family, fields in SOURCE_FILTER_FIELDS.items()
@@ -96,7 +100,7 @@ def clause_supported(source: str, clause: Dict[str, Any]) -> bool:
     field, operator = clause["field"], clause["operator"]
     if operator not in SOURCE_FILTER_OPERATORS.get(source, {}).get(field, set()):
         return False
-    if field == "created_at" and operator in {"gte", "lte", "between"}:
+    if field in {"created_at", "due_at", "deployed_at"} and operator in {"gte", "lte", "between"}:
         values = values_for_clause(clause.get("value"))
         if len(values) != (2 if operator == "between" else 1):
             return False
@@ -132,7 +136,7 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
         raw = fields.get(field, "")
         candidates = raw if isinstance(raw, list) else [raw]
         values = values_for_clause(clause.get("value"))
-        if field == "created_at":
+        if field in {"created_at", "due_at", "deployed_at"}:
             candidates = [str(item or "")[:10] for item in candidates]
         raw_candidates, raw_values = candidates, values
         candidates = [_canonical_filter_value(field, item) for item in candidates if item not in (None, "")]
@@ -252,7 +256,8 @@ def filter_clause_label(clause: Dict[str, Any]) -> str:
     else:
         value_text = str(value) if value not in (None, "") else ""
     suffix = operator_labels.get(str(clause.get("operator")), str(clause.get("operator")))
-    return " ".join(part for part in (str(clause.get("field")), suffix, value_text) if part)
+    field_label = {"due_at": "기한", "deployed_at": "운영반영일"}.get(str(clause.get("field")), str(clause.get("field")))
+    return " ".join(part for part in (field_label, suffix, value_text) if part)
 
 
 def partition_supported_clauses(
@@ -286,3 +291,14 @@ def filter_audit_for_source(source: str, clauses: Iterable[Dict[str, Any]]) -> D
         "unapplied_filters": unapplied,
         "fully_applied": not unapplied,
     }
+
+
+def notion_temporal_field(question: str) -> str:
+    """명시된 기한/반영일만 등록일과 구분한다."""
+    from backend.common import remove_quoted_value
+    text = remove_quoted_value(question)
+    if re.search(r"마감|기한", text) and not re.search(r"등록일|등록된|생성일", text):
+        return "due_at"
+    if re.search(r"운영\s*반영|배포일", text) and not re.search(r"등록일|등록된|생성일", text):
+        return "deployed_at"
+    return "created_at"

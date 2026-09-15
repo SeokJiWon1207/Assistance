@@ -5,11 +5,13 @@
 
 import json
 import os
+import random
 import re
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from fastapi import HTTPException
@@ -236,6 +238,10 @@ CUSTOMER_ALIASES = load_customer_aliases()
 
 AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES = {
     "KRX",
+    # 삼성증권과 삼성선물 프로젝트가 공통 어간으로 하나의 고객사 그룹에
+    # 합쳐지면 양쪽 이슈가 섞인다. 전체 프로젝트명은 유지하고 어간만 막는다.
+    "Samsung",
+    "삼성",
 }
 
 PLATFORM_ALIASES = {
@@ -411,21 +417,177 @@ def parse_notion_database_ids() -> List[str]:
     return list(dict.fromkeys(database_ids))
 
 
+NOTION_DISCOVERY_MAX_PAGES = 10
+NOTION_DISCOVERY_FAILURE_TTL_SECONDS = 30
+_notion_discovery_lock = threading.Lock()
+_notion_discovery_cache: Dict[str, Tuple[float, List[str], str, str]] = {}
+_notion_request_lock = threading.Lock()
+_notion_next_request_at = 0.0
+_notion_default_request_interval = os.getenv(
+    "NOTION_MIN_REQUEST_INTERVAL_SECONDS", "0.36"
+)
+
+
+def get_notion_token() -> str:
+    return os.getenv("NOTION_API_TOKEN") or os.getenv("NOTION_TOKEN") or ""
+
+
+def notion_discovery_ttl_seconds() -> int:
+    try:
+        return max(30, min(int(os.getenv("NOTION_CACHE_TTL_SECONDS", "600")), 3600))
+    except ValueError:
+        return 600
+
+
+def notion_discovery_max_databases() -> int:
+    # 질문마다 DB별로 스키마·제목·본문 조회를 하므로 DB 수가 곧 요청 수다.
+    # 상위 페이지를 연결해 수백 개 DB가 잡히면 한 질문에 수천 번 호출한다.
+    try:
+        return max(1, min(int(os.getenv("NOTION_DISCOVERY_MAX_DATABASES", "20")), 200))
+    except ValueError:
+        return 20
+
+
+def discover_notion_database_ids(token: str) -> Tuple[List[str], str, str]:
+    """API 키의 integration에 연결된 DB를 Notion 검색 API로 찾는다.
+
+    ``NOTION_DATABASE_IDS``를 비워 두면 연결(Connections)된 DB 전체가 검색
+    대상이다. 설정 조회가 요청마다 여러 번 일어나므로 결과를 캐시하고,
+    실패도 짧게 캐시해 Notion 장애 때 요청마다 재시도하지 않는다.
+    반환값은 (DB ID 목록, 오류 메시지, 오류 종류 dependency|configuration)이다.
+    """
+    now = time.monotonic()
+    with _notion_discovery_lock:
+        cached = _notion_discovery_cache.get(token)
+        if cached and cached[0] > now:
+            return list(cached[1]), cached[2], cached[3]
+
+    database_ids: List[str] = []
+    error = ""
+    error_kind = ""
+    has_more = False
+    payload: Dict[str, Any] = {
+        "filter": {"property": "object", "value": "database"},
+        "page_size": 100,
+    }
+    try:
+        for _ in range(NOTION_DISCOVERY_MAX_PAGES):
+            response = notion_post_json(f"{NOTION_API_BASE}/search", payload, timeout=20)
+            if response.status_code >= 400:
+                error = f"Notion DB 목록 조회 실패: {response.status_code} {response.text[:300]}"
+                error_kind = "dependency"
+                break
+            data = response.json()
+            database_ids.extend(
+                str(item.get("id") or "").replace("-", "")
+                for item in data.get("results", [])
+                if item.get("object") == "database"
+                and item.get("id")
+                and not item.get("archived")
+                and not item.get("in_trash")
+            )
+            next_cursor = data.get("next_cursor")
+            has_more = bool(data.get("has_more") and next_cursor)
+            if not has_more:
+                break
+            payload["start_cursor"] = next_cursor
+    except (requests.RequestException, ValueError) as exc:
+        error = f"Notion DB 목록 조회 실패: {type(exc).__name__}"
+        error_kind = "dependency"
+
+    database_ids = list(dict.fromkeys(database_ids))
+    max_databases = notion_discovery_max_databases()
+    if not error and (has_more or len(database_ids) > max_databases):
+        count = f"{len(database_ids)}개 이상" if has_more else f"{len(database_ids)}개"
+        error = (
+            f"API 키에 연결된 Notion DB가 {count}로 자동 검색 한도({max_databases}개)를 넘습니다. "
+            "검색할 DB에만 integration을 연결하거나 NOTION_DATABASE_IDS에 DB ID를 지정하세요."
+        )
+        error_kind = "configuration"
+    if error:
+        # 일부 목록이나 임의로 자른 목록으로 '전체 연결 DB'를 대신하지 않는다.
+        database_ids = []
+    ttl = NOTION_DISCOVERY_FAILURE_TTL_SECONDS if error_kind == "dependency" else notion_discovery_ttl_seconds()
+    with _notion_discovery_lock:
+        _notion_discovery_cache[token] = (time.monotonic() + ttl, database_ids, error, error_kind)
+    return list(database_ids), error, error_kind
+
+
 def get_notion_settings() -> Dict[str, Any]:
+    token = get_notion_token()
+    database_ids = parse_notion_database_ids()
+    database_source = "configured"
+    discovery_error = ""
+    discovery_error_kind = ""
+    if token and not database_ids:
+        database_ids, discovery_error, discovery_error_kind = discover_notion_database_ids(token)
+        database_source = "discovered"
     return {
-        "token": os.getenv("NOTION_API_TOKEN") or os.getenv("NOTION_TOKEN") or "",
-        "database_ids": parse_notion_database_ids(),
+        "token": token,
+        "database_ids": database_ids,
+        "database_source": database_source,
+        "database_discovery_error": discovery_error,
+        "database_discovery_error_kind": discovery_error_kind,
         "version": os.getenv("NOTION_API_VERSION") or NOTION_DEFAULT_VERSION,
     }
 
 
+def notion_unavailable_reason(settings: Dict[str, Any]) -> str:
+    if not settings.get("token"):
+        return "NOTION_API_TOKEN이 설정되지 않았습니다."
+    if settings.get("database_discovery_error"):
+        return str(settings["database_discovery_error"])
+    if settings.get("database_source") == "discovered":
+        return "API 키의 integration에 연결된 Notion DB가 없습니다. DB의 연결(Connections)에 integration을 추가하세요."
+    return "NOTION_DATABASE_IDS에 조회할 DB가 없습니다."
+
+
 def get_notion_headers() -> Dict[str, str]:
-    settings = get_notion_settings()
+    # DB 자동 조회 요청도 이 헤더를 쓰므로 여기서 get_notion_settings를 부르지 않는다.
     return {
-        "Authorization": f"Bearer {settings['token']}",
-        "Notion-Version": settings["version"],
+        "Authorization": f"Bearer {get_notion_token()}",
+        "Notion-Version": os.getenv("NOTION_API_VERSION") or NOTION_DEFAULT_VERSION,
         "Content-Type": "application/json",
     }
+
+
+def notion_request_slot() -> None:
+    """Serialize Notion calls at the integration's supported average rate."""
+    global _notion_next_request_at
+    try:
+        interval = max(
+            0.0,
+            min(
+                float(
+                    os.getenv(
+                        "NOTION_MIN_REQUEST_INTERVAL_SECONDS",
+                        _notion_default_request_interval,
+                    )
+                ),
+                2.0,
+            ),
+        )
+    except ValueError:
+        interval = 0.36
+    if interval <= 0:
+        return
+    with _notion_request_lock:
+        now = time.monotonic()
+        wait_seconds = max(0.0, _notion_next_request_at - now)
+        if wait_seconds:
+            time.sleep(wait_seconds)
+            now = time.monotonic()
+        _notion_next_request_at = max(now, _notion_next_request_at) + interval
+
+
+def _notion_retry_delay(response: requests.Response, attempt: int) -> float:
+    retry_after = 0.0
+    try:
+        retry_after = float(response.headers.get("Retry-After", "0"))
+    except (AttributeError, TypeError, ValueError):
+        pass
+    exponential = min(0.5 * (2**attempt), 4.0)
+    return min(max(retry_after, exponential) + random.uniform(0.0, 0.15), 10.0)
 
 
 def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retries: int = 2) -> requests.Response:
@@ -441,6 +603,7 @@ def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retri
     last_error: Optional[requests.RequestException] = None
     for attempt in range(max(1, retries + 1)):
         try:
+            notion_request_slot()
             response = requests.post(
                 url,
                 headers=get_notion_headers(),
@@ -448,13 +611,13 @@ def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retri
                 timeout=timeout,
             )
             if (response.status_code == 429 or response.status_code >= 500) and attempt < retries:
-                time.sleep(min(0.25 * (2**attempt), 1.0))
+                time.sleep(_notion_retry_delay(response, attempt))
                 continue
             return response
         except requests.RequestException as exc:
             last_error = exc
             if attempt < retries:
-                time.sleep(min(0.25 * (2**attempt), 1.0))
+                time.sleep(min(0.5 * (2**attempt) + random.uniform(0.0, 0.15), 4.0))
     if last_error:
         raise last_error
     raise requests.RequestException("Notion request failed")

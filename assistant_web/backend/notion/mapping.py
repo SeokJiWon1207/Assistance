@@ -11,6 +11,9 @@ from backend.notion.client import (
 )
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import NOISY_PROPERTY_NAME_KEYWORDS, NOISY_PROPERTY_TYPES
+from backend.notion.property_roles import (
+    DEPLOYMENT_NAMES, DUE_NAMES, date_property, owner_properties, responsible_properties,
+)
 
 
 def fetch_notion_page_blocks(*args: Any, **kwargs: Any) -> str:
@@ -99,11 +102,8 @@ def notion_title(properties: Dict[str, Dict[str, Any]]) -> str:
 
 def notion_owner_relation_ids(properties: Dict[str, Dict[str, Any]]) -> List[str]:
     relation_ids: List[str] = []
-    owner_keywords = ("담당", "owner", "ownership", "담당자", "assignee")
-    for prop_name, prop in properties.items():
-        normalized_name = normalize_for_match(prop_name)
-        if not any(normalize_for_match(keyword) in normalized_name for keyword in owner_keywords):
-            continue
+    for prop_name in responsible_properties(properties):
+        prop = properties[prop_name]
         if prop.get("type") != "relation":
             continue
         for item in prop.get("relation") or []:
@@ -115,11 +115,8 @@ def notion_owner_relation_ids(properties: Dict[str, Dict[str, Any]]) -> List[str
 
 def notion_owner_user_ids(properties: Dict[str, Dict[str, Any]]) -> List[str]:
     user_ids: List[str] = []
-    owner_keywords = ("담당", "owner", "ownership", "담당자", "assignee")
-    for prop_name, prop in properties.items():
-        normalized_name = normalize_for_match(prop_name)
-        if not any(normalize_for_match(keyword) in normalized_name for keyword in owner_keywords):
-            continue
+    for prop_name in responsible_properties(properties):
+        prop = properties[prop_name]
         if prop.get("type") != "people":
             continue
         for user in prop.get("people") or []:
@@ -155,10 +152,7 @@ def notion_status(properties: Dict[str, Dict[str, Any]]) -> str:
 
 
 def notion_owner(properties: Dict[str, Dict[str, Any]]) -> str:
-    owner = (
-        notion_prop_by_keywords(properties, ["담당", "owner", "ownership", "담당자", "assignee"])
-        or "담당자 미지정"
-    )
+    owner = ", ".join(notion_property_to_text(properties[name]) for name in responsible_properties(properties))
     owner_parts = [
         part.strip()
         for part in owner.split(",")
@@ -169,7 +163,7 @@ def notion_owner(properties: Dict[str, Dict[str, Any]]) -> str:
             re.IGNORECASE,
         )
     ]
-    return ", ".join(owner_parts) or "담당자 미지정"
+    return ", ".join(dict.fromkeys(owner_parts)) or "담당자 미지정"
 
 
 def resolve_notion_page_owner(page: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,7 +192,11 @@ def resolve_notion_page_owner(page: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def notion_due_date(properties: Dict[str, Dict[str, Any]]) -> str:
-    return notion_prop_by_keywords(properties, ["일정", "기한", "날짜", "date", "due"]) or ""
+    name = date_property(properties, DUE_NAMES)
+    if not name:
+        return ""
+    value = properties[name].get("date") or {}
+    return str(value.get("end") or value.get("start") or "")
 
 
 def notion_type(properties: Dict[str, Dict[str, Any]]) -> str:
@@ -313,12 +311,13 @@ def normalize_notion_page(
     properties = page.get("properties", {})
     property_text = notion_properties_to_text(properties)
     search_property_text = notion_properties_to_search_text(properties)
-    block_text = fetch_notion_page_blocks(page.get("id", ""), max_blocks=20) if include_blocks else ""
+    block_text = fetch_notion_page_blocks(page.get("id", ""), max_blocks=200) if include_blocks else ""
     content = "\n\n".join(part for part in (property_text, block_text) if part).strip()
     title = notion_title(properties)
     status = notion_status(properties)
     owner = notion_owner(properties)
     due_date = notion_due_date(properties)
+    deployment_property = date_property(properties, DEPLOYMENT_NAMES)
     page_type = notion_type(properties)
     customer = notion_prop_by_keywords(properties, ["고객사", "customer"]) or ""
     platform = notion_prop_by_keywords(properties, ["매체", "플랫폼", "media", "platform"]) or ""
@@ -332,10 +331,15 @@ def normalize_notion_page(
             and any(key in normalize_for_match(name) for key in ("상태", "status", "진행"))
         },
         "owner": owner,
+        "owner_role": "기여자" if not owner_properties(properties) and responsible_properties(properties) else "담당자",
+        "owner_properties": responsible_properties(properties),
         "owner_relation_ids": notion_owner_relation_ids(properties),
         "owner_user_ids": notion_owner_user_ids(properties),
         "owner_user_name_hints": notion_user_name_hints(properties),
         "due_date": due_date,
+        "due_date_property": date_property(properties, DUE_NAMES),
+        "deployment_date": str((properties.get(deployment_property, {}).get("date") or {}).get("start") or ""),
+        "date_fields": {name: notion_property_to_text(prop) for name, prop in properties.items() if prop.get("type") == "date"},
         "type": page_type,
         "customer": customer,
         "platform": platform,

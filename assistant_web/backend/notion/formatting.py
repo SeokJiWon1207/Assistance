@@ -3,10 +3,71 @@
 from typing import Any, Dict, List
 
 from backend.common import extract_quoted_value, has_lookup_request, normalize_for_match, remove_quoted_value
-from backend.intent.constants import ISSUE_LIST_INTENT_KEYWORDS
+from backend.intent.constants import ISSUE_ANALYSIS_INTENT_KEYWORDS, ISSUE_LIST_INTENT_KEYWORDS
 from backend.notion.search import collect_retrieved_notion_pages
 from backend.query_filters import filter_clause_label
-from backend.query_planning import extract_group_by
+from backend.query_planning import extract_group_by, has_count_intent
+
+
+NOTION_CONTENT_ANSWER_MARKERS = (
+    "상세",
+    "자세히",
+    "본문",
+    "내용",
+    "요약",
+    "설명",
+    "정리",
+    "방법",
+    "절차",
+    "원인",
+    "이유",
+    "왜",
+    "어떻게",
+)
+NOTION_STRONG_CONTENT_MARKERS = tuple(
+    marker for marker in NOTION_CONTENT_ANSWER_MARKERS
+    if marker not in {"원인", "이유", "왜", "어떻게"}
+)
+
+
+def has_deterministic_notion_list_intent(text: str) -> bool:
+    """Return whether Notion can answer without reading page bodies."""
+    # Quoted text is a title filter, not the requested answer form. For
+    # example, ``'배포 요청 문서' 상세 내용`` needs the page body even
+    # though the title itself contains a list-intent keyword.
+    intent_text = remove_quoted_value(text) if extract_quoted_value(text) else text
+    normalized_text = normalize_for_match(intent_text)
+    if extract_group_by(intent_text):
+        return True
+    # 문서 주제의 '방법'과 목록을 정리하는 명령은 본문 요약 요청이 아니다.
+    explicit_content = any(word in normalized_text for word in ("본문", "내용", "요약", "설명", "상세", "자세히"))
+    if not explicit_content and any(word in normalized_text for word in ("목록", "리스트")):
+        return True
+    if not explicit_content and "정리" in normalized_text and any(
+        word in normalized_text for word in ("항목", "이슈", "마감")
+    ):
+        return True
+    if any(
+        normalize_for_match(marker) in normalized_text
+        for marker in NOTION_STRONG_CONTENT_MARKERS
+    ):
+        return False
+    # Count questions such as ``원인별 건수`` are still deterministic. A
+    # strong content verb above (``요약``, ``절차``, ``설명``) takes priority
+    # for mixed requests like ``몇 개를 요약해줘``.
+    if has_count_intent(intent_text):
+        return True
+    if any(
+        normalize_for_match(marker) in normalized_text
+        for marker in (*NOTION_CONTENT_ANSWER_MARKERS, *ISSUE_ANALYSIS_INTENT_KEYWORDS)
+    ):
+        return False
+    if any(marker in normalized_text for marker in ("목록", "리스트")):
+        return True
+    return has_lookup_request(intent_text) or any(
+        normalize_for_match(keyword) in normalized_text
+        for keyword in ISSUE_LIST_INTENT_KEYWORDS
+    )
 
 
 def build_sources_from_notion_pages(pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -20,7 +81,9 @@ def build_sources_from_notion_pages(pages: List[Dict[str, Any]]) -> List[Dict[st
             "status": page.get("status", "상태 미상"),
             "status_property": page.get("status_property", ""),
             "owner": page.get("owner", "담당자 미지정"),
+            "owner_role": page.get("owner_role", "담당자"),
             "due_date": page.get("due_date", ""),
+            "deployment_date": page.get("deployment_date", ""),
             "updated_at": page.get("last_edited_time", ""),
             "preview": page.get("content", "")[:320],
             "url": page.get("url", ""),
@@ -41,21 +104,7 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
     has_notion_stage = any(stage.get("source") == "notion" for stage in retrieval_result.get("stages", []))
     if plan_source != "notion" and not has_notion_stage:
         return False
-    # 인용된 제목은 검색 대상이지 사용자의 명령이 아니다. 제목에 "요청" 같은
-    # 목록 의도 단어가 들어 있으면 ``상세 내용 정리해줘``도 목록 조회로 오인한다.
-    # 정확 제목 뒤의 실제 명령만 보고 목록 여부를 판정한다.
-    intent_text = remove_quoted_value(text) if extract_quoted_value(text) else text
-    normalized_text = normalize_for_match(intent_text)
-    if extract_quoted_value(text) and any(
-        normalize_for_match(marker) in normalized_text
-        for marker in ("상세", "자세히", "요약", "내용 정리", "정리해줘")
-    ):
-        return False
-    has_list_intent = has_lookup_request(intent_text) or any(
-        normalize_for_match(keyword) in normalized_text
-        for keyword in ISSUE_LIST_INTENT_KEYWORDS
-    )
-    return has_list_intent and has_notion_stage
+    return has_deterministic_notion_list_intent(text) and has_notion_stage
 
 
 def notion_page_owner_names(page: Dict[str, Any]) -> List[str]:
@@ -92,8 +141,12 @@ def format_grouped_notion_answer(
                 page.get("database_label", "Notion DB"),
                 f"상태 {page.get('status', '상태 미상')}",
             ]
+            if page.get("owner_role") == "기여자":
+                meta_items.append("기여자 기준")
             if page.get("due_date"):
                 meta_items.append(f"기한 {page['due_date']}")
+            if page.get("deployment_date"):
+                meta_items.append(f"운영반영 {page['deployment_date']}")
             if page.get("last_edited_time"):
                 meta_items.append(f"수정 {page['last_edited_time']}")
             lines.append(f"- **{page.get('title', '제목 없음')}** · {' · '.join(meta_items)}")
@@ -113,10 +166,11 @@ def format_deterministic_notion_answer(
     )
     if notion_stage.get("status") == "skipped":
         return (
-            "Notion 연동 설정이 아직 비어 있습니다.\n\n"
+            "Notion에서 조회할 수 있는 DB가 아직 없습니다.\n\n"
             "- `.env`에 `NOTION_API_TOKEN`을 입력하세요.\n"
-            "- `.env`에 `NOTION_DATABASE_IDS`를 입력하세요. 두 DB ID는 쉼표로 구분합니다.\n"
-            "- Notion DB 우측 상단 공유 메뉴에서 Integration을 추가하세요."
+            "- 조회할 Notion DB 우측 상단 `연결(Connections)`에 해당 Integration을 추가하세요. "
+            "연결된 DB는 자동으로 검색합니다.\n"
+            "- 특정 DB만 검색하려면 `.env`의 `NOTION_DATABASE_IDS`에 DB ID를 쉼표로 구분해 입력하세요."
         )
     if notion_stage.get("status") == "error":
         return f"Notion 조회 중 오류가 발생했습니다.\n\n{notion_stage.get('reason', '원인 미상')}"
@@ -204,12 +258,14 @@ def format_deterministic_notion_answer(
         meta_items = [
             f"DB {page.get('database_label', 'Notion DB')}",
             f"상태 {page.get('status', '상태 미상')}",
-            f"담당 {page.get('owner', '담당자 미지정')}",
+            f"{page.get('owner_role', '담당')} {page.get('owner', '담당자 미지정')}",
         ]
         if page.get("status_property") and page["status_property"] != "상태":
             meta_items.append(f"상태 필드 {page['status_property']}")
         if page.get("due_date"):
             meta_items.append(f"기한 {page['due_date']}")
+        if page.get("deployment_date"):
+            meta_items.append(f"운영반영 {page['deployment_date']}")
         if page.get("last_edited_time"):
             meta_items.append(f"수정 {page['last_edited_time']}")
         lines.extend(
@@ -225,6 +281,7 @@ def format_deterministic_notion_answer(
 __all__ = [
     "build_sources_from_notion_pages",
     "build_sources_from_single_notion_page",
+    "has_deterministic_notion_list_intent",
     "should_return_deterministic_notion_list",
     "notion_page_owner_names",
     "format_grouped_notion_answer",

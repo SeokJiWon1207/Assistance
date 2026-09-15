@@ -25,6 +25,7 @@ from backend.common import (
     remove_quoted_value,
 )
 from backend.query_filters import filter_audit_for_source
+from backend.notion.formatting import has_deterministic_notion_list_intent
 from backend.sources.chroma import execute_chroma_search, get_chroma_document
 from backend.sources.mantis import (
     execute_mantis_filter_search,
@@ -52,6 +53,11 @@ from backend.understanding import (
     rule_based_search_intent,
     wants_similar_issue_search,
 )
+
+
+def notion_question_needs_blocks(query_text: str) -> bool:
+    """Fetch bodies for model answers; skip them for deterministic lists/counts."""
+    return not has_deterministic_notion_list_intent(query_text)
 
 
 def _similar_reference_lookup(
@@ -234,6 +240,7 @@ def run_retrieval_pipeline(
                 limit,
                 notion_constraints,
                 planned_terms=notion_terms,
+                include_blocks=notion_question_needs_blocks(query_text),
             )
         )
 

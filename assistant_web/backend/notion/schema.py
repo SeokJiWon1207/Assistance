@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 
 from backend.common import normalize_for_match
-from backend.config import get_notion_settings as _get_notion_settings
+from backend.config import get_notion_settings as _get_notion_settings, notion_unavailable_reason
 from backend.notion.client import (
     fetch_notion_database_schema as _fetch_notion_database_schema,
     fetch_notion_database_title as _fetch_notion_database_title,
@@ -28,7 +28,7 @@ def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
     settings = get_notion_settings()
     database_ids = settings.get("database_ids", [])
     if not settings["token"] or not database_ids:
-        raise HTTPException(status_code=503, detail="NOTION_API_TOKEN/NOTION_DATABASE_IDS가 설정되지 않았습니다.")
+        raise HTTPException(status_code=503, detail=notion_unavailable_reason(settings))
 
     if label_or_id:
         normalized_target = normalize_for_match(label_or_id.replace("-", ""))
@@ -68,6 +68,17 @@ def ensure_configured_notion_database(database_id: str) -> str:
         if normalize_notion_id(item)
     }
     if not normalized or normalized not in allowed:
+        raise HTTPException(status_code=403, detail="허용되지 않은 Notion 데이터베이스입니다.")
+    return normalized
+
+
+def ensure_readable_notion_database(database_id: str) -> str:
+    """읽기에만 자손 DB를 허용하고 쓰기 허용 목록은 확장하지 않는다."""
+    from backend.notion.read_scope import resolve_notion_read_scope
+    settings = get_notion_settings()
+    scope, _ = resolve_notion_read_scope(settings.get("database_ids", []), settings.get("token", ""))
+    normalized = normalize_notion_id(database_id)
+    if not normalized or normalized not in scope:
         raise HTTPException(status_code=403, detail="허용되지 않은 Notion 데이터베이스입니다.")
     return normalized
 

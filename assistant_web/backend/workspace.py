@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from backend.common import clamp_int, extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
+from backend.notion.property_roles import responsible_properties
 from backend.db_migrations import run_sqlite_migrations
 from backend.sources.mantis import fetch_mantis_recent_issues, normalize_issue
 from backend.sources.notion import (
@@ -419,12 +420,8 @@ def _my_notion_pages(user: Dict[str, Any], limit: int = 12) -> Dict[str, Any]:
             schema = fetch_notion_database_schema(database_id)
             owner_properties = [
                 name
-                for name, prop in (schema.get("properties") or {}).items()
-                if prop.get("type") == "people"
-                and any(
-                    keyword in normalize_for_match(name)
-                    for keyword in ("담당", "owner", "assignee", "참여")
-                )
+                for name in responsible_properties(schema.get("properties") or {})
+                if schema["properties"][name].get("type") == "people"
             ]
             if not owner_properties:
                 continue

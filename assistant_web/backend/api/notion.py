@@ -8,10 +8,10 @@ from fastapi import APIRouter, HTTPException, Request
 from backend.auth import current_request_user
 from backend.config import NOTION_API_BASE, get_notion_headers, get_notion_settings, notion_is_configured
 from backend.schemas import ChromaSearchRequest, NotionPageUpdateRequest, NotionPageWriteRequest
+from backend.notion.schema import ensure_readable_notion_database
 from backend.sources.notion import (
     build_sources_from_single_notion_page,
     create_notion_page,
-    ensure_configured_notion_database,
     execute_notion_search,
     fetch_notion_database_title,
     normalize_notion_page,
@@ -40,6 +40,8 @@ def notion_status_endpoint() -> Dict[str, Any]:
         "hasDatabaseId": bool(database_ids),
         "databaseCount": len(database_ids),
         "databaseIds": [database_id[-8:] for database_id in database_ids],
+        "databaseSource": settings.get("database_source", "configured"),
+        "databaseDiscoveryError": bool(settings.get("database_discovery_error")),
         "version": settings["version"],
     }
 
@@ -65,7 +67,7 @@ def get_notion_page_endpoint(page_id: str) -> Dict[str, Any]:
         )
     page = response.json()
     database_id = page.get("parent", {}).get("database_id", "")
-    ensure_configured_notion_database(database_id)
+    ensure_readable_notion_database(database_id)
     return {
         "page": normalize_notion_page(
             page,
