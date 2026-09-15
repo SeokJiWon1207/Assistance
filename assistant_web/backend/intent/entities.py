@@ -277,7 +277,10 @@ def expression_is_excluded(text: str, value: str) -> bool:
     if not normalized_value:
         return False
     particle = r"(?:은|는|을|를|이|가)?"
-    bridge = r"(?:된|인)?(?:것|건|것도|건도|것은|건은)?"
+    bridge = (
+        r"(?:(?:상태|조건)(?:인|은|는|가|만|을|를)?"
+        r"|(?:된|인)?(?:것|건|것도|건도|것은|건은)?)"
+    )
     negative = r"(?:제외|빼고|빼줘|빼주세요|말고|아닌|아니고|없이|제외한|제외하고|미포함)"
     return bool(
         re.search(re.escape(normalized_value) + particle + bridge + negative, normalized_text)
@@ -318,7 +321,8 @@ _EXPLICIT_HANDLER_PATTERN = re.compile(
     r"|(?P<korean_subject>[가-힣]{2,4}?)(?:이|가|은|는)"
     r"(?=\s+(?:맡은|담당|처리|할당|배정))"
     r"|(?P<korean_name>[가-힣]{2,4})(?=\s|$|[,.?!:;)\]}])"
-    r"|(?P<english_name>[A-Za-z][A-Za-z0-9_.-]{1,31})"
+    r"|(?P<mixed_name>[A-Za-z][A-Za-z0-9_.-]*[가-힣]{1,8}?)(?:의|이|가|은|는)(?=\s|$|[,.?!:;)\]}])"
+    r"|(?P<english_name>[A-Za-z][A-Za-z0-9_.-]{1,31})(?=(?:의|이|가|은|는)?(?:\s|$|[,.?!:;)\]}]))"
     r")",
     re.IGNORECASE,
 )
@@ -348,13 +352,17 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
                 "korean_possessive",
                 "korean_subject",
                 "korean_name",
+                "mixed_name",
                 "english_name",
             )
             if explicit_handler.group(group)
         ).strip()
         korean_candidate = bool(re.fullmatch(r"[가-힣]{2,4}", name))
+        mixed_candidate = bool(
+            re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*[가-힣][가-힣A-Za-z0-9_.-]*", name)
+        )
         if (
-            is_valid_handler_name(name)
+            (is_valid_handler_name(name) or mixed_candidate)
             and name not in ROLE_FOLLOWING_NOUNS
             and (not korean_candidate or plausible_explicit_person_name(name))
         ):

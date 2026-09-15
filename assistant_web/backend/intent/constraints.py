@@ -144,7 +144,7 @@ def merge_query_plan_constraints(
     query_plan: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Apply validated planner filters without trusting arbitrary model values."""
-    merged = {
+    merged: Dict[str, Any] = {
         **constraints,
         "customer_aliases": list(constraints.get("customer_aliases") or []),
         "platform_aliases": list(constraints.get("platform_aliases") or []),
@@ -193,6 +193,24 @@ def merge_query_plan_constraints(
                 continue
             values = accepted_values
             clause = {**clause, "value": accepted_values if isinstance(value, list) else accepted_values[0]}
+        if field == "screen_number" and operator in {"equals", "in"}:
+            numeric_values = [str(item) for item in values if re.fullmatch(r"\d{3,5}", str(item))]
+            if not numeric_values:
+                continue
+            values = numeric_values
+            clause = {**clause, "value": numeric_values if isinstance(value, list) else numeric_values[0]}
+        if field == "keyword" and not re.search(
+            r"제목|본문|내용|키워드|포함|제외",
+            str((query_plan or {}).get("grounding_text") or ""),
+            re.IGNORECASE,
+        ):
+            continue
+        if field == "customer" and merged.get("customer_key"):
+            # The rule parser already expanded the customer's exact project and
+            # aliases. A model-produced shorthand such as ``138Meritz`` must
+            # not become an additional exact clause against
+            # ``138Meritz(메리츠)`` and eliminate the correct issue.
+            continue
         if clause not in merged["filter_clauses"]:
             merged["filter_clauses"].append(clause)
         if field == "platform":
@@ -236,11 +254,14 @@ def merge_query_plan_constraints(
         elif field in {"owner", "reporter"} and operator in {"equals", "in"}:
             merged["people"] = grounded_people or merged["people"]
         elif field == "issue_id":
-            numeric_values = [int(str(item)) for item in values if str(item).isdigit()]
+            issue_values: List[int] = []
+            for item in values:
+                if str(item).isdigit():
+                    issue_values.append(int(str(item)))
             if operator in {"not_equals", "not_in"}:
-                merged["exclude_issue_ids"].extend(numeric_values)
+                merged["exclude_issue_ids"].extend(issue_values)
             elif operator in {"equals", "in"}:
-                merged["issue_ids"] = list(dict.fromkeys([*merged.get("issue_ids", []), *numeric_values]))
+                merged["issue_ids"] = list(dict.fromkeys([*merged.get("issue_ids", []), *issue_values]))
         elif field == "screen_number" and operator in {"equals", "in"}:
             merged["screen_numbers"] = list(
                 dict.fromkeys([*merged.get("screen_numbers", []), *(str(item) for item in values)])
@@ -279,6 +300,12 @@ def merge_query_plan_constraints(
         "excluded_statuses",
     ):
         merged[key] = list(dict.fromkeys(merged.get(key) or []))
+    if (query_plan or {}).get("source") == "notion" and any(
+        clause.get("field") in {"due_at", "deployed_at"} for clause in merged.get("filter_clauses", [])
+    ):
+        merged["created_at"] = None
+        merged["filter_clauses"] = [clause for clause in merged["filter_clauses"] if clause["field"] != "created_at"]
+
     return merged
 
 

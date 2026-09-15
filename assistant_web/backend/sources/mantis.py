@@ -8,6 +8,7 @@ Mantis REST API 조회, 이슈 정규화, 커스텀 날짜/열거형 포맷, 필
 """
 
 import json
+import os
 import re
 import sqlite3
 import time
@@ -759,8 +760,11 @@ def revalidate_mantis_snapshot_stage(
     revalidated_count = 0
     removed_count = 0
     fallback_count = 0
+    target_count = int((stage.get("meta") or {}).get("displayed_count") or len(stage.get("issues_list", [])))
+    checked_issue_ids: set[int] = set()
     for snapshot_issue in stage.get("issues_list", []):
         issue_id = int(snapshot_issue.get("id") or 0)
+        checked_issue_ids.add(issue_id)
         try:
             live_issue = fetch_mantis_issue_by_id(issue_id) if issue_id else None
         except (requests.RequestException, HTTPException) as exc:
@@ -782,6 +786,56 @@ def revalidate_mantis_snapshot_stage(
             removed_count += 1
             matched_issue_ids.discard(issue_id)
 
+    # If a displayed snapshot row became stale, refill the requested result
+    # from the remaining matched IDs instead of returning too few rows. The
+    # snapshot scan already found these IDs across the complete local index;
+    # each replacement is still validated against the live issue endpoint.
+    try:
+        refill_limit = max(
+            0,
+            min(int(os.getenv("MANTIS_LIVE_REFILL_MAX_ATTEMPTS", "12")), 50),
+        )
+    except ValueError:
+        refill_limit = 12
+    refill_attempt_count = 0
+    refill_dependency_error = False
+    refill_candidates = sorted(matched_issue_ids - checked_issue_ids, reverse=True)
+    for issue_id in refill_candidates:
+        if len(refreshed) >= target_count:
+            break
+        if refill_attempt_count >= refill_limit:
+            break
+        refill_attempt_count += 1
+        try:
+            live_issue = fetch_mantis_issue_by_id(issue_id)
+        except (requests.RequestException, HTTPException) as exc:
+            retryable_failure = not (
+                isinstance(exc, HTTPException)
+                and exc.status_code < 500
+                and exc.status_code != 429
+            )
+            if retryable_failure:
+                fallback_count += 1
+                refill_dependency_error = True
+                break
+            continue
+        checked_issue_ids.add(issue_id)
+        if live_issue is None:
+            removed_count += 1
+            matched_issue_ids.discard(issue_id)
+            continue
+        revalidated_count += 1
+        if issue_matches_constraints(live_issue, constraints):
+            refreshed.append(normalize_issue(live_issue))
+        else:
+            removed_count += 1
+            matched_issue_ids.discard(issue_id)
+
+    refill_limit_reached = (
+        len(refreshed) < target_count
+        and refill_attempt_count >= refill_limit
+        and refill_attempt_count < len(refill_candidates)
+    )
     return {
         **stage,
         "issues_list": refreshed,
@@ -793,8 +847,16 @@ def revalidate_mantis_snapshot_stage(
             "live_revalidated_count": revalidated_count,
             "stale_removed_count": removed_count,
             "live_fallback_count": fallback_count,
-            "live_revalidation_complete": fallback_count == 0,
-            "freshness_warning": "실시간 확인 실패: 스냅샷 참고값입니다." if fallback_count else "",
+            "live_refill_attempt_count": refill_attempt_count,
+            "live_refill_limit_reached": refill_limit_reached,
+            "live_revalidation_complete": not (
+                fallback_count or refill_dependency_error or refill_limit_reached
+            ),
+            "freshness_warning": (
+                "실시간 확인이 끝나지 않아 스냅샷 참고값을 포함할 수 있습니다."
+                if fallback_count or refill_limit_reached
+                else ""
+            ),
         },
     }
 

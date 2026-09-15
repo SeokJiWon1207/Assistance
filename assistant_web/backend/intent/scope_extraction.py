@@ -3,7 +3,11 @@
 import re
 from typing import Any, Dict, List
 
-from backend.common import normalize_for_match, text_matches_customer_aliases
+from backend.common import (
+    derive_customer_aliases_from_project,
+    normalize_for_match,
+    text_matches_customer_aliases,
+)
 from backend.config import PLATFORM_ALIASES, STATUS_ALIASES
 from backend.intent.constants import SOURCE_NAME_ALIASES
 from backend.intent.dates import extract_date_field_constraints, remove_date_field_phrases
@@ -39,6 +43,10 @@ def empty_query_constraints() -> Dict[str, Any]:
 
 
 def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
+    # DB03_작업 같은 Notion DB 식별자를 DB금융투자의 약칭으로 해석하지 않는다.
+    customer_text = re.sub(r"(?<![A-Za-z0-9_])DB\d{2}_[가-힣A-Za-z0-9_]+", " ", text, flags=re.IGNORECASE)
+    if customer_text != text:
+        text, normalized_text = customer_text, normalize_for_match(customer_text)
     customer_matches: List[tuple[int, str, List[str]]] = []
     excluded_matches: List[tuple[int, str, List[str]]] = []
     for aliases in get_customer_alias_groups():
@@ -47,6 +55,22 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
             if normalized_alias and text_matches_customer_aliases(text, [alias]):
                 target = excluded_matches if expression_is_excluded(text, alias) else customer_matches
                 target.append((len(normalized_alias), alias, aliases))
+
+    # 프로젝트 코드와 표시명을 함께 적은 표기(예: ``138Meritz(메리츠)``)는
+    # 현재 스냅샷의 동적 명부가 비어 있어도 질의 자체에서 정확한 고객 범위를
+    # 복원할 수 있어야 한다. 동적 별칭 목록에 의존하면 테스트·초기 구동 시
+    # 동일한 명시 표기가 일반 별칭으로만 남아 ``customer_exact``가 사라진다.
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9])(\d+[A-Za-z][A-Za-z0-9_-]*\([^()\s]{1,40}\))",
+        text,
+    ):
+        exact_project = match.group(1)
+        normalized_exact = normalize_for_match(exact_project)
+        if expression_is_excluded(text, exact_project):
+            excluded_matches.append((len(normalized_exact), exact_project, [exact_project]))
+        else:
+            aliases = list(dict.fromkeys([exact_project, *derive_customer_aliases_from_project(exact_project)]))
+            customer_matches.append((len(normalized_exact), exact_project, aliases))
 
     if not any(
         normalize_for_match(marker) in normalized_text for marker in ("999Mantis", "903모바일", "고객사", "프로젝트")
