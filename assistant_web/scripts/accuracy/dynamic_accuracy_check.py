@@ -31,11 +31,12 @@ import requests
 
 from backend.environment import load_dotenv
 from backend.evaluation.verification import ungrounded_constraint_labels
+from backend.intent.search_terms import extract_requested_limit
 from backend.notion.search import extract_notion_constraints
 
 load_dotenv(APP_DIR / ".env")
 
-from backend.config import NOTION_API_BASE, parse_notion_database_ids
+from backend.config import NOTION_API_BASE, discover_notion_database_ids, parse_notion_database_ids
 from backend.llm import get_model_registry
 from backend.schemas import ChatMessage, ChatRequest
 from backend.services.chat_service import chat_service
@@ -235,9 +236,16 @@ def notion_page_summary(page: Dict[str, Any], database_label: str) -> Dict[str, 
 
 def fetch_notion_snapshot() -> List[Dict[str, str]]:
     token = os.getenv("NOTION_API_TOKEN") or os.getenv("NOTION_TOKEN") or ""
+    if not token:
+        raise RuntimeError("NOTION_API_TOKEN is not configured")
+    # 챗봇과 같은 범위를 정답 근거로 쓴다. 명시 목록이 없으면 연결된 DB 전체다.
     database_ids = parse_notion_database_ids()
-    if not token or not database_ids:
-        raise RuntimeError("NOTION_API_TOKEN/NOTION_DATABASE_IDS is not configured")
+    if not database_ids:
+        database_ids, discovery_error, _ = discover_notion_database_ids(token)
+        if discovery_error:
+            raise RuntimeError(discovery_error)
+    if not database_ids:
+        raise RuntimeError("No Notion database is connected to the integration")
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -904,13 +912,24 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     answer_passed = passed
     incomplete_search = any(stage.get("meta", {}).get("search_complete") is False for stage in stages)
     internal_error = any(stage.get("error_kind") == "internal" for stage in stages)
+    # A literal-title lookup has already satisfied its contract when the exact
+    # title and requested properties are present. An unrelated database that
+    # could not be scanned is still useful coverage information, but it cannot
+    # turn the verified item into a wrong answer. Counts, empty-result claims,
+    # and ordered lists still require complete coverage.
+    completeness_required = not (
+        case.source == "notion"
+        and case.expected_kind == "titles"
+        and answer_passed
+    )
     passed = passed and not any(value is False for value in (
         routing_passed, filter_precision_passed, filter_recall_passed, source_constraints_passed,
-    )) and not incomplete_search and not internal_error
+    )) and (not incomplete_search or not completeness_required) and not internal_error
     failed_checks = [label for label, value in (
         ("답변 내용", answer_passed), ("검색 소스", routing_passed),
         ("추가 조건", filter_precision_passed), ("조건 누락", filter_recall_passed),
-        ("원문 속성", source_constraints_passed), ("조회 완전성", not incomplete_search),
+        ("원문 속성", source_constraints_passed),
+        ("조회 완전성", not incomplete_search if completeness_required else None),
         ("실행 오류", not internal_error),
     ) if value is False]
     # 외부 소스가 불완전한 상태에서 우연히 기대값이 포함됐더라도 완전한 성공으로
@@ -924,6 +943,7 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
         "answer_passed": answer_passed,
         "source_constraints_passed": source_constraints_passed,
         "incomplete_search": incomplete_search,
+        "coverage_warning": incomplete_search and not completeness_required,
         "failed_checks": failed_checks,
         "observed_constraints": observed_notion if case.source == "notion" else actual_constraints,
         "expected_route": case.source,
@@ -961,9 +981,7 @@ def reconcile_mutable_mantis_oracle(
 
     actual_order = observed_ordered_issue_ids(response)
     expected_ids = [int(value) for value in case.expected]
-    limit = len(expected_ids)
-    if len(actual_order) != limit:
-        return result
+    limit = extract_requested_limit(case.question) or len(expected_ids)
 
     # The oracle must be independent from the system under test. Rebuild it
     # from the question and a fresh live candidate universe; using the returned
@@ -977,8 +995,6 @@ def reconcile_mutable_mantis_oracle(
             **result,
             "oracle_reconciliation_error": f"{type(exc).__name__}: {str(exc)[:500]}",
         }
-    if len(refreshed_expected) != limit:
-        return result
     if refreshed_expected == expected_ids:
         # The old oracle is still current, so this is a real answer failure.
         return result
@@ -1153,6 +1169,20 @@ def summarize_boolean_dimension(results: List[Dict[str, Any]], key: str) -> Dict
     }
 
 
+def summarize_external_reliability(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    attempted = len(results)
+    failed = sum(
+        result.get("outcome") in {"dependency_error", "execution_error"}
+        for result in results
+    )
+    passed = attempted - failed
+    return {
+        "total": attempted,
+        "passed": passed,
+        "score": round(passed / attempted * 100) if attempted else None,
+    }
+
+
 def summarize_latency(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     values = sorted(float(result["latency_ms"]) for result in results if result.get("latency_ms") is not None)
     if not values:
@@ -1184,6 +1214,10 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     routing = summary.get("routing", {})
     filter_precision = summary.get("filter_precision", {})
     filter_recall = summary.get("filter_recall", {})
+    answer_accuracy = summary.get("answer_accuracy", {})
+    source_properties = summary.get("source_properties", {})
+    coverage = summary.get("coverage", {})
+    external_reliability = summary.get("external_reliability", {})
     latency = summary.get("latency", {})
     routing_label = f"{routing.get('score')}%" if routing.get("score") is not None else "N/A"
     filter_precision_label = (
@@ -1203,6 +1237,10 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
         f"- Source routing: {routing_label} ({routing.get('passed', 0)}/{routing.get('total', 0)})",
         f"- Filter precision: {filter_precision_label} ({filter_precision.get('passed', 0)}/{filter_precision.get('total', 0)})",
         f"- Filter recall: {filter_recall_label} ({filter_recall.get('passed', 0)}/{filter_recall.get('total', 0)})",
+        f"- Answer content: {answer_accuracy.get('score')}% ({answer_accuracy.get('passed', 0)}/{answer_accuracy.get('total', 0)})",
+        f"- Source properties: {source_properties.get('score')}% ({source_properties.get('passed', 0)}/{source_properties.get('total', 0)})",
+        f"- Search coverage: {coverage.get('score')}% ({coverage.get('passed', 0)}/{coverage.get('total', 0)})",
+        f"- External API reliability: {external_reliability.get('score')}% ({external_reliability.get('passed', 0)}/{external_reliability.get('total', 0)})",
         f"- Latency: p50 {latency.get('p50_ms')} ms / p95 {latency.get('p95_ms')} ms",
         f"- Attempted: {summary.get('attempted', summary['total'])}",
         f"- Blocked follow-ups: {summary.get('blocked_by_prerequisite', 0)}",
@@ -1347,6 +1385,16 @@ def main() -> int:
     routing_summary = summarize_boolean_dimension(results, "routing_passed")
     filter_precision_summary = summarize_boolean_dimension(results, "filter_precision_passed")
     filter_recall_summary = summarize_boolean_dimension(results, "filter_recall_passed")
+    answer_accuracy_summary = summarize_boolean_dimension(results, "answer_passed")
+    source_properties_summary = summarize_boolean_dimension(results, "source_constraints_passed")
+    coverage_summary = {
+        "total": len(results),
+        "passed": sum(not result.get("incomplete_search") for result in results),
+    }
+    coverage_summary["score"] = round(
+        coverage_summary["passed"] / coverage_summary["total"] * 100
+    ) if coverage_summary["total"] else None
+    external_reliability_summary = summarize_external_reliability(results)
     latency_summary = summarize_latency(results)
     incomplete = (
         len(cases) < requested_questions
@@ -1377,6 +1425,10 @@ def main() -> int:
             "routing": routing_summary,
             "filter_precision": filter_precision_summary,
             "filter_recall": filter_recall_summary,
+            "answer_accuracy": answer_accuracy_summary,
+            "source_properties": source_properties_summary,
+            "coverage": coverage_summary,
+            "external_reliability": external_reliability_summary,
             "latency": latency_summary,
         },
         "errors": errors,

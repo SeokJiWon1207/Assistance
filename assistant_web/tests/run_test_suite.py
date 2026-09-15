@@ -17,8 +17,6 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1]
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "mantis_documents.json"
-
-
 def render_document(item: dict[str, object]) -> str:
     return "\n".join(
         [
@@ -83,6 +81,7 @@ def main() -> int:
                 "WORKSPACE_DB_PATH": str(Path(temporary_directory) / "workspace.sqlite3"),
                 "AUDIT_DB_PATH": str(Path(temporary_directory) / "audit.sqlite3"),
                 "ANONYMIZED_TELEMETRY": "False",
+                "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0",
                 "PYTHONDONTWRITEBYTECODE": "1",
             }
         )

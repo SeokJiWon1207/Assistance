@@ -162,6 +162,35 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertNotIn("oracle_reconciled", result)
 
+    @patch("scripts.accuracy.dynamic_accuracy_check.complete_mutable_mantis_ids")
+    @patch("scripts.accuracy.dynamic_accuracy_check.fetch_mantis_snapshot", return_value=[])
+    def test_oracle_reconciliation_accepts_fewer_current_matches(
+        self,
+        _fetch_snapshot,
+        complete_oracle,
+    ):
+        complete_oracle.return_value = [31268]
+        case = AccuracyCase(
+            "mantis-status",
+            "mantis",
+            "상태",
+            "NH증권에서 상태가 confirmed인 최근 이슈 2개 보여줘",
+            "issue_ids",
+            [30980, 30979],
+            mutable_oracle=True,
+        )
+        response = {
+            "sources": [{"type": "mantis", "issue_id": 31268}],
+            "retrieval": {"constraints": {"customer_key": "NH증권", "statuses": ["confirmed"]}},
+        }
+        original = {"passed": False, "outcome": "assertion_failed", "answer_passed": False}
+
+        result = reconcile_mutable_mantis_oracle(case, response, original)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["expected"], [31268])
+        complete_oracle.assert_called_once_with(case.question, [], 2)
+
     @patch("scripts.accuracy.dynamic_accuracy_check.fetch_mantis_snapshot")
     def test_oracle_reconciliation_refuses_wrong_returned_constraints(self, fetch_snapshot):
         case = AccuracyCase(
