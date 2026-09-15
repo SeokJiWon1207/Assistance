@@ -364,7 +364,8 @@ Notion은 백엔드에서 공식 API를 직접 호출합니다. 토큰과 DB ID�
 
 ```bash
 NOTION_API_TOKEN=secret_xxx
-NOTION_DATABASE_IDS=이슈리스트_테스트_DB_ID,주요이슈현황_테스트_DB_ID
+# 비워 두면 API 키의 connection에 연결된 DB 전체를 자동으로 조회합니다.
+NOTION_DATABASE_IDS=
 NOTION_API_VERSION=2022-06-28
 NOTION_FETCH_PAGE_BLOCKS=true
 ```
@@ -372,9 +373,15 @@ NOTION_FETCH_PAGE_BLOCKS=true
 설정 순서:
 
 1. Notion 개발자 포털에서 Internal connection을 생성하고 access token을 발급합니다.
-2. `AI_Notion / 이슈리스트_테스트`, `AI_Notion / 주요이슈현황_테스트` 두 데이터베이스 우측 상단 메뉴에서 해당 connection을 각각 추가합니다.
-3. 두 데이터베이스 URL의 32자리 ID를 쉼표로 구분해 `NOTION_DATABASE_IDS`에 입력합니다.
-4. 서버를 재시작하고 `/api/notion/status` 또는 `/api/notion/search`로 연결 상태를 확인합니다.
+2. 조회할 데이터베이스마다 우측 상단 메뉴의 `연결(Connections)`에서 해당 connection을 추가합니다.
+   API 키만으로는 아무 DB도 볼 수 없고, 연결된 DB만 조회됩니다.
+3. `NOTION_DATABASE_IDS`를 비워 두면 연결된 DB 목록을 Notion 검색 API로 자동 조회합니다
+   (`NOTION_CACHE_TTL_SECONDS` 동안 캐시). 특정 DB만 검색·수정 대상으로 제한하려면
+   DB URL의 32자리 ID를 쉼표로 구분해 입력합니다.
+   질문마다 DB별로 조회하므로 자동 조회는 최대 `NOTION_DISCOVERY_MAX_DATABASES`(기본 20)개까지만
+   허용합니다. 상위 페이지에 connection을 추가해 연결 DB가 한도를 넘으면 검색하지 않고
+   원인을 안내하므로, 검색할 DB에만 연결하거나 `NOTION_DATABASE_IDS`를 지정합니다.
+4. 서버를 재시작하고 `/api/notion/status`의 `databaseCount`, `databaseSource`로 연결 상태를 확인합니다.
 
 예시 질문:
 
@@ -506,3 +513,19 @@ cron에 등록하지 않는다 - 시스템 스케줄 변경은 사용자가 직�
 - 페이지 제한 도달과 통신·조회 오류를 구분해 기록한다. 제한된 검색의 완전성 경고와 정확도 점검 실패는 의도된 판정이다. 기대한 항목이 포함됐다는 이유만으로 전체 검색 성공으로 집계하지 않는다.
 - Notion 원문 속성에서 확인한 조건 불일치는 실패다. Mantis 원문 텍스트 비교로 추정한 불일치는 경고이며, 설명에도 ‘가능성’을 명시한다.
 - 라우팅·필터 회귀 사례는 `tests/fixtures/routing_cases.jsonl`에 기록한다. 런타임 SQLite 파일은 커밋 대상이 아니다.
+
+### 선택한 Notion DB의 하위 문서 검색
+
+`NOTION_INCLUDE_CHILD_DATABASES=true`를 설정하면 `NOTION_DATABASE_IDS`의 루트 DB는 그대로 두고, Notion의 실제 부모 관계로 확인된 하위 DB를 읽기 검색에 포함합니다. 관계형 속성이나 임의 링크로 연결된 다른 DB는 포함하지 않습니다. 쓰기 허용 목록은 루트 DB에만 적용됩니다. 사용자 질문 처리 중에는 하위 DB를 새로 탐색하지 않습니다. 완료된 범위 스냅샷은 기본 30일(`NOTION_READ_SCOPE_TTL_SECONDS`) 동안 재사용하므로 제목 색인이 하루 뒤 만료돼도 하위 DB 범위는 완료 상태를 유지합니다. 범위 스냅샷이 전혀 없으면 루트 DB만 조회하고 범위가 일부임을 표시합니다.
+
+`NOTION_MIN_REQUEST_INTERVAL_SECONDS`는 integration 전체의 Notion 요청 간 최소 간격입니다. 기본값은 `0.36`초이며, 429 응답이 오면 `Retry-After`를 우선해 재시도합니다.
+
+`scripts/accuracy/rebaseline_notion_titles.py`는 현재 연결 범위의 제목 색인, 마지막으로 완료된 하위 DB 범위, 과거 질문 분류 리포트를 `ASSISTANT_RUNTIME_DIR` 아래에 갱신합니다. 배포 후와 Notion DB 구성이 바뀔 때 이 스크립트를 별도 유지보수 작업으로 실행해야 합니다. 제목 색인은 기본 24시간(`NOTION_TITLE_INDEX_TTL_SECONDS`) 동안 정확 제목 조회 우선순위에 사용합니다. 하위 DB 탐색이 끝난 경우에만 별도 범위 스냅샷을 교체하므로, 실패한 갱신이 마지막 완료 범위를 지우지 않습니다.
+
+`MANTIS_LIVE_REFILL_MAX_ATTEMPTS`는 스냅샷 상위 결과가 최신 조건과 달라졌을 때 대체 이슈를 실시간으로 확인하는 최대 횟수입니다. 기본값은 12이며, 연결 오류가 발생하면 추가 보충 조회를 즉시 중단합니다.
+
+담당자는 `이슈할당`, `주담당자(입력)`, `담당자` 등에서 읽으며 팀·부서·이전 담당 파트는 제외합니다. 담당자 필드가 없는 문서 DB는 공동 작업자·공헌·Contributors를 관련자 검색에 사용하고 결과에 **기여자**라고 표시합니다. 비어 있는 실제 담당자를 기여자로 대체하지 않습니다.
+
+`마감일`은 기간의 끝 날짜를 기한으로 사용하고 `운영반영(입력)`은 운영반영일로 별도 표시합니다. “노션에서 2026년 4월 마감인 작업”과 “노션 버전관리에서 2026년 8월 운영반영된 항목”은 등록일과 구분해 조회합니다.
+
+본문은 중첩 블록과 소유한 하위 문서를 제한된 요청 수·깊이·시간 안에서 읽습니다. 원본 데이터 소스 접근 권한이 없거나 한도에 도달하면 본문 일부를 확인하지 못했다고 표시합니다. 연결된 뷰만 공유하고 원본 데이터 소스를 공유하지 않은 경우는 Notion에서 원본에 integration을 연결해야 합니다.
