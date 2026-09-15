@@ -66,3 +66,16 @@
 {"q": "노션에서 slackmanager 처리 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
 {"q": "노션에서 DRFN_SM 처리 문서", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "notion_constraints": {"owner": ""}, "notion_known_people": ["김보람", "svn", "signalmaker", "slackmanager", "DRFN_SM"]}
 {"q": "노션에서 담당자 svn 항목", "source": "notion", "authority": "authoritative", "people": ["svn"], "candidate_people": [], "notion_constraints": {"owner": "svn"}, "notion_known_people": ["김보람", "svn"]}
+{"q":"노션 기술공유 문서 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"database_label":"기술공유","owner":""}}
+{"q":"노션 DB03_작업에서 2026년 4월 마감인 항목 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"database_label":"DB03_작업","owner":"","date_filter":{"field":"due_at","operator":"between","value":["2026-04-01","2026-04-30"]}},"customer_key":null}
+{"q":"노션 버전관리에서 2026년 8월 운영반영된 항목 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"database_label":"버전관리","owner":"","date_filter":{"field":"deployed_at","operator":"between","value":["2026-08-01","2026-08-31"]}}}
+{"q":"노션 DB02_통합_프로젝트에서 진행중인 항목 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"database_label":"DB02_통합_프로젝트","status":"진행중","owner":""},"customer_key":null}
+{"q":"노션에서 \"기술공유 활용법\" 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"database_label":"","owner":""}}
+{"q":"노션 결제오류 처리 방법 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"owner":""}}
+{"q":"노션 운영팀의 업무 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"owner":""}}
+{"q":"900DRFN(공용)에서 상태가 closed인 최근 이슈 2개 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"screen_numbers":[],"customer_exact":"900DRFN(공용)"}
+{"q":"담당자 cs이슈의 최근 이슈 2개 보여줘","source":"mantis","authority":"authoritative","people":["cs이슈"],"candidate_people":[]}
+{"q":"삼성증권 최근 이슈 3개 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_forbidden_aliases":["삼성선물","SamsungFutures"]}
+{"q":"노션 이슈리스트 담당자별로 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"group_by":"owner","owner":""},"notion_deterministic":true,"notion_terms":[]}
+{"q":"노션 배포 방법 문서 목록 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_deterministic":true,"notion_terms":["배포","방법"]}
+{"q":"노션 기술공유 문서 내용 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_deterministic":false,"notion_terms":["기술공유"]}

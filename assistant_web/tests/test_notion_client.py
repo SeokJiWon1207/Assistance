@@ -16,6 +16,7 @@ class NotionClientTests(unittest.TestCase):
         client._fetch_notion_database_title_cached.cache_clear()
         client._fetch_notion_database_schema_cached.cache_clear()
         client._fetch_notion_users_cached.cache_clear()
+        client._page_content_cached.cache_clear()
 
     def tearDown(self):
         self.setUp()
@@ -140,10 +141,12 @@ class NotionPostJsonTests(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"NOTION_TOOL_TIMEOUT_SECONDS": "5", "NOTION_TOOL_MAX_RETRIES": "2"},
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "5", "NOTION_TOOL_MAX_RETRIES": "2",
+                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
             patch.object(config.requests, "post", side_effect=[requests.Timeout("slow"), success]) as post,
             patch.object(config.time, "sleep") as sleep,
+            patch.object(config.random, "uniform", return_value=0),
         ):
             response = config.notion_post_json(
                 "https://api.notion.test/query",
@@ -156,13 +159,14 @@ class NotionPostJsonTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         self.assertEqual(post.call_args_list[0].kwargs["timeout"], 5)
         self.assertEqual(post.call_args_list[1].kwargs["timeout"], 5)
-        self.assertEqual(sleep.call_args_list, [call(0.25)])
+        self.assertEqual(sleep.call_args_list, [call(0.5)])
 
     def test_post_raises_last_error_after_retry_budget_is_exhausted(self):
         with (
             patch.dict(
                 os.environ,
-                {"NOTION_TOOL_TIMEOUT_SECONDS": "3", "NOTION_TOOL_MAX_RETRIES": "1"},
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "3", "NOTION_TOOL_MAX_RETRIES": "1",
+                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
             patch.object(
                 config.requests,
@@ -170,6 +174,7 @@ class NotionPostJsonTests(unittest.TestCase):
                 side_effect=[requests.ConnectionError("first"), requests.Timeout("last")],
             ) as post,
             patch.object(config.time, "sleep"),
+            patch.object(config.random, "uniform", return_value=0),
         ):
             with self.assertRaisesRegex(requests.Timeout, "last"):
                 config.notion_post_json("https://api.notion.test/query", {}, retries=2)
@@ -182,23 +187,39 @@ class NotionPostJsonTests(unittest.TestCase):
         with (
             patch.dict(
                 os.environ,
-                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1"},
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1",
+                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
             patch.object(config.requests, "post", side_effect=[throttled, success]) as post,
             patch.object(config.time, "sleep") as sleep,
+            patch.object(config.random, "uniform", return_value=0),
         ):
             response = config.notion_post_json("https://api.notion.test/query", {}, retries=2)
 
         self.assertIs(response, success)
         self.assertEqual(post.call_count, 2)
-        sleep.assert_called_once_with(0.25)
+        sleep.assert_called_once_with(0.5)
+
+    def test_post_respects_retry_after_header(self):
+        throttled = Mock(status_code=429, headers={"Retry-After": "2"})
+        success = Mock(status_code=200)
+        with (
+            patch.dict(os.environ, {"NOTION_TOOL_MAX_RETRIES": "1",
+                                    "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"}),
+            patch.object(config.requests, "post", side_effect=[throttled, success]),
+            patch.object(config.time, "sleep") as sleep,
+            patch.object(config.random, "uniform", return_value=0),
+        ):
+            self.assertIs(config.notion_post_json("https://api.notion.test/query", {}), success)
+        sleep.assert_called_once_with(2.0)
 
     def test_post_does_not_retry_non_transient_http_status(self):
         forbidden = Mock(status_code=403)
         with (
             patch.dict(
                 os.environ,
-                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1"},
+                {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1",
+                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
             patch.object(config.requests, "post", return_value=forbidden) as post,
         ):

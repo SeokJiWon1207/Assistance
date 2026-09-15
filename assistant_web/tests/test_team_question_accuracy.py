@@ -16,7 +16,7 @@ from backend.services.chat_service import deterministic_retrieval_response
 from backend.notion.mapping import notion_status
 from backend.notion.write import notion_write_intent
 from backend.schemas import ChatMessage, ChatRequest
-from scripts.accuracy.dynamic_accuracy_check import AccuracyCase, grade
+from scripts.accuracy.dynamic_accuracy_check import AccuracyCase, grade, summarize_external_reliability
 
 
 class TeamQuestionUnderstandingTests(unittest.TestCase):
@@ -499,6 +499,40 @@ class TeamQuestionSearchTests(unittest.TestCase):
         self.assertFalse(result["meta"]["search_complete"])
         self.assertEqual(result["meta"]["candidate_count"], 1)
 
+    def test_truncated_display_body_does_not_mark_completed_search_incomplete(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "results": [{"id": "p1", "title": "기술공유", "search_text": "기술공유"}],
+            "has_more": False,
+        }
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="기술공유"),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_title_property", return_value="제목"),
+            patch.object(search, "notion_post_json", return_value=response),
+            patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: {**page, **kwargs}),
+            patch.object(
+                search,
+                "fetch_notion_page_blocks",
+                return_value=f"본문\n{search.NOTION_CONTENT_INCOMPLETE}",
+            ),
+        ):
+            stage = search.execute_notion_search(
+                '노션에서 "기술공유" 찾아줘', include_blocks=True
+            )
+
+        self.assertTrue(stage["meta"]["search_complete"])
+        self.assertEqual(stage["meta"]["incomplete_reasons"], [])
+        self.assertFalse(stage["meta"]["content_complete"])
+        self.assertEqual(stage["meta"]["content_incomplete_page_ids"], ["p1"])
+        content = format_deterministic_notion_answer(
+            '노션에서 "기술공유" 찾아줘', {"stages": [stage]}, 5
+        )
+        self.assertNotIn("일부 항목을 아직", content)
+
     def test_keyword_page_limit_explains_scope_without_claiming_query_error(self):
         responses = []
         for index in range(3):
@@ -529,8 +563,9 @@ class TeamQuestionSearchTests(unittest.TestCase):
         result = grade(AccuracyCase("scope", "notion", "범위", "노션에서 대기시간 문서 찾아줘", "titles", ["대기시간"]),
                        {"content": content, "sources": [{"type": "notion", "title": "대기시간"}],
                         "retrieval": {"stages": [stage], "intent_plan": {"source": "notion"}}})
-        self.assertFalse(result["passed"])
-        self.assertIn("조회 완전성", result["failed_checks"])
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["coverage_warning"])
+        self.assertNotIn("조회 완전성", result["failed_checks"])
 
     def test_same_title_wrong_status_is_rejected_and_next_page_is_checked(self):
         responses = []
@@ -568,6 +603,14 @@ class TeamQuestionSearchTests(unittest.TestCase):
 
 
 class StrictAccuracyGradingTests(unittest.TestCase):
+    def test_external_reliability_is_reported_separately_from_wrong_answers(self):
+        summary = summarize_external_reliability([
+            {"outcome": "passed"},
+            {"outcome": "assertion_failed"},
+            {"outcome": "dependency_error"},
+        ])
+        self.assertEqual(summary, {"total": 3, "passed": 2, "score": 67})
+
     def test_no_results_cannot_hide_an_invented_status_filter(self):
         case = AccuracyCase("none", "mantis", "없음", "화면번호 99999 관련 이슈가 있는지 확인해줘", "no_results", [])
         result = grade(case, {"content": "조건에 맞는 이슈가 없습니다.", "sources": [], "retrieval": {

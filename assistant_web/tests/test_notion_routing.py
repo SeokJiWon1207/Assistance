@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.notion.search import build_notion_terms, extract_notion_constraints
+from backend.notion.formatting import has_deterministic_notion_list_intent
 
 from backend.understanding import (
     extract_query_constraints,
@@ -89,8 +90,18 @@ class RoutingFixtureTest(unittest.TestCase):
                     self.assertNotIn("needs_model", plan)
                     if "notion_terms" in case:
                         self.assertEqual(build_notion_terms(case["q"]), case["notion_terms"])
+                    if "notion_deterministic" in case:
+                        self.assertEqual(has_deterministic_notion_list_intent(case["q"]), case["notion_deterministic"])
                     if "statuses" in case:
                         self.assertEqual(constraints["statuses"], case["statuses"])
+                    if "customer_key" in case:
+                        self.assertEqual(constraints["customer_key"], case["customer_key"])
+                    if "customer_exact" in case:
+                        self.assertEqual(constraints["customer_exact"], case["customer_exact"])
+                    if "screen_numbers" in case:
+                        self.assertEqual(constraints["screen_numbers"], case["screen_numbers"])
+                    for alias in case.get("customer_forbidden_aliases", []):
+                        self.assertNotIn(alias, constraints["customer_aliases"])
                     with patch("backend.notion.search.load_known_people", return_value=(
                         tuple(case.get("notion_known_people", ["김보람", "svn"])), (),
                     )):

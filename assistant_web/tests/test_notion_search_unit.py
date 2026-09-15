@@ -165,6 +165,44 @@ class NotionSearchExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["notion_pages"][0]["match_method"], "notion_exact_title_filter")
 
+    def test_exact_title_index_prioritizes_match_without_skipping_other_databases(self):
+        indexed_response = Mock(status_code=200)
+        indexed_response.json.return_value = {
+            "results": [{
+                "id": "p1", "title": "배포 계획", "search_text": "배포 계획",
+                "last_edited_time": "2026-08-25",
+            }], "has_more": False,
+        }
+        newly_created_response = Mock(status_code=200)
+        newly_created_response.json.return_value = {
+            "results": [{
+                "id": "p2", "title": "배포 계획", "search_text": "배포 계획",
+                "last_edited_time": "2026-09-15",
+            }], "has_more": False,
+        }
+
+        def normalize(raw, **kwargs):
+            return {**raw, **kwargs}
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db1", "db2"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db1": "db1", "db2": "db2"}, True)),
+            patch.object(search, "fetch_notion_database_title", side_effect=lambda value: {"db1": "DB 1", "db2": "DB 2"}[value]),
+            patch.object(search, "indexed_exact_title_database_ids", return_value=["db2"]),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=[indexed_response, newly_created_response]) as post,
+            patch.object(search, "normalize_notion_page", side_effect=normalize),
+        ):
+            result = search.execute_notion_search('노션에서 "배포 계획" 찾아줘', include_blocks=False)
+
+        self.assertEqual(post.call_count, 2)
+        self.assertIn("/databases/db2/query", post.call_args_list[0].args[0])
+        self.assertIn("/databases/db1/query", post.call_args_list[1].args[0])
+        self.assertEqual({page["id"] for page in result["notion_pages"]}, {"p1", "p2"})
+        self.assertEqual(result["notion_pages"][0]["match_method"], "notion_exact_title_filter")
+        self.assertTrue(result["meta"]["exact_title_index_hit"])
+
     def test_general_search_uses_title_then_body_fallback(self):
         targeted = Mock(status_code=200)
         targeted.json.return_value = {"results": []}

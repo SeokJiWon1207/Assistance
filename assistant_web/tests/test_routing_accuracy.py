@@ -12,6 +12,44 @@ from backend.understanding import rule_based_search_intent
 
 
 class PeopleFilterGroundingTest(unittest.TestCase):
+    def test_model_cannot_turn_project_code_into_screen_number(self):
+        question = "900DRFN(공용)에서 상태가 closed인 최근 이슈 2개 보여줘"
+        constraints = merge_query_plan_constraints(
+            extract_query_constraints(question),
+            {"grounding_text": question, "filter_clauses": [
+                {"field": "screen_number", "operator": "equals", "value": "900DRFN"},
+            ]},
+        )
+        self.assertEqual(constraints["screen_numbers"], [])
+        self.assertFalse(any(clause["field"] == "screen_number" for clause in constraints["filter_clauses"]))
+
+    def test_model_customer_shorthand_does_not_narrow_exact_project(self):
+        question = "138Meritz(메리츠)에서 상태가 assigned인 최근 이슈 하나 보여줘"
+        constraints = merge_query_plan_constraints(
+            extract_query_constraints(question),
+            {"grounding_text": question, "filter_clauses": [
+                {"field": "customer", "operator": "equals", "value": "138Meritz"},
+            ]},
+        )
+        self.assertEqual(constraints["customer_exact"], "138Meritz(메리츠)")
+        customer_clauses = [
+            clause for clause in constraints["filter_clauses"]
+            if clause["field"] == "customer"
+        ]
+        self.assertEqual(customer_clauses, [{
+            "field": "customer", "operator": "equals", "value": "138Meritz(메리츠)",
+        }])
+
+    def test_model_cannot_invent_keyword_from_structured_customer_and_status(self):
+        question = "SK증권에서 상태가 confirmed인 최근 이슈 하나 보여줘"
+        constraints = merge_query_plan_constraints(
+            extract_query_constraints(question),
+            {"grounding_text": question, "filter_clauses": [
+                {"field": "keyword", "operator": "contains", "value": "108SK confirmed"},
+            ]},
+        )
+        self.assertFalse(any(clause["field"] == "keyword" for clause in constraints["filter_clauses"]))
+
     def test_model_cannot_add_an_ungrounded_owner(self):
         question = "신한 이슈 보여줘"
         constraints = extract_query_constraints(question)

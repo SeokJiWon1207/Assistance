@@ -4,6 +4,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from backend import answers, retrieval, understanding
 from backend.reports import aggregate
 from backend.sources import mantis, notion
@@ -45,6 +47,59 @@ from backend.understanding import (
 
 
 class SearchIntentTests(unittest.TestCase):
+    def test_notion_grouping_and_explicit_lists_do_not_fetch_bodies(self):
+        for question in (
+            "노션 이슈리스트 담당자별로 정리해줘",
+            "결재요청 항목 담당자별로 정리해줘",
+            "이번주 마감 이슈 정리해줘",
+            "배포 방법 문서 목록 보여줘",
+        ):
+            self.assertFalse(retrieval.notion_question_needs_blocks(question), question)
+
+    def test_notion_fallback_terms_exclude_commands_and_grouping(self):
+        self.assertEqual(notion.build_notion_terms("기술공유 문서 내용 정리해줘"), ["기술공유"])
+        self.assertEqual(notion.build_notion_terms("노션 이슈리스트 담당자별로 정리해줘"), [])
+        self.assertEqual(notion.build_notion_terms("배포 방법 문서 목록 보여줘"), ["배포", "방법"])
+        self.assertEqual(notion.build_notion_terms("도커 문서 요약해주세요"), ["도커"])
+
+    def test_notion_list_and_count_requests_skip_page_bodies(self):
+        for question in (
+            "노션 기술공유 문서 보여줘",
+            "노션 버전관리 항목 몇 개야",
+            '노션에서 "배포 계획" 찾아줘',
+        ):
+            self.assertFalse(retrieval.notion_question_needs_blocks(question), msg=question)
+        for question in (
+            "노션 기술공유 문서 내용을 요약해줘",
+            '노션에서 "배포 계획" 상세 내용을 알려줘',
+            "svn 접속 방법이 뭐야?",
+            "도커 설치 절차는 어떻게 돼?",
+            "원인이 뭐야?",
+            "노션 장애 원인 알려줘",
+            "노션 문서 목록 내용을 요약해줘",
+        ):
+            self.assertTrue(retrieval.notion_question_needs_blocks(question), msg=question)
+
+    def test_notion_body_policy_matches_final_answer_mode(self):
+        retrieval_result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [{"source": "notion", "status": "ok", "notion_pages": [{}]}],
+        }
+        for question in ("노션 기술공유 문서 보여줘", "노션 버전관리 항목 몇 개야"):
+            self.assertTrue(
+                should_return_deterministic_notion_list(question, retrieval_result),
+                msg=question,
+            )
+            self.assertFalse(retrieval.notion_question_needs_blocks(question), msg=question)
+        for question in ("svn 접속 방법이 뭐야?", "도커 설치 절차는 어떻게 돼?", "원인이 뭐야?"):
+            self.assertFalse(
+                should_return_deterministic_notion_list(question, retrieval_result),
+                msg=question,
+            )
+            self.assertTrue(retrieval.notion_question_needs_blocks(question), msg=question)
+        self.assertFalse(retrieval.notion_question_needs_blocks("노션 원인별 건수 몇 개야"))
+        self.assertTrue(retrieval.notion_question_needs_blocks("노션 문서 몇 개를 요약해줘"))
+
     def test_mantis_status_codes_use_source_ui_labels(self):
         expected = {
             "new": "신규 이슈",
@@ -317,6 +372,17 @@ class ExactConstraintTests(unittest.TestCase):
     def test_full_project_name_uses_exact_customer_constraint(self):
         constraints = extract_query_constraints("900DRFN(공용)에서 closed 이슈 보여줘")
         self.assertEqual(constraints["customer_exact"], "900DRFN(공용)")
+        self.assertEqual(constraints["screen_numbers"], [])
+
+    def test_english_word_joined_to_korean_name_is_not_truncated(self):
+        constraints = extract_query_constraints("담당자 cs이슈의 최근 이슈 2개 보여줘")
+        self.assertEqual(constraints["people"]["names"], ["cs이슈"])
+
+    def test_samsung_securities_does_not_include_samsung_futures_aliases(self):
+        constraints = extract_query_constraints("삼성증권 최근 이슈 3개 보여줘")
+        aliases = {alias.casefold() for alias in constraints["customer_aliases"]}
+        self.assertNotIn("samsungfutures", aliases)
+        self.assertNotIn("삼성선물", aliases)
 
     def test_hana_alias_and_all_results_are_structured(self):
         question = "작년 하나증권 멘티스 이슈리스트 다 보여줘 개발 문의건 포함해서"
@@ -706,6 +772,81 @@ class LiveStatusRevalidationTests(unittest.TestCase):
         self.assertEqual(refreshed["issues_list"], [])
         self.assertEqual(refreshed["meta"]["found_count"], 0)
         self.assertEqual(refreshed["meta"]["matched_issue_ids"], [])
+
+    def test_revalidation_refills_result_after_top_snapshot_issue_changed(self):
+        constraints = extract_query_constraints(
+            "138Meritz(메리츠)에서 상태가 assigned인 최근 이슈 하나 보여줘"
+        )
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 31401, "status": "할당된 이슈"}],
+            "meta": {
+                "found_count": 2,
+                "displayed_count": 1,
+                "matched_issue_ids": [21718, 31401],
+            },
+        }
+        stale = {
+            "id": 31401, "project": {"name": "138Meritz(메리츠)"},
+            "status": {"name": "closed"}, "summary": "종료됨",
+        }
+        replacement = {
+            "id": 21718, "project": {"name": "138Meritz(메리츠)"},
+            "status": {"name": "assigned"}, "summary": "할당됨",
+        }
+        with patch(
+            "backend.sources.mantis.fetch_mantis_issue_by_id",
+            side_effect=lambda issue_id: stale if issue_id == 31401 else replacement,
+        ):
+            refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
+
+        self.assertEqual([issue["id"] for issue in refreshed["issues_list"]], [21718])
+        self.assertEqual(refreshed["meta"]["stale_removed_count"], 1)
+
+    def test_revalidation_refill_has_a_bounded_attempt_count(self):
+        constraints = extract_query_constraints("상태가 assigned인 최근 이슈 하나 보여줘")
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 100}],
+            "meta": {"displayed_count": 1, "matched_issue_ids": list(range(90, 101))},
+        }
+
+        def closed(issue_id):
+            return {"id": issue_id, "status": {"name": "closed"}, "summary": "종료됨"}
+
+        with (
+            patch.dict("os.environ", {"MANTIS_LIVE_REFILL_MAX_ATTEMPTS": "3"}),
+            patch.object(mantis, "fetch_mantis_issue_by_id", side_effect=closed) as fetch,
+        ):
+            refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
+
+        self.assertEqual(fetch.call_count, 4)
+        self.assertEqual(refreshed["meta"]["live_refill_attempt_count"], 3)
+        self.assertTrue(refreshed["meta"]["live_refill_limit_reached"])
+        self.assertFalse(refreshed["meta"]["live_revalidation_complete"])
+
+    def test_revalidation_refill_stops_after_first_connection_error(self):
+        constraints = extract_query_constraints("상태가 assigned인 최근 이슈 하나 보여줘")
+        stage = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [{"id": 100}],
+            "meta": {"displayed_count": 1, "matched_issue_ids": list(range(90, 101))},
+        }
+        stale = {"id": 100, "status": {"name": "closed"}, "summary": "종료됨"}
+        with patch.object(
+            mantis,
+            "fetch_mantis_issue_by_id",
+            side_effect=[stale, requests.Timeout("down")],
+        ) as fetch:
+            refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)
+
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(refreshed["meta"]["live_refill_attempt_count"], 1)
+        self.assertEqual(refreshed["meta"]["live_fallback_count"], 1)
+        self.assertFalse(refreshed["meta"]["live_revalidation_complete"])
 
 
 class TopCustomersTests(unittest.TestCase):
