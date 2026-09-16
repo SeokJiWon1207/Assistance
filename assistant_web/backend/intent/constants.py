@@ -217,6 +217,11 @@ NOTION_TARGET_OBJECT_MARKERS = (
     "업무공유",
     "접속 방법",
     "사용 방법",
+    "조직도",
+    "정기보고서",
+    "주간보고",
+    "주간업무",
+    "세미나",
 )
 
 MANTIS_TARGET_OBJECT_MARKERS = (

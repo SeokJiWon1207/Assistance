@@ -299,7 +299,16 @@ def extract_notion_database_label_from_text(text: str) -> Optional[str]:
         return "이슈리스트"
     if "주요이슈" in normalized_text or "주요이슈현황" in normalized_text:
         return "주요이슈"
-    for label in ("DB02_통합_프로젝트", "DB03_작업", "버전관리", "기술공유"):
+    # 라벨은 질문의 표현과 DB 제목 양쪽에 공통으로 들어가는 부분이어야
+    # 검색어 목록에서 빠지고 DB 범위도 좁혀진다. ('조직도' → 'DB00_조직')
+    if "조직도" in normalized_text:
+        return "조직"
+    # 질문에 쓰는 표현이 DB 제목의 일부이면 그대로 라벨로 쓴다.
+    for label in (
+        "DB02_통합_프로젝트", "DB03_작업", "버전관리", "기술공유",
+        "회의록", "사내규정", "휴가신청", "정기보고서", "정기점검",
+        "문서양식", "주간업무", "팀세미나",
+    ):
         if normalize_for_match(label) in normalized_text:
             return label
     return None

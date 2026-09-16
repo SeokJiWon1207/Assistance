@@ -37,8 +37,8 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
     notion_target = _contains_normalized_marker(normalized, NOTION_TARGET_OBJECT_MARKERS)
     notion_target = notion_target or bool(
         re.search(
-            r"(?:신입사원|교육|업무|운영).{0,16}(?:문서|자료)"
-            r"|(?:문서|자료).{0,16}(?:신입사원|교육|업무|운영)",
+            r"(?:신입사원|교육|업무|운영|프로세스|절차).{0,16}(?:문서|자료)"
+            r"|(?:문서|자료).{0,16}(?:신입사원|교육|업무|운영|프로세스|절차)",
             normalized,
         )
     )
