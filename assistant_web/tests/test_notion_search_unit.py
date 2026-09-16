@@ -56,6 +56,24 @@ class NotionSearchParsingTests(unittest.TestCase):
             "value": ["2026-09-14", "2026-09-20"],
         }]))
 
+    def test_customer_mapping_does_not_use_customer_request_date(self):
+        item = normalize_notion_page(
+            {
+                "id": "p1",
+                "properties": {
+                    "제목": {"type": "title", "title": [{"plain_text": "고객 이슈"}]},
+                    "고객사요청일": {
+                        "type": "date", "date": {"start": "2026-09-10"},
+                    },
+                    "고객사": {
+                        "type": "select", "select": {"name": "하나증권"},
+                    },
+                },
+            },
+            include_blocks=False,
+        )
+        self.assertEqual(item["customer"], "하나증권")
+
     def test_terms_typo_context_and_constraints_are_normalized(self):
         corrected, typo = search.correct_notion_status_typo("결제요청 문서")
         self.assertEqual(corrected, "결재요청 문서")
@@ -160,6 +178,18 @@ class NotionSearchParsingTests(unittest.TestCase):
         self.assertTrue(search.notion_page_matches_terms(page, ["배포", "진행"] ))
         self.assertEqual(search.notion_minimum_match_score(["a", "b", "c"]), 2)
         self.assertEqual(search.notion_search_max_pages({"status": "진행"}), 30)
+        self.assertEqual(
+            search.notion_search_max_pages(
+                {"status": "진행"}, server_filter_applied=True,
+            ),
+            5,
+        )
+        self.assertEqual(
+            search.notion_search_max_pages(
+                {"status": "진행"}, server_filter_applied=True, require_complete=True,
+            ),
+            30,
+        )
         self.assertEqual(search.notion_search_max_pages({}), 3)
 
         with patch.object(search, "resolve_notion_page_owner") as resolve:
@@ -388,6 +418,205 @@ class NotionSearchExecutionTests(unittest.TestCase):
             self.assertEqual(search.notion_database_status_filter("db", "없는 상태"), (True, None))
         with patch.object(search, "fetch_notion_database_schema", side_effect=requests.Timeout("slow")):
             self.assertEqual(search.notion_database_status_filter("db", "완료"), (False, None))
+
+    def test_customer_filter_uses_matching_database_option(self):
+        properties = {
+            "고객사": {
+                "type": "select",
+                "select": {"options": [
+                    {"name": "134Hanaw(하나금융)"},
+                    {"name": "132SHGM(신한굿모닝증권)"},
+                ]},
+            },
+        }
+        clause = {"field": "customer", "operator": "equals", "value": "하나금융"}
+        with patch.object(search, "notion_property_schema", return_value=properties):
+            api_filter = search.notion_database_customer_filter(
+                "db", [clause], ["하나금융", "134Hanaw(하나금융)"],
+            )
+        self.assertEqual(api_filter, {
+            "property": "고객사",
+            "select": {"equals": "134Hanaw(하나금융)"},
+        })
+
+    def test_server_filtered_customer_list_stops_after_first_result_window(self):
+        calls = 0
+
+        def response_for_page(_url, _payload, **_kwargs):
+            nonlocal calls
+            calls += 1
+            response = Mock(status_code=200)
+            response.json.return_value = {
+                "results": [],
+                "has_more": True,
+                "next_cursor": f"cursor-{calls}",
+            }
+            return response
+
+        constraints = {
+            "customer_aliases": ["하나금융", "134Hanaw(하나금융)"],
+            "filter_clauses": [{
+                "field": "customer", "operator": "equals", "value": "하나금융",
+            }],
+        }
+        properties = {
+            "제목": {"type": "title"},
+            "고객사": {
+                "type": "select",
+                "select": {"options": [{"name": "134Hanaw(하나금융)"}]},
+            },
+        }
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", return_value=properties),
+            patch.object(search, "notion_post_json", side_effect=response_for_page) as post,
+        ):
+            result = search.execute_notion_search(
+                "노션에서 하나금융 고객사 항목 보여줘",
+                constraints=constraints,
+                include_blocks=False,
+            )
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args_list[0].args[1]["filter"], {
+            "property": "고객사",
+            "select": {"equals": "134Hanaw(하나금융)"},
+        })
+        self.assertEqual(post.call_args_list[0].args[1]["page_size"], 5)
+        self.assertEqual(result["meta"]["scan_limit_per_database"], 500)
+        self.assertTrue(result["meta"]["search_complete"])
+        self.assertTrue(result["meta"]["result_window_complete"])
+        self.assertFalse(result["meta"]["candidate_count_complete"])
+
+    def test_body_scan_budget_is_global_and_shared_across_databases(self):
+        def response_for_query(url, payload, **_kwargs):
+            response = Mock(status_code=200)
+            if "filter" in payload:
+                response.json.return_value = {"results": [], "has_more": False}
+                return response
+            database_id = url.split("/databases/")[1].split("/")[0]
+            response.json.return_value = {
+                "results": [
+                    {
+                        "id": f"{database_id}-{index}",
+                        "title": f"문서 {index}",
+                        "search_text": "관련 없는 속성",
+                        "properties_text": "",
+                        "last_edited_time": f"2026-09-{(index % 20) + 1:02d}",
+                    }
+                    for index in range(20)
+                ],
+                "has_more": False,
+            }
+            return response
+
+        def normalize(raw, **kwargs):
+            return {**raw, **kwargs}
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={
+                "token": "t", "database_ids": ["db1", "db2"],
+            }),
+            patch.object(search, "resolve_notion_read_scope", return_value=({
+                "db1": "db1", "db2": "db2",
+            }, True)),
+            patch.object(search, "fetch_notion_database_title", side_effect=lambda value: value),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=response_for_query),
+            patch.object(search, "normalize_notion_page", side_effect=normalize),
+            patch.object(search, "fetch_notion_page_blocks", return_value="needle 본문") as blocks,
+        ):
+            result = search.execute_notion_search(
+                "needle 문서 찾아줘",
+                limit=100,
+                planned_terms=["needle"],
+                include_blocks=False,
+            )
+        self.assertEqual(blocks.call_count, 30)
+        self.assertEqual(result["meta"]["body_scan_attempted_count"], 30)
+        self.assertEqual(result["meta"]["body_scan_limit"], 30)
+        self.assertEqual(
+            {page["database_id"] for page in result["notion_pages"]},
+            {"db1", "db2"},
+        )
+        self.assertIn("body_scan_limit", result["meta"]["incomplete_reasons"])
+
+    def test_body_scan_stops_at_limit_without_incomplete_warning(self):
+        def response_for_query(_url, payload, **_kwargs):
+            response = Mock(status_code=200)
+            response.json.return_value = {
+                "results": [] if "filter" in payload else [
+                    {
+                        "id": f"page-{index}",
+                        "title": f"문서 {index}",
+                        "search_text": "관련 없는 속성",
+                        "properties_text": "",
+                        "last_edited_time": f"2026-09-{(index % 20) + 1:02d}",
+                    }
+                    for index in range(100)
+                ],
+                "has_more": False,
+            }
+            return response
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={
+                "token": "t", "database_ids": ["db"],
+            }),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="기술공유"),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=response_for_query),
+            patch.object(
+                search, "normalize_notion_page",
+                side_effect=lambda raw, **kwargs: {**raw, **kwargs},
+            ),
+            patch.object(search, "fetch_notion_page_blocks", return_value="needle 본문") as blocks,
+        ):
+            result = search.execute_notion_search(
+                "needle 문서 찾아줘",
+                limit=5,
+                planned_terms=["needle"],
+                include_blocks=False,
+            )
+        self.assertEqual(blocks.call_count, 5)
+        self.assertEqual(result["meta"]["body_scan_attempted_count"], 5)
+        self.assertEqual(result["meta"]["displayed_count"], 5)
+        self.assertTrue(result["meta"]["search_complete"])
+        self.assertTrue(result["meta"]["result_window_complete"])
+        self.assertFalse(result["meta"]["candidate_count_complete"])
+        self.assertNotIn("body_scan_limit", result["meta"]["incomplete_reasons"])
+
+    def test_result_body_fetch_uses_short_summary_budget(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "results": [{
+                "id": "p1",
+                "title": "배포 계획",
+                "search_text": "배포 계획",
+                "last_edited_time": "2026-09-15",
+            }],
+            "has_more": False,
+        }
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="업무 DB"),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", return_value=response),
+            patch.object(
+                search, "normalize_notion_page",
+                side_effect=lambda raw, **kwargs: {**raw, **kwargs},
+            ),
+            patch.object(search, "fetch_notion_page_blocks", return_value="본문") as blocks,
+        ):
+            result = search.execute_notion_search(
+                '노션에서 "배포 계획" 내용 알려줘',
+                include_blocks=True,
+            )
+        blocks.assert_called_once_with("p1", max_blocks=30)
+        self.assertEqual(result["notion_pages"][0]["content"], "본문")
 
     def test_search_skips_when_not_configured(self):
         with patch.object(search, "get_notion_settings", return_value={"token": "", "database_ids": []}):

@@ -39,15 +39,22 @@ from backend.notion.client import (
 )
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import (
-    NOTION_BODY_SCAN_MAX_PER_DB,
+    NOTION_BODY_SCAN_MAX_PER_REQUEST,
     NOTION_IN_ENDING_NOUNS,
+    NOTION_RESULT_BODY_MAX_BLOCKS,
     NOTION_STATUS_QUERY_TERMS,
     NOTION_STATUS_TYPOS,
 )
 from backend.notion.mapping import normalize_notion_page, resolve_notion_page_owner
 from backend.notion.read_scope import resolve_notion_read_scope
 from backend.notion.database_roles import select_notion_database_ids
-from backend.notion.property_roles import DEPLOYMENT_NAMES, DUE_NAMES, REGISTRATION_NAMES, role_properties
+from backend.notion.property_roles import (
+    CUSTOMER_NAMES,
+    DEPLOYMENT_NAMES,
+    DUE_NAMES,
+    REGISTRATION_NAMES,
+    role_properties,
+)
 from backend.notion.schema import (
     notion_property_schema as _notion_property_schema,
     notion_title_property,
@@ -403,6 +410,7 @@ def merge_common_notion_constraints(
     merged = {
         **notion_constraints,
         "common_filter_clauses": normalize_filter_clauses((constraints or {}).get("filter_clauses") or []),
+        "customer_aliases": list((constraints or {}).get("customer_aliases") or []),
         "excluded_statuses": list(
             dict.fromkeys(
                 [
@@ -414,6 +422,16 @@ def merge_common_notion_constraints(
     }
     for clause in merged["common_filter_clauses"]:
         values = values_for_clause(clause.get("value"))
+        if clause["field"] == "customer" and clause["operator"] in {"equals", "in"}:
+            aliases = [
+                str(alias)
+                for alias in merged.get("customer_aliases", [])
+                if len(normalize_for_match(str(alias))) >= 3
+            ]
+            expanded = list(dict.fromkeys([*values, *aliases]))
+            clause["operator"] = "in"
+            clause["value"] = expanded
+            values = expanded
         if clause["field"] == "owner" and merged.get("owner"):
             owner = str(merged["owner"])
             corrected = [owner if value in {owner + suffix for suffix in _OWNER_SUFFIXES} else value for value in values]
@@ -618,20 +636,50 @@ def notion_page_matches_terms(page: Dict[str, Any], terms: List[str]) -> bool:
     return all(normalize_for_match(term) in normalized_search_text for term in terms)
 
 
-def notion_search_max_pages(constraints: Dict[str, Any]) -> int:
+def notion_search_max_pages(
+    constraints: Dict[str, Any],
+    *,
+    server_filter_applied: bool = False,
+    require_complete: bool = False,
+) -> int:
     # Structured filters and grouped summaries must scan the complete configured
-    # databases; otherwise an arbitrary recent-300 window produces incomplete
-    # counts and groups. Keep ordinary fuzzy searches bounded for latency.
-    if (
+    # databases. 목록 조회는 서버 필터가 실제 적용된 뒤에만 상한을 낮춘다.
+    # 스키마 조회 실패 등으로 필터가 적용되지 않았다면 기존 전체 스캔으로
+    # 되돌아가 최근 수정 행만 보고 0건으로 단정하는 일을 막는다.
+    has_structured_filter = bool(
         constraints.get("status")
         or constraints.get("excluded_statuses")
         or constraints.get("unassigned_owner")
         or constraints.get("owner")
         or constraints.get("group_by")
         or constraints.get("common_filter_clauses")
-    ):
+    )
+    if require_complete:
         return 30
+    if has_structured_filter:
+        return 5 if server_filter_applied else 30
     return 3
+
+
+def notion_clause_server_covered(
+    clause: Dict[str, Any],
+    server_covered_fields: set[str],
+    *,
+    target_database_label: str,
+    exact_title: str,
+) -> bool:
+    """서버 필터가 로컬 후처리 조건을 빠짐없이 포함하는지 확인한다."""
+    field = str(clause.get("field") or "")
+    operator = str(clause.get("operator") or "")
+    if field in {"status", "customer"}:
+        return field in server_covered_fields and operator in {"equals", "in"}
+    if field in {"created_at", "deployed_at"}:
+        return field in server_covered_fields and operator in {"between", "equals", "gte", "lte"}
+    if field == "database":
+        return bool(target_database_label)
+    if field == "title":
+        return bool(exact_title)
+    return False
 
 
 def notion_database_status_filter(
@@ -667,6 +715,55 @@ def notion_database_status_filter(
     if not filters:
         return supported, None
     return True, filters[0] if len(filters) == 1 else {"or": filters}
+
+
+def notion_database_customer_filter(
+    database_id: str,
+    clauses: List[Dict[str, Any]],
+    aliases: List[str],
+) -> Optional[Dict[str, Any]]:
+    """고객사 속성이 확인된 DB에만 안전한 서버 필터를 만든다."""
+    customer_clauses = [
+        clause for clause in normalize_filter_clauses(clauses)
+        if clause["field"] == "customer" and clause["operator"] in {"equals", "in"}
+    ]
+    if not customer_clauses:
+        return None
+    properties = notion_property_schema(database_id)
+    fields = role_properties(
+        properties,
+        CUSTOMER_NAMES,
+        {"select", "multi_select"},
+    )
+    if not fields:
+        return None
+
+    clause_filters: List[Dict[str, Any]] = []
+    for clause in customer_clauses:
+        requested = list(dict.fromkeys([
+            *values_for_clause(clause.get("value")),
+            *[str(alias) for alias in aliases if str(alias).strip()],
+        ]))
+        normalized_requested = [normalize_for_match(value) for value in requested]
+        filters: List[Dict[str, Any]] = []
+        for name in fields:
+            prop_type = str(properties[name].get("type") or "")
+            if prop_type in {"select", "multi_select"}:
+                options = (properties[name].get(prop_type) or {}).get("options", [])
+                for option in options:
+                    option_name = str(option.get("name") or "")
+                    normalized_option = normalize_for_match(option_name)
+                    if not option_name or not any(
+                        value in normalized_option or normalized_option in value
+                        for value in normalized_requested if value
+                    ):
+                        continue
+                    operator = "equals" if prop_type == "select" else "contains"
+                    filters.append({"property": name, prop_type: {operator: option_name}})
+        if not filters:
+            return None
+        clause_filters.append(filters[0] if len(filters) == 1 else {"or": filters})
+    return clause_filters[0] if len(clause_filters) == 1 else {"and": clause_filters}
 
 
 def notion_database_date_filter(database_id: str, clause: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -874,10 +971,20 @@ def execute_notion_search(
         for value in values_for_clause(clause.get("value"))
         if clause.get("field") not in {"title", "keyword"}
     )
+    structured_fields = {
+        str(clause.get("field") or "")
+        for clause in notion_constraints.get("common_filter_clauses", [])
+    }
+    structured_field_terms: set[str] = set()
+    if "customer" in structured_fields:
+        structured_field_terms.update({"고객사", "고객", "customer", "client"})
+    if "platform" in structured_fields:
+        structured_field_terms.update({"매체", "플랫폼", "media", "platform"})
     terms = [
         term
         for term in terms
-        if not any(
+        if normalize_for_match(term) not in structured_field_terms
+        and not any(
             normalize_for_match(term) in value or value in normalize_for_match(term)
             for value in structured_values
         )
@@ -901,7 +1008,13 @@ def execute_notion_search(
     incomplete_reasons: set[str] = set() if scope_complete else {"child_database_discovery"}
     seen_page_ids: set[str] = set()
     content_incomplete_page_ids: set[str] = set()
-    max_pages = notion_search_max_pages(notion_constraints)
+    require_complete_scan = bool(
+        has_count_intent(query_text) or notion_constraints.get("group_by")
+    )
+    max_pages = notion_search_max_pages(
+        notion_constraints,
+        require_complete=require_complete_scan,
+    )
     created_at_filtered = any(
         clause.get("field") == "created_at"
         for clause in notion_constraints.get("common_filter_clauses", [])
@@ -924,6 +1037,9 @@ def execute_notion_search(
     page_size = 100
     candidate_count_complete = True
     result_window_complete = False
+    body_scan_candidate_groups: List[Tuple[str, List[Dict[str, Any]]]] = []
+    body_scan_candidates_truncated = False
+    body_scan_attempted_count = 0
 
     indexed_database_ids = indexed_exact_title_database_ids(exact_title, database_ids) if exact_title else []
     indexed_ids = set(indexed_database_ids)
@@ -944,6 +1060,7 @@ def execute_notion_search(
             body_scan_candidates: List[Dict[str, Any]] = []
             created_filter_applied = False
             created_window_safe = False
+            server_covered_fields: set[str] = set()
             status_filter_supported, status_api_filter = notion_database_status_filter(
                 database_id,
                 notion_constraints.get("status", ""),
@@ -957,7 +1074,10 @@ def execute_notion_search(
                     }
                 )
                 continue
-            date_clauses = [clause for clause in notion_constraints.get("common_filter_clauses", [])
+            if status_api_filter:
+                server_covered_fields.add("status")
+            common_clauses = notion_constraints.get("common_filter_clauses", [])
+            date_clauses = [clause for clause in common_clauses
                             if clause["field"] in {"created_at", "due_at", "deployed_at"}
                             and clause_supported("notion", clause)
                             and clause["operator"] in {"between", "equals", "gte", "lte"}]
@@ -974,8 +1094,11 @@ def execute_notion_search(
                             )
                             date_filters.append(created_filter)
                             created_filter_applied = True
+                            server_covered_fields.add("created_at")
                         else:
                             date_filters.append(notion_database_date_filter(database_id, clause))
+                            if clause["field"] == "deployed_at":
+                                server_covered_fields.add("deployed_at")
                     if any(date_filter is None for date_filter in date_filters):
                         database_meta.append({"database_id": database_id, "database_label": database_label, "found_count": 0})
                         continue
@@ -983,7 +1106,51 @@ def execute_notion_search(
                     status_api_filter = combined_filters[0] if len(combined_filters) == 1 else {"and": combined_filters}
                 except (HTTPException, requests.RequestException, ValueError):
                     # 스키마 실패 시 조건을 버리지 않고 기존 로컬 필터로 검사한다.
-                    pass
+                    server_covered_fields.difference_update({"created_at", "deployed_at"})
+            try:
+                customer_api_filter = notion_database_customer_filter(
+                    database_id,
+                    common_clauses,
+                    notion_constraints.get("customer_aliases", []),
+                )
+            except (HTTPException, requests.RequestException):
+                customer_api_filter = None
+            if customer_api_filter:
+                server_covered_fields.add("customer")
+                combined_filters = [item for item in [status_api_filter, customer_api_filter] if item]
+                status_api_filter = (
+                    combined_filters[0]
+                    if len(combined_filters) == 1
+                    else {"and": combined_filters}
+                )
+
+            server_filter_complete = bool(status_api_filter) and all(
+                notion_clause_server_covered(
+                    clause,
+                    server_covered_fields,
+                    target_database_label=target_database_label,
+                    exact_title=exact_title,
+                )
+                for clause in common_clauses
+            ) and not any((
+                notion_constraints.get("owner"),
+                notion_constraints.get("unassigned_owner"),
+                notion_constraints.get("excluded_statuses"),
+            ))
+            if notion_constraints.get("status") and "status" not in server_covered_fields:
+                server_filter_complete = False
+            database_max_pages = notion_search_max_pages(
+                notion_constraints,
+                server_filter_applied=server_filter_complete,
+                require_complete=require_complete_scan,
+            )
+            server_filtered_list_window = bool(
+                server_filter_complete
+                and not terms
+                and not exact_title
+                and not require_complete_scan
+                and ("created_at" not in server_covered_fields or created_window_safe)
+            )
             try:
                 title_property = notion_title_property(notion_property_schema(database_id))
             except HTTPException:
@@ -1014,7 +1181,12 @@ def execute_notion_search(
                     "filter": {"and": [title_filter, status_api_filter]} if status_api_filter else title_filter,
                     "sorts": [database_sort],
                 }
-                for _ in range(max_pages):
+                exact_max_pages = notion_search_max_pages(
+                    notion_constraints,
+                    server_filter_applied=True,
+                    require_complete=require_complete_scan,
+                )
+                for _ in range(exact_max_pages):
                     try:
                         exact_response = notion_post_json(
                             f"{NOTION_API_BASE}/databases/{database_id}/query",
@@ -1077,6 +1249,7 @@ def execute_notion_search(
                         "database_id": database_id,
                         "database_label": database_label,
                         "found_count": database_found_count,
+                        "page_limit": exact_max_pages,
                     }
                 )
                 continue
@@ -1136,11 +1309,15 @@ def execute_notion_search(
                         }
                     )
             cursor = None
-            for _ in range(max_pages):
+            for _ in range(database_max_pages):
                 payload: Dict[str, Any] = {
                     "page_size": (
                         max(1, min(100, limit))
-                        if created_list_window and created_filter_applied and created_window_safe else page_size
+                        if (
+                            server_filtered_list_window
+                            or (created_list_window and created_filter_applied and created_window_safe)
+                        )
+                        else page_size
                     ),
                     "sorts": [database_sort],
                 }
@@ -1208,10 +1385,15 @@ def execute_notion_search(
                         ]
                         pages.append(page)
                         database_found_count += 1
-                    elif terms and len(body_scan_candidates) < NOTION_BODY_SCAN_MAX_PER_DB:
-                        body_scan_candidates.append(page)
-                if created_list_window and created_filter_applied and created_window_safe:
-                    # 서버가 등록일 필터와 내림차순 정렬을 모두 적용했으므로
+                    elif terms:
+                        if len(body_scan_candidates) < NOTION_BODY_SCAN_MAX_PER_REQUEST:
+                            body_scan_candidates.append(page)
+                        else:
+                            body_scan_candidates_truncated = True
+                if server_filtered_list_window or (
+                    created_list_window and created_filter_applied and created_window_safe
+                ):
+                    # 서버가 모든 조건과 내림차순 정렬을 적용했으므로
                     # 목록에 필요한 상위 N건은 첫 응답만으로 확정된다.
                     result_window_complete = True
                     if data.get("has_more"):
@@ -1230,45 +1412,98 @@ def execute_notion_search(
                 incomplete_reasons.add("page_limit")
 
             if terms and database_found_count < limit and body_scan_candidates:
-                for page in body_scan_candidates:
-                    page_id = page.get("id", "")
-                    if page_id in seen_page_ids:
-                        continue
-                    if not notion_page_matches_and_enrich(page, notion_constraints):
-                        continue
-                    block_text = fetch_notion_page_blocks(page_id, max_blocks=20)
-                    if NOTION_CONTENT_INCOMPLETE in block_text:
-                        search_complete = False
-                        incomplete_reasons.add("body_limit")
-                    if not block_text:
-                        continue
-                    body_search_text = f"{page.get('search_text', '')}\n{block_text.replace(NOTION_CONTENT_INCOMPLETE, '')}"
-                    if not all(
-                        normalize_for_match(term) in normalize_for_match(body_search_text)
-                        for term in terms
-                    ):
-                        continue
-                    seen_page_ids.add(page_id)
-                    page["content"] = "\n\n".join(
-                        part for part in (page.get("properties_text", ""), block_text) if part
-                    ).strip()
-                    page["match_score"] = notion_page_match_score(page, terms) - 5
-                    page["matched_terms"] = [
-                        term
-                        for term in terms
-                        if normalize_for_match(term) in normalize_for_match(body_search_text)
-                    ]
-                    page["match_method"] = "notion_body_scan"
-                    pages.append(page)
-                    database_found_count += 1
-                    if database_found_count >= limit:
-                        break
+                body_scan_candidate_groups.append((database_id, body_scan_candidates))
             database_meta.append(
                 {
                     "database_id": database_id,
                     "database_label": database_label,
                     "found_count": database_found_count,
+                    "page_limit": database_max_pages,
                 }
+            )
+
+        # DB 순서가 결과를 좌우하지 않도록 후보를 라운드로빈으로 읽되,
+        # 실제 본문 요청은 DB 수와 관계없이 요청 전체 30회까지만 허용한다.
+        body_match_counts: Dict[str, int] = {}
+        max_candidates = max(
+            (len(candidates) for _, candidates in body_scan_candidate_groups),
+            default=0,
+        )
+        body_scan_candidate_count = sum(
+            len(candidates) for _, candidates in body_scan_candidate_groups
+        )
+        body_scan_budget_exhausted = False
+        for candidate_index in range(max_candidates):
+            for database_id, candidates in body_scan_candidate_groups:
+                if candidate_index >= len(candidates):
+                    continue
+                if not require_complete_scan and len(pages) >= limit:
+                    break
+                if body_scan_attempted_count >= NOTION_BODY_SCAN_MAX_PER_REQUEST:
+                    body_scan_budget_exhausted = True
+                    break
+                page = candidates[candidate_index]
+                page_id = page.get("id", "")
+                if page_id in seen_page_ids:
+                    continue
+                body_scan_attempted_count += 1
+                block_text = fetch_notion_page_blocks(page_id, max_blocks=20)
+                if NOTION_CONTENT_INCOMPLETE in block_text:
+                    search_complete = False
+                    incomplete_reasons.add("body_limit")
+                if not block_text:
+                    continue
+                body_search_text = (
+                    f"{page.get('search_text', '')}\n"
+                    f"{block_text.replace(NOTION_CONTENT_INCOMPLETE, '')}"
+                )
+                if not all(
+                    normalize_for_match(term) in normalize_for_match(body_search_text)
+                    for term in terms
+                ):
+                    continue
+                seen_page_ids.add(page_id)
+                page["content"] = "\n\n".join(
+                    part for part in (page.get("properties_text", ""), block_text) if part
+                ).strip()
+                page["match_score"] = notion_page_match_score(page, terms) - 5
+                page["matched_terms"] = [
+                    term
+                    for term in terms
+                    if normalize_for_match(term) in normalize_for_match(body_search_text)
+                ]
+                page["match_method"] = "notion_body_scan"
+                pages.append(page)
+                body_match_counts[database_id] = body_match_counts.get(database_id, 0) + 1
+            if body_scan_budget_exhausted or (
+                not require_complete_scan and len(pages) >= limit
+            ):
+                break
+        body_scan_stopped_at_limit = bool(
+            not require_complete_scan
+            and len(pages) >= limit
+            and body_scan_attempted_count < body_scan_candidate_count
+        )
+        body_scan_result_incomplete = bool(
+            body_scan_budget_exhausted
+            or (
+                body_scan_candidates_truncated
+                and (require_complete_scan or len(pages) < limit)
+            )
+        )
+        if body_scan_result_incomplete:
+            search_complete = False
+            candidate_count_complete = False
+            incomplete_reasons.add("body_scan_limit")
+        elif body_scan_candidates_truncated or body_scan_stopped_at_limit:
+            # 목록에 필요한 결과 창은 확보했지만, 나머지 본문 후보를 읽지
+            # 않았으므로 전체 후보 건수까지 확정됐다고 표시하지 않는다.
+            candidate_count_complete = False
+            result_window_complete = True
+        for meta in database_meta:
+            found_count = meta.get("found_count")
+            meta["found_count"] = (found_count if isinstance(found_count, int) else 0) + body_match_counts.get(
+                str(meta.get("database_id") or ""), 0,
             )
     except requests.RequestException as exc:
         return {
@@ -1294,7 +1529,10 @@ def execute_notion_search(
             # notion_body_scan 단계에서 이미 본문을 조회한 페이지는 재조회하지 않는다.
             if page.get("match_method") == "notion_body_scan" and page.get("content"):
                 continue
-            block_text = fetch_notion_page_blocks(page.get("id", ""), max_blocks=200)
+            block_text = fetch_notion_page_blocks(
+                page.get("id", ""),
+                max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS,
+            )
             if NOTION_CONTENT_INCOMPLETE in block_text:
                 page["content_incomplete"] = True
                 content_incomplete_page_ids.add(str(page.get("id") or ""))
@@ -1303,6 +1541,11 @@ def execute_notion_search(
                     part for part in (page.get("properties_text", ""), block_text) if part
                 ).strip()
     status = "partial_error" if errors and limited_pages else "error" if errors else "ok"
+    database_page_limits = [
+        value
+        for meta in database_meta
+        if isinstance((value := meta.get("page_limit")), int)
+    ]
 
     return {
         "source": "notion",
@@ -1330,7 +1573,9 @@ def execute_notion_search(
             ),
             "content_incomplete_page_ids": sorted(content_incomplete_page_ids),
             "content_incomplete_count": len(content_incomplete_page_ids),
-            "scan_limit_per_database": max_pages * page_size,
+            "scan_limit_per_database": max(database_page_limits or [max_pages]) * page_size,
+            "body_scan_attempted_count": body_scan_attempted_count,
+            "body_scan_limit": NOTION_BODY_SCAN_MAX_PER_REQUEST,
             "terms": terms[:6],
             "constraints": notion_constraints,
             "database_ids": database_ids,

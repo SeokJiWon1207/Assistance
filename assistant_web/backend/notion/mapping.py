@@ -13,8 +13,8 @@ from backend.notion.client import (
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import NOISY_PROPERTY_NAME_KEYWORDS, NOISY_PROPERTY_TYPES
 from backend.notion.property_roles import (
-    DEPLOYMENT_NAMES, DUE_NAMES, REGISTRATION_NAMES, date_property, owner_properties,
-    responsible_properties, role_properties,
+    CUSTOMER_NAMES, DEPLOYMENT_NAMES, DUE_NAMES, REGISTRATION_NAMES, date_property,
+    owner_properties, responsible_properties, role_properties,
 )
 
 
@@ -349,7 +349,16 @@ def normalize_notion_page(
     created_time_raw = str(page.get("created_time", ""))
     last_edited_time_raw = str(page.get("last_edited_time", ""))
     page_type = notion_type(properties)
-    customer = notion_prop_by_keywords(properties, ["고객사", "customer"]) or ""
+    customer_properties = role_properties(
+        properties,
+        CUSTOMER_NAMES,
+        {"select", "multi_select", "rich_text"},
+    )
+    customer = ", ".join(
+        value
+        for name in customer_properties
+        if (value := notion_property_to_text(properties[name]))
+    )
     platform = notion_prop_by_keywords(properties, ["매체", "플랫폼", "media", "platform"]) or ""
     return {
         "id": page.get("id", ""),

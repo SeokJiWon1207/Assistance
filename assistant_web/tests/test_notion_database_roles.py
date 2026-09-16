@@ -174,6 +174,21 @@ class DatabaseRoleTests(unittest.TestCase):
         self.assertNotIn('총 1건', text)
         self.assertNotIn('일부 항목', text)
 
+    def test_limited_keyword_list_uses_modified_sort_without_incomplete_warning(self):
+        item = page({'수정일': {'type': 'last_edited_time', 'last_edited_time': '2026-09-15'}})
+        result = {'stages': [{'source': 'notion', 'status': 'ok', 'notion_pages': [item], 'meta': {
+            'search_complete': True,
+            'candidate_count': 1,
+            'candidate_count_complete': False,
+            'result_window_complete': True,
+            'terms': ['needle'],
+            'constraints': {},
+        }}]}
+        text = format_deterministic_notion_answer('needle 문서 보여줘', result, 5)
+        self.assertIn('최근 수정순으로 1건 표시', text)
+        self.assertNotIn('최근 등록순', text)
+        self.assertNotIn('일부 항목', text)
+
     def test_created_date_sort_label_is_consistent_for_truncated_and_grouped_lists(self):
         item = page({'등록일': {'type': 'date', 'date': {'start': '2026-09-15'}}})
         constraints = {'common_filter_clauses': [{

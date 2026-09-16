@@ -44,7 +44,11 @@ NOISY_PROPERTY_TYPES = frozenset(
     {"formula", "title", "created_time", "last_edited_time", "created_by", "last_edited_by"}
 )
 
-NOTION_BODY_SCAN_MAX_PER_DB = 30
+# 본문 검색은 외부 요청을 발생시키므로 DB 수와 무관한 요청 전체 예산으로 제한한다.
+NOTION_BODY_SCAN_MAX_PER_REQUEST = 30
+
+# 최종 답변에 넘길 본문은 요약·근거 생성에 필요한 앞부분만 읽는다.
+NOTION_RESULT_BODY_MAX_BLOCKS = 30
 
 NOTION_WRITE_CONFIRM_HEADER_CREATE = "📝 다음 내용으로 Notion에 새 항목을 만들까요?"
 
@@ -70,7 +74,8 @@ __all__ = [
     "NOTION_STATUS_TYPOS",
     "NOISY_PROPERTY_NAME_KEYWORDS",
     "NOISY_PROPERTY_TYPES",
-    "NOTION_BODY_SCAN_MAX_PER_DB",
+    "NOTION_BODY_SCAN_MAX_PER_REQUEST",
+    "NOTION_RESULT_BODY_MAX_BLOCKS",
     "NOTION_WRITE_CONFIRM_HEADER_CREATE",
     "NOTION_WRITE_CONFIRM_HEADER_UPDATE",
     "NOTION_WRITE_CONFIRM_PHRASES",

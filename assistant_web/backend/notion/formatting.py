@@ -255,7 +255,7 @@ def format_deterministic_notion_answer(
     elif count_intent:
         intro = f"📊 조건에 맞는 Notion 항목은 총 {total_matches}건입니다. 대표 항목을 함께 표시합니다."
     elif scope_meta.get("candidate_count_complete") is False and scope_meta.get("result_window_complete"):
-        intro = f"🔍 Notion에서 조건에 맞는 항목을 최근 등록순으로 {len(pages)}건 표시합니다."
+        intro = f"🔍 Notion에서 조건에 맞는 항목을 {sort_label}으로 {len(pages)}건 표시합니다."
     elif total_matches > len(pages):
         # 화면엔 limit만큼만 표시되지만 실제로는 더 많은 후보가 있는 경우,
         # 사용자가 잘려 나간 나머지를 인지하도록 총 후보 수를 함께 알려준다.
