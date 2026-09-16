@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
-from backend.notion import client, mapping, read_scope, schema, search
+from backend.notion import client, database_roles, mapping, read_scope, schema, search
 from backend.notion.formatting import format_deterministic_notion_answer
 from backend.query_planning import build_query_plan, validate_query_plan
 from backend.intent.constraints import extract_query_constraints, merge_query_plan_constraints
@@ -34,6 +34,55 @@ def response(data, status=200):
 
 
 class DatabaseRoleTests(unittest.TestCase):
+    def test_condition_only_issue_query_uses_issue_and_unknown_databases(self):
+        known_issue, known_document, unknown = "a" * 32, "b" * 32, "c" * 32
+        catalog = {
+            known_issue: {"roles": ["issue"], "source": "configured"},
+            known_document: {"roles": ["document"], "source": "configured"},
+        }
+        constraints = {"common_filter_clauses": [{
+            "field": "created_at", "operator": "between", "value": ["2026-09-14", "2026-09-20"],
+        }]}
+        with patch.object(database_roles, "load_notion_database_roles", return_value=catalog):
+            selected, role = database_roles.select_notion_database_ids(
+                [known_issue, known_document, unknown],
+                "이번주 등록된 이슈 알려줘", [], constraints,
+            )
+            all_for_keyword, keyword_role = database_roles.select_notion_database_ids(
+                [known_issue, known_document, unknown],
+                "도커 관련 이슈 찾아줘", ["도커"], constraints,
+            )
+        self.assertEqual(selected, [known_issue, unknown])
+        self.assertEqual(role, "issue")
+        self.assertEqual(all_for_keyword, [known_issue, known_document, unknown])
+        self.assertEqual(keyword_role, "")
+
+        with patch.object(database_roles, "load_notion_database_roles", return_value={
+            known_issue: {"roles": ["issue"], "source": "inferred"},
+            known_document: {"roles": ["document"], "source": "inferred"},
+        }):
+            inferred, inferred_role = database_roles.select_notion_database_ids(
+                [known_issue, known_document], "이번주 등록된 이슈 알려줘", [], constraints,
+            )
+        self.assertEqual(inferred, [known_issue, known_document])
+        self.assertEqual(inferred_role, "")
+
+    def test_role_catalog_is_replaced_atomically_only_when_complete(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            database_roles, "RUNTIME_DIR", Path(directory),
+        ):
+            catalog = database_roles.build_notion_database_role_catalog(
+                [("a" * 32, "이슈리스트", {
+                    "이슈할당": {"type": "people"}, "등록일": {"type": "date"},
+                    "고객사": {"type": "select"}, "매체": {"type": "select"},
+                })],
+                generated_at="2026-09-15T12:00:00+09:00",
+                root_database_ids=["a" * 32],
+            )
+            path = database_roles.save_notion_database_role_catalog(catalog)
+            self.assertEqual(json.loads(path.read_text())["databases"]["a" * 32]["roles"], ["issue"])
+            with self.assertRaises(ValueError):
+                database_roles.save_notion_database_role_catalog({"complete": False, "databases": {}})
     def test_issue_assignment_ignores_previous_team_and_people(self):
         item = page({"직전담당파트": {"type": "rich_text", "rich_text": [{"plain_text": "QC"}]},
                      "직전할당": people("김지원"), "이슈할당": people("김지은")})
@@ -108,6 +157,40 @@ class DatabaseRoleTests(unittest.TestCase):
         text = format_deterministic_notion_answer('노션 문서 보여줘', result, 5)
         self.assertIn('기여자 김지은', text)
         self.assertNotIn('담당 김지은', text)
+
+    def test_limited_created_list_does_not_claim_a_total_count(self):
+        item = page({'등록일': {'type': 'date', 'date': {'start': '2026-09-15'}}})
+        result = {'stages': [{'source': 'notion', 'status': 'ok', 'notion_pages': [item], 'meta': {
+            'search_complete': True,
+            'candidate_count': 1,
+            'candidate_count_complete': False,
+            'result_window_complete': True,
+            'constraints': {'common_filter_clauses': [{
+                'field': 'created_at', 'operator': 'between', 'value': ['2026-09-14', '2026-09-20'],
+            }]},
+        }}]}
+        text = format_deterministic_notion_answer('이번주 등록된 이슈 알려줘', result, 5)
+        self.assertIn('최근 등록순으로 1건 표시', text)
+        self.assertNotIn('총 1건', text)
+        self.assertNotIn('일부 항목', text)
+
+    def test_created_date_sort_label_is_consistent_for_truncated_and_grouped_lists(self):
+        item = page({'등록일': {'type': 'date', 'date': {'start': '2026-09-15'}}})
+        constraints = {'common_filter_clauses': [{
+            'field': 'created_at', 'operator': 'between', 'value': ['2026-09-14', '2026-09-20'],
+        }]}
+        stage = {'source': 'notion', 'status': 'ok', 'notion_pages': [item], 'meta': {
+            'search_complete': True, 'candidate_count': 3, 'constraints': constraints,
+        }}
+        plain = format_deterministic_notion_answer('이번주 등록된 이슈 보여줘', {'stages': [stage]}, 1)
+        grouped = format_deterministic_notion_answer(
+            '이번주 등록된 이슈 담당자별로 보여줘',
+            {'stages': [{**stage, 'meta': {**stage['meta'], 'constraints': {**constraints, 'group_by': 'owner'}}}]},
+            1,
+        )
+        for text in (plain, grouped):
+            self.assertIn('최근 등록순', text)
+            self.assertNotIn('최근 수정순', text)
 
     def test_realistic_deadline_question_survives_the_full_filter_pipeline(self):
         question = '노션 DB03_작업에서 2026년 4월 마감인 "AP 가동" 항목 찾아줘'

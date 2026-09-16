@@ -79,3 +79,10 @@
 {"q":"노션 이슈리스트 담당자별로 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"group_by":"owner","owner":""},"notion_deterministic":true,"notion_terms":[]}
 {"q":"노션 배포 방법 문서 목록 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_deterministic":true,"notion_terms":["배포","방법"]}
 {"q":"노션 기술공유 문서 내용 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_deterministic":false,"notion_terms":["기술공유"]}
+{"q":"노션에서 이번주 등록된 이슈 알려줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션에서 도커 관련 이슈 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션에서 9월 마감인 작업 알려줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션 마감 임박 작업 중 3월 프로젝트 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션 운영 반영 목록에서 2월 신규기능 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션에서 어제 올라온 배포일정 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"노션 기한 없는 항목 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}

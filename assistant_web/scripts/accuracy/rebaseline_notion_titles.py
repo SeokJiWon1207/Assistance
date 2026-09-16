@@ -21,6 +21,11 @@ load_dotenv(APP_DIR / ".env")
 from backend.common import normalize_for_match
 from backend.config import NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
 from backend.notion.client import notion_title
+from backend.notion.client import fetch_notion_database_schema, fetch_notion_database_title
+from backend.notion.database_roles import (
+    build_notion_database_role_catalog,
+    save_notion_database_role_catalog,
+)
 from backend.notion.read_scope import (
     preserve_legacy_notion_read_scope,
     refresh_notion_read_scope,
@@ -127,6 +132,21 @@ def main() -> int:
             read_scope,
             datetime.now().astimezone().isoformat(timespec="seconds"),
         )
+        role_rows = []
+        try:
+            for database_id in read_scope:
+                role_rows.append((
+                    database_id,
+                    fetch_notion_database_title(database_id),
+                    fetch_notion_database_schema(database_id).get("properties", {}),
+                ))
+            save_notion_database_role_catalog(build_notion_database_role_catalog(
+                role_rows,
+                generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                root_database_ids=roots,
+            ))
+        except Exception as exc:  # 마지막 완성본을 보존하고 제목 기준선 작업은 계속한다.
+            print(f"Notion DB 역할 카탈로그 갱신 실패: {exc}", file=sys.stderr)
     allowed = {identifier.replace("-", "") for identifier in read_scope}
     titles = historical_titles()
     if args.limit > 0:

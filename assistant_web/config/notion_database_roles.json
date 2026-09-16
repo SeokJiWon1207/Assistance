@@ -1,0 +1,19 @@
+{
+  "databases": {
+    "8b1ea35f0db04f4db6bf8b8265aee310": {"title": "이슈리스트", "roles": ["issue"]},
+    "2e09eccfeda4812280a6c57e8f0a1aad": {"title": "DB02_통합_프로젝트", "roles": ["project"]},
+    "2e09eccfeda481ea9cbfcbbec06b67a0": {"title": "DB03_작업", "roles": ["task"]},
+    "746d312dc62441208e16f2589505972e": {"title": "버전관리", "roles": ["release"]},
+    "bbc9b5f7808d4bab9ac97c49b820c9a3": {"title": "기술공유", "roles": ["document"]},
+    "3c29eccfeda4802b98fcc7f929a04020": {"title": "테스트 및 수정", "roles": ["task"]},
+    "d349eccfeda48281a9120147f10880fe": {"title": "조건차트 작업", "roles": ["task"]},
+    "bb79eccfeda483efb97a815a0a1be0d7": {"title": "비교차트 작업", "roles": ["task"]},
+    "39e9eccfeda480ee99aec5cdcaefa486": {"title": "종합차트 작업", "roles": ["task"]},
+    "2e99eccfeda481c382f1f3c255437930": {"title": "기술공유_AI활용", "roles": ["document"]},
+    "2e09eccfeda481978af3ed63504669d3": {"title": "기술공유", "roles": ["document"]},
+    "15f9eccfeda481398792d518d46f45d4": {"title": "Flutter Roadmap", "roles": ["document"]},
+    "5a3858ad43df432eb48e716d1f9421bb": {"title": "기술공유_C++/MFC", "roles": ["document"]},
+    "6983c71f0a9b460992ed321d100af05e": {"title": "기술공유_GIT", "roles": ["document"]},
+    "cada0080f56349d1b7d3ac71f9c177e5": {"title": "기술공유_본사테스트서버구축", "roles": ["document"]}
+  }
+}

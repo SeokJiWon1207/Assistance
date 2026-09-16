@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from backend.common import normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
 from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_MATCH_ALIASES
 
@@ -137,7 +137,19 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
         candidates = raw if isinstance(raw, list) else [raw]
         values = values_for_clause(clause.get("value"))
         if field in {"created_at", "due_at", "deployed_at"}:
-            candidates = [str(item or "")[:10] for item in candidates]
+            normalized_dates = []
+            for item in candidates:
+                raw_date = str(item or "")
+                if source == "notion" and field == "created_at" and "T" in raw_date:
+                    try:
+                        parsed = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=9)))
+                        raw_date = parsed.astimezone(timezone(timedelta(hours=9))).date().isoformat()
+                    except ValueError:
+                        pass
+                normalized_dates.append(raw_date[:10])
+            candidates = normalized_dates
         raw_candidates, raw_values = candidates, values
         candidates = [_canonical_filter_value(field, item) for item in candidates if item not in (None, "")]
         values = [_canonical_filter_value(field, item) for item in values]
@@ -178,11 +190,13 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
             return False
         if operator == "not_exists" and present:
             return False
-        if operator == "gte" and (not present or candidates[0] < values[0]):
+        if operator == "gte" and (not present or not any(candidate >= values[0] for candidate in candidates)):
             return False
-        if operator == "lte" and (not present or candidates[0] > values[0]):
+        if operator == "lte" and (not present or not any(candidate <= values[0] for candidate in candidates)):
             return False
-        if operator == "between" and (not present or not values[0] <= candidates[0] <= values[1]):
+        if operator == "between" and (
+            not present or not any(values[0] <= candidate <= values[1] for candidate in candidates)
+        ):
             return False
     return True
 
@@ -296,9 +310,36 @@ def filter_audit_for_source(source: str, clauses: Iterable[Dict[str, Any]]) -> D
 def notion_temporal_field(question: str) -> str:
     """명시된 기한/반영일만 등록일과 구분한다."""
     from backend.common import remove_quoted_value
+
     text = remove_quoted_value(question)
-    if re.search(r"마감|기한", text) and not re.search(r"등록일|등록된|생성일", text):
+
+    # 날짜 필드 이름은 독립된 어절일 때만 인정한다. ``배포일정``처럼
+    # 같은 글자로 시작하는 업무 명사를 배포일 조건으로 바꾸면, 질문의
+    # 상대 날짜까지 잘못된 필드에 적용된다. 조사와 서술형 어미는 명시적으로
+    # 허용해 ``기한이``, ``마감인``, ``운영 반영된`` 같은 표현은 유지한다.
+    suffix = r"(?:은|는|이|가|을|를|에|의|까지|부터|으로|로|인|된|되는|될|한|했던)?"
+    boundary = r"(?=\s|$|[,.;!?])"
+
+    created_marker = re.search(
+        rf"(?:등록일|접수일|생성일|작성일){suffix}{boundary}"
+        rf"|(?:등록|접수|생성|작성)(?:된|한|했|되는|될){boundary}"
+        rf"|만든{boundary}",
+        text,
+    )
+    due_marker = re.search(rf"(?:마감일?|기한){suffix}{boundary}", text)
+    deployed_marker = re.search(rf"(?:운영\s*반영일?|배포일){suffix}{boundary}", text)
+
+    # 날짜가 비어 있는 항목을 찾는 표현은 기간 기준을 고르는 요청이 아니다.
+    absence = r"(?:없는|없음|없이|미지정|정해지지\s*않은|안\s*정해진)"
+    due_absence = re.search(rf"(?:마감일?|기한)(?:은|는|이|가)?\s*{absence}", text)
+    deployed_absence = re.search(
+        rf"(?:운영\s*반영일?|배포일)(?:은|는|이|가)?\s*{absence}", text,
+    )
+
+    if created_marker:
+        return "created_at"
+    if due_marker and not due_absence:
         return "due_at"
-    if re.search(r"운영\s*반영|배포일", text) and not re.search(r"등록일|등록된|생성일", text):
+    if deployed_marker and not deployed_absence:
         return "deployed_at"
     return "created_at"

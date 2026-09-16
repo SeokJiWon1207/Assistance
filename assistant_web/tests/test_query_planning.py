@@ -31,6 +31,7 @@ from backend.understanding import (
 from backend.schemas import ChatMessage, ChatRequest
 from backend.reports.evaluation import generate_candidate_model_answer
 from backend.sources.notion import notion_page_matches_constraints
+from backend.query_filters import notion_temporal_field
 from backend.query_planning import (
     build_query_plan,
     extract_created_at_range,
@@ -540,6 +541,94 @@ class QueryPlanningTests(unittest.TestCase):
             extract_created_at_range("2026년 12월 이슈"),
             {"from": "2026-12-01", "to": "2026-12-31", "precision": "month"},
         )
+
+    def test_registration_month_without_year_uses_current_year(self):
+        year = date.today().year
+        self.assertEqual(
+            extract_created_at_range("9월 등록된 항목"),
+            {"from": f"{year}-09-01", "to": f"{year}-09-30", "precision": "month"},
+        )
+        self.assertIsNone(extract_created_at_range("9월 사용자 등록 방법 문서"))
+        self.assertIsNone(extract_created_at_range("9월 마감인 작업 알려줘"))
+        self.assertIsNone(extract_created_at_range("9월 운영 반영 항목 알려줘"))
+
+        notion_due = build_query_plan("노션에서 9월 마감인 작업 알려줘", {"source": "notion"})
+        self.assertIn(
+            {"field": "due_at", "operator": "between", "value": [f"{year}-09-01", f"{year}-09-30"]},
+            notion_due["filter_clauses"],
+        )
+        mantis_due = build_query_plan("9월 마감인 이슈 알려줘", {"source": "mantis"})
+        self.assertFalse(any(clause["field"] == "created_at" for clause in mantis_due["filter_clauses"]))
+
+        for question in (
+            "노션 마감 임박 작업 중 3월 프로젝트 찾아줘",
+            "노션에서 마감 지난 3월호 자료 정리해줘",
+            "노션 운영 반영 목록에서 2월 신규기능 문서 찾아줘",
+        ):
+            plan = build_query_plan(question, {"source": "notion"})
+            self.assertFalse(
+                any(clause["field"] in {"due_at", "deployed_at"} for clause in plan["filter_clauses"]),
+                question,
+            )
+            model_plan = build_query_plan(
+                question,
+                {"source": "notion"},
+                model_plan={"filters": {"created_at": {
+                    "from": f"{year}-03-01", "to": f"{year}-03-31",
+                }}},
+            )
+            self.assertFalse(
+                any(clause["field"] in {"due_at", "deployed_at"} for clause in model_plan["filter_clauses"]),
+                question,
+            )
+
+        for question, field in (
+            ("노션에서 3월 마감 작업 알려줘", "due_at"),
+            ("노션에서 마감 3월까지인 작업 알려줘", "due_at"),
+            ("노션에서 2월 운영 반영 문서 알려줘", "deployed_at"),
+        ):
+            plan = build_query_plan(question, {"source": "notion"})
+            self.assertTrue(any(clause["field"] == field for clause in plan["filter_clauses"]), question)
+
+    def test_notion_temporal_field_requires_a_complete_field_name(self):
+        for question in (
+            "노션에서 어제 올라온 배포일정 문서 찾아줘",
+            "노션에서 어제 작성된 마감일정 문서 찾아줘",
+            "노션 기한 없는 항목 정리해줘",
+            "노션 기한이 없는 항목 정리해줘",
+            "노션 배포일 미지정 항목 보여줘",
+        ):
+            self.assertEqual(notion_temporal_field(question), "created_at", question)
+
+        plan = build_query_plan(
+            "노션에서 어제 올라온 배포일정 문서 찾아줘",
+            {"source": "notion"},
+        )
+        self.assertIsNotNone(plan["filters"]["created_at"])
+        self.assertFalse(
+            any(clause["field"] == "deployed_at" for clause in plan["filter_clauses"]),
+        )
+        date_check = next(
+            check for check in validate_query_plan(
+                "노션에서 어제 올라온 배포일정 문서 찾아줘", plan,
+            )["checks"]
+            if check["id"] == "date_intent"
+        )
+        self.assertEqual(date_check["label"], "등록일 기간 해석")
+        self.assertEqual(date_check["status"], "pass")
+
+    def test_notion_temporal_field_keeps_particles_and_predicate_endings(self):
+        for question in (
+            "노션에서 9월 마감인 작업 알려줘",
+            "노션에서 어제 마감된 항목 알려줘",
+            "노션에서 기한이 오늘인 항목 알려줘",
+        ):
+            self.assertEqual(notion_temporal_field(question), "due_at", question)
+        for question in (
+            "노션에서 2월 운영 반영된 문서 알려줘",
+            "노션에서 배포일이 어제인 문서 알려줘",
+        ):
+            self.assertEqual(notion_temporal_field(question), "deployed_at", question)
 
     def test_relative_month_ranges(self):
         base = date(2026, 7, 21)

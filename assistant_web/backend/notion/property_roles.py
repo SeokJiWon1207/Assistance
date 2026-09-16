@@ -16,6 +16,7 @@ OWNER_NAMES = ("이슈할당", "주담당자", "담당자", "담당", "owner", "
 CONTRIBUTOR_NAMES = ("공동 작업자", "공헌", "Contributors", "기여자", "참여")
 DUE_NAMES = ("마감일", "기한", "마감", "due date", "due", "전달목표일", "개발완료목표일", "일정", "날짜", "date")
 DEPLOYMENT_NAMES = ("운영반영", "운영반영일", "배포일")
+REGISTRATION_NAMES = ("등록일", "접수일", "생성일", "작성일", "registration date", "created date")
 
 
 def role_properties(

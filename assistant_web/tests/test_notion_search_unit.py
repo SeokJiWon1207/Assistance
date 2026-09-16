@@ -5,9 +5,57 @@ import requests
 from fastapi import HTTPException
 
 from backend.notion import search
+from backend.notion.mapping import normalize_notion_page
 
 
 class NotionSearchParsingTests(unittest.TestCase):
+    def test_created_date_terms_are_removed_only_after_date_is_structured(self):
+        clause = {
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }
+        for question in (
+            "노션에서 이번주 등록된 이슈 알려줘",
+            "노션에서 지난주 등록된 이슈 알려줘",
+            "노션에서 최근 3일 생성된 이슈 알려줘",
+            "노션에서 오늘 만든 문서 알려줘",
+            "노션에서 9월 작성된 항목 알려줘",
+        ):
+            self.assertEqual(
+                search.build_notion_terms(question, {"filter_clauses": [clause]}),
+                [],
+                question,
+            )
+        self.assertIn("등록", search.build_notion_terms("사용자 등록 방법 문서"))
+        expected_terms = {
+            "이번주 등록된 등록오류 이슈": ["등록오류"],
+            "이번주 등록된 작성자 이슈": ["작성자"],
+            "이번주 등록된 등록방법 이슈": ["등록방법"],
+            "이번주 등록된 운영 이슈": ["운영"],
+            "이번주 등록된 반영 이슈": ["반영"],
+        }
+        for question, expected in expected_terms.items():
+            self.assertEqual(
+                search.build_notion_terms(question, {"filter_clauses": [clause]}),
+                expected,
+                question,
+            )
+
+    def test_notion_created_time_uses_kst_calendar_date(self):
+        item = normalize_notion_page(
+            {
+                "id": "p1",
+                "created_time": "2026-09-13T23:36:00Z",
+                "properties": {"제목": {"type": "title", "title": [{"plain_text": "경계 이슈"}]}},
+            },
+            include_blocks=False,
+        )
+        self.assertEqual(item["created_time"], "2026-09-14")
+        self.assertTrue(search.notion_page_matches_common_filters(item, [{
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }]))
+
     def test_terms_typo_context_and_constraints_are_normalized(self):
         corrected, typo = search.correct_notion_status_typo("결제요청 문서")
         self.assertEqual(corrected, "결재요청 문서")
@@ -81,6 +129,14 @@ class NotionSearchParsingTests(unittest.TestCase):
                 [{"field": "owner", "operator": "not_exists", "value": True}],
             )
         )
+        self.assertFalse(search.notion_page_matches_common_filters(
+            {
+                "registration_date_property": "등록일",
+                "registration_date": "",
+                "created_time": "2026-08-25",
+            },
+            [{"field": "created_at", "operator": "between", "value": ["2026-08-01", "2026-08-31"]}],
+        ))
 
     def test_page_matching_scoring_and_collection(self):
         page = {
@@ -120,6 +176,204 @@ class NotionSearchParsingTests(unittest.TestCase):
 
 
 class NotionSearchExecutionTests(unittest.TestCase):
+    def test_schema_failure_keeps_full_scan_page_size_and_does_not_short_circuit(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {"results": [], "has_more": False}
+        constraints = {"filter_clauses": [{
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }]}
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", side_effect=HTTPException(status_code=502)),
+            patch.object(search, "notion_post_json", return_value=response) as post,
+        ):
+            result = search.execute_notion_search(
+                "노션에서 이번주 등록된 이슈 알려줘",
+                constraints=constraints,
+                include_blocks=False,
+            )
+        payload = post.call_args.args[1]
+        self.assertEqual(payload["page_size"], 100)
+        self.assertNotIn("filter", payload)
+        self.assertFalse(result["meta"]["result_window_complete"])
+
+    def test_cross_database_date_sort_uses_uniform_calendar_and_timestamp_keys(self):
+        property_page = {
+            "registration_date": "2026-09-15",
+            "created_time": "2026-09-15",
+            "created_time_raw": "2026-09-15T00:02:00Z",
+            "match_score": 1,
+        }
+        timestamp_page = {
+            "created_time": "2026-09-15",
+            "created_time_raw": "2026-09-15T00:01:00Z",
+            "match_score": 1,
+        }
+        property_key = search.notion_page_sort_key(property_page, created_at_filtered=True)
+        timestamp_key = search.notion_page_sort_key(timestamp_page, created_at_filtered=True)
+        self.assertIsInstance(property_key[0], str)
+        self.assertIsInstance(property_key[1], float)
+        self.assertGreater(property_key, timestamp_key)
+
+    def test_created_filter_prefers_registration_property_and_exclusive_end(self):
+        clause = {
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }
+        with patch.object(search, "notion_property_schema", return_value={"등록일": {"type": "date"}}):
+            api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
+        self.assertEqual(api_filter, {"property": "등록일", "date": {
+            "on_or_after": "2026-09-14", "before": "2026-09-21",
+        }})
+        self.assertEqual(sort, {"property": "등록일", "direction": "descending"})
+        self.assertTrue(window_safe)
+
+        with patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}):
+            api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
+        self.assertEqual(api_filter, {"timestamp": "created_time", "created_time": {
+            "on_or_after": "2026-09-14T00:00:00+09:00",
+            "before": "2026-09-21T00:00:00+09:00",
+        }})
+        self.assertEqual(sort, {"timestamp": "created_time", "direction": "descending"})
+        self.assertTrue(window_safe)
+
+        with patch.object(search, "notion_property_schema", return_value={
+            "등록일": {"type": "date"}, "접수일": {"type": "date"},
+        }):
+            api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
+        self.assertEqual(api_filter, {"or": [
+            {"property": "등록일", "date": {"on_or_after": "2026-09-14", "before": "2026-09-21"}},
+            {"property": "접수일", "date": {"on_or_after": "2026-09-14", "before": "2026-09-21"}},
+        ]})
+        self.assertEqual(sort, {"property": "등록일", "direction": "descending"})
+        self.assertFalse(window_safe)
+
+    def test_multiple_registration_fields_are_scanned_and_matched_with_the_same_or_contract(self):
+        first = Mock(status_code=200)
+        first.json.return_value = {"results": [], "has_more": True, "next_cursor": "next"}
+        second = Mock(status_code=200)
+        second.json.return_value = {
+            "results": [{
+                "id": "received-only",
+                "created_time": "2026-01-01T00:00:00Z",
+                "properties": {
+                    "제목": {"type": "title", "title": [{"plain_text": "접수일 항목"}]},
+                    "등록일": {"type": "date", "date": None},
+                    "접수일": {"type": "date", "date": {"start": "2026-09-15"}},
+                },
+            }],
+            "has_more": False,
+        }
+        constraints = {"filter_clauses": [{
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }]}
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", return_value={
+                "제목": {"type": "title"},
+                "등록일": {"type": "date"},
+                "접수일": {"type": "date"},
+            }),
+            patch.object(search, "notion_post_json", side_effect=[first, second]) as post,
+        ):
+            result = search.execute_notion_search(
+                "노션에서 이번주 등록된 이슈 알려줘",
+                constraints=constraints,
+                include_blocks=False,
+            )
+        self.assertEqual(post.call_count, 2)
+        self.assertTrue(all(call.args[1]["page_size"] == 100 for call in post.call_args_list))
+        self.assertEqual([item["id"] for item in result["notion_pages"]], ["received-only"])
+        self.assertEqual(result["notion_pages"][0]["registration_dates"], ["2026-09-15"])
+        self.assertFalse(result["meta"]["result_window_complete"])
+
+    def test_created_filter_is_sent_and_results_are_sorted_by_registration_date(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "results": [
+                {"id": "old", "created_time": "2026-09-14T10:00:00Z", "properties": {
+                    "제목": {"type": "title", "title": [{"plain_text": "이전"}]},
+                    "등록일": {"type": "date", "date": {"start": "2026-09-14"}},
+                }},
+                {"id": "new", "created_time": "2026-09-15T10:00:00Z", "properties": {
+                    "제목": {"type": "title", "title": [{"plain_text": "최신"}]},
+                    "등록일": {"type": "date", "date": {"start": "2026-09-15"}},
+                }},
+            ],
+            "has_more": True,
+            "next_cursor": "more",
+        }
+        constraints = {"filter_clauses": [{
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }]}
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", return_value={
+                "제목": {"type": "title"}, "등록일": {"type": "date"},
+            }),
+            patch.object(search, "notion_post_json", return_value=response) as post,
+        ):
+            result = search.execute_notion_search(
+                "노션에서 이번주 등록된 이슈 알려줘",
+                constraints=constraints,
+                include_blocks=False,
+            )
+        payload = post.call_args.args[1]
+        self.assertEqual(payload["filter"], {"property": "등록일", "date": {
+            "on_or_after": "2026-09-14", "before": "2026-09-21",
+        }})
+        self.assertEqual(payload["sorts"], [{"property": "등록일", "direction": "descending"}])
+        self.assertEqual(result["meta"]["terms"], [])
+        self.assertFalse(result["meta"]["candidate_count_complete"])
+        self.assertTrue(result["meta"]["result_window_complete"])
+        self.assertEqual([item["id"] for item in result["notion_pages"]], ["new", "old"])
+
+    def test_created_count_query_reads_all_server_filtered_pages(self):
+        first = Mock(status_code=200)
+        first.json.return_value = {
+            "results": [{"id": "p1", "created_time": "2026-09-15T01:00:00Z", "properties": {
+                "제목": {"type": "title", "title": [{"plain_text": "첫 항목"}]},
+            }}],
+            "has_more": True,
+            "next_cursor": "next",
+        }
+        second = Mock(status_code=200)
+        second.json.return_value = {
+            "results": [{"id": "p2", "created_time": "2026-09-14T23:36:00Z", "properties": {
+                "제목": {"type": "title", "title": [{"plain_text": "둘째 항목"}]},
+            }}],
+            "has_more": False,
+        }
+        constraints = {"filter_clauses": [{
+            "field": "created_at", "operator": "between",
+            "value": ["2026-09-14", "2026-09-20"],
+        }]}
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=[first, second]) as post,
+        ):
+            result = search.execute_notion_search(
+                "노션에서 이번주 등록된 이슈 몇 개야",
+                constraints=constraints,
+                include_blocks=False,
+            )
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(result["meta"]["candidate_count"], 2)
+        self.assertTrue(result["meta"]["candidate_count_complete"])
+        self.assertFalse(result["meta"]["result_window_complete"])
+
     def test_status_filter_uses_exact_option_and_fails_open_on_schema_error(self):
         properties = {
             "업무 상태": {

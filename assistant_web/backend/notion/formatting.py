@@ -112,6 +112,14 @@ def notion_page_owner_names(page: Dict[str, Any]) -> List[str]:
     return names or ["담당자 미지정"]
 
 
+def notion_result_sort_label(constraints: Dict[str, Any]) -> str:
+    created_at_filtered = any(
+        clause.get("field") == "created_at"
+        for clause in constraints.get("common_filter_clauses", [])
+    )
+    return "최근 등록순" if created_at_filtered else "최근 수정순"
+
+
 def format_grouped_notion_answer(
     pages: List[Dict[str, Any]],
     notion_stage: Dict[str, Any],
@@ -125,13 +133,14 @@ def format_grouped_notion_answer(
             groups.setdefault(owner, []).append(page)
 
     meta = notion_stage.get("meta", {})
+    sort_label = notion_result_sort_label(meta.get("constraints", {}))
     total_matches = int(meta.get("candidate_count", len(pages)))
     scope = "조회한 범위에서 확인된" if meta.get("search_complete") is False else "총"
     lines = [f"📊 조건에 맞는 Notion 항목은 {scope} {total_matches}건입니다. 담당자별로 정리했습니다."]
     if meta.get("search_complete") is False:
         lines.append("일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.")
     if total_matches > len(pages):
-        lines.append(f"현재 조회 범위에서는 최근 수정순 {len(pages)}건까지 담당자별로 표시합니다.")
+        lines.append(f"현재 조회 범위에서는 {sort_label} {len(pages)}건까지 담당자별로 표시합니다.")
     lines.append("")
     for owner in sorted(groups, key=lambda value: (value == "담당자 미지정", value)):
         owner_pages = groups[owner]
@@ -229,7 +238,8 @@ def format_deterministic_notion_answer(
     if status_typo:
         # 조용히 바꾸지 않고 무엇을 무엇으로 봤는지 밝힌다.
         criteria += f", 표기 보정={status_typo[0]}→{status_typo[1]}"
-    criteria += ", 정렬: 최근 수정순"
+    sort_label = notion_result_sort_label(notion_constraints)
+    criteria += f", 정렬: {sort_label}"
 
     count_intent = any(
         marker in normalize_for_match(query_text)
@@ -239,20 +249,22 @@ def format_deterministic_notion_answer(
     if notion_stage.get("meta", {}).get("search_complete") is False or notion_stage.get("status") == "partial_error":
         intro = (
             f"🔍 조회한 범위에서 조건에 맞는 Notion 항목 {total_matches}건을 확인했습니다. "
-            f"최근 수정순으로 {len(pages)}건을 표시합니다. "
+            f"{sort_label}으로 {len(pages)}건을 표시합니다. "
             + (scope_notice or "일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.")
         )
     elif count_intent:
         intro = f"📊 조건에 맞는 Notion 항목은 총 {total_matches}건입니다. 대표 항목을 함께 표시합니다."
+    elif scope_meta.get("candidate_count_complete") is False and scope_meta.get("result_window_complete"):
+        intro = f"🔍 Notion에서 조건에 맞는 항목을 최근 등록순으로 {len(pages)}건 표시합니다."
     elif total_matches > len(pages):
         # 화면엔 limit만큼만 표시되지만 실제로는 더 많은 후보가 있는 경우,
         # 사용자가 잘려 나간 나머지를 인지하도록 총 후보 수를 함께 알려준다.
         intro = (
             f"🔍 Notion에서 조건에 맞는 항목이 총 {total_matches}건 있어요. "
-            f"최근 수정순 상위 {len(pages)}건을 표시합니다. 더 보려면 '더 보여줘'라고 말해주세요."
+            f"{sort_label} 상위 {len(pages)}건을 표시합니다. 더 보려면 '더 보여줘'라고 말해주세요."
         )
     else:
-        intro = f"🔍 Notion에서 관련 항목 {len(pages)}건을 찾았어요. 최근 수정순으로 정리했습니다."
+        intro = f"🔍 Notion에서 관련 항목 {len(pages)}건을 찾았어요. {sort_label}으로 정리했습니다."
     lines = [intro, "", criteria, ""]
     for index, page in enumerate(pages, start=1):
         meta_items = [

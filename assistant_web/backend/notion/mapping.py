@@ -1,6 +1,7 @@
 """Notion 속성과 내부 페이지 모델 사이를 변환한다."""
 
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from backend.common import normalize_for_match
@@ -12,8 +13,28 @@ from backend.notion.client import (
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import NOISY_PROPERTY_NAME_KEYWORDS, NOISY_PROPERTY_TYPES
 from backend.notion.property_roles import (
-    DEPLOYMENT_NAMES, DUE_NAMES, date_property, owner_properties, responsible_properties,
+    DEPLOYMENT_NAMES, DUE_NAMES, REGISTRATION_NAMES, date_property, owner_properties,
+    responsible_properties, role_properties,
 )
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def notion_kst_date(value: Any) -> str:
+    """Notion ISO 시각을 한국 업무일 기준 날짜로 정규화한다."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return raw
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw[:10]
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=KST)
+    return parsed.astimezone(KST).date().isoformat()
 
 
 def fetch_notion_page_blocks(*args: Any, **kwargs: Any) -> str:
@@ -318,6 +339,15 @@ def normalize_notion_page(
     owner = notion_owner(properties)
     due_date = notion_due_date(properties)
     deployment_property = date_property(properties, DEPLOYMENT_NAMES)
+    registration_properties = role_properties(properties, REGISTRATION_NAMES, {"date"})
+    registration_property = registration_properties[0] if registration_properties else ""
+    registration_dates = [
+        notion_kst_date((properties.get(name, {}).get("date") or {}).get("start"))
+        for name in registration_properties
+        if (properties.get(name, {}).get("date") or {}).get("start")
+    ]
+    created_time_raw = str(page.get("created_time", ""))
+    last_edited_time_raw = str(page.get("last_edited_time", ""))
     page_type = notion_type(properties)
     customer = notion_prop_by_keywords(properties, ["고객사", "customer"]) or ""
     platform = notion_prop_by_keywords(properties, ["매체", "플랫폼", "media", "platform"]) or ""
@@ -339,6 +369,10 @@ def normalize_notion_page(
         "due_date": due_date,
         "due_date_property": date_property(properties, DUE_NAMES),
         "deployment_date": str((properties.get(deployment_property, {}).get("date") or {}).get("start") or ""),
+        "registration_date": registration_dates[0] if registration_dates else "",
+        "registration_dates": registration_dates,
+        "registration_date_property": registration_property,
+        "registration_date_properties": registration_properties,
         "date_fields": {name: notion_property_to_text(prop) for name, prop in properties.items() if prop.get("type") == "date"},
         "type": page_type,
         "customer": customer,
@@ -346,8 +380,10 @@ def normalize_notion_page(
         "database_id": database_id,
         "database_label": database_label or (database_id[-8:] if database_id else "Notion DB"),
         "url": page.get("url", ""),
-        "created_time": str(page.get("created_time", ""))[:10],
-        "last_edited_time": str(page.get("last_edited_time", ""))[:10],
+        "created_time": notion_kst_date(created_time_raw),
+        "created_time_raw": created_time_raw,
+        "last_edited_time": notion_kst_date(last_edited_time_raw),
+        "last_edited_time_raw": last_edited_time_raw,
         "properties_text": property_text,
         "search_text": "\n".join(
             part
@@ -377,5 +413,6 @@ __all__ = [
     "notion_properties_to_text",
     "notion_properties_to_search_text",
     "notion_block_text",
+    "notion_kst_date",
     "normalize_notion_page",
 ]

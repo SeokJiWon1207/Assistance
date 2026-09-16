@@ -206,6 +206,16 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
             "precision": "month",
         }
 
+    # 연도를 생략한 "9월 등록된 항목"도 현재 연도의 해당 월로 해석한다.
+    # 날짜와 무관한 숫자까지 잡지 않도록 월 표기와 시간 의미 동사가 함께
+    # 있는 경우에만 적용한다.
+    relative_month = extract_yearless_month_range(question)
+    if relative_month and re.search(
+        r"등록일|접수일|생성일|작성일|등록(?:된|한|했|되)|접수(?:된|한|했|되)|"
+        r"생성(?:된|한|했|되)|작성(?:된|한|했|되)|만든", question,
+    ):
+        return relative_month
+
     year_match = re.search(r"(?<!\d)(20\d{2})\s*년", question)
     if year_match:
         year = int(year_match.group(1))
@@ -223,6 +233,39 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
     if relative:
         return relative
     return None
+
+
+def extract_yearless_month_range(question: str, today: Optional[date] = None) -> Optional[Dict[str, str]]:
+    """연도를 생략한 월 표현을 날짜 필드 의미와 분리해 해석한다."""
+    match = re.search(r"(?<!\d)(1[0-2]|0?[1-9])\s*월(?!\s*\d)", question)
+    if not match:
+        return None
+    year = (today or date.today()).year
+    month = int(match.group(1))
+    last_day = calendar.monthrange(year, month)[1]
+    return {
+        "from": f"{year:04d}-{month:02d}-01",
+        "to": f"{year:04d}-{month:02d}-{last_day:02d}",
+        "precision": "month",
+    }
+
+
+def extract_yearless_temporal_month_range(
+    question: str, temporal_field: str, today: Optional[date] = None,
+) -> Optional[Dict[str, str]]:
+    """날짜 필드와 연도 없는 월이 직접 연결된 경우에만 기간으로 해석한다."""
+    aliases = {
+        "due_at": r"(?:마감일?|기한)",
+        "deployed_at": r"(?:운영\s*반영일?|배포일)",
+    }.get(temporal_field)
+    if not aliases:
+        return None
+    month = r"(?<!\d)(?:1[0-2]|0?[1-9])\s*월(?!\s*\d)"
+    particle = r"(?:이|가|은|는|을|를|의|에|:)?"
+    boundary = rf"(?:{month}\s*(?:까지|에)?\s*{aliases}|{aliases}\s*{particle}\s*{month}(?:까지|에)?)"
+    if not re.search(boundary, question):
+        return None
+    return extract_yearless_month_range(question, today=today)
 
 
 def extract_relative_year_range(question: str, today: Optional[date] = None) -> Optional[Dict[str, str]]:
@@ -473,7 +516,13 @@ def build_query_plan(
             filter_clauses.append(clause)
     from backend.query_filters import notion_temporal_field
     temporal_field = notion_temporal_field(question) if source == "notion" else "created_at"
+    temporal_date_range = created_at
     if temporal_field != "created_at":
+        # 마감·배포일은 규칙으로 질문과 직접 연결된 기간만 허용한다. 모델이
+        # 제목 속 월 표현을 날짜 조건으로 바꾸는 경우도 여기서 함께 차단한다.
+        temporal_date_range = detected_created_at or extract_yearless_temporal_month_range(
+            question, temporal_field,
+        )
         filters["created_at"] = None
         filter_clauses = [clause for clause in filter_clauses if clause["field"] != "created_at"]
     # 날짜 종류를 모델이 임의로 추가하지 않도록 질문의 표현과 맞춘다.
@@ -481,12 +530,12 @@ def build_query_plan(
         clause for clause in filter_clauses
         if clause["field"] not in {"due_at", "deployed_at"}
     ]
-    if created_at:
+    if temporal_date_range:
         add_filter_clause(
             filter_clauses,
             temporal_field,
             "between",
-            [created_at["from"], created_at["to"]],
+            [temporal_date_range["from"], temporal_date_range["to"]],
         )
     terms = model_plan.get("terms") or source_plan.get("terms") or []
     return {
@@ -514,6 +563,12 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     created_at = raw_created_at if isinstance(raw_created_at, dict) else None
 
     expected_date = extract_created_at_range(question)
+    if plan.get("source") == "notion":
+        from backend.query_filters import notion_temporal_field
+        if notion_temporal_field(question) != "created_at":
+            expected_date = expected_date or extract_yearless_temporal_month_range(
+                question, notion_temporal_field(question),
+            )
     if expected_date:
         from backend.query_filters import notion_temporal_field
         temporal_field = notion_temporal_field(question) if plan.get("source") == "notion" else "created_at"
