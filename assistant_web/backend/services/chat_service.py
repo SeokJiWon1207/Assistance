@@ -57,6 +57,7 @@ from backend.reports.customer import build_customer_profile_report
 from backend.reports.monthly_customer import build_monthly_customer_report
 from backend.reports.similar import build_similar_resolution_report
 from backend.reports.sla import build_sla_report
+from backend.reports.weekly_customer import build_weekly_report
 from backend.retrieval import (
     build_model_retrieval_context,
     build_sources,
@@ -240,7 +241,7 @@ def _build_deterministic_report(
         # 순서 계약: 아래 빌더는 첫 번째 일치 결과가 곧 최종 응답이므로 위치가 동작이다.
         # 1) 잘못된 고객사를 먼저 차단해 조건 없는 전체 조회로 넓어지는 것을 막는다.
         # 2) 기준 이슈가 명시된 유사 해결 검색은 일반 집계보다 구체적이라 먼저 처리한다.
-        # 3) 월간 리포트·고객사 프로필처럼 여러 지표를 묶는 요청은 단일 SLA보다 앞선다.
+        # 3) 월간·주간 리포트와 고객사 프로필처럼 여러 지표를 묶는 요청은 단일 SLA보다 앞선다.
         # 4) 피벗은 두 축 집계, 급증은 시점 비교이므로 단순 상위 고객사보다 앞선다.
         # 5) 공수 추이·순위는 이슈 건수 집계가 일치하지 않은 뒤에 평가한다.
         report_builders = [
@@ -256,6 +257,7 @@ def _build_deterministic_report(
         report_builders.extend(
             [
                 ("monthly_customer", lambda: build_monthly_customer_report(retrieval_text or latest_user_text)),
+                ("weekly_report", lambda: build_weekly_report(retrieval_text or latest_user_text)),
                 ("customer_profile", lambda: build_customer_profile_report(retrieval_text or latest_user_text)),
                 ("sla", lambda: build_sla_report(retrieval_text or latest_user_text)),
                 ("pivot", lambda: build_mantis_pivot_report(retrieval_text or latest_user_text)),
