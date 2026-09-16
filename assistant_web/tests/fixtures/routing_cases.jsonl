@@ -89,8 +89,9 @@
 {"q":"노션에서 하나금융 고객사 항목 5개 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_terms":["하나금융","고객사"]}
 {"q":"정기보고서 목록 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"컨텐츠서비스팀 주간업무 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
-{"q":"이번주 주간보고 어디 있어","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"이번주 주간업무 어디 있어","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"조직도 알려줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"팀세미나 일정 알려줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"장애 공유 프로세스 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"최근 장애 이슈 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[]}
+{"q":"지난주 신한 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[]}
