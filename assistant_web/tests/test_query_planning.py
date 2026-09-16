@@ -155,7 +155,8 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertIsNone(latest["customer_key"])
         self.assertFalse(needs_rewrite)
-        self.assertEqual(inherited["customer_key"], "159eBest")
+        # 프로젝트 코드로 물어봐도 customer_aliases.json에 등록된 대표 이름으로 정규화된다.
+        self.assertEqual(inherited["customer_key"], "이베스트")
         self.assertEqual(inherited["statuses"], ["closed"])
         self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
 
