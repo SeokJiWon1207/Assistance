@@ -14,6 +14,16 @@
     "15f9eccfeda481398792d518d46f45d4": {"title": "Flutter Roadmap", "roles": ["document"]},
     "5a3858ad43df432eb48e716d1f9421bb": {"title": "기술공유_C++/MFC", "roles": ["document"]},
     "6983c71f0a9b460992ed321d100af05e": {"title": "기술공유_GIT", "roles": ["document"]},
-    "cada0080f56349d1b7d3ac71f9c177e5": {"title": "기술공유_본사테스트서버구축", "roles": ["document"]}
+    "cada0080f56349d1b7d3ac71f9c177e5": {"title": "기술공유_본사테스트서버구축", "roles": ["document"]},
+    "2c39eccfeda480d4be0af6054216fe53": {"title": "DB04_이슈_트래킹", "roles": ["issue"]},
+    "21b9eccfeda4805d989cf6100bd31da0": {"title": "컨텐츠서비스팀 주간업무", "roles": ["task"]},
+    "2e79eccfeda480c49bcffec6fd78162a": {"title": "DB13_휴가신청", "roles": ["task"]},
+    "2df9eccfeda48010845dd22ed795e367": {"title": "DB12_정기점검", "roles": ["task"]},
+    "21d9eccfeda48022ad00dd7e0457bce1": {"title": "DB11_회의록", "roles": ["document"]},
+    "2c39eccfeda48069b9ebd8525d2e83ad": {"title": "DB07_사내규정_Wiki", "roles": ["document"]},
+    "2df9eccfeda480d9b43dfb9a35bad05c": {"title": "DB08_정기보고서", "roles": ["document"]},
+    "2ea9eccfeda48098b868f1b805df4b33": {"title": "DB14_문서양식", "roles": ["document"]},
+    "3449eccfeda4808cb1f3ffdf105a7064": {"title": "팀세미나", "roles": ["document"]},
+    "2ea9eccfeda480dcbceaeb7fcf927383": {"title": "DB00_조직", "roles": ["document"]}
   }
 }
