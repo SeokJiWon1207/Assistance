@@ -212,6 +212,9 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
         return latest, False
 
     inherited: List[str] = []
+    # 제외 표현은 바로 뒤 단어를 제외 대상으로 삼으므로 항상 맨 뒤에 모아 붙인다.
+    # "mts 제외 유진"처럼 앞에 오면 상속한 고객사가 제외 대상으로 뒤집힌다.
+    excluded: List[str] = []
     seen_customer = bool(latest_constraints.get("customer_key") or latest_constraints.get("excluded_customer_keys"))
     seen_platform = bool(latest_constraints.get("platform_key") or latest_constraints.get("excluded_platform_keys"))
     seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses"))
@@ -255,19 +258,19 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             inherited.append(prior_constraints["customer_aliases"][0])
             seen_customer = True
         if not seen_customer and prior_constraints.get("excluded_customer_keys"):
-            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_customer_keys"])
+            excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_customer_keys"])
             seen_customer = True
         if not seen_platform and prior_constraints.get("platform_key"):
             inherited.append(prior_constraints["platform_key"])
             seen_platform = True
         if not seen_platform and prior_constraints.get("excluded_platform_keys"):
-            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_platform_keys"])
+            excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_platform_keys"])
             seen_platform = True
         if not seen_status and prior_constraints.get("statuses"):
             inherited.extend(prior_constraints["statuses"])
             seen_status = True
         if not seen_status and prior_constraints.get("excluded_statuses"):
-            inherited.extend(f"{value} 제외" for value in prior_constraints["excluded_statuses"])
+            excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_statuses"])
             seen_status = True
         for name in prior_constraints.get("people", {}).get("names") or []:
             if name not in inherited:
@@ -275,9 +278,9 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
         if seen_customer and seen_platform and seen_status and seen_issue_ids and seen_screen_numbers:
             break
 
-    if not inherited:
+    if not inherited and not excluded:
         return latest, True
-    return f"{' '.join(inherited)} {latest}".strip(), False
+    return f"{' '.join([*inherited, *excluded])} {latest}".strip(), False
 
 
 def rewrite_follow_up_query_with_model(
