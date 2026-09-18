@@ -58,7 +58,10 @@ def extract_mantis_keyword(text: str) -> str:
         if normalized.isdigit():
             continue
         tokens.append(normalized)
-    return " ".join(tokens[:4]) or text
+    # 구조화 조건과 제어어를 제거하기 전에 네 단어로 자르면, 긴 장애 대응
+    # 템플릿의 실제 증상이 뒤에 있어 통째로 사라진다. 최종 상한은
+    # build_keyword_terms가 정제 후 적용한다.
+    return " ".join(tokens)
 
 
 def _snapshot_cache_key() -> tuple[str, int, int]:
@@ -189,6 +192,31 @@ def extract_status_constraints(text: str) -> List[str]:
     normalized_text = normalize_for_match(status_text)
     statuses = []
     for status_key, aliases in STATUS_ALIASES.items():
+        # 확인·해결·검토는 상태명 외에도 문서 작성 지시에서 매우 자주 쓰인다.
+        # 상태 문맥이나 "확인된 이슈"처럼 상태 대상을 함께 말한 경우에만
+        # 구조화 조건으로 사용한다.
+        if status_key in {"confirmed", "resolved", "review"}:
+            explicit_status_patterns = {
+                "confirmed": (
+                    r"(?<![가-힣])확인(?:된)?\s*상태(?:인|인건|인거|로|의|만)?(?=\s|$|[,.;!?])",
+                    r"상태\s*(?:가|는|만|를|=|:)?\s*(?:확인(?:된)?|confirmed)(?:인|으로)?(?=\s|$|[,.;!?])",
+                    r"(?:확인된|confirmed)\s*(?:상태|이슈|건|거|것|항목)",
+                    r"(?<![A-Za-z0-9_])confirmed(?![A-Za-z0-9_])",
+                ),
+                "resolved": (
+                    r"(?<![가-힣])해결(?:된)?\s*상태(?:인|인건|인거|로|의|만)?(?=\s|$|[,.;!?])",
+                    r"상태\s*(?:가|는|만|를|=|:)?\s*(?:해결(?:된)?|resolved)(?:인|으로)?(?=\s|$|[,.;!?])",
+                    r"(?:해결된|resolved)\s*(?:상태|이슈|건|거|것|항목)",
+                    r"(?<![A-Za-z0-9_])resolved(?![A-Za-z0-9_])",
+                ),
+                "review": (
+                    r"상태\s*(?:가|는|만|를|=|:)?\s*(?:검토|acknowledged)(?:인|으로)?(?=\s|$|[,.;!?])",
+                    r"(?:이슈\s*검토|검토\s*(?:상태|이슈|건|항목)|(?<![A-Za-z0-9_])acknowledged(?![A-Za-z0-9_]))",
+                ),
+            }[status_key]
+            if any(re.search(pattern, status_text, re.IGNORECASE) for pattern in explicit_status_patterns):
+                statuses.append(status_key)
+            continue
         if any(
             bool(re.search(
                 r"(?:상태\s*(?:가|는|만|를|=|:)?\s*feedback\b|"

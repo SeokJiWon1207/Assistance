@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.common import compact_text, normalize_for_match
 from backend.config import STATUS_ALIASES, STATUS_MATCH_ALIASES
+from backend.intent.entities import extract_issue_ids
 from backend.query_planning import extract_group_by
 from backend.query_filters import filter_clause_label
 from backend.reports.aggregate import (
@@ -42,6 +43,7 @@ from backend.reports.aggregate import (
 from backend.retrieval import (
     build_snapshot_note,
     collect_retrieved_issues,
+    collect_retrieved_customer_groups,
     count_retrieved_issues,
     merge_combined_sources,
     similar_base_issue_ids_from_retrieval,
@@ -68,6 +70,41 @@ CONVERSATION_TONE_NOTE = (
     "문장마다 붙이거나 심각한 장애/오류 내용에 장난스러운 이모지를 쓰지는 마라. "
     "강조는 **굵게**, 코드나 화면번호 같은 식별자는 `백틱`을 사용해라."
 )
+
+
+def sanitize_customer_notice_answer(question: str, content: str) -> str:
+    """고객 전달용 문안에서 내부 Mantis 식별자를 제거한다."""
+    normalized = normalize_for_match(question)
+    if not (
+        "내부식별자" in normalized
+        and any(marker in normalized for marker in ("고객안내", "메신저답변", "점검공지", "회의공유문"))
+    ):
+        return content
+
+    issue_ids = set(extract_issue_ids(question))
+
+    def remove_issue_identifier(match: re.Match[str]) -> str:
+        # 화면 #9580처럼 다른 업무 식별자가 명시된 경우는 보존한다.
+        if re.search(
+            r"(?:화면|주문|버전)\s*(?:번호\s*)?$", content[:match.start()],
+        ):
+            return match.group()
+        if match.group().lower().startswith("id"):
+            number = re.search(r"\d+", match.group())
+            if not number or int(number.group()) not in issue_ids:
+                return match.group()
+        return ""
+
+    sanitized = re.sub(
+        r"(?<![\w])(?:이슈|Mantis|멘티스)\s*(?:ID|번호)?\s*[:#]?\s*\d+(?!\d)"
+        r"|(?<![\w])(?:#|ID\s*[:#]?)\s*\d+(?!\d)",
+        remove_issue_identifier,
+        str(content or ""),
+        flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(r"\(\s*\)", "", sanitized)
+    sanitized = re.sub(r"[ \t]+\n", "\n", sanitized)
+    return sanitized.strip()
 
 
 KOREAN_WEEKDAY_NAMES = ("월", "화", "수", "목", "금", "토", "일")
@@ -160,10 +197,16 @@ def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any
     if not has_constraint(constraints) and not group_by:
         return False
     normalized_text = normalize_for_match(text)
+    # 그룹별 요약은 전체 후보의 건수를 기준으로 계산해야 한다. 모델에 상위 몇 건만
+    # 넘기면 고객사별 건수가 틀릴 수 있으므로 결정형 포맷을 우선한다.
     if any(
         normalize_for_match(keyword) in normalized_text
-        for keyword in ISSUE_ANALYSIS_INTENT_KEYWORDS
+        for keyword in ISSUE_ANALYSIS_INTENT_KEYWORDS - {"정리해줘", "요약해줘"}
     ):
+        return False
+    if group_by and any(marker in normalized_text for marker in ("요약", "정리")):
+        return True
+    if any(marker in normalized_text for marker in ("요약해줘", "정리해줘")):
         return False
     return any(
         normalize_for_match(keyword) in normalized_text
@@ -461,10 +504,17 @@ def format_deterministic_issue_answer(
         or extract_group_by(query_text)
         or ""
     )
-    issues = select_grouped_issue_rows(
-        collect_retrieved_issues(retrieval_result, limit),
-        group_by,
-    )
+    all_issues = collect_retrieved_issues(retrieval_result, None if group_by else limit)
+    issues = select_grouped_issue_rows(all_issues, group_by)[:limit]
+    found_count = count_retrieved_issues(retrieval_result)
+    customer_group_counts: Dict[str, int] = {}
+    if group_by == "customer":
+        labels = {_customer_group_key(issue): _issue_group_value(issue, group_by) for issue in issues}
+        for project in collect_retrieved_customer_groups(retrieval_result).values():
+            key = _customer_group_key({"project": project})
+            label = labels.setdefault(key, _issue_group_value({"project": project}, group_by))
+            customer_group_counts[label] = customer_group_counts.get(label, 0) + 1
+    customer_counts_complete = sum(customer_group_counts.values()) == found_count
     display_constraints = constraints
     similar_base_issue_ids = similar_base_issue_ids_from_retrieval(retrieval_result)
     if similar_base_issue_ids:
@@ -482,7 +532,7 @@ def format_deterministic_issue_answer(
     unapplied_note = build_unapplied_filters_note(retrieval_result)
     unverified_person_note = build_unverified_person_note(display_constraints, len(issues))
     snapshot_note = build_snapshot_note(retrieval_result)
-    if not issues:
+    if not issues and not customer_group_counts:
         intro = build_issue_intro_line(display_constraints, issues, 0)
         sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
@@ -497,7 +547,12 @@ def format_deterministic_issue_answer(
         return "\n".join(parts)
 
     if group_by == "customer":
-        intro = f"🔍 고객사 {len(issues)}곳의 최신 이슈를 하나씩 정리했어요."
+        intro = (
+            f"🔍 조회된 총 {found_count}건에서 고객사 {len(issues)}곳의 최신 이슈를 "
+            "하나씩 정리했어요."
+        )
+        if not customer_counts_complete:
+            intro = f"🔍 조회된 총 {found_count}건 중 고객사를 확인한 범위의 요약입니다."
     elif group_by == "platform":
         platform_count = len({_issue_group_value(issue, group_by) for issue in issues})
         intro = f"🔍 조건에 맞는 이슈 {len(issues)}건을 매체 {platform_count}개로 나눠 정리했어요."
@@ -540,6 +595,12 @@ def format_deterministic_issue_answer(
         f"검색 기준: {criteria}, 정렬: {'의미 유사도 기준' if similar_base_issue_ids else '최신 이슈 ID 기준'}",
         "",
     ]
+    if group_by == "customer":
+        lines.extend(["고객사별 건수" if customer_counts_complete else "고객사를 확인한 항목의 건수", "",
+                      "| 고객사 | 이슈 수 |", "|---|---:|"])
+        for label, count in sorted(customer_group_counts.items(), key=lambda item: (-item[1], item[0])):
+            lines.append(f"| {label.replace('|', r'\|')} | {count}건 |")
+        lines.extend(["", "고객사별 대표 이슈", ""])
     if wants_table_output(query_text):
         # 표를 요청했는데 결정형 답변이 늘 목록만 내보내던 문제. 모델을 거치지
         # 않는 경로라 여기서 직접 표로 조립한다.
@@ -558,17 +619,21 @@ def format_deterministic_issue_answer(
             )
     else:
         group_counts: Dict[str, int] = {}
-        if group_by == "platform":
+        if group_by in {"customer", "platform"}:
             for issue in issues:
                 label = _issue_group_value(issue, group_by)
-                group_counts[label] = group_counts.get(label, 0) + 1
+                group_counts[label] = (
+                    customer_group_counts.get(label, 0)
+                    if group_by == "customer"
+                    else group_counts.get(label, 0) + 1
+                )
         current_group = ""
         for index, issue in enumerate(issues, start=1):
-            if group_by == "platform":
+            if group_by in {"customer", "platform"}:
                 label = _issue_group_value(issue, group_by)
                 if label != current_group:
                     current_group = label
-                    lines.extend([f"**{label} · {group_counts[label]}건**", ""])
+                    lines.extend(["", f"**{label} · {group_counts[label]}건**", ""])
             lines.append(
                 f"{index}. **ID**: {issue['id']} | "
                 f"**프로젝트**: {issue['project']} | "
@@ -582,10 +647,16 @@ def format_deterministic_issue_answer(
                 if preview:
                     lines.append(f"   - 요약: {preview}")
 
-    found_count = count_retrieved_issues(retrieval_result)
     requested_limit = extract_requested_limit(query_text)
     if group_by == "customer":
-        lines.extend(["", f"총 {len(issues)}개 고객사의 최신 이슈를 확인했습니다."])
+        lines.extend([
+            "",
+            (f"총 {found_count}건을 {len(customer_group_counts)}개 고객사로 나눠 확인했습니다."
+             if customer_counts_complete else
+             f"조회된 총 {found_count}건 중 {sum(customer_group_counts.values())}건의 고객사별 건수를 확인했습니다."),
+        ])
+        if len(customer_group_counts) > len(issues):
+            lines.append(f"대표 이슈는 {len(issues)}개 고객사까지 표시했습니다.")
     elif group_by == "platform":
         lines.extend(["", f"매체별 이슈를 합해 총 {len(issues)}건을 확인했습니다."])
     elif found_count and found_count > len(issues):
@@ -620,12 +691,7 @@ def select_grouped_issue_rows(
     selected: List[Dict[str, Any]] = []
     seen_projects = set()
     for issue in sorted(issues, key=lambda item: int(item.get("id") or 0), reverse=True):
-        project_key = re.sub(
-            r"_project$",
-            "",
-            normalize_for_match(str(issue.get("project") or "")),
-            flags=re.IGNORECASE,
-        )
+        project_key = _customer_group_key(issue)
         if not project_key or project_key in seen_projects:
             continue
         seen_projects.add(project_key)
@@ -633,7 +699,18 @@ def select_grouped_issue_rows(
     return selected
 
 
+def _customer_group_key(issue: Dict[str, Any]) -> str:
+    return re.sub(
+        r"_project$",
+        "",
+        normalize_for_match(str(issue.get("project") or "")),
+        flags=re.IGNORECASE,
+    )
+
+
 def _issue_group_value(issue: Dict[str, Any], group_by: str) -> str:
+    if group_by == "customer":
+        return str(issue.get("project") or "고객사 미상").strip() or "고객사 미상"
     if group_by == "platform":
         detail = issue.get("detail") or {}
         return str(issue.get("media_type") or detail.get("media_type") or "기타/미상").strip() or "기타/미상"

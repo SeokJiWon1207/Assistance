@@ -15,7 +15,7 @@ COMMON_KOREAN_SURNAMES = frozenset(
 )
 ROLE_FOLLOWING_NOUNS = frozenset({
     "업무", "이슈", "현황", "부서", "목록", "명단", "정보", "내역", "건수",
-    "인수인계", "교육", "문서", "자료", "가이드", "규정", "지침",
+    "인수인계", "교육", "문서", "자료", "가이드", "규정", "지침", "전달",
 })
 _ORIGIN_PRIORITY = {
     "inferred": 0,

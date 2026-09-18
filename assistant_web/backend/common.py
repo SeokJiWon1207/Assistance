@@ -90,6 +90,9 @@ def normalize_for_match(value: str) -> str:
 
 def normalize_search_token(token: str) -> str:
     normalized = token.strip()
+    # 아래 글자가 조사처럼 보여도 단어 자체의 일부인 업무 용어다.
+    if normalize_for_match(normalized) in {"로그인", "디자인", "온라인", "승인", "원인"}:
+        return normalized
     for suffix in (
         "으로부터",
         "로부터",

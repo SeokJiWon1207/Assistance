@@ -3,7 +3,8 @@
 import re
 from typing import Any, Dict, List, Optional
 
-from backend.common import LOOKUP_REQUEST_PATTERN, is_control_search_term, normalize_for_match, normalize_search_token
+from backend.common import LOOKUP_REQUEST_PATTERN, extract_quoted_value, is_control_search_term, normalize_for_match, normalize_search_token
+from backend.intent.constants import TRIAGE_REQUEST_PATTERN
 from backend.config import (
     KOREAN_COUNT_WORDS,
     STATUS_ALIASES,
@@ -46,7 +47,12 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
             else ()
         ),
         *(
-            ("올해", "금년", "작년", "전년", "지난해", "지난년도", "이번해", "이번년도")
+            (
+                "오늘", "금일", "어제", "전일", "그제", "그저께", "엊그제",
+                "이번주", "금주", "지난주", "저번주", "전주",
+                "이번달", "이달", "금월", "당월", "지난달", "저번달", "전달", "전월",
+                "올해", "금년", "작년", "전년", "지난해", "지난년도", "이번해", "이번년도",
+            )
             if constraints.get("created_at")
             else ()
         ),
@@ -62,6 +68,9 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    if TRIAGE_REQUEST_PATTERN.search(text) and (symptom := extract_quoted_value(text)):
+        text = symptom
+    text = re.sub(r"(?<![가-힣])(?:표|목록|리스트|요약)(?:로|으로)\s*(?=보여|정리|만들|작성|알려)", " ", text)
     text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
     personal_scope_text = bool(
@@ -85,6 +94,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "고객사는", "프로젝트는", "플랫폼은", "매체는", "상태만", "담당자만",
         "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
         "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
+        "요약해줘", "요약해주세요", "정리해줘", "정리해주세요", "비교해줘", "비교해주세요",
         "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
         "내", "나", "저", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
         "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",

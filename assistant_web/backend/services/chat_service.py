@@ -20,6 +20,7 @@ from backend.answers import (
     format_deterministic_combined_answer,
     format_deterministic_issue_answer,
     format_model_timeout_fallback,
+    sanitize_customer_notice_answer,
     select_grouped_issue_rows,
     should_return_deterministic_issue_list,
 )
@@ -54,6 +55,7 @@ from backend.reports.effort_trend import (
 )
 from backend.reports.evaluation import finalize_chat_response as persist_chat_response
 from backend.reports.customer import build_customer_profile_report
+from backend.reports.incident_triage import build_incident_triage_report
 from backend.reports.monthly_customer import build_monthly_customer_report
 from backend.reports.similar import build_similar_resolution_report
 from backend.reports.sla import build_sla_report
@@ -186,7 +188,9 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
         marker in normalized
         for marker in ("업무보고서", "주간보고서", "주간업무보고", "주간업무")
     ):
-        return True
+        # 고객사를 명시한 주간 보고서는 그 고객사 전체 현황이다. 로그인 사용자의
+        # 담당 이슈로 다시 좁히면 팀 템플릿의 집계값이 사람마다 달라진다.
+        return not bool(constraints.get("customer_key") or constraints.get("customer_exact"))
     return has_personal_mantis_scope_phrase(text)
 
 
@@ -254,6 +258,12 @@ def _build_deterministic_report(
             report_builders.append(
                 ("similar_resolution", lambda: build_similar_resolution_report(retrieval_text or latest_user_text))
             )
+        report_builders.append((
+            "incident_triage",
+            lambda: build_incident_triage_report(
+                retrieval_text or latest_user_text, search_similar=bool(enabled_tools.get("vectorDb")),
+            ),
+        ))
         report_builders.extend(
             [
                 ("monthly_customer", lambda: build_monthly_customer_report(retrieval_text or latest_user_text)),
@@ -452,7 +462,10 @@ def generate_model_response(
         data = response.json()
 
     final_sources = build_sources(retrieval_result, max_sources=active_limit)
-    content = extract_model_content(data)
+    content = sanitize_customer_notice_answer(
+        messages[-1].get("content", "") if messages else "",
+        extract_model_content(data),
+    )
     return {
         "modelId": final_model["id"],
         "content": content or "응답 본문을 찾지 못했습니다.",
@@ -722,9 +735,9 @@ def deterministic_retrieval_response(
         context.query_constraints,
     ):
         deterministic_issues = select_grouped_issue_rows(
-            collect_retrieved_issues(retrieval_result, limit),
+            collect_retrieved_issues(retrieval_result, None if group_by else limit),
             group_by,
-        )
+        )[:limit]
         issue_sources = build_sources_from_issue_rows(deterministic_issues)
         return {
             "modelId": request.modelId,

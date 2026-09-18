@@ -36,6 +36,9 @@ RESOLUTION_MARKERS = (
 
 SIMILAR_TOP_N = 3            # 조치까지 정리해 보여줄 유사 사례 수
 NOTE_SNIPPET_CHARS = 220     # 사례별 조치 요약 길이
+_GENERIC_SIMILAR_FOCUS_TERMS = frozenset({
+    "찾아", "찾아서", "원인", "해결", "내용", "비교", "비교해줘", "과거", "사례",
+})
 
 
 def _wants_resolution(text: str) -> bool:
@@ -142,12 +145,21 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
 
     base_issue = normalize_issue(raw_base)
     similar_query = build_similar_issue_search_text(base_issue) or text
+    focus_terms = [
+        term
+        for term in build_keyword_terms(text, constraints)
+        if normalize_for_match(term) not in {
+            normalize_for_match(value) for value in _GENERIC_SIMILAR_FOCUS_TERMS
+        }
+    ]
     similar_constraints = {
         **constraints,
         "issue_ids": [],
         "exclude_issue_ids": base_ids,
         "max_issue_id_exclusive": base_id,
-        "semantic_focus_terms": build_keyword_terms(text, constraints),
+        # "원인과 해결 내용을 비교"의 원인·해결은 출력 형식이지 유사도 주제가
+        # 아니다. 이런 제어어로 후보를 거르면 오래되고 무관한 이슈만 남는다.
+        "semantic_focus_terms": focus_terms,
         "filter_clauses": [
             clause
             for clause in constraints.get("filter_clauses", [])

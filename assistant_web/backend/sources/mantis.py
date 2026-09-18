@@ -699,6 +699,7 @@ def execute_mantis_snapshot_search(
         lambda content: chroma_text_matches_constraints(content, constraints),
         normalize_chroma_issue_document,
         example_limit=limit,
+        group_key=lambda issue: str(issue.get("project") or "미상"),
         constraints=constraints,
     )
     if not snapshot["available"]:
@@ -718,6 +719,7 @@ def execute_mantis_snapshot_search(
             "found_count": snapshot["matched_count"],
             "displayed_count": len(snapshot["issues"]),
             "matched_issue_ids": sorted(snapshot["matched_ids"]),
+            "matched_customer_groups": snapshot.get("matched_groups") or {},
             "applied_filters": constraints,
             "tool": "mantis_chroma_snapshot",
             "snapshot_as_of": get_mantis_snapshot_freshness(),
@@ -842,6 +844,14 @@ def revalidate_mantis_snapshot_stage(
         "meta": {
             **(stage.get("meta") or {}),
             "found_count": len(matched_issue_ids),
+            "matched_customer_groups": {
+                **{
+                    int(issue_id): project
+                    for issue_id, project in (stage.get("meta", {}).get("matched_customer_groups") or {}).items()
+                    if int(issue_id) in matched_issue_ids
+                },
+                **{issue["id"]: issue.get("project") or "미상" for issue in refreshed},
+            },
             "displayed_count": len(refreshed),
             "matched_issue_ids": sorted(matched_issue_ids),
             "live_revalidated_count": revalidated_count,
@@ -946,6 +956,10 @@ def execute_mantis_page_scan(
         "meta": {
             "search_keyword": search_keyword,
             "found_count": len(filtered_issues),
+            "matched_customer_groups": {
+                issue["id"]: (issue.get("project") or {}).get("name") or "미상"
+                for issue in filtered_issues if issue.get("id")
+            },
             "displayed_count": len(target_batch),
             "matched_issue_ids": sorted(
                 int(issue.get("id") or 0)

@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 from backend.notion.search import build_notion_terms, extract_notion_constraints
 from backend.notion.formatting import has_deterministic_notion_list_intent
+from backend.answers import should_return_deterministic_issue_list
 
 from backend.understanding import (
     extract_query_constraints,
+    build_keyword_terms,
     rule_based_search_intent,
     has_notion_retrieval_signal,
     should_run_notion_search,
@@ -94,6 +96,12 @@ class RoutingFixtureTest(unittest.TestCase):
                         self.assertEqual(has_deterministic_notion_list_intent(case["q"]), case["notion_deterministic"])
                     if "statuses" in case:
                         self.assertEqual(constraints["statuses"], case["statuses"])
+                    if "mantis_terms" in case:
+                        self.assertEqual(build_keyword_terms(case["q"], constraints), case["mantis_terms"])
+                    if "mantis_deterministic" in case:
+                        self.assertEqual(should_return_deterministic_issue_list(case["q"], constraints), case["mantis_deterministic"])
+                    if "created_at" in case:
+                        self.assertEqual(constraints["created_at"], case["created_at"])
                     if "customer_key" in case:
                         self.assertEqual(constraints["customer_key"], case["customer_key"])
                     if "customer_exact" in case:

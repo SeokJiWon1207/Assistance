@@ -58,6 +58,20 @@ class AuthenticatedIdentityTests(unittest.TestCase):
             },
         )
 
+    def test_customer_weekly_report_is_not_scoped_to_logged_in_owner(self):
+        question = (
+            "지난주 미래에셋증권 신규 이슈, 미종료 이슈, 장기 적체, "
+            "공수와 처리시간을 주간 보고서 형식으로 작성해줘"
+        )
+        self.assertFalse(chat_service_module.should_scope_to_authenticated_mantis_user(question))
+        self.assertEqual(
+            chat_service_module.apply_authenticated_mantis_scope(
+                question,
+                {"mantisUsername": "정희진"},
+            ),
+            question,
+        )
+
     def test_personal_issue_variants_are_scoped_to_authenticated_user(self):
         questions = (
             "내 최근 이슈 보여줘",

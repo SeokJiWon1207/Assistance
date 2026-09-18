@@ -7,6 +7,7 @@
 """
 
 import re
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -394,17 +395,20 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
     notion_limit = max(5, min(limit, 10))
     issues = collect_retrieved_issues(retrieval_result, issue_limit)
     notion_pages = collect_retrieved_notion_pages(retrieval_result, notion_limit)
+    customer_groups = collect_retrieved_customer_groups(retrieval_result)
 
     return {
         "query": retrieval_result.get("query", ""),
         "keyword": retrieval_result.get("keyword", ""),
         "constraints": retrieval_result.get("constraints", {}),
         "limit": limit,
+        "customer_counts": dict(Counter(customer_groups.values())),
+        "customer_counts_complete": len(customer_groups) == count_retrieved_issues(retrieval_result),
         "stages": [
             {
                 "source": stage.get("source"),
                 "status": stage.get("status"),
-                "meta": stage.get("meta", {}),
+                "meta": {key: value for key, value in stage.get("meta", {}).items() if key != "matched_customer_groups"},
                 "reason": stage.get("reason", ""),
             }
             for stage in retrieval_result.get("stages", [])
@@ -550,7 +554,7 @@ def build_sources(retrieval_result: Optional[Dict[str, Any]], max_sources: int =
     return sources[:max_sources]
 
 
-def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> List[Dict[str, Any]]:
+def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[int]) -> List[Dict[str, Any]]:
     rows: Dict[int, Dict[str, Any]] = {}
     similarity_search = any(
         stage.get("source") == "chroma_similar" for stage in retrieval_result.get("stages", [])
@@ -623,6 +627,26 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: int) -> Li
             key=lambda issue: (issue.get("_retrieval_rank", 10**9), -int(issue["id"])),
         )[:limit]
     return sorted(rows.values(), key=lambda issue: issue["id"], reverse=True)[:limit]
+
+
+def collect_retrieved_customer_groups(retrieval_result: Dict[str, Any]) -> Dict[int, str]:
+    """표시 개수와 관계없이 집계하고 라이브 재조회 결과로 중복·상태 변경을 보정한다."""
+    groups: Dict[int, str] = {}
+    for stage in retrieval_result.get("stages", []):
+        meta = stage.get("meta") or {}
+        if stage.get("status") != "ok" or meta.get("reference_only"):
+            continue
+        for issue_id in meta.get("scanned_issue_ids", []):
+            groups.pop(int(issue_id), None)
+        stage_groups = {
+            int(issue_id): str(project)
+            for issue_id, project in (meta.get("matched_customer_groups") or {}).items()
+        }
+        for issue in stage.get("issues_list", []):
+            if issue.get("id"):
+                stage_groups[int(issue["id"])] = str(issue.get("project") or "미상")
+        groups.update(stage_groups)
+    return groups
 
 
 def count_retrieved_issues(retrieval_result: Dict[str, Any]) -> int:

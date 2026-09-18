@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -59,24 +60,49 @@ class SlaReportTest(unittest.TestCase):
             {"id": 201, "summary": "묵은건", "status": "assigned", "project": "유진증권",
              "created_at": "2026-01-01", "updated_at": "2026-01-02"},
             {"id": 202, "summary": "최근건", "status": "assigned", "project": "KB증권",
-             "created_at": "2026-07-20", "updated_at": "2026-07-21"},
+             "created_at": (date.today() - timedelta(days=10)).isoformat(),
+             "updated_at": date.today().isoformat()},
             {"id": 203, "summary": "종료건", "status": "closed", "project": "KB증권",
              "created_at": "2026-01-01", "updated_at": "2026-01-05"},   # 종료 제외
         ])
         content = sla.build_sla_report("가장 오래 방치된 이슈 알려줘")["content"]
         self.assertIn("미종료 이슈 2건", content)
-        # 가장 오래된(2026-01-01) 건이 먼저 나온다.
-        self.assertLess(content.index("#201"), content.index("#202"))
+        self.assertIn("#201", content)
+        # 기준 미만의 최근 이슈는 전체 미종료 통계에는 포함되지만 상세 목록에서는 빠진다.
+        self.assertNotIn("#202", content)
+
+    def test_aging_uses_requested_threshold_without_false_scope_note(self):
+        recent = (date.today().replace(day=1)).isoformat()
+        old = date(date.today().year - 1, 1, 1).isoformat()
+        self._set_issues([
+            {"id": 211, "summary": "오래된 건", "status": "assigned", "project": "A",
+             "created_at": old, "updated_at": old},
+            {"id": 212, "summary": "최근 건", "status": "assigned", "project": "A",
+             "created_at": recent, "updated_at": recent},
+        ])
+        content = sla.build_sla_report("90일 넘게 미종료된 이슈 보여줘")["content"]
+        self.assertIn("90일 이상 경과", content)
+        self.assertIn("#211", content)
+        self.assertNotIn("#212", content)
+        self.assertNotIn("적체 분석에 적용하지 않았습니다", content)
+
+    def test_duration_with_effort_returns_combined_customer_table(self):
+        self._set_issues([
+            {"id": 221, "summary": "A", "status": "closed", "project": "고객A",
+             "created_at": "2026-08-01", "updated_at": "2026-08-05",
+             "effort_fields": {"3PC공수": "김담당(2.5)"}},
+            {"id": 222, "summary": "B", "status": "assigned", "project": "고객A",
+             "created_at": "2026-08-02", "updated_at": "2026-08-03",
+             "effort_fields": {"1문의공수": "김담당(1.0)"}},
+        ])
+        content = sla.build_sla_report("지난달 고객사별 공수와 평균 처리시간을 표로 보여줘")["content"]
+        self.assertIn("고객사별 공수·평균 처리시간", content)
+        self.assertIn("| 고객A | 3.50 | 4.0일 | 1건 |", content)
 
     def test_returns_none_for_non_sla_questions(self):
         self.assertIsNone(sla.build_sla_report("KB증권 HTS 이슈 5개"))
 
-    def test_aging_drops_created_at_constraint(self):
-        """'이번 주 ... 장기 적체'처럼 등록일 범위가 붙어도 적체 대상이 살아 있어야 한다.
-
-        적체 임계값(30일)과 최근 등록 구간은 정의상 겹칠 수 없어, 등록일 조건을 그대로
-        적용하면 데이터와 무관하게 항상 0건이 된다.
-        """
+    def test_aging_keeps_explicit_registration_scope_even_when_empty(self):
         constraints = {
             "customer_aliases": ["159eBest"],
             "created_at": {"from": "2026-08-03", "to": "2026-08-09"},
@@ -86,24 +112,15 @@ class SlaReportTest(unittest.TestCase):
             ],
         }
         sla.extract_query_constraints = lambda text: constraints
-        # 등록일 조건이 살아 있으면 아무것도 통과하지 못하도록 실제 매칭기를 흉내 낸다.
         sla.issue_matches_constraints = lambda issue, cc: "created_at" not in cc
         self._set_issues([
-            {"id": 301, "summary": "묵은건", "status": "assigned", "project": "eBest",
+            {"id": 301, "summary": "범위 밖", "status": "assigned", "project": "eBest",
              "created_at": "2026-01-01", "updated_at": "2026-01-02"},
         ])
-
         report = sla.build_sla_report("이번 주 ebest 장기 적체 알려줘")
-        content = report["content"]
-        self.assertIn("#301", content)
-        self.assertIn("적체 분석에 적용하지 않았습니다", content)
-        # 실제로 적용한 조건만 칩·검증 패널에 남아야 한다.
-        applied = report["retrieval"]["constraints"]
-        self.assertNotIn("created_at", applied)
-        self.assertEqual(
-            [clause["field"] for clause in applied["filter_clauses"]],
-            ["customer"],
-        )
+        self.assertNotIn("#301", report["content"])
+        self.assertIn("조건에 맞는 이슈가 없습니다", report["content"])
+        self.assertEqual(report["retrieval"]["constraints"], constraints)
 
     def test_duration_keeps_created_at_constraint(self):
         sla.extract_query_constraints = lambda text: {"created_at": {"from": "2026-08-03"}}
@@ -228,6 +245,20 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertEqual(candidate["sourceIssueIds"], [12345, 9001])
         self.assertEqual(captured["constraints"]["issue_ids"], [])
         self.assertEqual(captured["constraints"]["filter_clauses"], [])
+
+    def test_generic_resolution_words_do_not_filter_similarity_candidates(self):
+        captured = {}
+        similar.build_keyword_terms = lambda text, constraints: ["찾아서", "원인"]
+
+        def search(q, limit, cons, semantic=False):
+            captured["constraints"] = cons
+            return {"status": "ok", "documents": []}
+
+        similar.execute_chroma_search = search
+        similar.build_similar_resolution_report(
+            "#12345와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘"
+        )
+        self.assertEqual(captured["constraints"]["semantic_focus_terms"], [])
 
     def test_returns_none_without_resolution_intent(self):
         self.assertIsNone(similar.build_similar_resolution_report("#12345 비슷한 이슈 목록"))

@@ -10,7 +10,7 @@ from backend.notion.formatting import format_deterministic_notion_answer
 from backend.query_filters import matches_source_filters
 from backend.intent.constraints import extract_query_constraints, merge_query_plan_constraints
 from backend.intent.context import build_contextual_retrieval_text, resolve_reference_from_context
-from backend.intent.search_terms import extract_requested_limit
+from backend.intent.search_terms import build_keyword_terms, extract_requested_limit
 from backend.retrieval import grounded_mantis_terms
 from backend.services.chat_service import deterministic_retrieval_response
 from backend.notion.mapping import notion_status
@@ -201,6 +201,48 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
             self.assertEqual(constraints["statuses"], [])
             self.assertEqual(constraints["screen_numbers"], ["99999"])
         self.assertEqual(extract_query_constraints("확인된 이슈가 있는지 확인해줘")["statuses"], ["confirmed"])
+
+    def test_template_instruction_words_are_not_search_constraints(self):
+        questions = (
+            "#31411 이슈의 현재 상태, 확인한 내용과 다음 행동을 정리해줘",
+            "#31411 이슈의 현재 확인된 사실을 고객 안내 메일로 작성해줘",
+            "#31411와 비슷한 과거 이슈의 원인과 해결 내용을 비교해줘",
+        )
+        for question in questions:
+            with self.subTest(question=question):
+                constraints = extract_query_constraints(question)
+                self.assertEqual(constraints["statuses"], [])
+        self.assertEqual(extract_query_constraints("확인된거 보여줘")["statuses"], ["confirmed"])
+        self.assertEqual(extract_query_constraints("해결된 건 보여줘")["statuses"], ["resolved"])
+        triage = extract_query_constraints(
+            "미래에셋증권 MTS 장애의 초동 확인 순서와 담당자 전달 내용을 정리해줘"
+        )
+        self.assertEqual(triage["customer_key"], "미래에셋증권")
+        self.assertEqual(triage["people"]["names"], [])
+        self.assertIsNone(triage["created_at"])
+        triage_terms = build_keyword_terms(
+            "긴급 우선순위로 미래에셋증권 MTS에서 발생한 "
+            "'로그인 후 주문 화면이 열리지 않음' 이슈의 영향 범위와 초동 확인 순서를 정리해줘",
+            triage,
+        )
+        self.assertIn("로그인", triage_terms)
+        self.assertIn("주문", triage_terms)
+        self.assertNotIn("긴급", triage_terms)
+        self.assertNotIn("우선순위", triage_terms)
+
+    def test_relative_date_term_is_removed_after_structured_parsing(self):
+        question = "오늘 등록된 미종료 이슈를 고객사별로 요약해줘"
+        constraints = extract_query_constraints(question)
+        self.assertEqual(build_keyword_terms(question, constraints), [])
+
+    def test_document_template_list_alias_targets_form_database(self):
+        self.assertEqual(search.extract_notion_database_label_from_text("템플릿 목록 보여줘"), "문서양식")
+        self.assertEqual(search.extract_notion_database_label_from_text("양식 리스트 알려줘"), "문서양식")
+        self.assertIsNone(search.extract_notion_database_label_from_text("서버 재부팅 템플릿 내용 알려줘"))
+        self.assertEqual(
+            search.remove_notion_database_label_terms(["템플릿"], "문서양식"),
+            [],
+        )
 
     def test_lookup_titles_and_filter_corrections_do_not_request_document_writes(self):
         for question in (

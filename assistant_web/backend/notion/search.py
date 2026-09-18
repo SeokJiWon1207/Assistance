@@ -303,6 +303,13 @@ def extract_notion_database_label_from_text(text: str) -> Optional[str]:
     # 검색어 목록에서 빠지고 DB 범위도 좁혀진다. ('조직도' → 'DB00_조직')
     if "조직도" in normalized_text:
         return "조직"
+    # UI와 대화에서는 DB14_문서양식을 보통 "템플릿" 또는 "양식"이라고 부른다.
+    # 목록 탐색일 때만 DB 별칭으로 취급해 구체적인 문서 키워드 검색은 넓게 유지한다.
+    if (
+        any(alias in normalized_text for alias in ("템플릿", "양식"))
+        and any(marker in normalized_text for marker in ("목록", "리스트", "전체", "보여", "어떤"))
+    ):
+        return "문서양식"
     # 질문에 쓰는 표현이 DB 제목의 일부이면 그대로 라벨로 쓴다.
     for label in (
         "DB02_통합_프로젝트", "DB03_작업", "버전관리", "기술공유",
@@ -312,6 +319,21 @@ def extract_notion_database_label_from_text(text: str) -> Optional[str]:
         if normalize_for_match(label) in normalized_text:
             return label
     return None
+
+
+def remove_notion_database_label_terms(terms: List[str], database_label: str) -> List[str]:
+    """DB를 선택하는 표현을 본문 AND 검색어에서 제거한다."""
+    database_target = normalize_for_match(database_label)
+    if not database_target:
+        return terms
+    aliases = {database_target}
+    if database_target == normalize_for_match("문서양식"):
+        aliases.update({normalize_for_match("템플릿"), normalize_for_match("양식")})
+    return [
+        term
+        for term in terms
+        if not any(alias in normalize_for_match(term) for alias in aliases)
+    ]
 
 
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
@@ -950,7 +972,10 @@ def execute_notion_search(
         terms = remove_structured_date_terms(terms, notion_constraints)
     database_target = normalize_for_match(notion_constraints.get("database_label", ""))
     if database_target and not exact_title:
-        terms = [term for term in terms if database_target not in normalize_for_match(term)]
+        terms = remove_notion_database_label_terms(
+            terms,
+            str(notion_constraints.get("database_label") or ""),
+        )
     if notion_constraints.get("owner"):
         terms = [term for term in terms if normalize_for_match(term) not in {"기여자", "공헌자", "contributors", "contributor", "공동", "작업자"}]
         # 담당 조건으로 소비한 '김지은이 맡은'의 서술어가 본문 검색어로

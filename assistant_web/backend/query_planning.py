@@ -343,7 +343,7 @@ def extract_relative_created_at_range(question: str, today: Optional[date] = Non
             "precision": "recent_months",
         }
 
-    if re.search(r"지난\s*달|저번\s*달|전\s*달(?!력)|전월", question):
+    if re.search(r"지난\s*달|저번\s*달|전\s+달|전월", question):
         last_month_end = base.replace(day=1) - timedelta(days=1)
         return {
             "from": last_month_end.replace(day=1).isoformat(),
@@ -396,7 +396,7 @@ _TEMPORAL_EXPRESSION_PATTERN = re.compile(
     r"|\d{1,2}\s*월"
     r"|오늘|금일|어제|전일|그제|그저께|엊그제"
     r"|이번\s*주|금주|지난\s*주|저번\s*주"
-    r"|이번\s*달|이달|금월|당월|지난\s*달|저번\s*달|전\s*달|전월"
+    r"|이번\s*달|이달|금월|당월|지난\s*달|저번\s*달|전\s+달|전월"
     r"|최근\s*\d{1,3}\s*(?:일|개월|달|주)"
     r"|올해|금년|작년|전년|지난\s*해|이번\s*해|이번\s*년도|지난\s*년도"
 )

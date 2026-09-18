@@ -226,6 +226,8 @@ NOTION_TARGET_OBJECT_MARKERS = (
 
 MANTIS_TARGET_OBJECT_MARKERS = (
     "공수",
+    "고객사 프로필",
+    "월간 고객사 리포트",
     "개발완료",
     "개발 완료",
     "qc완료",
@@ -244,6 +246,8 @@ SHARED_TOPIC_MARKERS = (
     "버그",
     "이슈",
 )
+
+TRIAGE_REQUEST_PATTERN = re.compile(r"초동\s*확인.*(?:영향\s*범위|담당자\s*전달)|영향\s*범위.*초동\s*확인")
 
 ISSUE_LIST_INTENT_KEYWORDS = {
     "최근",

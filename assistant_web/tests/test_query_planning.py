@@ -8,6 +8,7 @@ from backend.answers import (
     display_constraints,
     format_deterministic_issue_answer,
     generate_follow_up_questions,
+    sanitize_customer_notice_answer,
     select_grouped_issue_rows,
     should_return_deterministic_issue_list,
 )
@@ -141,6 +142,24 @@ class QueryPlanningTests(unittest.TestCase):
         grouped = select_grouped_issue_rows(issues, "customer")
 
         self.assertEqual([issue["id"] for issue in grouped], [300, 250, 150])
+
+    def test_customer_grouped_summary_uses_deterministic_answer(self):
+        question = "오늘 등록된 미종료 이슈를 고객사별로 요약해줘"
+        constraints = extract_query_constraints(question)
+        self.assertTrue(should_return_deterministic_issue_list(question, constraints))
+
+    def test_customer_notice_removes_internal_issue_identifiers_only(self):
+        question = (
+            "#31411 이슈를 바탕으로 내부 식별자를 제외하고 고객 안내 메일을 작성해줘"
+        )
+        content = "오류 건(#31411) 안내입니다. 이슈 ID: 31411, 화면 9580을 확인했습니다."
+        sanitized = sanitize_customer_notice_answer(question, content)
+        self.assertNotIn("31411", sanitized)
+        self.assertIn("9580", sanitized)
+        self.assertEqual(
+            sanitize_customer_notice_answer("#31411 인수인계해줘", content),
+            content,
+        )
 
     def test_follow_up_quantity_hana_inherits_the_previous_customer(self):
         messages = [
@@ -286,6 +305,8 @@ class QueryPlanningTests(unittest.TestCase):
         )
 
         self.assertIn("고객사 2곳의 최신 이슈", answer)
+        self.assertIn("총 3건", answer)
+        self.assertIn("**고객사A · 2건**", answer)
         self.assertIn("고객사별 최신 이슈 1건", answer)
         self.assertIn("**ID**: 300", answer)
         self.assertIn("**ID**: 250", answer)

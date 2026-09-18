@@ -17,6 +17,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.query_planning import extract_group_by
+from backend.reports.effort import parse_effort_field_value
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
@@ -41,11 +42,6 @@ SLA_AGING_MARKERS = (
 SLA_AGING_THRESHOLD_DAYS = 30   # 이 일수를 넘긴 미종료 이슈를 '적체'로 본다
 SLA_TOP_N = 10                  # 랭킹/대표 노출 개수
 SLA_FETCH_LIMIT = 800           # 라이브에서 훑을 최근 이슈 수(공수 체커와 동일 규모)
-
-# 적체는 '등록 후 오래 지났는데 아직 안 닫힌 이슈'를 찾는 분석이다. 질문에 붙은 등록일
-# 범위("이번 주 ... 장기 적체")를 그대로 적용하면 SLA_AGING_THRESHOLD_DAYS와 정면으로
-# 충돌해 데이터와 무관하게 항상 0건이 된다. 적체 모드에서만 등록일 제약을 뺀다.
-AGING_IGNORED_CONSTRAINTS = ("created_at",)
 
 # 0건일 때 "어느 조건이 결과를 비웠는지" 되짚기 위한 목록. 라벨 하나가 실제 매칭 키
 # 여러 개에 대응할 수 있어(고객사 = 별칭 + 정확일치) 키를 묶어서 둔다.
@@ -89,12 +85,22 @@ def _median(values: List[int]) -> float:
 def _sla_mode(text: str) -> Optional[str]:
     normalized = str(text or "")
     has_duration = any(marker in normalized for marker in SLA_DURATION_MARKERS)
-    has_aging = any(marker in normalized for marker in SLA_AGING_MARKERS)
+    has_aging = any(marker in normalized for marker in SLA_AGING_MARKERS) or bool(
+        re.search(r"\d{1,3}\s*일\s*(?:이상|초과|넘)", normalized)
+    )
     if has_aging and not has_duration:
         return "aging"
     if has_duration:
         return "duration"
     return None
+
+
+def _aging_threshold_days(text: str) -> int:
+    """질문에 지정한 적체 기준 일수를 반환한다."""
+    match = re.search(r"(\d{1,3})\s*일\s*(?:이상|초과|넘(?:게|은|은지|었|긴))", str(text or ""))
+    if not match:
+        return SLA_AGING_THRESHOLD_DAYS
+    return max(1, min(int(match.group(1)), 365))
 
 
 def _group_axis(text: str) -> Optional[Tuple[str, Any, str]]:
@@ -129,43 +135,6 @@ def _constraint_is_active(constraints: Dict[str, Any], keys: Tuple[str, ...]) ->
         if value:
             return True
     return False
-
-
-def _constraints_for_mode(constraints: Dict[str, Any], mode: str) -> Dict[str, Any]:
-    """적체 모드에서 분석 정의와 충돌하는 제약을 걷어낸다."""
-    if mode != "aging" or not _constraint_is_active(constraints, AGING_IGNORED_CONSTRAINTS):
-        return constraints
-    adjusted = {
-        key: value
-        for key, value in constraints.items()
-        if key not in AGING_IGNORED_CONSTRAINTS
-    }
-    # 화면 상단 검색 조건 칩과 검증 패널이 '실제로 적용한 조건'만 보여주도록 맞춘다.
-    if "filter_clauses" in constraints:
-        adjusted["filter_clauses"] = [
-            clause
-            for clause in constraints.get("filter_clauses") or []
-            if clause.get("field") not in AGING_IGNORED_CONSTRAINTS
-        ]
-    return adjusted
-
-
-def _aging_scope_notes(
-    original: Dict[str, Any],
-    applied: Dict[str, Any],
-) -> List[str]:
-    """적체 분석에서 등록일 조건을 뺐다면 그 사실을 답변에 밝힌다."""
-    created_at = original.get("created_at")
-    if not created_at or applied.get("created_at"):
-        return []
-    span = "~".join(part for part in (created_at.get("from"), created_at.get("to")) if part)
-    label = f"등록일 {span}" if span else "등록일"
-    return [
-        "",
-        f"※ 질문의 {label} 조건은 적체 분석에 적용하지 않았습니다. 적체는 등록 후 "
-        f"{SLA_AGING_THRESHOLD_DAYS}일 이상 지난 미종료 이슈를 찾는 분석이라, 최근 "
-        "등록 구간으로 좁히면 대상이 남지 않습니다.",
-    ]
 
 
 def _no_match_reason(
@@ -235,7 +204,14 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
         return None
 
     constraints = extract_query_constraints(text)
-    match_constraints = _constraints_for_mode(constraints, mode)
+    if mode == "aging":
+        # 경과일과 별도로 명시한 등록 기간이 있으면 둘을 교집합으로 적용한다.
+        # 상대 날짜 파서가 "30일 넘게"를 먼저 읽어 "이번 달"을 놓치는 경우도 보정한다.
+        period_text = re.sub(r"\d{1,3}\s*일\s*(?:이상|초과|넘(?:게|은|은지|었|긴))", " ", text)
+        period_constraints = extract_query_constraints(period_text)
+        if period_constraints.get("created_at"):
+            constraints = period_constraints
+    match_constraints = constraints
     try:
         raw_issues = fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
     except Exception as exc:  # 네트워크/설정 오류는 조용히 흘리지 않고 사유를 남긴다.
@@ -256,12 +232,13 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
     axis = _group_axis(text)
     if mode == "duration":
         return _build_duration_report(text, match_constraints, issues, axis)
+    threshold_days = _aging_threshold_days(text)
     return _build_aging_report(
         text,
         match_constraints,
         issues,
         axis,
-        _aging_scope_notes(constraints, match_constraints),
+        threshold_days,
     )
 
 
@@ -285,26 +262,22 @@ def _build_duration_report(
         rows.append({**issue, "handling_days": days})
 
     scope = f"최근 라이브 {len(issues)}건 중 종료 이슈 {len(rows)}건"
-    if not rows:
-        lines = [
-            "처리시간(리드타임) 분석 결과",
-            f"기준: {scope}",
-            "",
-            "종료된 이슈가 없어 리드타임을 계산할 수 없습니다.",
-        ]
-        return _finalize(text, constraints, lines, [], "duration")
-
-    all_days = [row["handling_days"] for row in rows]
-    avg = sum(all_days) / len(all_days)
-    med = _median(all_days)
     lines = [
         "처리시간(리드타임) 분석 — 등록일→최종수정일 근사",
         f"기준: {scope}",
         "",
-        f"- 평균 처리기간: **{avg:.1f}일**",
-        f"- 중앙값: **{med:.1f}일**",
-        f"- 최장: {max(all_days)}일 · 최단: {min(all_days)}일",
     ]
+    if rows:
+        all_days = [row["handling_days"] for row in rows]
+        avg = sum(all_days) / len(all_days)
+        med = _median(all_days)
+        lines.extend([
+            f"- 평균 처리기간: **{avg:.1f}일**",
+            f"- 중앙값: **{med:.1f}일**",
+            f"- 최장: {max(all_days)}일 · 최단: {min(all_days)}일",
+        ])
+    else:
+        lines.append("종료된 이슈가 없어 리드타임을 계산할 수 없습니다.")
 
     if axis:
         _axis_field, axis_extract, axis_label = axis
@@ -322,8 +295,51 @@ def _build_duration_report(
                 f"- {name} — 평균 {sum(days_list) / len(days_list):.1f}일 ({len(days_list)}건)"
             )
 
+    if "공수" in str(text or ""):
+        def effort_total(issue: Dict[str, Any]) -> float:
+            return sum(
+                amount
+                for value in (issue.get("effort_fields") or {}).values()
+                for _person, amount in parse_effort_field_value(value)
+            )
+
+        if axis:
+            _axis_field, axis_extract, axis_label = axis
+            grouped_effort: Dict[str, float] = {}
+            grouped_duration: Dict[str, List[int]] = {}
+            for issue in issues:
+                key = str(axis_extract(issue))
+                grouped_effort[key] = grouped_effort.get(key, 0.0) + effort_total(issue)
+            for row in rows:
+                key = str(axis_extract(row))
+                grouped_duration.setdefault(key, []).append(row["handling_days"])
+            group_names = sorted(
+                set(grouped_effort) | set(grouped_duration),
+                key=lambda name: (-grouped_effort.get(name, 0.0), name),
+            )
+            lines.extend([
+                "",
+                f"{axis_label}별 공수·평균 처리시간",
+                f"| {axis_label} | 총 공수 | 평균 처리시간 | 종료 건수 |",
+                "|---|---:|---:|---:|",
+            ])
+            for name in group_names:
+                durations = grouped_duration.get(name, [])
+                average = f"{sum(durations) / len(durations):.1f}일" if durations else "계산 불가"
+                lines.append(
+                    f"| {name} | {grouped_effort.get(name, 0.0):.2f} | {average} | {len(durations)}건 |"
+                )
+        else:
+            total = sum(effort_total(issue) for issue in issues)
+            average = f"{sum(row['handling_days'] for row in rows) / len(rows):.1f}일" if rows else "계산 불가"
+            lines.extend([
+                "", "| 총 공수 | 평균 처리시간 | 종료 건수 |", "|---:|---:|---:|",
+                f"| {total:.2f} | {average} | {len(rows)}건 |",
+            ])
+
     rows.sort(key=lambda row: row["handling_days"], reverse=True)
-    lines.extend(["", "가장 오래 걸린 이슈"])
+    if rows:
+        lines.extend(["", "가장 오래 걸린 이슈"])
     for row in rows[:5]:
         lines.append(
             f"- #{row['id']} {row['summary']} — {row['handling_days']}일 "
@@ -341,7 +357,7 @@ def _build_aging_report(
     constraints: Dict[str, Any],
     issues: List[Dict[str, Any]],
     axis: Optional[Tuple[str, Any, str]],
-    scope_notes: Optional[List[str]] = None,
+    threshold_days: int,
 ) -> Dict[str, Any]:
     today = date.today()
     rows: List[Dict[str, Any]] = []
@@ -356,13 +372,13 @@ def _build_aging_report(
             continue
         rows.append({**issue, "age_days": age})
 
-    over_threshold = [row for row in rows if row["age_days"] >= SLA_AGING_THRESHOLD_DAYS]
+    over_threshold = [row for row in rows if row["age_days"] >= threshold_days]
     scope = f"최근 라이브 {len(issues)}건 중 미종료 이슈 {len(rows)}건"
     lines = [
-        f"장기 미종료(적체) 분석 — {SLA_AGING_THRESHOLD_DAYS}일 이상 경과",
+        f"장기 미종료(적체) 분석 — {threshold_days}일 이상 경과",
         f"기준: {scope} (기준일 {today.isoformat()})",
         "",
-        f"- {SLA_AGING_THRESHOLD_DAYS}일 이상 경과한 미종료 이슈: **{len(over_threshold)}건**",
+        f"- {threshold_days}일 이상 경과한 미종료 이슈: **{len(over_threshold)}건**",
     ]
     if rows:
         ages = [row["age_days"] for row in rows]
@@ -379,18 +395,20 @@ def _build_aging_report(
         for name, count in ranked:
             lines.append(f"- {name} — {count}건")
 
-    rows.sort(key=lambda row: row["age_days"], reverse=True)
-    if rows:
+    over_threshold.sort(key=lambda row: row["age_days"], reverse=True)
+    if over_threshold:
         lines.extend(["", "가장 오래 방치된 미종료 이슈"])
-        for row in rows[:SLA_TOP_N]:
+        for row in over_threshold[:SLA_TOP_N]:
             lines.append(
                 f"- #{row['id']} {row['summary']} — {row['age_days']}일 경과 "
                 f"({row['project']} · 등록 {row['created_at']})"
             )
     else:
-        lines.extend(["", "조건에 맞는 미종료 이슈가 없습니다."])
-    lines.extend(scope_notes or [])
-    return _finalize(text, constraints, lines, rows[:SLA_TOP_N], "aging")
+        lines.extend(["", f"{threshold_days}일 이상 경과한 미종료 이슈가 없습니다."])
+    created_at = constraints.get("created_at") or {}
+    if created_at:
+        lines.extend(["", f"등록일 조건: {created_at.get('from') or '시작 제한 없음'} ~ {created_at.get('to') or '종료 제한 없음'}"])
+    return _finalize(text, constraints, lines, over_threshold[:SLA_TOP_N], "aging")
 
 
 def _finalize(

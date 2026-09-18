@@ -95,3 +95,12 @@
 {"q":"장애 공유 프로세스 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"최근 장애 이슈 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[]}
 {"q":"지난주 신한 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[]}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"확인 상태인 이슈 보여줘","statuses":["confirmed"],"mantis_terms":[],"mantis_deterministic":true}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"긴급 이슈 보여줘","statuses":[],"mantis_terms":["긴급"]}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"고객사별 이슈 추이를 요약해줘","mantis_deterministic":false}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"오늘 등록된 미종료 이슈를 고객사별로 요약해줘","statuses":["open"],"mantis_terms":[],"mantis_deterministic":true}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"2026년 8월에 등록된 이슈 중 30일 넘게 미종료","statuses":["open"],"created_at":{"from":"2026-08-01","to":"2026-08-31","precision":"month"}}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"이번 주 미래에셋증권 이슈를 표로 보여줘","mantis_terms":[]}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"최근 3개월 미래에셋증권 고객사 프로필을 만들어줘"}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"2026년 8월 미래에셋증권 월간 고객사 리포트를 만들어줘"}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"높음 우선순위로 '차트 미표시' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘","statuses":[],"mantis_terms":["차트","미표시"]}

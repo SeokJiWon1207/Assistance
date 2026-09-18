@@ -13,6 +13,7 @@ from backend.intent.constants import (
     MANTIS_TARGET_OBJECT_MARKERS,
     NOTION_TARGET_OBJECT_MARKERS,
     RETRIEVAL_INTENT_KEYWORDS,
+    TRIAGE_REQUEST_PATTERN,
 )
 from backend.intent.entities import is_simple_greeting
 from backend.query_planning import extract_group_by
@@ -42,8 +43,14 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
             normalized,
         )
     )
-    mantis_target = _contains_normalized_marker(normalized, MANTIS_TARGET_OBJECT_MARKERS)
+    mantis_target = _contains_normalized_marker(normalized, MANTIS_TARGET_OBJECT_MARKERS) or bool(
+        TRIAGE_REQUEST_PATTERN.search(text)
+    )
     platform_group = extract_group_by(text) == "platform"
+    grouped_issue_analysis = bool(
+        extract_group_by(text)
+        and re.search(r"이슈.{0,16}(?:추이|비교|분석|요약|경향)", normalized)
+    )
     exact_mantis_target = bool(constraints.get("issue_ids") or constraints.get("screen_numbers"))
     issue_request = bool(
         re.search(
@@ -75,6 +82,7 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
         or constraints.get("statuses")
         or constraints.get("date_fields")
     )
+    scoped_issue = scope_only and bool(re.search(r"이슈|버그", normalized))
     evidence: List[Dict[str, str]] = []
 
     if is_simple_greeting(text):
@@ -106,7 +114,7 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
     elif notion_target:
         source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "문서 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "notion"})
-    elif mantis_target or issue_request or issue_list_request or platform_group:
+    elif mantis_target or issue_request or issue_list_request or platform_group or grouped_issue_analysis or scoped_issue:
         source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "mantis"})
     elif document_hint:
