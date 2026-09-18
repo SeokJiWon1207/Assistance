@@ -623,6 +623,7 @@ function updateWorkspaceUnread() {
 }
 
 let workspaceLoadPromise = null;
+let workspaceFreshPromise = null;
 let workspaceLoadIsRefresh = false;
 let workspaceLoading = false;
 let workspaceLoadingMessage = "";
@@ -632,16 +633,19 @@ const workspaceLiveTtlMs = 60_000;
 
 function updateWorkspaceLoadingControl() {
   if (!els.workspaceRefreshBtn) return;
-  els.workspaceRefreshBtn.disabled = workspaceLoading;
-  els.workspaceRefreshBtn.textContent = workspaceLoading ? "불러오는 중…" : "새로고침";
-  els.workspaceRefreshBtn.setAttribute("aria-busy", String(workspaceLoading));
+  const loading = workspaceLoading || Boolean(workspaceFreshPromise);
+  els.workspaceRefreshBtn.disabled = loading;
+  els.workspaceRefreshBtn.textContent = loading ? "불러오는 중…" : "새로고침";
+  els.workspaceRefreshBtn.setAttribute("aria-busy", String(loading));
 }
 
 function renderWorkspace() {
   if (!els.workspaceContent) return;
+  const loading = workspaceLoading || Boolean(workspaceFreshPromise);
+  els.workspaceContent.setAttribute("aria-busy", String(loading));
   const isPersonalOverview = state.workspaceTab === "overview";
   els.workspaceContent.classList.toggle("is-overview", isPersonalOverview);
-  els.workspaceContent.classList.toggle("has-status", Boolean(state.myWorkspace) && Boolean(workspaceLoading || workspaceLoadingError));
+  els.workspaceContent.classList.toggle("has-status", !loading && Boolean(state.myWorkspace) && Boolean(workspaceLoadingError));
   els.workspaceModalEyebrow.textContent = "개인 워크스페이스";
   els.workspaceModalTitle.textContent = "내 업무";
   els.workspaceTabs.hidden = false;
@@ -654,8 +658,14 @@ function renderWorkspace() {
     button.tabIndex = selected ? 0 : -1;
     if (selected && button.id) els.workspaceContent.setAttribute("aria-labelledby", button.id);
   });
+  if (loading) {
+    els.workspaceContent.innerHTML = `<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage || "업무 정보를 불러오는 중입니다.")}</strong></div>`;
+    return;
+  }
   if (!state.myWorkspace) {
-    els.workspaceContent.innerHTML = `<div class="workspace-loading"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage || "업무 정보를 불러오는 중입니다.")}</strong></div>`;
+    els.workspaceContent.innerHTML = workspaceLoadingError
+      ? `<div class="workspace-error" role="alert"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(workspaceLoadingError)}</p></div>`
+      : '<div class="workspace-loading" role="status">업무 정보를 불러오는 중입니다.</div>';
     return;
   }
   const renderers = {
@@ -665,9 +675,7 @@ function renderWorkspace() {
     notifications: () => renderNotifications(state.myWorkspace),
     favorites: renderFavoriteConversations,
   };
-  const loadingStatus = workspaceLoading
-    ? `<div class="workspace-refresh-status" role="status"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage)}</strong></div>`
-    : workspaceLoadingError
+  const loadingStatus = workspaceLoadingError
       ? `<div class="workspace-refresh-status is-error" role="status"><strong>${escapeHtml(workspaceLoadingError)}</strong></div>`
       : "";
   els.workspaceContent.innerHTML = `${loadingStatus}${(renderers[state.workspaceTab] || renderers.overview)()}`;
@@ -715,11 +723,30 @@ async function loadMyWorkspace(force = false) {
 }
 
 async function ensureMyWorkspaceFresh() {
-  if (!state.myWorkspace) await loadMyWorkspace();
+  if (workspaceFreshPromise) return workspaceFreshPromise;
   const sourceIsLive = state.myWorkspace?.mantis?.status === "live";
   const liveDataIsRecent = sourceIsLive && Date.now() - workspaceLastLiveAt < workspaceLiveTtlMs;
-  if (!liveDataIsRecent && state.myWorkspace?.user?.mantisUsername) await loadMyWorkspace(true);
-  return state.myWorkspace;
+  if (!workspaceLoadPromise && state.myWorkspace && (liveDataIsRecent || !state.myWorkspace.user?.mantisUsername)) {
+    renderWorkspace();
+    return state.myWorkspace;
+  }
+  // 저장 데이터 조회와 실시간 갱신을 한 번의 로딩으로 묶어 중간 목록을 표시하지 않는다.
+  workspaceFreshPromise = Promise.resolve().then(async () => {
+    if (workspaceLoadPromise) await workspaceLoadPromise;
+    if (!state.myWorkspace) await loadMyWorkspace();
+    const recent = state.myWorkspace?.mantis?.status === "live" && Date.now() - workspaceLastLiveAt < workspaceLiveTtlMs;
+    if (!recent && state.myWorkspace?.user?.mantisUsername) await loadMyWorkspace(true);
+    return state.myWorkspace;
+  });
+  updateWorkspaceLoadingControl();
+  renderWorkspace();
+  try {
+    return await workspaceFreshPromise;
+  } finally {
+    workspaceFreshPromise = null;
+    updateWorkspaceLoadingControl();
+    renderWorkspace();
+  }
 }
 
 async function loadTeamWeeklyBrief(refresh = false) {

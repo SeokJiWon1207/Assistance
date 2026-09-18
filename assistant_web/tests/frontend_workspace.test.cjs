@@ -19,6 +19,11 @@ async function harness(apiFetch) {
     clearTimeout: (id) => timers.delete(id),
   });
   const workspaceContent = { innerHTML: '', attributes: {}, classList: { toggle() {} }, setAttribute(key, value) { this.attributes[key] = value; } };
+  const htmlWrites = [];
+  Object.defineProperty(workspaceContent, 'innerHTML', {
+    get: () => htmlWrites.at(-1) || '',
+    set: (html) => htmlWrites.push(html),
+  });
   const workspaceRefreshBtn = { disabled: false, textContent: '새로고침', attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } };
   const els = {
     workspaceContent,
@@ -45,7 +50,7 @@ async function harness(apiFetch) {
     }, { context });
   });
   await module.evaluate();
-  return { state, storage, timers, els, api: module.namespace };
+  return { state, storage, timers, els, htmlWrites, api: module.namespace };
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -120,11 +125,11 @@ test('late response from previous account cannot replace the next account histor
   assert.equal(h.storage.has('chats:user-b'), false);
 });
 
-test('personal workspace shows refresh progress and replaces snapshot with live data', async () => {
+test('personal workspace hides intermediate snapshot until live refresh finishes', async () => {
   const calls = [];
   const payloads = [
-    { summary: { open: 5 }, mantis: { status: 'snapshot', issues: [] }, user: { mantisUsername: '석지원' } },
-    { summary: { open: 2 }, mantis: { status: 'live', issues: [] }, user: { mantisUsername: '석지원' } },
+    { summary: { open: 5 }, mantis: { status: 'snapshot', issues: [{ id: 1, title: '이전 업무' }] }, user: { mantisUsername: '석지원' } },
+    { summary: { open: 2 }, mantis: { status: 'live', issues: [{ id: 2, title: '최신 업무' }] }, user: { mantisUsername: '석지원' } },
   ];
   let releaseLive;
   const h = await harness(async (url) => {
@@ -132,15 +137,61 @@ test('personal workspace shows refresh progress and replaces snapshot with live 
     if (url.includes('refresh=true')) await new Promise((resolve) => { releaseLive = resolve; });
     return { ok: true, json: async () => payloads.shift() };
   });
+  const prefetch = h.api.loadMyWorkspace();
   const loading = h.api.ensureMyWorkspaceFresh();
+  const joined = h.api.ensureMyWorkspaceFresh();
   await new Promise(setImmediate);
   assert.equal(h.els.workspaceRefreshBtn.disabled, true);
   assert.equal(h.els.workspaceRefreshBtn.textContent, '불러오는 중…');
   assert.match(h.els.workspaceContent.innerHTML, /Mantis 최신 데이터를 확인하고 있습니다/);
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-overview|workspace-issue-list/);
+  assert.ok(h.htmlWrites.every((html) => !html.includes('이전 업무')));
   releaseLive();
-  await loading;
+  await Promise.all([prefetch, loading, joined]);
   assert.deepEqual(calls, ['/personal', '/personal?refresh=true']);
   assert.equal(h.state.myWorkspace.summary.open, 2);
   assert.equal(h.els.workspaceRefreshBtn.disabled, false);
   assert.equal(h.els.workspaceRefreshBtn.attributes['aria-busy'], 'false');
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
+  assert.match(h.els.workspaceContent.innerHTML, /최신 업무/);
+  assert.ok(h.htmlWrites.every((html) => !html.includes('이전 업무')));
+  await h.api.ensureMyWorkspaceFresh();
+  assert.equal(calls.length, 2);
+});
+
+test('personal refresh hides existing list and restores it only after failure', async () => {
+  let finish;
+  const h = await harness(async () => new Promise((resolve) => { finish = resolve; }));
+  h.state.myWorkspace = { summary: { open: 1 }, mantis: { status: 'snapshot', issues: [{ id: 1, title: '기존 업무' }] } };
+  h.api.renderWorkspace();
+  assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
+  const loading = h.api.loadMyWorkspace(true);
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /기존 업무|workspace-issue-list/);
+  finish({ ok: false, json: async () => ({ detail: '조회 실패' }) });
+  await assert.rejects(loading, /조회 실패/);
+  assert.match(h.els.workspaceContent.innerHTML, /조회 실패/);
+  assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
+  assert.equal(h.els.workspaceRefreshBtn.disabled, false);
+});
+
+test('personal initial failure exits loading state without showing an empty work list', async () => {
+  const h = await harness(async () => ({ ok: false, json: async () => ({ detail: '조회 실패' }) }));
+  await assert.rejects(h.api.ensureMyWorkspaceFresh(), /조회 실패/);
+  assert.match(h.els.workspaceContent.innerHTML, /조회 실패/);
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-spinner|workspace-issue-list/);
+  assert.equal(h.els.workspaceRefreshBtn.disabled, false);
+});
+
+test('unlinked personal account finishes after its initial lookup', async () => {
+  let calls = 0;
+  const h = await harness(async () => {
+    calls++;
+    return { ok: true, json: async () => ({ mantis: { status: 'unlinked', issues: [] }, user: {} }) };
+  });
+  await h.api.ensureMyWorkspaceFresh();
+  assert.equal(calls, 1);
+  assert.match(h.els.workspaceContent.innerHTML, /담당자명이 연결되지 않았습니다/);
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
 });

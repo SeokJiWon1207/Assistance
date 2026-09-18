@@ -21,6 +21,11 @@ async function harness(role, stored, fetcher) {
     'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardBody',
     'dashboardDetail', 'dashboardDetailClose', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
   ].map((name) => [name, element(name)]));
+  const htmlWrites = [];
+  Object.defineProperty(els.dashboardBody, 'innerHTML', {
+    get: () => htmlWrites.at(-1) || '',
+    set: (html) => htmlWrites.push(html),
+  });
   els.viewChatBtn.hidden = els.viewPersonalBtn.hidden = false;
   const state = { currentUser: { uid: `user-${role}`, role }, workspaceTab: 'overview', myWorkspace: { summary: {} } };
   const context = vm.createContext({
@@ -45,8 +50,16 @@ async function harness(role, stored, fetcher) {
   });
   await module.evaluate();
   module.namespace.initDashboard();
-  return { api: module.namespace, els, state, storage, calls, focus: () => focused };
+  return { api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
 }
+
+const dashboard = (source, open) => ({
+  meta: { source, scope: 'team', periodFrom: '2026-08-13', periodTo: '2026-09-11', periodDays: 30, generatedAt: '2026-09-11T12:00:00' },
+  user: { role: 'member' },
+  summary: { open, carriedOpen: 0, overdue: 0, aging: 0, highRisk: 0, highPriority: 0, changeRate: 0 },
+  decisionSummary: { riskLevel: 'watch', headline: `${source} 업무 요약`, signals: [], recommendedActions: [] },
+  todos: [], customerHealth: [], customerHealthSummary: {}, customerSpikes: [], screenSpikes: [], members: [], priorities: [],
+});
 
 test('manager can switch among three panels without losing personal tab state', async () => {
   const h = await harness('manager');
@@ -95,18 +108,77 @@ test('dashboard shows refresh progress while keeping its controls in sync', asyn
   assert.equal(h.els.dashboardRefreshBtn.attributes['aria-busy'], 'false');
 });
 
-test('dashboard replaces its snapshot with live data when opened', async () => {
-  const dashboard = (source, open) => ({
-    meta: { source, scope: 'team', periodFrom: '2026-08-13', periodTo: '2026-09-11', periodDays: 30, generatedAt: '2026-09-11T12:00:00' },
-    user: { role: 'member' },
-    summary: { open, carriedOpen: 0, overdue: 0, aging: 0, highRisk: 0, highPriority: 0, changeRate: 0 },
-    decisionSummary: { riskLevel: 'watch', headline: '확인 완료', signals: [], recommendedActions: [] },
-    todos: [], customerHealth: [], customerHealthSummary: {}, customerSpikes: [], screenSpikes: [], members: [], priorities: [],
-  });
+test('dashboard keeps prefetched snapshot hidden until live lookup completes', async () => {
   const payloads = [dashboard('snapshot', 5), dashboard('live', 2)];
-  const h = await harness('member', undefined, async () => ({ ok: true, payload: payloads.shift() }));
+  let releaseLive;
+  const h = await harness('member', undefined, async (url) => {
+    if (url.includes('refresh=true')) await new Promise((resolve) => { releaseLive = resolve; });
+    return { ok: true, payload: payloads.shift() };
+  });
+  const prefetch = h.api.loadDashboard();
+  const loading = h.api.ensureDashboardFresh();
+  const joined = h.api.ensureDashboardFresh();
+  await new Promise(setImmediate);
+  assert.equal(h.els.dashboardRefreshBtn.disabled, true);
+  assert.equal(h.els.dashboardPeriod.disabled, true);
+  assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'true');
+  assert.match(h.els.dashboardBody.innerHTML, /dashboard-spinner/);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-grid|dashboard-metrics/);
+  assert.ok(h.htmlWrites.every((html) => !html.includes('snapshot 업무 요약')));
+  releaseLive();
+  await Promise.all([prefetch, loading, joined]);
+  assert.match(h.els.dashboardBody.innerHTML, /live 업무 요약/);
+  assert.ok(h.htmlWrites.every((html) => !html.includes('snapshot 업무 요약')));
+  assert.equal(h.els.dashboardPeriod.disabled, false);
+  assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
   await h.api.ensureDashboardFresh();
   assert.deepEqual(h.calls, ['/dashboard?days=30', '/dashboard?days=30&refresh=true']);
+});
+
+test('dashboard manual refresh hides old sections until completion', async () => {
+  let finish;
+  const h = await harness('member', undefined, async (url) => url.includes('refresh=true')
+    ? new Promise((resolve) => { finish = resolve; })
+    : { ok: true, payload: dashboard('snapshot', 5) });
+  await h.api.loadDashboard();
+  assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
+  const loading = h.api.loadDashboard(true);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /snapshot 업무 요약|dashboard-grid|dashboard-metrics/);
+  finish({ ok: true, payload: dashboard('live', 2) });
+  await loading;
+  assert.match(h.els.dashboardBody.innerHTML, /live 업무 요약/);
+  assert.equal(h.els.dashboardRefreshBtn.disabled, false);
+});
+
+test('dashboard reveals fallback only after live lookup has failed', async () => {
+  let finish;
+  const h = await harness('member', undefined, async (url) => url.includes('refresh=true')
+    ? new Promise((resolve) => { finish = resolve; })
+    : { ok: true, payload: dashboard('snapshot', 5) });
+  const loading = h.api.ensureDashboardFresh();
+  await new Promise(setImmediate);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
+  finish({ ok: false, payload: { detail: '조회 실패' } });
+  await loading;
+  assert.match(h.els.dashboardBody.innerHTML, /조회 실패/);
+  assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
+  assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
+  assert.equal(h.els.dashboardRefreshBtn.disabled, false);
+});
+
+test('dashboard joins failed prefetch without retrying or leaving a spinner', async () => {
+  let finish;
+  const h = await harness('member', undefined, async () => new Promise((resolve) => { finish = resolve; }));
+  const prefetch = h.api.loadDashboard();
+  const loading = h.api.ensureDashboardFresh();
+  await new Promise(setImmediate);
+  finish({ ok: false, payload: { detail: '조회 실패' } });
+  await Promise.all([prefetch, loading]);
+  assert.deepEqual(h.calls, ['/dashboard?days=30']);
+  assert.match(h.els.dashboardBody.innerHTML, /조회 실패/);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-spinner|dashboard-grid/);
+  assert.equal(h.els.dashboardRefreshBtn.disabled, false);
+  assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
 });
 
 test('keyboard navigation follows visible tab order and moves focus', async () => {
