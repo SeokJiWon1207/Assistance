@@ -1037,3 +1037,138 @@ class NotionSearchExecutionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def compound_levels(api_filter):
+    """검사 대상 코드와 독립적으로 and/or 중첩 단계를 센다."""
+    if not isinstance(api_filter, dict):
+        return 0
+    children = api_filter.get("and") or api_filter.get("or")
+    if children is None:
+        return 0
+    return 1 + max((compound_levels(child) for child in children), default=0)
+
+
+def fake_notion_query(pages):
+    """노션처럼 복합 필터가 두 단계를 넘으면 400으로 거부하는 가짜 query API."""
+    payloads = []
+
+    def respond(url, payload, **_kwargs):
+        payloads.append(payload)
+        response = Mock()
+        if compound_levels(payload.get("filter")) > 2:
+            response.status_code = 400
+            response.text = '{"code":"validation_error"}'
+            response.raise_for_status.side_effect = requests.HTTPError("400 Client Error: Bad Request")
+            return response
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"results": pages, "has_more": False}
+        return response
+
+    return respond, payloads
+
+
+class NotionFilterNestingTests(unittest.TestCase):
+    STATUS_ANY = {"or": [
+        {"property": "이슈진행", "status": {"equals": "시작전"}},
+        {"property": "QC진행 ", "status": {"equals": "시작전"}},
+    ]}
+    CUSTOMER = {"property": "고객사", "select": {"equals": "케이프투자증권"}}
+
+    def test_and_filter_flattens_nested_and_but_keeps_or(self):
+        title = {"property": "이슈내용", "title": {"equals": "정기점검"}}
+        combined = search.notion_and_filter(title, {"and": [self.STATUS_ANY, self.CUSTOMER]}, None)
+        self.assertEqual(combined, {"and": [title, self.STATUS_ANY, self.CUSTOMER]})
+        self.assertEqual(search.notion_filter_levels(combined), 2)
+        self.assertEqual(search.notion_and_filter(title), title)
+        self.assertIsNone(search.notion_and_filter(None, None))
+
+    def test_title_query_falls_back_to_title_filter_when_conditions_exceed_limit(self):
+        title = {"property": "이슈내용", "title": {"contains": "배포"}}
+        date_by_property = {"or": [
+            {"and": [{"property": name, "date": {"on_or_after": "2026-09-01"}},
+                     {"property": name, "date": {"on_or_before": "2026-09-30"}}]}
+            for name in ("배포일", "운영배포일")
+        ]}
+        self.assertEqual(search.notion_title_query_filter(title, date_by_property), title)
+        self.assertEqual(
+            search.notion_title_query_filter(title, self.STATUS_ANY),
+            {"and": [title, self.STATUS_ANY]},
+        )
+
+    def test_exact_title_with_two_status_properties_and_customer_is_not_rejected(self):
+        """상태 속성이 둘인 DB에서 정확한 제목 + 상태 + 고객사 조회가 400이 나던 회귀."""
+        page = {"id": "p1", "title": "케이프증권 2026.09 정기점검",
+                "search_text": "케이프증권 2026.09 정기점검", "last_edited_time": "2026-09-20"}
+        respond, payloads = fake_notion_query([page])
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_database_status_filter", return_value=(True, self.STATUS_ANY)),
+            patch.object(search, "notion_database_customer_filter", return_value=self.CUSTOMER),
+            patch.object(search, "notion_property_schema", return_value={"이슈내용": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=respond),
+            patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
+            patch.object(search, "notion_page_matches_and_enrich", return_value=True),
+        ):
+            result = search.execute_notion_search(
+                "노션에서 상태가 시작전인 '케이프증권 2026.09 정기점검' 항목을 정확히 찾아줘",
+                include_blocks=False,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([item["id"] for item in result["notion_pages"]], ["p1"])
+        exact_filter = payloads[0]["filter"]
+        self.assertLessEqual(compound_levels(exact_filter), 2)
+        # 펼치기만 했을 뿐 조건은 하나도 빠지지 않는다.
+        self.assertIn(self.STATUS_ANY, exact_filter["and"])
+        self.assertIn(self.CUSTOMER, exact_filter["and"])
+
+    def test_date_filter_beyond_nesting_limit_is_checked_locally_instead(self):
+        date_by_property = {"or": [
+            {"and": [{"property": name, "date": {"on_or_after": "2026-09-01"}},
+                     {"property": name, "date": {"on_or_before": "2026-09-30"}}]}
+            for name in ("배포일", "운영배포일")
+        ]}
+        page = {"id": "p1", "title": "배포 항목", "search_text": "배포 항목", "last_edited_time": "2026-09-20"}
+        respond, payloads = fake_notion_query([page])
+        local_constraints = []
+
+        def matches(candidate, constraints):
+            local_constraints.append(constraints)
+            return True
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="배포관리"),
+            patch.object(search, "notion_database_status_filter", return_value=(True, self.STATUS_ANY)),
+            patch.object(search, "notion_database_date_filter", return_value=date_by_property),
+            patch.object(search, "notion_database_customer_filter", return_value=None),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=respond),
+            patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
+            patch.object(search, "notion_page_matches_and_enrich", side_effect=matches),
+        ):
+            result = search.execute_notion_search(
+                "노션에서 상태가 시작전인 항목 보여줘",
+                constraints={"filter_clauses": [{
+                    "field": "deployed_at", "operator": "between",
+                    "value": ["2026-09-01", "2026-09-30"],
+                }]},
+                include_blocks=False,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(payloads)
+        self.assertTrue(all(compound_levels(item.get("filter")) <= 2 for item in payloads))
+        # 서버에는 상태 조건만 보내고, 배포일 조건은 로컬 검사로 넘어간다.
+        self.assertEqual(payloads[-1]["filter"], self.STATUS_ANY)
+        self.assertTrue(any(
+            clause.get("field") == "deployed_at"
+            for constraints in local_constraints
+            for clause in constraints.get("common_filter_clauses", [])
+        ))
+

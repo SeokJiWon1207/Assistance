@@ -754,6 +754,57 @@ def notion_clause_server_covered(
     return False
 
 
+# 노션 API는 and/or 복합 필터를 두 단계까지만 중첩할 수 있다.
+NOTION_MAX_FILTER_LEVELS = 2
+
+
+def notion_filter_levels(api_filter: Optional[Dict[str, Any]]) -> int:
+    """and/or 복합 필터가 겹친 최대 단계 수를 센다."""
+    if not isinstance(api_filter, dict):
+        return 0
+    for key in ("and", "or"):
+        if key in api_filter:
+            return 1 + max((notion_filter_levels(item) for item in api_filter[key]), default=0)
+    return 0
+
+
+def notion_filter_fits(api_filter: Optional[Dict[str, Any]]) -> bool:
+    return notion_filter_levels(api_filter) <= NOTION_MAX_FILTER_LEVELS
+
+
+def notion_and_filter(*filters: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """필터를 and로 묶되 안쪽 and는 펼친다. 의미는 같고 중첩 단계만 줄어든다."""
+    parts: List[Dict[str, Any]] = []
+
+    def add(api_filter: Optional[Dict[str, Any]]) -> None:
+        if not api_filter:
+            return
+        if set(api_filter) == {"and"}:
+            for item in api_filter["and"]:
+                add(item)
+        else:
+            parts.append(api_filter)
+
+    for api_filter in filters:
+        add(api_filter)
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else {"and": parts}
+
+
+def notion_title_query_filter(
+    title_filter: Dict[str, Any],
+    condition_filter: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """제목 필터에 나머지 조건을 붙인다. 중첩 한도를 넘으면 제목 필터만 보낸다.
+
+    서버가 돌려준 페이지는 모든 조건으로 다시 로컬 검사하므로 결과는 같고,
+    조회량만 늘어난다.
+    """
+    combined = notion_and_filter(title_filter, condition_filter)
+    return combined if combined is not None and notion_filter_fits(combined) else title_filter
+
+
 def notion_database_status_filter(
     database_id: str,
     status: str,
@@ -1327,8 +1378,14 @@ def execute_notion_search(
                     if any(date_filter is None for date_filter in date_filters):
                         scan.meta = {"database_id": database_id, "database_label": database_label, "found_count": 0}
                         return scan
-                    combined_filters = [item for item in [status_api_filter, *date_filters] if item]
-                    status_api_filter = combined_filters[0] if len(combined_filters) == 1 else {"and": combined_filters}
+                    combined_filter = notion_and_filter(status_api_filter, *date_filters)
+                    if notion_filter_fits(combined_filter):
+                        status_api_filter = combined_filter
+                    else:
+                        # 중첩 한도를 넘는 날짜 조건은 서버에 보내지 않고 로컬에서만 검사한다.
+                        created_filter_applied = False
+                        created_window_safe = False
+                        server_covered_fields.difference_update({"created_at", "deployed_at"})
                 except (HTTPException, requests.RequestException, ValueError):
                     # 스키마 실패 시 조건을 버리지 않고 기존 로컬 필터로 검사한다.
                     server_covered_fields.difference_update({"created_at", "deployed_at"})
@@ -1341,13 +1398,11 @@ def execute_notion_search(
             except (HTTPException, requests.RequestException):
                 customer_api_filter = None
             if customer_api_filter:
-                server_covered_fields.add("customer")
-                combined_filters = [item for item in [status_api_filter, customer_api_filter] if item]
-                status_api_filter = (
-                    combined_filters[0]
-                    if len(combined_filters) == 1
-                    else {"and": combined_filters}
-                )
+                combined_filter = notion_and_filter(status_api_filter, customer_api_filter)
+                # 중첩 한도를 넘으면 고객사 조건은 로컬에서만 검사한다.
+                if notion_filter_fits(combined_filter):
+                    server_covered_fields.add("customer")
+                    status_api_filter = combined_filter
             owner_filter_decisive = False
             owner_api_filter: Optional[Dict[str, Any]] = None
             if notion_constraints.get("owner"):
@@ -1367,15 +1422,11 @@ def execute_notion_search(
                     }
                     return scan
                 if owner_api_filter:
-                    server_covered_fields.add("owner")
-                    combined_filters = [
-                        item for item in [status_api_filter, owner_api_filter] if item
-                    ]
-                    status_api_filter = (
-                        combined_filters[0]
-                        if len(combined_filters) == 1
-                        else {"and": combined_filters}
-                    )
+                    combined_filter = notion_and_filter(status_api_filter, owner_api_filter)
+                    # 중첩 한도를 넘으면 담당자 조건은 로컬에서만 검사한다.
+                    if notion_filter_fits(combined_filter):
+                        server_covered_fields.add("owner")
+                        status_api_filter = combined_filter
 
             server_filter_complete = bool(status_api_filter) and all(
                 notion_clause_server_covered(
@@ -1440,7 +1491,7 @@ def execute_notion_search(
                 }
                 exact_payload: Dict[str, Any] = {
                     "page_size": page_size,
-                    "filter": {"and": [title_filter, status_api_filter]} if status_api_filter else title_filter,
+                    "filter": notion_title_query_filter(title_filter, status_api_filter),
                     "sorts": [database_sort],
                 }
                 exact_max_pages = notion_search_max_pages(
@@ -1525,10 +1576,7 @@ def execute_notion_search(
                         f"{NOTION_API_BASE}/databases/{database_id}/query",
                         {
                             "page_size": page_size,
-                            "filter": (
-                                {"and": [title_filter, status_api_filter]}
-                                if status_api_filter else title_filter
-                            ),
+                            "filter": notion_title_query_filter(title_filter, status_api_filter),
                             "sorts": [database_sort],
                         },
                         timeout=45,
