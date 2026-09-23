@@ -515,34 +515,25 @@ def run_incremental(
     )
     new_documents: list[Document] = []
     refreshed_documents: list[Document] = []
-    # Mantis가 최신순으로 반환하므로, "새 이슈도 refresh 대상도 전혀 없는 페이지"가
-    # 연속으로 나오면 그 뒤로는 전부 기존 데이터라고 보고 조기 종료한다.
-    stale_page_streak = 0
+    # API 정렬은 보장되지 않는다. 기존 항목만 있는 페이지 뒤에도 신규/수정
+    # 항목이 있으므로 마지막 페이지까지 확인해야 한다.
+    scanned_ids: set[int] = set()
 
     for page, issues in fetch_issue_pages(url, headers, max_pages=max_pages):
-        page_has_work = False
         for issue in issues:
             issue_id = issue.get("id")
-            if not issue_id:
+            if not issue_id or issue_id in scanned_ids:
                 continue
+            scanned_ids.add(issue_id)
             if issue_id not in existing_ids:
                 new_documents.append(build_issue_document(issue))
                 existing_ids.add(issue_id)
-                page_has_work = True
             elif refresh_cutoff and issue_date(issue.get("updated_at")) >= refresh_cutoff:
                 refreshed_documents.append(build_issue_document(issue))
-                page_has_work = True
         print(
             f"✅ {page}페이지 검토 완료 "
             f"(신규 누적 {len(new_documents)}건, 갱신 후보 {len(refreshed_documents)}건)"
         )
-        if page_has_work:
-            stale_page_streak = 0
-        else:
-            stale_page_streak += 1
-            if stale_page_streak >= 2:
-                print("⏹️ 새 이슈/갱신 대상 없는 페이지가 이어져 조기 종료합니다.")
-                break
 
     changed_documents = new_documents + refreshed_documents
     if not changed_documents and MANTIS_INDEX_SQLITE.exists():

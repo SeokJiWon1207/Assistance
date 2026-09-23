@@ -402,7 +402,7 @@ class SnapshotRebuildTests(unittest.TestCase):
             ), patch.object(
                 make_vector_db,
                 "fetch_issue_pages",
-                return_value=iter([(1, [changed_issue, new_issue])]),
+                return_value=iter([(1, [changed_issue, new_issue]), (2, [new_issue])]),
             ), patch.object(make_vector_db, "Chroma", FakeChroma):
                 make_vector_db.run_incremental(
                     "https://mantis.example",
@@ -424,6 +424,21 @@ class SnapshotRebuildTests(unittest.TestCase):
             self.assertIn("변경 제목", documents)
             self.assertIn("신규 제목", documents)
             self.assertEqual(len(list(backups.glob("mantis_chroma_db-*"))), 1)
+
+    def test_incremental_reads_new_issue_after_two_unchanged_pages(self):
+        old = {"id": 1, "updated_at": "2026-08-01"}
+        with (
+            patch.object(make_vector_db, "load_existing_issue_ids", return_value={1}),
+            patch.object(make_vector_db, "fetch_issue_pages", return_value=iter([
+                (1, [old]), (2, [old]), (3, [{"id": 2}]),
+            ])),
+            patch.object(make_vector_db, "build_issue_document", side_effect=RuntimeError("late new issue")) as build,
+        ):
+            # 파일 교체 이전에서 멈춰 세 번째 페이지의 신규 항목까지 도달했는지 확인한다.
+            with self.assertRaisesRegex(RuntimeError, "late new issue"):
+                make_vector_db.run_incremental("https://mantis.test", {}, 7, 10,
+                                               reference_time=datetime(2026, 9, 22))
+            build.assert_called_once_with({"id": 2})
 
 
 if __name__ == "__main__":
