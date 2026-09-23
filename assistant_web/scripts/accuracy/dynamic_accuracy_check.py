@@ -116,12 +116,13 @@ def complete_mutable_mantis_ids(
     live_issues: List[Dict[str, Any]],
     limit: int,
 ) -> List[int]:
-    """Complete a handler/status oracle with live-verified local candidates.
+    """Complete a list oracle with live-sampled and full-index candidates.
 
-    The paginated live sample can omit older IDs that are still newer than
-    other sampled matches. Combine it with the full local index, but include
-    local candidates only when every displayed candidate was revalidated by an
-    exact live lookup. This avoids defining expectations from stale fields.
+    The paginated live sample can omit historical matches that are still the
+    newest rows for a sparse filter such as a screen number. Combine it with
+    the full local index. Mutable filters are revalidated by the Mantis source
+    adapter before their candidates are accepted, which avoids defining
+    handler/status expectations from stale fields.
     """
     constraints = extract_query_constraints(question)
     expected_ids = {
@@ -404,9 +405,19 @@ def build_mantis_cases(
             screen_groups.setdefault(screen, []).append(item)
     if screen_groups:
         screen = rng.choice(sorted(screen_groups))
+        screen_question = f"화면번호 {screen} 관련 이슈 3개 보여줘"
+        screen_expected = sorted(
+            (int(item["id"]) for item in screen_groups[screen]),
+            reverse=True,
+        )[:3]
+        if augment_mutable_oracle:
+            screen_expected = (
+                complete_mutable_mantis_ids(screen_question, issues, 3)
+                or screen_expected
+            )
         cases.append(AccuracyCase(
-            "mantis-screen", "mantis", "화면번호", f"화면번호 {screen} 관련 이슈 3개 보여줘",
-            "issue_ids", [int(item["id"]) for item in screen_groups[screen][:3]],
+            "mantis-screen", "mantis", "화면번호", screen_question,
+            "ordered_issue_ids", screen_expected, mutable_oracle=True,
         ))
 
     handler_groups: Dict[str, List[Dict[str, Any]]] = {}
@@ -678,7 +689,10 @@ def build_follow_up_scenarios(
             "후속 질문·Notion 문맥",
             notion_case.id,
             "그 항목의 제목을 정확히 다시 알려줘",
-            "titles",
+            # 대화 문맥에서 이미 검증된 제목을 다시 말하는 후속 응답은 검색을
+            # 반복하지 않아 sources가 비어 있을 수 있다. 본문의 정확한 제목을
+            # 검증하는 text_any가 이 계약을 직접 표현한다.
+            "text_any",
             list(notion_case.expected),
         ))
 

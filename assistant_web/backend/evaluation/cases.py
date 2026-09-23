@@ -14,6 +14,8 @@ from backend.audit import init_audit_db
 from backend.common import normalize_for_match, text_matches_customer_aliases
 from backend.config import AUDIT_DB_PATH, CONFIG_DIR
 from backend.reports.effort import build_effort_report
+from backend.reports.aggregate import extract_month_count_query
+from backend.sources.mantis import fetch_mantis_recent_issues
 from backend.retrieval import build_sources, retrieval_trace, run_retrieval_pipeline
 from backend.understanding import (
     extract_query_constraints,
@@ -109,10 +111,39 @@ EVALUATION_CASES = load_evaluation_cases()
 def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
     started = time.perf_counter()
     question = case["question"]
-    expected = case["expected"]
+    expected = dict(case["expected"])
     constraints = extract_query_constraints(question)
     effort_report = build_effort_report(question) if expected.get("effortTotal") is not None else None
-    count_report = build_mantis_month_count_report(question) if expected.get("totalCount") is not None else None
+    baseline_count = None
+    baseline_ids: List[int] = []
+    if expected.get("liveLatestPerson"):
+        rows = fetch_mantis_recent_issues(800)
+        baseline_ids = sorted({
+            int(row["id"]) for row in rows
+            if normalize_for_match(str((row.get("handler") or {}).get("real_name", "")))
+            == normalize_for_match(str(expected["liveLatestPerson"]))
+        }, reverse=True)[:int(expected.get("latestCount", 2))]
+        if len(baseline_ids) < int(expected.get("minResults", 1)):
+            raise ValueError("최근 800건에서 담당자 최신 이슈 기준을 확보하지 못했습니다")
+        expected["sourceIds"] = baseline_ids
+    if expected.get("liveMonthCount"):
+        month = extract_month_count_query(question)
+        if not month:
+            raise ValueError("월별 기준을 해석하지 못했습니다")
+        rows = fetch_mantis_recent_issues(month["snapshot_limit"])
+        target_month = f"{month['year']}-{month['month']:02d}"
+        # 검색기의 조건 판정 함수를 재사용하지 않고 원본 날짜/프로젝트로
+        # 독립 집계한다. 같은 응답을 주입해 실행 중 800건 창 이동도 막는다.
+        aliases = extract_query_constraints(str(expected["liveMonthCount"]))["customer_aliases"]
+        baseline_ids = sorted(
+            int(row["id"]) for row in rows
+            if str(row.get("created_at") or "").startswith(target_month)
+            and text_matches_customer_aliases(str((row.get("project") or {}).get("name", "")), aliases)
+        )
+        baseline_count = len(baseline_ids)
+        count_report = build_mantis_month_count_report(question, recent_issues=rows)
+    else:
+        count_report = build_mantis_month_count_report(question) if expected.get("totalCount") is not None else None
     retrieval_result = (
         effort_report.get("retrieval")
         if effort_report
@@ -265,13 +296,13 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
             len(sources) == int(expected["issueCount"]),
             f"{len(sources)}건",
         )
-    if expected.get("totalCount") is not None:
+    if expected.get("totalCount") is not None or baseline_count is not None:
         count_stages = (retrieval_result or {}).get("stages") or []
         count_stage = count_stages[0] if count_stages and isinstance(count_stages[0], dict) else {}
         total_count = int(count_stage.get("meta", {}).get("total_count", -1))
         add_check(
             "전체 건수",
-            total_count == int(expected["totalCount"]),
+            total_count == (baseline_count if baseline_count is not None else int(expected["totalCount"])),
             f"{total_count}건" if total_count >= 0 else "집계 없음",
         )
     add_check("최소 결과 수", len(sources) >= expected.get("minResults", 1), f"{len(sources)}건")
@@ -283,6 +314,8 @@ def run_evaluation_case(case: Dict[str, Any]) -> Dict[str, Any]:
         "sourceCount": len(sources),
         "trace": retrieval_trace(retrieval_result),
         "durationMs": round((time.perf_counter() - started) * 1000),
+        **({"baseline": {"totalCount": baseline_count, "issueIds": baseline_ids}} if baseline_count is not None else {}),
+        **({"baseline": {"issueIds": baseline_ids}} if expected.get("liveLatestPerson") else {}),
     }
 
 

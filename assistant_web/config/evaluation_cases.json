@@ -59,7 +59,7 @@
     "id": "mantis-handler-permission",
     "category": "담당자",
     "question": "담당자 권한별의 최근 이슈 2개 보여줘",
-    "expected": { "person": "권한별", "sourceIds": [30996, 30995], "minResults": 2 }
+    "expected": { "person": "권한별", "liveLatestPerson": "권한별", "minResults": 2, "latestCount": 2 }
   },
   {
     "id": "mantis-handler-seokjiwon",
@@ -76,20 +76,20 @@
   {
     "id": "mantis-month-count-cape-2025-12",
     "category": "월별 건수",
-    "question": "최신 800건 기준으로 2025년 12월에 CAPE증권에서 들어온 이슈는 몇 개야?",
-    "expected": { "totalCount": 2, "minResults": 1 }
+    "question": "최신 800건 기준으로 지난달에 CAPE증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "liveMonthCount": "CAPE증권", "minResults": 0 }
   },
   {
     "id": "mantis-month-count-eugene-2025-12",
     "category": "월별 건수",
-    "question": "최신 800건 기준으로 2025년 12월에 유진증권에서 들어온 이슈는 몇 개야?",
-    "expected": { "totalCount": 5, "minResults": 1 }
+    "question": "최신 800건 기준으로 지난달에 유진증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "liveMonthCount": "유진증권", "minResults": 0 }
   },
   {
     "id": "mantis-month-count-hanwha-2026-02",
     "category": "월별 건수",
-    "question": "최신 800건 기준으로 2026년 2월에 한화증권에서 들어온 이슈는 몇 개야?",
-    "expected": { "totalCount": 12, "minResults": 1 }
+    "question": "최신 800건 기준으로 지난달에 한화증권에서 들어온 이슈는 몇 개야?",
+    "expected": { "liveMonthCount": "한화증권", "minResults": 0 }
   },
   {
     "id": "mantis-exact-id",

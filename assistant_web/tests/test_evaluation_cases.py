@@ -2,14 +2,58 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 from backend.evaluation import cases
+from backend.reports import aggregate
 
 
 class EvaluationCaseTests(unittest.TestCase):
+    def test_previous_month_count_rolls_back_the_year(self):
+        with patch.object(aggregate, "date") as calendar:
+            calendar.today.return_value = date(2026, 1, 5)
+            month = aggregate.extract_month_count_query("최신 800건 기준으로 지난달 한화증권 이슈 몇 개야?")
+        self.assertEqual(month, {"year": 2025, "month": 12, "snapshot_limit": 800})
+
+    def test_latest_person_baseline_changes_with_live_ids(self):
+        case = {"id": "person", "question": "담당자 권한별의 최근 이슈 2개 보여줘",
+                "expected": {"liveLatestPerson": "권한별", "person": "권한별", "minResults": 2, "latestCount": 2}}
+        rows = [{"id": number, "handler": {"real_name": name}} for number, name in
+                ((50, "권한별"), (60, "권한별"), (70, "다른사람"), (40, "권한별"))]
+        sources = [{"type": "mantis", "issue_id": number, "handler": "권한별"} for number in (60, 50)]
+        with (
+            patch.object(cases, "fetch_mantis_recent_issues", return_value=rows),
+            patch.object(cases, "run_retrieval_pipeline", return_value={}),
+            patch.object(cases, "build_sources", return_value=sources),
+            patch.object(cases, "retrieval_trace", return_value=[]),
+        ):
+            result = cases.run_evaluation_case(case)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["baseline"]["issueIds"], [60, 50])
+        self.assertNotIn("sourceIds", case["expected"])
+
+    def test_live_month_baseline_accepts_zero_and_detects_wrong_counts(self):
+        case = {"id": "month", "question": "최신 800건 기준으로 2026년 2월 한화증권 이슈 몇 개야?",
+                "expected": {"liveMonthCount": "한화증권", "minResults": 0}}
+        rows = [{"id": 42, "created_at": "2026-02-01", "project": {"name": "112KBStar(KB증권)"}}]
+        for actual, expected in ((0, True), (12, False)):
+            report = {"sources": [], "retrieval": {"stages": [
+                {"source": "mantis_month_count", "meta": {"total_count": actual}},
+            ]}}
+            with (
+                patch.object(cases, "fetch_mantis_recent_issues", return_value=rows) as fetch,
+                patch.object(cases, "build_mantis_month_count_report", return_value=report) as build,
+                patch.object(cases, "retrieval_trace", return_value=[]),
+            ):
+                result = cases.run_evaluation_case(case)
+            self.assertIs(result["passed"], expected)
+            self.assertEqual(result["baseline"], {"totalCount": 0, "issueIds": []})
+            fetch.assert_called_once_with(800)
+            build.assert_called_once_with(case["question"], recent_issues=rows)
+
     def test_case_loader_uses_defaults_for_missing_or_invalid_configuration(self):
         with tempfile.TemporaryDirectory() as directory:
             config_dir = Path(directory)

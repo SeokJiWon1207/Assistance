@@ -482,6 +482,9 @@ class AccuracyInsightTests(unittest.TestCase):
             by_id["mantis-project-platform-exclusion"].expected_kind,
             "ordered_issue_ids",
         )
+        self.assertEqual(by_id["mantis-screen"].expected_kind, "ordered_issue_ids")
+        self.assertEqual(by_id["mantis-screen"].expected, [31008, 31007, 31006])
+        self.assertTrue(by_id["mantis-screen"].mutable_oracle)
         self.assertEqual(by_id["mantis-screen-no-result"].expected_kind, "no_results")
 
     def test_daily_case_selection_keeps_follow_up_prerequisites_and_rotates_other_slots(self):
@@ -540,6 +543,28 @@ class AccuracyInsightTests(unittest.TestCase):
             ],
         )
         self.assertEqual(scenarios[1].expected, [30919])
+        self.assertEqual(scenarios[3].expected_kind, "text_any")
+
+    def test_notion_title_follow_up_accepts_exact_title_without_repeated_sources(self):
+        case = AccuracyCase(
+            "followup-notion-title",
+            "notion",
+            "후속 질문·Notion 문맥",
+            "그 항목의 제목을 정확히 다시 알려줘",
+            "text_any",
+            ["서버 업무파트 회의"],
+        )
+
+        result = grade(
+            case,
+            {
+                "content": "위 목록의 첫 번째 항목 제목은 **서버 업무파트 회의**입니다.",
+                "sources": [],
+            },
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["actual"], {"matched": "서버 업무파트 회의"})
 
     @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat")
     def test_follow_up_sends_web_equivalent_history_and_audit_context(self, execute):

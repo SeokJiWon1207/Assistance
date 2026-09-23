@@ -4,7 +4,7 @@
 """
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.common import (
@@ -39,7 +39,13 @@ def extract_month_count_query(text: str) -> Optional[Dict[str, int]]:
         return None
     month_match = re.search(r"(1[0-2]|0?[1-9])\s*월", text)
     if not month_match:
-        return None
+        if "지난달" in normalized_text:
+            target = date.today().replace(day=1) - timedelta(days=1)
+        elif "이번달" in normalized_text:
+            target = date.today()
+        else:
+            return None
+        return {"year": target.year, "month": target.month, "snapshot_limit": extract_snapshot_limit(text)}
     year_match = re.search(r"(20\d{2})\s*년", text)
     year = int(year_match.group(1)) if year_match else date.today().year
     month = int(month_match.group(1))
@@ -670,7 +676,9 @@ def build_mantis_count_report(
     }
 
 
-def build_mantis_month_count_report(text: str) -> Optional[Dict[str, Any]]:
+def build_mantis_month_count_report(
+    text: str, *, recent_issues: Optional[List[Dict[str, Any]]] = None,
+) -> Optional[Dict[str, Any]]:
     month_query = extract_month_count_query(text)
     if not month_query:
         return None
@@ -683,7 +691,10 @@ def build_mantis_month_count_report(text: str) -> Optional[Dict[str, Any]]:
     )
     target_month = f"{month_query['year']}-{month_query['month']:02d}"
     snapshot_limit = month_query["snapshot_limit"]
-    recent_issues = fetch_mantis_recent_issues(snapshot_limit)
+    if recent_issues is None:
+        recent_issues = fetch_mantis_recent_issues(snapshot_limit)
+    else:
+        recent_issues = recent_issues[:snapshot_limit]
     matched_issues = [
         issue
         for issue in recent_issues
