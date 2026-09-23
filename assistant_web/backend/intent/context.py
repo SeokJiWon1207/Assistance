@@ -280,6 +280,9 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
 
     if not inherited and not excluded:
         return latest, True
+    # 교정을 시작하는 담화 표지를 상속 값에 붙이면 'NH 아니'가 되어
+    # NH 제외 조건으로 오인된다. 명시적인 'NH 아닌' 등의 필터는 유지한다.
+    latest = re.sub(r"^(?:아니|아니요|아니오)\s*[,，]\s*", "", latest)
     return f"{' '.join([*inherited, *excluded])} {latest}".strip(), False
 
 

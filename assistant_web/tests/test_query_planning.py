@@ -198,6 +198,23 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(inherited["statuses"], ["confirmed"])
         self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
 
+    def test_nh_correction_discourse_marker_does_not_exclude_inherited_customer(self):
+        for opening in ("아니, ", "아니요, ", ""):
+            with self.subTest(opening=opening):
+                messages = [
+                    ChatMessage(role="user", content="NH증권에서 상태가 closed인 최근 이슈 2개 보여줘"),
+                    ChatMessage(role="user", content=opening +
+                                "고객사는 그대로 두고 상태만 resolved로 바꿔서 가장 최근 이슈 하나를 알려줘"),
+                ]
+                text, rewrite = build_contextual_retrieval_text(messages)
+                constraints = extract_query_constraints(text)
+                original = extract_query_constraints(messages[0].content)
+                self.assertFalse(rewrite)
+                self.assertIn(constraints["customer_key"], original["customer_aliases"])
+                self.assertEqual(constraints["excluded_customer_keys"], [])
+                self.assertEqual(constraints["statuses"], ["resolved"])
+
+
     def test_handler_possessive_particle_is_not_part_of_name(self):
         constraints = extract_query_constraints("담당자 강민성의 최근 이슈 2개 보여줘")
         self.assertEqual(constraints["people"]["names"], ["강민성"])

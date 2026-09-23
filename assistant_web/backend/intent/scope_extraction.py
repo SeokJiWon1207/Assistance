@@ -79,6 +79,17 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
             item for item in customer_matches if normalize_for_match(item[1]) not in SOURCE_NAME_ALIASES
         ]
 
+    # 수량 '이슈 하나'는 고객사 후보를 고르기 전에 제외한다. 이후에 지우면
+    # 더 짧은 실제 고객사 NH가 하나에 밀려 함께 사라진다.
+    hana_count_expression = bool(
+        re.search(
+            r"(?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*하나\s*(?:만|씩|를|가|는|$)",
+            text,
+        )
+    )
+    if hana_count_expression:
+        customer_matches = [item for item in customer_matches if normalize_for_match(item[1]) != "하나"]
+
     customer_key = None
     customer_aliases: List[str] = []
     customer_exact = None
@@ -102,15 +113,6 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
             customer_exact = matched_alias
 
     if extract_group_by(text) == "customer":
-        customer_key, customer_aliases, customer_exact = None, [], None
-
-    hana_count_expression = bool(
-        re.search(
-            r"(?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*하나\s*(?:만|씩|를|가|는|$)",
-            text,
-        )
-    )
-    if customer_key and normalize_for_match(customer_key) == "하나" and hana_count_expression:
         customer_key, customer_aliases, customer_exact = None, [], None
 
     if customer_aliases and any(normalize_for_match(alias) == "krx" for alias in customer_aliases):
