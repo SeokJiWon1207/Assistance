@@ -58,6 +58,10 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
         ),
     ]
     normalized_term = normalize_for_match(term)
+    if "open" in constraints.get("statuses", []) and normalized_term in {
+        "남은", "남아있는", "잔여", "안끝난", "미종료",
+    }:
+        return True
     return any(
         normalized_term == normalize_for_match(alias)
         or normalized_term in normalize_for_match(alias)

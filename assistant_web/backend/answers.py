@@ -449,6 +449,28 @@ def build_unverified_person_note(
     )
 
 
+def build_mantis_dependency_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
+    """Mantis 장애를 정상적인 0건 결과와 구분해 알린다.
+
+    로컬 스냅샷이 요청 기간보다 오래된 상태에서 실시간 단계까지 실패하면,
+    결과가 비어 있어도 '없음'을 확정할 수 없다. 이 경우 조건 변경을 권하기보다
+    외부 조회가 끝나지 않았다는 사실과 재시도 방법을 먼저 안내한다.
+    """
+    failed = [
+        stage
+        for stage in retrieval_result.get("stages", [])
+        if str(stage.get("source") or "").startswith("mantis_")
+        and stage.get("status") in {"error", "partial_error"}
+        and stage.get("error_kind") == "dependency"
+    ]
+    if not failed:
+        return None
+    return (
+        "Mantis 연결 오류로 실시간 조회를 완료하지 못했어요. "
+        "현재 조건의 결과가 0건이라고 확정할 수 없습니다. 잠시 후 다시 시도해 주세요."
+    )
+
+
 def wants_issue_history_detail(text: str) -> bool:
     normalized = normalize_for_match(text)
     return any(
@@ -532,8 +554,9 @@ def format_deterministic_issue_answer(
     unapplied_note = build_unapplied_filters_note(retrieval_result)
     unverified_person_note = build_unverified_person_note(display_constraints, len(issues))
     snapshot_note = build_snapshot_note(retrieval_result)
+    dependency_note = build_mantis_dependency_note(retrieval_result)
     if not issues and not customer_group_counts:
-        intro = build_issue_intro_line(display_constraints, issues, 0)
+        intro = dependency_note or build_issue_intro_line(display_constraints, issues, 0)
         sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
         if status_note:
@@ -667,6 +690,8 @@ def format_deterministic_issue_answer(
         lines.extend(["", status_note])
     if unapplied_note:
         lines.extend(["", unapplied_note])
+    if dependency_note:
+        lines.extend(["", dependency_note])
     if snapshot_note:
         lines.extend(["", snapshot_note])
     return "\n".join(lines)

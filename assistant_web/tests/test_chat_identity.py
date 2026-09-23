@@ -173,6 +173,48 @@ class AuthenticatedIdentityTests(unittest.TestCase):
             question,
         )
 
+    def test_personal_notion_document_uses_authenticated_display_name(self):
+        question = "노션에서 나랑 관련된 문서있어?"
+        user = {"displayName": "석지원", "mantisUsername": "mantis-id"}
+
+        self.assertTrue(
+            chat_service_module.should_scope_to_authenticated_notion_user(question)
+        )
+        scoped = chat_service_module.apply_authenticated_notion_scope(
+            question,
+            user,
+        )
+        self.assertEqual(scoped, f"{question} 담당자: 석지원")
+        self.assertEqual(
+            chat_service_module.extract_query_constraints(scoped)["people"]["names"],
+            ["석지원"],
+        )
+
+        request = ChatRequest(
+            modelId="test-model",
+            messages=[{"role": "user", "content": question}],
+        )
+        with patch.object(
+            chat_service_module,
+            "get_private_model",
+            return_value={"id": "test-model", "status": "active"},
+        ), patch.object(
+            chat_service_module,
+            "get_model_api_key",
+            return_value="test-key",
+        ):
+            context = chat_service_module.prepare_chat_pipeline(request, question, user)
+
+        self.assertEqual(context.authenticated_owner, "석지원")
+        self.assertEqual(context.query_constraints["people"]["names"], ["석지원"])
+        self.assertIn("담당자: 석지원", context.retrieval_text)
+
+    def test_personal_notion_scope_does_not_override_named_owner(self):
+        question = "노션에서 내 문서 말고 우동헌 담당 문서 보여줘"
+        self.assertFalse(
+            chat_service_module.should_scope_to_authenticated_notion_user(question)
+        )
+
     def test_explicit_other_person_is_not_overridden_by_login(self):
         with patch.object(
             chat_service_module,

@@ -9,6 +9,72 @@ from backend.notion.mapping import normalize_notion_page
 
 
 class NotionSearchParsingTests(unittest.TestCase):
+    def test_personal_owner_words_are_not_free_text_terms(self):
+        constraints = {
+            "owner": "석지원",
+            "common_filter_clauses": [{
+                "field": "owner", "operator": "equals", "value": "석지원",
+            }],
+        }
+        terms = search.build_notion_terms(
+            "노션에서 나랑 관련된 문서있어? 담당자: 석지원",
+            constraints,
+        )
+        self.assertEqual(terms, ["석지원"])
+
+    def test_owner_people_filter_uses_matching_notion_user(self):
+        search._NOTION_USER_ID_HINTS.clear()
+        with patch.object(search, "notion_property_schema", return_value={
+            "담당자": {"type": "people"},
+            "제목": {"type": "title"},
+        }), patch.object(
+            search,
+            "fetch_notion_users",
+            return_value=(("석지원", "user-1"), ("우동헌", "user-2")),
+        ):
+            decisive, api_filter = search.notion_database_owner_filter("db", "석지원")
+
+        self.assertTrue(decisive)
+        self.assertEqual(
+            api_filter,
+            {"property": "담당자", "people": {"contains": "user-1"}},
+        )
+
+    def test_owner_people_filter_learns_guest_id_from_recent_pages(self):
+        search._NOTION_USER_ID_HINTS.clear()
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "results": [{
+                "properties": {
+                    "담당자": {
+                        "type": "people",
+                        "people": [{"id": "guest-1", "name": "석지원"}],
+                    },
+                },
+            }],
+        }
+        with patch.object(search, "notion_property_schema", return_value={
+            "담당자": {"type": "people"},
+            "제목": {"type": "title"},
+        }), patch.object(
+            search, "fetch_notion_users", return_value=()
+        ), patch.object(
+            search, "notion_post_json", return_value=response
+        ) as post:
+            decisive, api_filter = search.notion_database_owner_filter("db", "석지원")
+            cached_decisive, cached_filter = search.notion_database_owner_filter(
+                "other-db", "석지원"
+            )
+
+        self.assertTrue(decisive)
+        self.assertEqual(
+            api_filter,
+            {"property": "담당자", "people": {"contains": "guest-1"}},
+        )
+        self.assertTrue(cached_decisive)
+        self.assertEqual(cached_filter, api_filter)
+        post.assert_called_once()
+
     def test_created_date_terms_are_removed_only_after_date_is_structured(self):
         clause = {
             "field": "created_at", "operator": "between",
@@ -686,6 +752,108 @@ class NotionSearchExecutionTests(unittest.TestCase):
         self.assertEqual(result["notion_pages"][0]["match_method"], "notion_exact_title_filter")
         self.assertTrue(result["meta"]["exact_title_index_hit"])
 
+    def test_title_search_checks_unindexed_databases_before_skipping_body_scan(self):
+        targeted = Mock(status_code=200)
+        targeted.json.return_value = {
+            "results": [
+                {
+                    "id": f"p{index}",
+                    "title": f"신입사원 교육 {index}",
+                    "search_text": f"신입사원 교육 {index}",
+                    "last_edited_time": f"2026-09-{20 - index:02d}",
+                }
+                for index in range(3)
+            ],
+            "has_more": False,
+        }
+        with (
+            patch.object(search, "get_notion_settings", return_value={
+                "token": "t", "database_ids": ["db1", "db2"],
+            }),
+            patch.object(
+                search,
+                "resolve_notion_read_scope",
+                return_value=({"db1": "db1", "db2": "db2"}, True),
+            ),
+            patch.object(search, "fetch_notion_database_title", return_value="주요이슈현황"),
+            patch.object(search, "indexed_title_term_database_ids", return_value=["db2"]),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=[targeted, self._new_title_response()]) as post,
+            patch.object(
+                search,
+                "normalize_notion_page",
+                side_effect=lambda raw, **kwargs: {**raw, **kwargs},
+            ),
+        ):
+            result = search.execute_notion_search(
+                "노션에서 신입사원 관련 문서 찾아줘",
+                planned_terms=["신입사원"],
+                include_blocks=False,
+            )
+
+        self.assertEqual(post.call_count, 2)
+        self.assertIn("/databases/db2/query", post.call_args_list[0].args[0])
+        self.assertIn("/databases/db1/query", post.call_args_list[1].args[0])
+        self.assertTrue(all("filter" in call.args[1] for call in post.call_args_list))
+        self.assertEqual(result["meta"]["displayed_count"], 4)
+        self.assertTrue(result["meta"]["search_complete"])
+        self.assertNotIn("page_limit", result["meta"]["incomplete_reasons"])
+        self.assertTrue(result["meta"]["result_window_complete"])
+        self.assertFalse(result["meta"]["candidate_count_complete"])
+        self.assertTrue(result["meta"]["title_term_index_hit"])
+        self.assertEqual(result["notion_pages"][0]["id"], "new-page")
+
+    @staticmethod
+    def _new_title_response():
+        response = Mock(status_code=200)
+        response.json.return_value = {"results": [{
+            "id": "new-page", "title": "신입사원 새 교육", "search_text": "신입사원 새 교육",
+            "last_edited_time": "2026-09-22",
+        }], "has_more": False}
+        return response
+
+    def test_title_matches_do_not_skip_full_scan_for_counts(self):
+        targeted = self._new_title_response()
+        scanned = Mock(status_code=200)
+        scanned.json.return_value = {"results": [{
+            "id": "body-page", "title": "교육 안내", "search_text": "신입사원 안내",
+        }], "has_more": False}
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="문서"),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", side_effect=[targeted, scanned]) as post,
+            patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
+        ):
+            result = search.execute_notion_search("신입사원 문서 몇 개야", planned_terms=["신입사원"], include_blocks=False)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(result["meta"]["candidate_count"], 2)
+        self.assertFalse(result["meta"]["title_search_only"])
+
+    def test_one_database_schema_failure_keeps_other_database_results(self):
+        def title(database_id):
+            if database_id == "broken":
+                raise requests.ReadTimeout("slow schema")
+            return "문서"
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["good", "broken"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"good": "good", "broken": "broken"}, True)),
+            patch.object(search, "fetch_notion_database_title", side_effect=title),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(search, "notion_post_json", return_value=self._new_title_response()),
+            patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
+        ):
+            result = search.execute_notion_search("신입사원 문서 찾아줘", planned_terms=["신입사원"], include_blocks=False)
+        self.assertEqual(result["status"], "partial_error")
+        self.assertEqual(result["notion_pages"][0]["id"], "new-page")
+        self.assertFalse(result["meta"]["search_complete"])
+        self.assertIn("query_error", result["meta"]["incomplete_reasons"])
+
     def test_general_search_uses_title_then_body_fallback(self):
         targeted = Mock(status_code=200)
         targeted.json.return_value = {"results": []}
@@ -720,6 +888,46 @@ class NotionSearchExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["notion_pages"][0]["match_method"], "notion_body_scan")
         self.assertIn("배포 체크리스트 본문", result["notion_pages"][0]["content"])
+
+    def test_schema_timeout_falls_back_to_database_scan(self):
+        scanned = Mock(status_code=200)
+        scanned.json.return_value = {
+            "results": [
+                {
+                    "id": "p1",
+                    "title": "신입사원 안내",
+                    "search_text": "신입사원 안내",
+                    "properties_text": "온보딩 문서",
+                    "last_edited_time": "2026-09-21",
+                }
+            ],
+            "has_more": False,
+        }
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db1", "db2"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db1": "db1", "db2": "db2"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="사내규정 Wiki"),
+            patch.object(search, "notion_property_schema", side_effect=[
+                requests.ReadTimeout("slow schema"),
+                {"제목": {"type": "title"}},
+            ]) as schema,
+            patch.object(search, "notion_post_json", return_value=scanned) as post,
+            patch.object(
+                search,
+                "normalize_notion_page",
+                side_effect=lambda raw, **kwargs: {**raw, **kwargs},
+            ),
+        ):
+            result = search.execute_notion_search(
+                "노션에서 신입사원 관련 문서 찾아줘",
+                planned_terms=["신입사원"],
+                include_blocks=False,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["notion_pages"][0]["title"], "신입사원 안내")
+        self.assertEqual(schema.call_count, 2)
+        self.assertEqual(post.call_count, 3)
 
     def test_database_query_error_is_reported_without_raising(self):
         with (

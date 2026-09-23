@@ -497,11 +497,13 @@ def build_query_plan(
         ]
     for clause in model_filter_clauses:
         if clause["field"] == "created_at" and (
-            not question_has_temporal_expression(question)
+            detected_created_at
+            or not question_has_temporal_expression(question)
             or has_invalid_month_expression(question)
         ):
-            # filters.created_at을 버려도 이 절이 남으면 검색 제약을 만들 때
-            # 다시 날짜 범위로 살아나므로 같은 조건으로 함께 막는다.
+            # 규칙으로 날짜를 확정했으면 모델이 만든 별도 범위를 겹치지 않는다.
+            # 두 범위가 함께 남으면 교집합만 검색해 정상 항목을 조용히 누락한다.
+            # 질문에 시점 표현이 없거나 월 표현이 잘못된 경우도 모델 날짜를 버린다.
             continue
         if clause["field"] == "status" and not question_mentions_status:
             # 질문에 상태 표현이 없는데 모델이 "종료 제외" 같은 필터를 붙이면

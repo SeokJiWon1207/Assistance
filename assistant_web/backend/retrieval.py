@@ -329,13 +329,17 @@ def run_retrieval_pipeline(
             if not constraints.get("screen_numbers"):
                 try:
                     stages.append(execute_mantis_filter_search(query_text, limit, constraints))
-                except HTTPException as exc:
+                except (HTTPException, requests.RequestException) as exc:
                     stages.append(
                         {
                             "source": "mantis_filter",
                             "status": "error",
                             "error_kind": "dependency",
-                            "reason": exc.detail,
+                            "reason": (
+                                exc.detail
+                                if isinstance(exc, HTTPException)
+                                else f"Mantis connection failed: {type(exc).__name__}"
+                            ),
                             "issues_list": [],
                             "meta": {"displayed_count": 0},
                         }

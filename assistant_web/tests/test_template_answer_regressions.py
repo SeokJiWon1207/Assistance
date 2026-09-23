@@ -4,10 +4,14 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
+import requests
+
 from backend.answers import format_deterministic_issue_answer, sanitize_customer_notice_answer, should_return_deterministic_issue_list
+from backend.evaluation.verification import build_verification_report
 from backend.intent.source_router import rule_based_search_intent
+from backend.query_planning import build_query_plan
 from backend.reports import incident_triage, sla
-from backend.retrieval import build_model_retrieval_context, collect_retrieved_customer_groups
+from backend.retrieval import build_model_retrieval_context, collect_retrieved_customer_groups, run_retrieval_pipeline
 from backend.sources import mantis
 from backend.understanding import build_keyword_terms, extract_query_constraints
 
@@ -144,6 +148,83 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
             report = incident_triage.build_incident_triage_report(q, search_similar=False)
         search.assert_not_called()
         self.assertIn("초동 확인 순서", report["content"])
+
+    def test_mantis_dependency_failure_is_not_reported_as_zero_matches(self):
+        question = "이번주 이슈 보여줘"
+        constraints = extract_query_constraints(question)
+        query_plan = build_query_plan(question, {"source": "mantis"}, constraints)
+        retrieval = {
+            "query": question,
+            "constraints": constraints,
+            "query_plan": query_plan,
+            "stages": [
+                {
+                    "source": "mantis_snapshot",
+                    "status": "ok",
+                    "issues_list": [],
+                    "meta": {"found_count": 0, "displayed_count": 0},
+                },
+                {
+                    "source": "mantis_page_scan",
+                    "status": "error",
+                    "error_kind": "dependency",
+                    "reason": "Mantis API failed: 500",
+                    "issues_list": [],
+                    "meta": {"displayed_count": 0},
+                },
+            ],
+        }
+        answer = format_deterministic_issue_answer(question, constraints, retrieval, 5)
+        self.assertIn("Mantis 연결 오류로 실시간 조회를 완료하지 못했어요", answer)
+        self.assertIn("0건이라고 확정할 수 없습니다", answer)
+        self.assertNotIn("조건에 맞는 이슈를 찾지 못했어요", answer)
+        report = build_verification_report(question, answer, [], retrieval, "deterministic_issue_list")
+        evidence = next(check for check in report["checks"] if check["id"] == "evidence")
+        self.assertEqual(evidence["status"], "warning")
+        self.assertIn("원문 확인 미완료", evidence["detail"])
+        self.assertEqual(report["status"], "warning")
+
+    def test_completed_empty_search_is_valid_evidence(self):
+        retrieval = {
+            "stages": [{
+                "source": "mantis_page_scan",
+                "status": "ok",
+                "issues_list": [],
+                "meta": {"displayed_count": 0},
+            }],
+        }
+        answer = "조건에 맞는 이슈가 없습니다."
+        report = build_verification_report("이번주 이슈 보여줘", answer, [], retrieval, "deterministic_issue_list")
+        evidence = next(check for check in report["checks"] if check["id"] == "evidence")
+        self.assertEqual(evidence["status"], "pass")
+        self.assertIn("검색 완료", evidence["detail"])
+
+    def test_mantis_filter_connection_failure_becomes_dependency_stage(self):
+        question = "이번주 이슈 보여줘"
+        constraints = extract_query_constraints(question)
+        plan = build_query_plan(question, {"source": "mantis"}, constraints)
+        snapshot = {
+            "source": "mantis_snapshot",
+            "status": "ok",
+            "issues_list": [],
+            "meta": {"snapshot_as_of": "2026-08-19", "found_count": 0},
+        }
+        with patch("backend.retrieval.execute_mantis_snapshot_search", return_value=snapshot), patch(
+            "backend.retrieval.execute_mantis_filter_search",
+            side_effect=requests.RequestException("invalid response"),
+        ), patch(
+            "backend.retrieval.execute_mantis_page_scan",
+            return_value={"source": "mantis_page_scan", "status": "ok", "issues_list": []},
+        ):
+            result = run_retrieval_pipeline(
+                question,
+                5,
+                {"mantis": True, "notion": False, "vectorDb": False},
+                intent_plan=plan,
+            )
+        filter_stage = next(stage for stage in result["stages"] if stage["source"] == "mantis_filter")
+        self.assertEqual(filter_stage["status"], "error")
+        self.assertEqual(filter_stage["error_kind"], "dependency")
 
     def test_aging_intersects_registration_month_and_age(self):
         class FixedDate(date):

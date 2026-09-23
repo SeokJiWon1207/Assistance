@@ -663,6 +663,32 @@ class QueryPlanningTests(unittest.TestCase):
             {"from": "2026-06-01", "to": "2026-06-30", "precision": "last_month"},
         )
 
+    def test_rule_date_range_replaces_conflicting_model_clause(self):
+        question = "노션에 이번주에 등록된거 뭐야"
+        plan = build_query_plan(
+            question,
+            {"source": "notion"},
+            extract_query_constraints(question),
+            {
+                "planned": True,
+                "source": "notion",
+                "filter_clauses": [{
+                    "field": "created_at",
+                    "operator": "between",
+                    "value": ["2026-09-14", "2026-09-20"],
+                }],
+            },
+        )
+        created_clauses = [
+            clause for clause in plan["filter_clauses"]
+            if clause["field"] == "created_at"
+        ]
+        self.assertEqual(len(created_clauses), 1)
+        self.assertEqual(
+            created_clauses[0]["value"],
+            [plan["filters"]["created_at"]["from"], plan["filters"]["created_at"]["to"]],
+        )
+
     def test_last_month_crosses_year_boundary(self):
         # 연초에도 이전 달을 전년 12월로 계산해야 한다.
         self.assertEqual(

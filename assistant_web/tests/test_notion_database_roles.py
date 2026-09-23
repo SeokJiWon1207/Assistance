@@ -382,6 +382,31 @@ class ChildScopeTests(unittest.TestCase):
                 self.assertIs(index['scope_complete'], scope_complete)
                 self.assertIs(index['catalog_complete'], catalog_complete)
 
+    def test_rebaseline_catalog_queries_each_database_directly(self):
+        first = response({
+            'results': [{
+                'id': 'page-1',
+                'properties': {
+                    '제목': {'type': 'title', 'title': [{'plain_text': '신입사원 입문교육'}]},
+                },
+                'url': 'https://www.notion.so/page-1',
+            }],
+            'has_more': False,
+        })
+        second = response({'results': [], 'has_more': False})
+        with patch.object(
+            rebaseline_notion_titles,
+            'notion_post_json',
+            side_effect=[first, second],
+        ) as post:
+            catalog, error, complete = rebaseline_notion_titles.fetch_page_catalog(['db1', 'db2'])
+
+        self.assertTrue(complete)
+        self.assertEqual(error, '')
+        self.assertEqual(catalog['신입사원입문교육'][0]['parent_id'], 'db1')
+        self.assertIn('/databases/db1/query', post.call_args_list[0].args[0])
+        self.assertIn('/databases/db2/query', post.call_args_list[1].args[0])
+
     def test_rebaseline_outputs_follow_runtime_directory(self):
         self.assertEqual(rebaseline_notion_titles.REPORT_DIR.parent, rebaseline_notion_titles.RUNTIME_DIR)
 

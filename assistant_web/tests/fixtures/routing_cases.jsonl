@@ -104,3 +104,6 @@
 {"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"최근 3개월 미래에셋증권 고객사 프로필을 만들어줘"}
 {"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"2026년 8월 미래에셋증권 월간 고객사 리포트를 만들어줘"}
 {"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"높음 우선순위로 '차트 미표시' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘","statuses":[],"mantis_terms":["차트","미표시"]}
+{"q": "DB증권 최근 이슈 보여줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "DB증권", "mantis_terms": []}
+{"q": "동부증권 최근 이슈 보여줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "동부증권", "mantis_terms": []}
+{"q": "노션에서 한화 서버 자동주문 장애에 관한 건 알려줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "한화"}

@@ -62,11 +62,31 @@ class SearchIntentTests(unittest.TestCase):
         self.assertEqual(notion.build_notion_terms("배포 방법 문서 목록 보여줘"), ["배포", "방법"])
         self.assertEqual(notion.build_notion_terms("도커 문서 요약해주세요"), ["도커"])
 
+    def test_notion_created_date_terms_remove_attached_bound_nouns_only(self):
+        constraints = {
+            "common_filter_clauses": [{
+                "field": "created_at",
+                "operator": "between",
+                "value": ["2026-09-21", "2026-09-27"],
+            }],
+        }
+        self.assertEqual(
+            notion.build_notion_terms("노션에 이번주에 등록된거 뭐야", constraints),
+            [],
+        )
+        for keyword in ("등록오류", "작성자", "등록방법"):
+            self.assertEqual(
+                notion.build_notion_terms(f"이번주 {keyword} 문서 보여줘", constraints),
+                [keyword],
+            )
+
     def test_notion_list_and_count_requests_skip_page_bodies(self):
         for question in (
             "노션 기술공유 문서 보여줘",
             "노션 버전관리 항목 몇 개야",
             '노션에서 "배포 계획" 찾아줘',
+            "노션에 이번주에 등록된거 뭐야",
+            "노션에서 나랑 관련된 문서있어?",
         ):
             self.assertFalse(retrieval.notion_question_needs_blocks(question), msg=question)
         for question in (
@@ -85,7 +105,11 @@ class SearchIntentTests(unittest.TestCase):
             "intent_plan": {"source": "notion"},
             "stages": [{"source": "notion", "status": "ok", "notion_pages": [{}]}],
         }
-        for question in ("노션 기술공유 문서 보여줘", "노션 버전관리 항목 몇 개야"):
+        for question in (
+            "노션 기술공유 문서 보여줘",
+            "노션 버전관리 항목 몇 개야",
+            "노션에 이번주에 등록된거 뭐야",
+        ):
             self.assertTrue(
                 should_return_deterministic_notion_list(question, retrieval_result),
                 msg=question,
@@ -223,8 +247,46 @@ class SearchIntentTests(unittest.TestCase):
             5,
         )
 
+        self.assertIn("검색 기준: Notion,", answer)
+        self.assertNotIn("Notion DB(업무 DB)", answer)
         self.assertIn(f"정확 제목={title}", answer)
         self.assertNotIn("키워드=배포, 요청, 문서", answer)
+
+    def test_notion_owner_criteria_is_displayed_once(self):
+        result = {
+            "intent_plan": {"source": "notion"},
+            "stages": [{
+                "source": "notion",
+                "status": "ok",
+                "notion_pages": [{
+                    "id": "page-1",
+                    "title": "개인 문서",
+                    "database_label": "이슈리스트",
+                    "status": "진행 중",
+                    "owner": "석지원",
+                }],
+                "meta": {
+                    "candidate_count": 1,
+                    "constraints": {
+                        "owner": "석지원",
+                        "common_filter_clauses": [{
+                            "field": "owner",
+                            "operator": "equals",
+                            "value": "석지원",
+                        }],
+                    },
+                },
+            }],
+        }
+
+        answer = notion.format_deterministic_notion_answer(
+            "노션에서 나랑 관련된 문서있어? 담당자: 석지원",
+            result,
+            5,
+        )
+
+        self.assertIn("담당자=석지원", answer)
+        self.assertNotIn("owner 일치", answer)
 
 
 class ExactConstraintTests(unittest.TestCase):

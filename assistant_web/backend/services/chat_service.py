@@ -131,6 +131,15 @@ PERSONAL_SCOPE_COMPACT_PATTERN = re.compile(
     r"(?:이슈|업무|건)",
     re.IGNORECASE,
 )
+NOTION_PERSONAL_SCOPE_PATTERN = re.compile(
+    r"(?:^|[\s,])(?:"
+    r"(?:내|나의|제)\s*(?:관련\s*(?:된|있는)?\s*)?(?:문서|항목|페이지|업무|자료)|"
+    r"(?:나|저)(?:랑|와|과)\s*관련\s*(?:된|있는)?\s*(?:문서|항목|페이지|업무|자료)|"
+    r"(?:내가|제가)\s*(?:담당|맡|작성|등록|참여|기여)[가-힣]*\s*(?:문서|항목|페이지|업무|자료)?|"
+    r"(?:내게|나에게|나한테|저에게|저한테)\s*(?:할당|배정|지정|맡겨)[가-힣]*"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def is_identity_question(text: str) -> bool:
@@ -194,6 +203,22 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
     return has_personal_mantis_scope_phrase(text)
 
 
+def should_scope_to_authenticated_notion_user(text: str) -> bool:
+    """Notion의 1인칭 관련 문서를 로그인 사용자 범위로 해석한다."""
+    raw_text = str(text or "").strip()
+    normalized = re.sub(r"\s+", "", raw_text).casefold()
+    if not any(marker in normalized for marker in ("notion", "노션", "노선")):
+        return False
+    constraints = extract_query_constraints(raw_text)
+    explicit_names = {
+        str(name or "").strip().casefold()
+        for name in constraints.get("people", {}).get("names") or []
+    } - PERSONAL_SCOPE_PRONOUN_NAMES
+    if explicit_names:
+        return False
+    return bool(NOTION_PERSONAL_SCOPE_PATTERN.search(raw_text))
+
+
 def apply_authenticated_mantis_scope(
     text: str,
     user: Optional[Dict[str, Any]],
@@ -205,6 +230,25 @@ def apply_authenticated_mantis_scope(
     if not mantis_username or not should_scope_to_authenticated_mantis_user(scope_text or text):
         return text
     return f"{text} 담당자: {mantis_username}".strip()
+
+
+def apply_authenticated_notion_scope(
+    text: str,
+    user: Optional[Dict[str, Any]],
+    *,
+    scope_text: Optional[str] = None,
+) -> str:
+    """개인 Notion 요청에 인증 계정의 표시 이름을 담당 조건으로 명시한다."""
+    notion_username = str(
+        (user or {}).get("displayName") or (user or {}).get("mantisUsername") or ""
+    ).strip()
+    if (
+        not notion_username
+        or "@" in notion_username
+        or not should_scope_to_authenticated_notion_user(scope_text or text)
+    ):
+        return text
+    return f"{text} 담당자: {notion_username}".strip()
 
 
 @dataclass
@@ -548,16 +592,32 @@ def prepare_chat_pipeline(
     scope_text = retrieval_text
     if is_follow_up_question(latest_user_text):
         scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))
-    owner = str((user or {}).get("mantisUsername") or (user or {}).get("displayName") or "").strip()
-    if not should_scope_to_authenticated_mantis_user(scope_text):
+    mantis_personal_scope = should_scope_to_authenticated_mantis_user(scope_text)
+    notion_personal_scope = should_scope_to_authenticated_notion_user(scope_text)
+    if mantis_personal_scope:
+        owner = str(
+            (user or {}).get("mantisUsername") or (user or {}).get("displayName") or ""
+        ).strip()
+    elif notion_personal_scope:
+        owner = str(
+            (user or {}).get("displayName") or (user or {}).get("mantisUsername") or ""
+        ).strip()
+        if "@" in owner:
+            owner = ""
+    else:
         owner = ""
-    with authenticated_owner_scope(owner):
-        scoped_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
     retrieval_text = apply_authenticated_mantis_scope(
         retrieval_text,
         user,
         scope_text=scope_text,
     )
+    retrieval_text = apply_authenticated_notion_scope(
+        retrieval_text,
+        user,
+        scope_text=scope_text,
+    )
+    with authenticated_owner_scope(owner):
+        scoped_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
     enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
     system_notes = [
         answer_style_instruction(request.answerStyle),
@@ -582,6 +642,9 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
     if user and not context.authenticated_owner and should_scope_to_authenticated_mantis_user(context.latest_user_text):
         return {"modelId": request.modelId, "content": "개인 이슈를 조회할 담당자명이 등록되어 있지 않습니다. 관리자에게 Mantis 담당자명 등록을 요청해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_scope"}}
+    if user and not context.authenticated_owner and should_scope_to_authenticated_notion_user(context.latest_user_text):
+        return {"modelId": request.modelId, "content": "개인 Notion 문서를 조회할 사용자 이름이 등록되어 있지 않습니다. 계정 표시 이름을 확인해 주세요.",
+                "sources": [], "raw": {"mode": "missing_personal_notion_scope"}}
     with authenticated_owner_scope(context.authenticated_owner):
         return _plan_chat_query(request, context, user)
 

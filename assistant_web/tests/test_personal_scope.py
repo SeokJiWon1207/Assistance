@@ -50,6 +50,15 @@ class ActionableStatusTest(unittest.TestCase):
         self.assertEqual(extract_query_constraints("지금 처리해야 하는 이슈")["statuses"], ["open"])
         self.assertEqual(extract_query_constraints("대응해야 할 건")["statuses"], ["open"])
         self.assertEqual(extract_query_constraints("나 안끝난거 이슈 알려줘")["statuses"], ["open"])
+        self.assertEqual(extract_query_constraints("내 남은 이슈 보여줘")["statuses"], ["open"])
+        self.assertEqual(extract_query_constraints("잔여 이슈 보여줘")["statuses"], ["open"])
+
+    def test_todo_status_words_are_not_sent_as_content_keywords(self):
+        for question in ("내 남은 이슈 보여줘", "잔여 이슈 보여줘"):
+            with self.subTest(question=question):
+                scoped = apply_authenticated_mantis_scope(question, USER)
+                constraints = extract_query_constraints(scoped)
+                self.assertEqual(build_keyword_terms(scoped, constraints), [])
 
     def test_contrastive_assignment_means_not_closed(self):
         # "배정됐는데"는 아직 안 끝난 일을 뜻한다.

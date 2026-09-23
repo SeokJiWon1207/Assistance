@@ -36,6 +36,7 @@ from backend.notion.client import (
     fetch_notion_database_schema as _fetch_notion_database_schema,
     fetch_notion_database_title as _fetch_notion_database_title,
     fetch_notion_page_blocks as _fetch_notion_page_blocks,
+    fetch_notion_users as _fetch_notion_users,
 )
 from backend.notion.compat import compat_dependency
 from backend.notion.constants import (
@@ -53,6 +54,7 @@ from backend.notion.property_roles import (
     DEPLOYMENT_NAMES,
     DUE_NAMES,
     REGISTRATION_NAMES,
+    responsible_properties,
     role_properties,
 )
 from backend.notion.schema import (
@@ -85,7 +87,16 @@ _DATE_VALUE_TERM = re.compile(
 _CREATED_DATE_VERB = re.compile(
     r"(?:등록(?:된|한|됐|되었|되어)|접수(?:된|한|됐|되었|되어)|"
     r"생성(?:된|한|됐|되었|되어)|작성(?:된|한|됐|되었|되어)|만든|올라온|들어온)"
+    r"(?:(?:것|거|게|건)(?:들)?(?:만|은|는|이|가|을|를|도)?)?"
 )
+_PERSONAL_OWNER_QUERY = re.compile(
+    r"(?<![가-힣])(?:내|제|나|저)(?:가|랑|와|과|의|에게|한테|게)?"
+    r"(?:\s*관련(?:된|있는)?)?(?=\s|$|[,.;!?])"
+)
+_EXISTENCE_LIST_QUERY = re.compile(
+    r"(?:문서|항목|페이지|자료|업무)(?:가|은|는)?\s*있(?:어(?:요)?|나요|는지)(?=\s|$|[,.;!?])"
+)
+_NOTION_USER_ID_HINTS: Dict[str, str] = {}
 _DATE_FIELD_TERMS = {
     "created_at": {"등록일", "접수일", "생성일", "작성일"},
     "due_at": {"마감", "기한", "마감일"},
@@ -108,6 +119,9 @@ def fetch_notion_database_title(database_id: str) -> str:
 def fetch_notion_page_blocks(*args: Any, **kwargs: Any) -> str:
     return compat_dependency("fetch_notion_page_blocks", _fetch_notion_page_blocks)(*args, **kwargs)
 
+def fetch_notion_users() -> tuple[tuple[str, str], ...]:
+    return compat_dependency("fetch_notion_users", _fetch_notion_users)()
+
 def notion_property_schema(database_id: str) -> Dict[str, Any]:
     return compat_dependency("notion_property_schema", _notion_property_schema)(database_id)
 
@@ -121,6 +135,15 @@ def correct_notion_status_typo(text: str) -> Tuple[str, Optional[Tuple[str, str]
 
 
 def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    owner_values = [
+        value
+        for clause in (constraints or {}).get("common_filter_clauses", [])
+        if clause.get("field") == "owner"
+        for value in values_for_clause(clause.get("value"))
+    ]
+    if (constraints or {}).get("owner") or owner_values:
+        text = _PERSONAL_OWNER_QUERY.sub(" ", text)
+    text = _EXISTENCE_LIST_QUERY.sub(" ", text)
     for pattern in GROUP_BY_PATTERNS.values():
         text = pattern.sub(" ", text)
     text = re.sub(
@@ -704,6 +727,8 @@ def notion_clause_server_covered(
     operator = str(clause.get("operator") or "")
     if field in {"status", "customer"}:
         return field in server_covered_fields and operator in {"equals", "in"}
+    if field == "owner":
+        return field in server_covered_fields and operator in {"equals", "in"}
     if field in {"created_at", "deployed_at"}:
         return field in server_covered_fields and operator in {"between", "equals", "gte", "lte"}
     if field == "database":
@@ -795,6 +820,75 @@ def notion_database_customer_filter(
             return None
         clause_filters.append(filters[0] if len(filters) == 1 else {"or": filters})
     return clause_filters[0] if len(clause_filters) == 1 else {"and": clause_filters}
+
+
+def notion_database_owner_filter(
+    database_id: str,
+    owner: str,
+) -> tuple[bool, Optional[Dict[str, Any]]]:
+    """담당자 people 필드가 있으면 사용자 ID로 서버 필터를 만든다.
+
+    첫 반환값이 참이고 필터가 없으면 해당 DB에는 관련자 필드가 없어
+    안전하게 건너뛸 수 있다. relation 기반 담당자는 로컬 해석을 유지한다.
+    """
+    if not owner:
+        return False, None
+    properties = notion_property_schema(database_id)
+    fields = responsible_properties(properties)
+    if not fields:
+        # 빈 스키마는 조회 실패/테스트 대역일 수 있으므로 로컬 검사로
+        # 폴백한다. 실제 속성이 있는데 관련자 필드가 없는 DB만 건너뛴다.
+        return bool(properties), None
+    people_fields = [name for name in fields if properties[name].get("type") == "people"]
+    if not people_fields:
+        return False, None
+    normalized_owner = normalize_for_match(owner)
+    user_id = _NOTION_USER_ID_HINTS.get(normalized_owner, "") or next(
+        (
+            user_id
+            for user_name, user_id in fetch_notion_users()
+            if normalize_for_match(user_name) == normalized_owner
+        ),
+        "",
+    )
+    if not user_id:
+        # users.list는 게스트/제한 멤버를 빠뜨릴 수 있지만, 페이지의 people
+        # 값에는 이름과 ID가 함께 들어온다. 최근 페이지 한 번만 읽어 ID를
+        # 찾아 두면 이후 모든 DB에 정확한 서버 필터를 적용할 수 있다.
+        response = notion_post_json(
+            f"{NOTION_API_BASE}/databases/{database_id}/query",
+            {
+                "page_size": 100,
+                "sorts": [{"timestamp": "last_edited_time", "direction": "descending"}],
+            },
+            timeout=20,
+            retries=1,
+        )
+        if response.status_code < 400:
+            for raw_page in response.json().get("results", []):
+                raw_properties = raw_page.get("properties") or {}
+                for name in people_fields:
+                    for person in (raw_properties.get(name) or {}).get("people") or []:
+                        person_name = str(person.get("name") or "").strip()
+                        person_id = str(person.get("id") or "").strip()
+                        if (
+                            person_id
+                            and normalize_for_match(person_name) == normalized_owner
+                        ):
+                            user_id = person_id
+                            break
+                    if user_id:
+                        break
+                if user_id:
+                    break
+    if not user_id:
+        return False, None
+    _NOTION_USER_ID_HINTS[normalized_owner] = user_id
+    filters = [
+        {"property": name, "people": {"contains": user_id}}
+        for name in people_fields
+    ]
+    return True, filters[0] if len(filters) == 1 else {"or": filters}
 
 
 def notion_database_date_filter(database_id: str, clause: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -922,6 +1016,32 @@ def indexed_exact_title_database_ids(exact_title: str, database_ids: List[str]) 
         for parent_id in index.get(normalize_for_match(exact_title), ())
         if parent_id in allowed
     ))
+
+
+def indexed_title_term_database_ids(terms: List[str], database_ids: List[str]) -> List[str]:
+    """완성된 최신 제목 인덱스에서 모든 검색어가 제목에 있는 DB를 찾는다."""
+    normalized_terms = [normalize_for_match(term) for term in terms if normalize_for_match(term)]
+    if not normalized_terms:
+        return []
+    path = RUNTIME_DIR / "notion_title_index.json"
+    try:
+        stat = path.stat()
+        data = json.loads(path.read_text(encoding="utf-8"))
+        max_age = float(os.getenv("NOTION_TITLE_INDEX_TTL_SECONDS", "86400"))
+    except (OSError, TypeError, ValueError):
+        return []
+    if data.get("complete") is not True or (max_age >= 0 and time.time() - stat.st_mtime > max_age):
+        return []
+    allowed = {identifier.replace("-", ""): identifier for identifier in database_ids}
+    matched: List[str] = []
+    for normalized_title, rows in (data.get("titles") or {}).items():
+        if not all(term in normalize_for_match(str(normalized_title)) for term in normalized_terms):
+            continue
+        for row in rows if isinstance(rows, list) else []:
+            parent_id = str(row.get("parent_id") or "").replace("-", "")
+            if parent_id in allowed:
+                matched.append(allowed[parent_id])
+    return list(dict.fromkeys(matched))
 
 
 def execute_notion_search(
@@ -1075,19 +1195,56 @@ def execute_notion_search(
     body_scan_candidates_truncated = False
     body_scan_attempted_count = 0
 
-    indexed_database_ids = indexed_exact_title_database_ids(exact_title, database_ids) if exact_title else []
+    indexed_exact_database_ids = indexed_exact_title_database_ids(exact_title, database_ids) if exact_title else []
+    indexed_term_database_ids = (
+        indexed_title_term_database_ids(title_terms, database_ids)
+        if title_terms and not exact_title
+        else []
+    )
+    indexed_database_ids = list(dict.fromkeys([
+        *indexed_exact_database_ids,
+        *indexed_term_database_ids,
+    ]))
     indexed_ids = set(indexed_database_ids)
     search_database_ids = [
         *indexed_database_ids,
         *(database_id for database_id in database_ids if database_id not in indexed_ids),
     ]
 
+    # 제목 검색은 모든 DB에서 먼저 끝낸다. 인덱스는 조회 순서에만
+    # 사용하므로 인덱스 작성 뒤 다른 DB에 생긴 문서도 놓치지 않는다.
+    title_first = bool(title_terms and not exact_title)
+    title_search_complete = True
+    title_search_only = False
+    database_passes = (
+        [(database_id, True) for database_id in search_database_ids]
+        + [(database_id, False) for database_id in search_database_ids]
+        if title_first else [(database_id, False) for database_id in search_database_ids]
+    )
     try:
-        for database_id in search_database_ids:
-            database_label = fetch_notion_database_title(database_id)
-            root_id = read_scope.get(database_id)
-            if root_id and root_id != database_id:
-                database_label = f"{fetch_notion_database_title(root_id)} / {database_label}"
+        for database_id, title_pass in database_passes:
+            if (title_first and not title_pass and title_search_complete
+                    and pages and not require_complete_scan):
+                result_window_complete = True
+                candidate_count_complete = False
+                title_search_only = True
+                break
+            try:
+                database_label = fetch_notion_database_title(database_id)
+                root_id = read_scope.get(database_id)
+                if root_id and root_id != database_id:
+                    database_label = f"{fetch_notion_database_title(root_id)} / {database_label}"
+            except (HTTPException, requests.RequestException) as exc:
+                # 다른 DB에서 확보한 결과를 한 DB의 스키마 장애 때문에
+                # 전부 버리지 않는다. 실패한 범위는 부분 오류로 남긴다.
+                title_search_complete = False
+                errors.append({
+                    "database_id": database_id,
+                    "database_label": database_id,
+                    "error_kind": "dependency",
+                    "reason": f"Notion database schema failed: {exc}",
+                })
+                continue
             if target_database_label and normalize_for_match(target_database_label) not in normalize_for_match(database_label):
                 continue
             database_found_count = 0
@@ -1157,6 +1314,34 @@ def execute_notion_search(
                     if len(combined_filters) == 1
                     else {"and": combined_filters}
                 )
+            owner_filter_decisive = False
+            owner_api_filter: Optional[Dict[str, Any]] = None
+            if notion_constraints.get("owner"):
+                try:
+                    owner_filter_decisive, owner_api_filter = notion_database_owner_filter(
+                        database_id,
+                        str(notion_constraints["owner"]),
+                    )
+                except (HTTPException, requests.RequestException):
+                    owner_filter_decisive = False
+                    owner_api_filter = None
+                if owner_filter_decisive and not owner_api_filter:
+                    database_meta.append({
+                        "database_id": database_id,
+                        "database_label": database_label,
+                        "found_count": 0,
+                    })
+                    continue
+                if owner_api_filter:
+                    server_covered_fields.add("owner")
+                    combined_filters = [
+                        item for item in [status_api_filter, owner_api_filter] if item
+                    ]
+                    status_api_filter = (
+                        combined_filters[0]
+                        if len(combined_filters) == 1
+                        else {"and": combined_filters}
+                    )
 
             server_filter_complete = bool(status_api_filter) and all(
                 notion_clause_server_covered(
@@ -1167,10 +1352,11 @@ def execute_notion_search(
                 )
                 for clause in common_clauses
             ) and not any((
-                notion_constraints.get("owner"),
                 notion_constraints.get("unassigned_owner"),
                 notion_constraints.get("excluded_statuses"),
             ))
+            if notion_constraints.get("owner") and "owner" not in server_covered_fields:
+                server_filter_complete = False
             if notion_constraints.get("status") and "status" not in server_covered_fields:
                 server_filter_complete = False
             database_max_pages = notion_search_max_pages(
@@ -1186,8 +1372,16 @@ def execute_notion_search(
                 and ("created_at" not in server_covered_fields or created_window_safe)
             )
             try:
-                title_property = notion_title_property(notion_property_schema(database_id))
-            except HTTPException:
+                title_property = (
+                    notion_title_property(notion_property_schema(database_id))
+                    if title_pass or not title_first else ""
+                )
+            except requests.Timeout:
+                # 스키마 GET이 지연돼도 키워드 검색 자체는 DB query와 로컬
+                # 매칭으로 계속할 수 있다. 다른 DB의 제목 필터까지 끄면
+                # 전체 스캔 요청이 급증하므로 실패한 DB만 폴백한다.
+                title_property = ""
+            except (HTTPException, requests.RequestException):
                 title_property = ""
             if exact_title and not title_property:
                 errors.append(
@@ -1287,7 +1481,7 @@ def execute_notion_search(
                     }
                 )
                 continue
-            if title_terms and title_property:
+            if title_pass and title_property:
                 try:
                     title_filter = {
                         "and": [
@@ -1309,7 +1503,13 @@ def execute_notion_search(
                         retries=2,
                     )
                     if targeted_response.status_code < 400:
-                        targeted_results = targeted_response.json().get("results", [])
+                        targeted_data = targeted_response.json()
+                        if targeted_data.get("has_more"):
+                            title_search_complete = False
+                            search_complete = False
+                            candidate_count_complete = False
+                            incomplete_reasons.add("title_page_limit")
+                        targeted_results = targeted_data.get("results", [])
                         scanned_count += len(targeted_results)
                         for raw_page in targeted_results:
                             page = normalize_notion_page(
@@ -1333,7 +1533,10 @@ def execute_notion_search(
                             page["match_method"] = "notion_title_filter"
                             pages.append(page)
                             database_found_count += 1
+                    else:
+                        title_search_complete = False
                 except (HTTPException, requests.RequestException) as exc:
+                    title_search_complete = False
                     errors.append(
                         {
                             "database_id": database_id,
@@ -1342,6 +1545,16 @@ def execute_notion_search(
                             "reason": f"Notion targeted-title query failed: {exc}",
                         }
                     )
+            if title_pass:
+                if not title_property:
+                    title_search_complete = False
+                database_meta.append({
+                    "database_id": database_id,
+                    "database_label": database_label,
+                    "found_count": database_found_count,
+                    "phase": "title",
+                })
+                continue
             cursor = None
             for _ in range(database_max_pages):
                 payload: Dict[str, Any] = {
@@ -1550,7 +1763,10 @@ def execute_notion_search(
         }
 
     pages.sort(
-        key=lambda page: notion_page_sort_key(page, created_at_filtered=created_at_filtered),
+        key=lambda page: (
+            bool(terms) and page.get("match_method") == "notion_title_filter",
+            notion_page_sort_key(page, created_at_filtered=created_at_filtered),
+        ),
         reverse=True,
     )
     deduplicated_pages = deduplicate_notion_pages_by_id(pages)
@@ -1617,7 +1833,9 @@ def execute_notion_search(
             "selected_database_role": selected_database_role,
             "databases": database_meta,
             "errors": errors,
-            "exact_title_index_hit": bool(indexed_database_ids),
+            "exact_title_index_hit": bool(indexed_exact_database_ids),
+            "title_term_index_hit": bool(indexed_term_database_ids),
+            "title_search_only": title_search_only,
         },
         "notion_pages": limited_pages,
     }

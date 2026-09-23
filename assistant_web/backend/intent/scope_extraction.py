@@ -84,6 +84,18 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
     customer_exact = None
     if customer_matches:
         _, matched_alias, matched_group = max(customer_matches, key=lambda item: item[0])
+        if normalize_for_match(matched_alias) == "서버자동주문" and not re.search(
+            r"(?:고객사|프로젝트)\s*[:=]?\s*서버\s*자동주문", text,
+        ):
+            # '한화 서버 자동주문 장애'의 서버자동주문은 제품명이다.
+            # 별도 PATS 프로젝트 별칭이 더 길다는 이유로 명시한 증권사를
+            # 덮어쓰면 고객사=한화인 문서가 로컬 검사에서 탈락한다.
+            broker_matches = [
+                item for item in customer_matches
+                if any(str(alias).endswith(("증권", "금융투자")) for alias in item[2])
+            ]
+            if broker_matches:
+                _, matched_alias, matched_group = max(broker_matches, key=lambda item: item[0])
         customer_key = matched_alias
         customer_aliases = matched_group
         if re.match(r"^\d+", matched_alias) and "(" in matched_alias and ")" in matched_alias:

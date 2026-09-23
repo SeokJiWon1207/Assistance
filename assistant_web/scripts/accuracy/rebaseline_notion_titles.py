@@ -60,40 +60,45 @@ def historical_titles() -> list[str]:
     return sorted({title for titles in latest.values() for title in titles})
 
 
-def fetch_page_catalog() -> tuple[dict[str, list[dict[str, Any]]], str, bool]:
-    payload: dict[str, Any] = {
-        "filter": {"property": "object", "value": "page"},
-        "page_size": 100,
-    }
+def fetch_page_catalog(database_ids: list[str]) -> tuple[dict[str, list[dict[str, Any]]], str, bool]:
+    """등록된 DB를 직접 조회해 전역 검색에서 빠지는 페이지까지 색인한다."""
     catalog: dict[str, list[dict[str, Any]]] = {}
-    for _ in range(100):
-        response = notion_post_json(f"{NOTION_API_BASE}/search", payload, timeout=20, retries=2)
-        if response.status_code >= 400:
-            return catalog, f"HTTP {response.status_code}: {response.text[:200]}", False
-        data = response.json()
-        for page in data.get("results") or []:
-            if page.get("object") != "page":
-                continue
-            found_title = notion_title(page.get("properties") or {})
-            normalized_title = normalize_for_match(found_title)
-            if not normalized_title:
-                continue
-            parent = page.get("parent") or {}
-            parent_kind = str(parent.get("type") or "")
-            catalog.setdefault(normalized_title, []).append({
-                "page_id": str(page.get("id") or "").replace("-", ""),
-                "title": found_title,
-                "parent_id": str(parent.get(parent_kind) or "").replace("-", ""),
-                "parent_type": parent_kind,
-                "url": str(page.get("url") or ""),
-            })
-        if not data.get("has_more"):
-            return catalog, "", True
-        cursor = data.get("next_cursor")
-        if not cursor or cursor == payload.get("start_cursor"):
-            return catalog, "invalid search cursor", False
-        payload["start_cursor"] = cursor
-    return catalog, "page catalog limit reached", False
+    errors: list[str] = []
+    for database_id in database_ids:
+        payload: dict[str, Any] = {"page_size": 100}
+        for _ in range(100):
+            response = notion_post_json(
+                f"{NOTION_API_BASE}/databases/{database_id}/query",
+                payload,
+                timeout=20,
+                retries=2,
+            )
+            if response.status_code >= 400:
+                errors.append(f"{database_id}: HTTP {response.status_code}")
+                break
+            data = response.json()
+            for page in data.get("results") or []:
+                found_title = notion_title(page.get("properties") or {})
+                normalized_title = normalize_for_match(found_title)
+                if not normalized_title:
+                    continue
+                catalog.setdefault(normalized_title, []).append({
+                    "page_id": str(page.get("id") or "").replace("-", ""),
+                    "title": found_title,
+                    "parent_id": database_id.replace("-", ""),
+                    "parent_type": "database_id",
+                    "url": str(page.get("url") or ""),
+                })
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+            if not cursor or cursor == payload.get("start_cursor"):
+                errors.append(f"{database_id}: invalid query cursor")
+                break
+            payload["start_cursor"] = cursor
+        else:
+            errors.append(f"{database_id}: page catalog limit reached")
+    return catalog, "; ".join(errors)[:500], not errors
 
 
 def build_title_index(
@@ -152,7 +157,7 @@ def main() -> int:
     if args.limit > 0:
         titles = titles[: args.limit]
 
-    catalog, catalog_error, catalog_complete = fetch_page_catalog()
+    catalog, catalog_error, catalog_complete = fetch_page_catalog(list(read_scope))
     rows: list[dict[str, Any]] = []
     for index, title in enumerate(titles, start=1):
         matches = catalog.get(normalize_for_match(title), [])
@@ -179,8 +184,9 @@ def main() -> int:
     counts = {kind: sum(row["classification"] == kind for row in rows) for kind in (
         "in_scope", "outside_scope", "missing_or_inaccessible", "dependency_error",
     )}
+    run_at = datetime.now().astimezone().isoformat(timespec="seconds")
     report = {
-        "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "run_at": run_at,
         "scope_complete": scope_complete,
         "catalog_complete": catalog_complete,
         "root_database_count": len(roots),
@@ -196,7 +202,7 @@ def main() -> int:
     index_path.write_text(
         json.dumps(
             build_title_index(
-                report["run_at"],
+                run_at,
                 roots,
                 read_scope,
                 catalog,

@@ -1,5 +1,7 @@
 """Notion 검색 근거와 결정형 답변을 포맷한다."""
 
+import re
+
 from typing import Any, Dict, List
 
 from backend.common import extract_quoted_value, has_lookup_request, normalize_for_match, remove_quoted_value
@@ -39,6 +41,11 @@ def has_deterministic_notion_list_intent(text: str) -> bool:
     normalized_text = normalize_for_match(intent_text)
     if extract_group_by(intent_text):
         return True
+    if re.search(
+        r"(?:문서|항목|페이지|자료|업무)(?:가|은|는)?있(?:어(?:요)?|나요|는지)",
+        normalized_text,
+    ):
+        return True
     # 문서 주제의 '방법'과 목록을 정리하는 명령은 본문 요약 요청이 아니다.
     explicit_content = any(word in normalized_text for word in ("본문", "내용", "요약", "설명", "상세", "자세히"))
     if not explicit_content and any(word in normalized_text for word in ("목록", "리스트")):
@@ -63,6 +70,11 @@ def has_deterministic_notion_list_intent(text: str) -> bool:
     ):
         return False
     if any(marker in normalized_text for marker in ("목록", "리스트")):
+        return True
+    if re.search(
+        r"(?:등록|접수|생성|작성)(?:된|한|된거|된게|한거|한게).*(?:뭐야|뭐가있|뭐있)",
+        normalized_text,
+    ):
         return True
     return has_lookup_request(intent_text) or any(
         normalize_for_match(keyword) in normalized_text
@@ -205,14 +217,9 @@ def format_deterministic_notion_answer(
         return grouped_answer
 
     terms = notion_stage.get("meta", {}).get("terms", [])
-    database_labels = [
-        item.get("database_label", "")
-        for item in notion_stage.get("meta", {}).get("databases", [])
-        if item.get("database_label")
-    ]
-    criteria = "검색 기준: Notion DB"
-    if database_labels:
-        criteria += f"({', '.join(database_labels)})"
+    # 개별 결과 카드가 출처 DB를 이미 표시한다. 전체 검색 범위의 DB명을
+    # 기준 줄에 모두 나열하면 자손 DB가 늘어날수록 답변의 대부분을 차지한다.
+    criteria = "검색 기준: Notion"
     exact_title = str(notion_constraints.get("exact_title") or "").strip()
     if exact_title:
         criteria += f", 정확 제목={exact_title}"
@@ -221,7 +228,8 @@ def format_deterministic_notion_answer(
     structured_labels = [
         filter_clause_label(clause)
         for clause in notion_constraints.get("common_filter_clauses", [])
-        if clause.get("field") not in {"keyword"}
+        # 담당자는 바로 아래의 사용자 친화적인 라벨로 한 번만 표시한다.
+        if clause.get("field") not in {"keyword", "owner"}
     ]
     if structured_labels:
         criteria += f", 조건={'; '.join(structured_labels)}"
@@ -254,6 +262,8 @@ def format_deterministic_notion_answer(
         )
     elif count_intent:
         intro = f"📊 조건에 맞는 Notion 항목은 총 {total_matches}건입니다. 대표 항목을 함께 표시합니다."
+    elif scope_meta.get("title_search_only"):
+        intro = f"🔍 Notion에서 제목에 검색어가 포함된 항목을 {sort_label}으로 {len(pages)}건 표시합니다."
     elif scope_meta.get("candidate_count_complete") is False and scope_meta.get("result_window_complete"):
         intro = f"🔍 Notion에서 조건에 맞는 항목을 {sort_label}으로 {len(pages)}건 표시합니다."
     elif total_matches > len(pages):

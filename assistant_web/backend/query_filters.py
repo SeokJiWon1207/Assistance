@@ -167,7 +167,9 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
                 for value in raw_values
             )
         elif field == "customer":
-            equal = any(
+            # 양쪽을 같은 고객사 키로 정규화한 비교를 보존한다. 표면형만
+            # 재검사하면 DB증권과 101PopcornRenewal(동부증권)이 갈라진다.
+            equal = equal or any(
                 text_matches_customer_aliases(str(candidate), [value, _canonical_filter_value(field, value)])
                 for candidate in raw_candidates
                 for value in raw_values

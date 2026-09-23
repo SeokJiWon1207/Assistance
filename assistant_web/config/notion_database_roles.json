@@ -1,6 +1,7 @@
 {
   "databases": {
     "8b1ea35f0db04f4db6bf8b8265aee310": {"title": "이슈리스트", "roles": ["issue"]},
+    "3f4f4c181fe940eda60d77ca0f412e04": {"title": "주요이슈현황", "roles": ["issue", "document"]},
     "2e09eccfeda4812280a6c57e8f0a1aad": {"title": "DB02_통합_프로젝트", "roles": ["project"]},
     "2e09eccfeda481ea9cbfcbbec06b67a0": {"title": "DB03_작업", "roles": ["task"]},
     "746d312dc62441208e16f2589505972e": {"title": "버전관리", "roles": ["release"]},

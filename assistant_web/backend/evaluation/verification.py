@@ -97,17 +97,44 @@ def build_verification_report(
         ),
         None,
     )
-    has_evidence = bool(sources or successful_count_stage or not retrieval_used)
+    dependency_failed = any(
+        stage.get("status") in {"error", "partial_error"}
+        and stage.get("error_kind") == "dependency"
+        for stage in (retrieval_result or {}).get("stages", [])
+    )
+    completed_empty_search = any(
+        stage.get("status") == "ok"
+        and stage.get("source") in {
+            "notion", "mantis_id_lookup", "mantis_filter", "mantis_page_scan",
+            "mantis_snapshot", "chroma_db",
+        }
+        and stage.get("meta", {}).get("search_complete") is not False
+        for stage in (retrieval_result or {}).get("stages", [])
+    )
+    has_evidence = bool(
+        sources or successful_count_stage or not retrieval_used or completed_empty_search
+    )
+    evidence_status = (
+        "warning"
+        if dependency_failed and not sources
+        else "pass"
+        if has_evidence
+        else "fail"
+    )
     retrieval_checks.append(
         {
             "id": "evidence",
             "label": "원문 근거",
-            "status": "pass" if has_evidence else "fail",
+            "status": evidence_status,
             "detail": (
                 f"연결된 원문 {len(sources)}건"
                 if sources
                 else "집계 실행 완료"
                 if successful_count_stage
+                else "외부 검색 오류로 원문 확인 미완료"
+                if dependency_failed
+                else "검색 완료 · 일치 항목 없음"
+                if completed_empty_search
                 else "일반 답변"
                 if not retrieval_used
                 else "연결된 원문 없음"
@@ -200,7 +227,9 @@ def build_verification_report(
     retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
     incomplete_stages = [
         stage for stage in (retrieval_result or {}).get("stages", [])
-        if stage.get("status") == "partial_error" or stage.get("meta", {}).get("search_complete") is False
+        if stage.get("status") == "partial_error"
+        or stage.get("error_kind") == "dependency"
+        or stage.get("meta", {}).get("search_complete") is False
     ]
     if incomplete_stages:
         retrieval_checks.append({
