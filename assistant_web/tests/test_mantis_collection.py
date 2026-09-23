@@ -92,7 +92,7 @@ class MantisCollectionTests(unittest.TestCase):
         def fetch(params, **kwargs):
             page = params["page"]
             self.assertEqual(params["page_size"], 50)
-            self.assertEqual(kwargs["timeout"], 45)
+            self.assertEqual(kwargs["timeout"], mantis.MANTIS_PAGE_SCAN_TIMEOUT_SECONDS)
             return [
                 {"id": page * 100 + n, "summary": "차트" if n % 2 == 0 else "주문",
                  "project": {"name": "112KBStar(KB증권)" if n % 2 == 0 else "동부증권"},
@@ -103,7 +103,7 @@ class MantisCollectionTests(unittest.TestCase):
         with patch.object(mantis, "fetch_mantis_issues", side_effect=fetch) as api:
             first = mantis.execute_mantis_page_scan("차트", 5, {"customer_exact": "112KBStar(KB증권)"})
             second = mantis.execute_mantis_page_scan("주문", 3, {"customer_exact": "동부증권"})
-            raw = mantis._fetch_mantis_raw_issues(800, 50, 45)
+            raw = mantis._fetch_mantis_raw_issues(800, 50, mantis.MANTIS_PAGE_SCAN_TIMEOUT_SECONDS)
         self.assertEqual(api.call_count, 16)
         self.assertEqual(first["meta"]["found_count"], 400)
         self.assertEqual(second["meta"]["found_count"], 400)

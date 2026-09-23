@@ -202,6 +202,10 @@ def find_matching_mantis_filter(text: str) -> Optional[Dict[str, Any]]:
 
 _mantis_request_slots = BoundedSemaphore(6)
 
+# 정상 페이지 요청은 6초 안에 끝난다. 드물게 응답 없이 멈추는 요청을 45초까지
+# 기다리면 첫 질문이 50초를 넘고, 캐시 TTL도 지나 결과가 저장되지 않는다.
+MANTIS_PAGE_SCAN_TIMEOUT_SECONDS = 12
+
 
 def fetch_mantis_issues(
     params: Dict[str, Any],
@@ -911,7 +915,7 @@ def execute_mantis_page_scan(
     try:
         # 기존과 같은 50건 × 16페이지를 전부 읽은 뒤 조건을 적용한다.
         # API 정렬이 보장되지 않으므로 표시 건수를 채워도 조기 종료하지 않는다.
-        raw_issues = _fetch_mantis_raw_issues(max_pages * page_size, page_size, 45)
+        raw_issues = _fetch_mantis_raw_issues(max_pages * page_size, page_size, MANTIS_PAGE_SCAN_TIMEOUT_SECONDS)
         for issue in raw_issues:
             issue_id = int(issue.get("id") or 0)
             if issue_id:
