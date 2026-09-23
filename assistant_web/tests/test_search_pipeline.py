@@ -639,7 +639,9 @@ class EffortIntentTests(unittest.TestCase):
 
         with patch(
             "backend.reports.effort.fetch_mantis_issues",
-            side_effect=[[matching, wrong_platform, wrong_customer], []],
+            side_effect=lambda params, **_: (
+                [matching, wrong_platform, wrong_customer] if params["page"] == 1 else []
+            ),
         ):
             report = build_effort_report("2025년 NH MTS 공수총합 알려줘")
 

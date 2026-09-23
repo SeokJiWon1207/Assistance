@@ -8,6 +8,7 @@ Mantis 이슈의 공수 커스텀필드를 파싱해 기간·고객사·매체·
 
 import calendar
 import re
+from contextlib import closing
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -23,8 +24,10 @@ from backend.sources.mantis import (
     fetch_mantis_issues,
     issue_matches_constraints,
     mantis_issue_effort_date,
+    mantis_live_max_workers,
     normalize_issue,
 )
+from backend.sources.mantis_collection import iter_pages_in_order
 from backend.understanding import (
     extract_query_constraints,
     load_known_people,
@@ -218,44 +221,48 @@ def run_filtered_effort_report(
     matched_rows: List[Dict[str, Any]] = []
     consecutive_old_pages = 0
 
-    for page_number in range(1, 51):
-        issues = fetch_mantis_issues({"page_size": 100, "page": page_number})
-        if not issues:
-            break
-        page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-        page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-        consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
+    with closing(iter_pages_in_order(
+        lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
+        max_pages=50,
+        workers=mantis_live_max_workers(),
+    )) as pages:
+        for _page_number, issues in pages:
+            if not issues:
+                break
+            page_dates = [mantis_issue_effort_date(issue) for issue in issues]
+            page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
+            consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
 
-        for issue in issues:
-            issue_date = mantis_issue_effort_date(issue)
-            if not issue_date or issue_date < start_date or issue_date > end_date:
-                continue
-            if not issue_matches_constraints(issue, effort_constraints):
-                continue
-            effort_items: List[Dict[str, Any]] = []
-            for custom_field in issue.get("custom_fields", []):
-                field_name = str(custom_field.get("field", {}).get("name", ""))
-                if field_name not in EFFORT_FIELD_LABELS:
+            for issue in issues:
+                issue_date = mantis_issue_effort_date(issue)
+                if not issue_date or issue_date < start_date or issue_date > end_date:
                     continue
-                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                    totals[field_name] += amount
-                    effort_items.append(
-                        {
-                            "field": field_name,
-                            "label": EFFORT_FIELD_LABELS[field_name],
-                            "person": effort_person,
-                            "amount": amount,
-                        }
+                if not issue_matches_constraints(issue, effort_constraints):
+                    continue
+                effort_items: List[Dict[str, Any]] = []
+                for custom_field in issue.get("custom_fields", []):
+                    field_name = str(custom_field.get("field", {}).get("name", ""))
+                    if field_name not in EFFORT_FIELD_LABELS:
+                        continue
+                    for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                        totals[field_name] += amount
+                        effort_items.append(
+                            {
+                                "field": field_name,
+                                "label": EFFORT_FIELD_LABELS[field_name],
+                                "person": effort_person,
+                                "amount": amount,
+                            }
+                        )
+                if effort_items:
+                    normalized_issue = normalize_issue(issue)
+                    normalized_issue["effort_items"] = effort_items
+                    normalized_issue["effort_total"] = round(
+                        sum(item["amount"] for item in effort_items), 4
                     )
-            if effort_items:
-                normalized_issue = normalize_issue(issue)
-                normalized_issue["effort_items"] = effort_items
-                normalized_issue["effort_total"] = round(
-                    sum(item["amount"] for item in effort_items), 4
-                )
-                matched_rows.append(normalized_issue)
-        if consecutive_old_pages >= 2:
-            break
+                    matched_rows.append(normalized_issue)
+            if consecutive_old_pages >= 2:
+                break
 
     matched_rows.sort(
         key=lambda issue: (issue.get("effort_total", 0), issue.get("id", 0)),
@@ -383,43 +390,47 @@ def run_person_effort_report(
     matched_rows: List[Dict[str, Any]] = []
     consecutive_old_pages = 0
 
-    for page_number in range(1, 51):
-        issues = fetch_mantis_issues({"page_size": 100, "page": page_number})
-        if not issues:
-            break
-        page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-        page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-        consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
+    with closing(iter_pages_in_order(
+        lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
+        max_pages=50,
+        workers=mantis_live_max_workers(),
+    )) as pages:
+        for _page_number, issues in pages:
+            if not issues:
+                break
+            page_dates = [mantis_issue_effort_date(issue) for issue in issues]
+            page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
+            consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
 
-        for issue in issues:
-            issue_date = mantis_issue_effort_date(issue)
-            if not issue_date or issue_date < start_date or issue_date > end_date:
-                continue
-            effort_items: List[Dict[str, Any]] = []
-            for custom_field in issue.get("custom_fields", []):
-                field_name = str(custom_field.get("field", {}).get("name", ""))
-                if field_name not in EFFORT_FIELD_LABELS:
+            for issue in issues:
+                issue_date = mantis_issue_effort_date(issue)
+                if not issue_date or issue_date < start_date or issue_date > end_date:
                     continue
-                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                    if normalize_for_match(effort_person) != normalize_for_match(person):
+                effort_items: List[Dict[str, Any]] = []
+                for custom_field in issue.get("custom_fields", []):
+                    field_name = str(custom_field.get("field", {}).get("name", ""))
+                    if field_name not in EFFORT_FIELD_LABELS:
                         continue
-                    totals[field_name] += amount
-                    effort_items.append(
-                        {
-                            "field": field_name,
-                            "label": EFFORT_FIELD_LABELS[field_name],
-                            "amount": amount,
-                        }
+                    for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                        if normalize_for_match(effort_person) != normalize_for_match(person):
+                            continue
+                        totals[field_name] += amount
+                        effort_items.append(
+                            {
+                                "field": field_name,
+                                "label": EFFORT_FIELD_LABELS[field_name],
+                                "amount": amount,
+                            }
+                        )
+                if effort_items:
+                    normalized_issue = normalize_issue(issue)
+                    normalized_issue["effort_items"] = effort_items
+                    normalized_issue["effort_total"] = round(
+                        sum(item["amount"] for item in effort_items), 4
                     )
-            if effort_items:
-                normalized_issue = normalize_issue(issue)
-                normalized_issue["effort_items"] = effort_items
-                normalized_issue["effort_total"] = round(
-                    sum(item["amount"] for item in effort_items), 4
-                )
-                matched_rows.append(normalized_issue)
-        if consecutive_old_pages >= 2:
-            break
+                    matched_rows.append(normalized_issue)
+            if consecutive_old_pages >= 2:
+                break
 
     matched_rows.sort(
         key=lambda issue: (issue.get("effort_total", 0), issue.get("id", 0)),
@@ -592,39 +603,43 @@ def run_effort_ranking_report(
     consecutive_old_pages = 0
     scanned_issue_count = 0
 
-    for page_number in range(1, 51):
-        issues = fetch_mantis_issues({"page_size": 100, "page": page_number})
-        if not issues:
-            break
-        page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-        page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-        consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
+    with closing(iter_pages_in_order(
+        lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
+        max_pages=50,
+        workers=mantis_live_max_workers(),
+    )) as pages:
+        for _page_number, issues in pages:
+            if not issues:
+                break
+            page_dates = [mantis_issue_effort_date(issue) for issue in issues]
+            page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
+            consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
 
-        for issue in issues:
-            issue_date = mantis_issue_effort_date(issue)
-            if not issue_date or issue_date < start_date or issue_date > end_date:
-                continue
-            issue_has_effort = False
-            for custom_field in issue.get("custom_fields", []):
-                field_name = str(custom_field.get("field", {}).get("name", ""))
-                if field_name not in EFFORT_FIELD_LABELS:
+            for issue in issues:
+                issue_date = mantis_issue_effort_date(issue)
+                if not issue_date or issue_date < start_date or issue_date > end_date:
                     continue
-                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                    normalized_name = effort_person.strip()
-                    if not normalized_name:
+                issue_has_effort = False
+                for custom_field in issue.get("custom_fields", []):
+                    field_name = str(custom_field.get("field", {}).get("name", ""))
+                    if field_name not in EFFORT_FIELD_LABELS:
                         continue
-                    bucket = per_person.get(normalized_name)
-                    if bucket is None:
-                        bucket = {field: 0.0 for field in EFFORT_FIELD_LABELS}
-                        bucket["_total"] = 0.0
-                        per_person[normalized_name] = bucket
-                    bucket[field_name] += amount
-                    bucket["_total"] += amount
-                    issue_has_effort = True
-            if issue_has_effort:
-                scanned_issue_count += 1
-        if consecutive_old_pages >= 2:
-            break
+                    for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                        normalized_name = effort_person.strip()
+                        if not normalized_name:
+                            continue
+                        bucket = per_person.get(normalized_name)
+                        if bucket is None:
+                            bucket = {field: 0.0 for field in EFFORT_FIELD_LABELS}
+                            bucket["_total"] = 0.0
+                            per_person[normalized_name] = bucket
+                        bucket[field_name] += amount
+                        bucket["_total"] += amount
+                        issue_has_effort = True
+                if issue_has_effort:
+                    scanned_issue_count += 1
+            if consecutive_old_pages >= 2:
+                break
 
     if not per_person:
         return {

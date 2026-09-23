@@ -1,11 +1,11 @@
 """범위가 제한된 Mantis 페이지 수집과 원본 데이터 단기 캐시."""
 
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from copy import deepcopy
 from threading import Lock
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Generator
 
 from fastapi import HTTPException
 
@@ -56,6 +56,31 @@ def _collect_unique(
         if len(ids) == len(set(ids)):
             return rows
     raise HTTPException(502, "Mantis 페이지가 조회 중 변경되어 결과를 확정하지 못했습니다.")
+
+
+def iter_pages_in_order(
+    fetch_page: Callable[[int], list[dict[str, Any]]],
+    *,
+    max_pages: int,
+    workers: int,
+) -> Generator[tuple[int, list[dict[str, Any]]], None, None]:
+    """페이지를 1쪽부터 순서대로 내주면서 뒤 페이지를 workers개까지 미리 요청한다.
+
+    종료 판단은 호출자가 페이지 순서대로 하므로 결과는 순차 수집과 같다. 호출자가
+    멈추면 미리 받은 뒤 페이지의 결과와 오류는 버린다.
+    """
+    pool = ThreadPoolExecutor(max_workers=workers)
+    pending: dict[int, Future[list[dict[str, Any]]]] = {}
+    next_page = 1
+    try:
+        for page in range(1, max_pages + 1):
+            while next_page <= max_pages and len(pending) < workers:
+                pending[next_page] = pool.submit(fetch_page, next_page)
+                next_page += 1
+            yield page, pending.pop(page).result()
+    finally:
+        # 조기 종료가 정상 경로라 진행 중인 선요청을 기다리지 않는다.
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def fetch_recent_cached(

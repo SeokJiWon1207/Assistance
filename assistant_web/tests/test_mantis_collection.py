@@ -1,5 +1,6 @@
 import os
 import unittest
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, Event, Lock
 from unittest.mock import Mock, patch
@@ -270,3 +271,52 @@ class MantisCollectionTests(unittest.TestCase):
             self.assertEqual(mantis.fetch_mantis_recent_issues(1), [{"id": 10}])
             self.assertEqual(get.call_count, 3)
             self.assertEqual([call.args[0] for call in sleep.call_args_list], [1, 2])
+
+    def test_ordered_prefetch_keeps_page_order_and_bounds_in_flight_requests(self):
+        second_page_done = Event()
+        lock = Lock()
+        in_flight = {"now": 0, "peak": 0}
+
+        def fetch(page):
+            with lock:
+                in_flight["now"] += 1
+                in_flight["peak"] = max(in_flight["peak"], in_flight["now"])
+            try:
+                # 1쪽이 2쪽보다 늦게 끝나도 결과는 1쪽부터 나와야 한다.
+                if page == 1:
+                    self.assertTrue(second_page_done.wait(timeout=3))
+                elif page == 2:
+                    second_page_done.set()
+                return [{"id": page}]
+            finally:
+                with lock:
+                    in_flight["now"] -= 1
+
+        pages = list(mantis_collection.iter_pages_in_order(fetch, max_pages=5, workers=3))
+
+        self.assertEqual([page for page, _ in pages], [1, 2, 3, 4, 5])
+        self.assertEqual([rows for _, rows in pages], [[{"id": n}] for n in range(1, 6)])
+        self.assertLessEqual(in_flight["peak"], 3)
+
+    def test_ordered_prefetch_ignores_errors_after_stop_but_raises_consumed_page_errors(self):
+        requested = []
+
+        def fetch(page):
+            requested.append(page)
+            if page >= 3:
+                raise RuntimeError(f"page {page} failed")
+            return [{"id": page}]
+
+        seen = []
+        with closing(mantis_collection.iter_pages_in_order(fetch, max_pages=50, workers=4)) as pages:
+            for page, _rows in pages:
+                seen.append(page)
+                if page == 2:
+                    break
+        self.assertEqual(seen, [1, 2])
+        # 2쪽을 내줄 때까지 선요청 창(4쪽)만큼만 요청한다.
+        self.assertLessEqual(max(requested), 5)
+
+        with self.assertRaisesRegex(RuntimeError, "page 3 failed"):
+            for _page in mantis_collection.iter_pages_in_order(fetch, max_pages=50, workers=4):
+                pass

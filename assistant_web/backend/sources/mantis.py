@@ -310,10 +310,14 @@ def _fetch_mantis_raw_issues(
     return fetch_recent_cached(
         (settings["url"], settings["token"]), fetch_page,
         limit=total_limit, page_size=page_size, timeout=request_timeout,
-        workers=_mantis_collection_setting("MANTIS_LIVE_MAX_WORKERS", 6, 1, 6),
+        workers=mantis_live_max_workers(),
         ttl=_mantis_collection_setting("MANTIS_LIVE_CACHE_TTL_SECONDS", 30, 0, 60),
         force_refresh=force_refresh,
     )
+
+
+def mantis_live_max_workers() -> int:
+    return _mantis_collection_setting("MANTIS_LIVE_MAX_WORKERS", 6, 1, 6)
 
 
 def _mantis_collection_setting(name: str, default: int, minimum: int, maximum: int) -> int:

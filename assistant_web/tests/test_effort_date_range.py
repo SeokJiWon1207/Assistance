@@ -1,5 +1,7 @@
+import os
 import unittest
 from datetime import date
+from threading import Event
 from unittest.mock import patch
 
 from backend.query_planning import extract_created_at_range
@@ -56,9 +58,12 @@ class EffortDateRangeTests(unittest.TestCase):
             ],
             [],
         ]
+        # 뒤 페이지를 미리 요청하므로 호출 순서가 아니라 페이지 번호로 응답한다.
         with patch(
             "backend.reports.effort.fetch_mantis_issues",
-            side_effect=batches,
+            side_effect=lambda params, **_: (
+                batches[params["page"] - 1] if params["page"] <= len(batches) else []
+            ),
         ):
             report = build_effort_report(
                 "2026년 3월 1일부터 7월 10일까지 미래에셋 공수 알려줘"
@@ -72,6 +77,56 @@ class EffortDateRangeTests(unittest.TestCase):
             {"from": "2026-03-01", "to": "2026-07-10", "precision": "range"},
         )
         self.assertEqual([source["issue_id"] for source in report["sources"]], [2])
+
+    def test_prefetched_pages_after_stop_do_not_change_or_break_the_report(self):
+        """기간 밖 페이지가 2쪽 연속이면 순차 수집과 같은 쪽에서 멈춘다.
+
+        미리 요청한 뒤 페이지의 공수와 오류는 결과에 반영되지 않아야 한다.
+        """
+        def issue(issue_id, created_at, effort):
+            return {
+                "id": issue_id,
+                "project": {"name": "147MiraeAsset(미래에셋증권)"},
+                "summary": f"공수 테스트 {issue_id}",
+                "status": {"name": "assigned"},
+                "created_at": created_at,
+                "custom_fields": [
+                    {"field": {"name": "1문의공수"}, "value": f"석지원({effort})"}
+                ],
+            }
+
+        pages = {
+            1: [issue(5, "2026-07-10T09:00:00+09:00", 1.5)],
+            2: [issue(4, "2026-01-10T09:00:00+09:00", 7)],
+            3: [issue(3, "2026-01-09T09:00:00+09:00", 7)],
+            4: [issue(2, "2026-07-09T09:00:00+09:00", 100)],
+        }
+        requested = []
+        page_four_requested = Event()
+
+        def fetch(params, **_):
+            page = params["page"]
+            requested.append(page)
+            if page == 4:
+                page_four_requested.set()
+            elif page == 3:
+                # 멈추기 전에 4쪽이 이미 선요청됐음을 보장해 검증이 공허하지 않게 한다.
+                self.assertTrue(page_four_requested.wait(timeout=3))
+            if page >= 5:
+                raise RuntimeError("멈춘 뒤의 선요청 오류")
+            return pages[page]
+
+        with (
+            patch.dict(os.environ, {"MANTIS_LIVE_MAX_WORKERS": "6"}),
+            patch("backend.reports.effort.fetch_mantis_issues", side_effect=fetch),
+        ):
+            report = build_effort_report(
+                "2026년 3월 1일부터 7월 10일까지 미래에셋 공수 알려줘"
+            )
+
+        self.assertIn("총 공수: **1.50**", report["content"])
+        self.assertEqual([source["issue_id"] for source in report["sources"]], [5])
+        self.assertIn(4, requested)
 
     def test_iso_day_range_is_recognized(self):
         """``2026-03-01 ~ 2026-07-10`` 표기가 연 단위로 넓어지면 안 된다."""
