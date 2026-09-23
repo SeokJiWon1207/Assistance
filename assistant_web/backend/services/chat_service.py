@@ -285,7 +285,11 @@ def _build_deterministic_report(
     if not latest_user_text:
         return DeterministicReportResult()
 
-    if enabled_tools.get("mantis"):
+    report_text = retrieval_text or latest_user_text
+    report_source = rule_based_search_intent(report_text, extract_query_constraints(report_text))
+    # Notion 검색 제목의 '공수'나 '주간보고'가 Mantis 집계로 선점되지 않게 한다.
+    notion_target = report_source.get("source") == "notion"
+    if enabled_tools.get("mantis") and not notion_target:
         # 순서 계약: 아래 빌더는 첫 번째 일치 결과가 곧 최종 응답이므로 위치가 동작이다.
         # 1) 잘못된 고객사를 먼저 차단해 조건 없는 전체 조회로 넓어지는 것을 막는다.
         # 2) 기준 이슈가 명시된 유사 해결 검색은 일반 집계보다 구체적이라 먼저 처리한다.

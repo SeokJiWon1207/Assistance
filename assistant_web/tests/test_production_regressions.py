@@ -42,6 +42,24 @@ def issue(issue_id, handler="테스트갑", status="assigned"):
 
 
 class SearchRegressionTests(unittest.TestCase):
+    def test_notion_title_cannot_be_intercepted_by_mantis_reports(self):
+        for title in ("코스콤 KRX 거래시간 연장 관련 테스트 범위 및 공수 확인", "주간보고"):
+            question = f"노션에서 '{title}' 항목을 찾아서 알려줘"
+            with (
+                patch.object(chat, "build_unknown_customer_report") as guard,
+                patch.object(chat, "build_weekly_report") as weekly,
+                patch.object(chat, "build_effort_report") as effort,
+                patch.object(chat, "run_notion_write_command", return_value=None),
+            ):
+                result = chat.build_deterministic_report(
+                    question, question, {"mantis": True, "notion": True}, [], None,
+                )
+            self.assertIsNone(result.response)
+            self.assertIsNone(result.pending_effort_report)
+            guard.assert_not_called()
+            weekly.assert_not_called()
+            effort.assert_not_called()
+
     def test_personal_sla_report_retains_authenticated_scope(self):
         question = "내 장기 미종료 이슈 알려줘"
         text = chat.apply_authenticated_mantis_scope(question, {"mantisUsername": "테스트갑"})
