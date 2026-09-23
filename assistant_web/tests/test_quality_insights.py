@@ -283,6 +283,10 @@ class ConstraintGroundingTests(unittest.TestCase):
 
 
 class ScreenNumberAccuracyTests(unittest.TestCase):
+    def setUp(self):
+        mantis.clear_mantis_recent_cache()
+        self.addCleanup(mantis.clear_mantis_recent_cache)
+
     @patch.object(mantis, "fetch_mantis_issues")
     def test_live_count_collection_returns_error_metadata(self, fetch_issues):
         fetch_issues.side_effect = requests.ReadTimeout("slow")
@@ -306,7 +310,7 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(result["scanned_pages"], 2)
 
     @patch.object(mantis, "get_mantis_headers", return_value={})
-    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
     @patch.object(mantis.requests, "get")
     def test_page_scan_checks_all_recent_pages_before_selecting_latest_results(
         self, get, _settings, _headers
@@ -322,12 +326,12 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
             }
 
         first_page = [issue(300), issue(200), issue(100)] + [
-            issue(issue_id, "다른 고객사") for issue_id in range(99, 2, -1)
+            issue(issue_id, "다른 고객사") for issue_id in range(99, 52, -1)
         ]
-        get.side_effect = [
-            Mock(status_code=200, json=lambda: {"issues": first_page}),
-            Mock(status_code=200, json=lambda: {"issues": [issue(400)]}),
-        ]
+        def get_page(*args, **kwargs):
+            rows = {1: first_page, 2: [issue(400)]}.get(kwargs["params"]["page"], [])
+            return Mock(status_code=200, json=lambda: {"issues": rows})
+        get.side_effect = get_page
 
         result = mantis.execute_mantis_page_scan(
             "115다올투자증권 구KTB",
@@ -336,22 +340,33 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         )
 
         self.assertEqual([row["id"] for row in result["issues_list"]], [400, 300, 200])
-        self.assertEqual(get.call_count, 2)
+        pages = [call.kwargs["params"]["page"] for call in get.call_args_list]
+        self.assertEqual(pages.count(1), 1)
+        self.assertEqual(pages.count(2), 1)
+        self.assertEqual(result["meta"]["searched_pages"], 2)
 
     @patch.object(mantis.time, "sleep")
     @patch.object(mantis, "get_mantis_headers", return_value={})
-    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
     @patch.object(mantis.requests, "get")
     def test_page_scan_retries_transient_timeout(self, get, _settings, _headers, sleep):
         response = Mock(status_code=200)
         response.json.return_value = {"issues": [{"id": 300, "summary": "테스트"}]}
-        get.side_effect = [requests.ReadTimeout("slow"), response]
+        first_page_attempts = iter([requests.ReadTimeout("slow"), response])
+        def get_page(*args, **kwargs):
+            if kwargs["params"]["page"] != 1:
+                return Mock(status_code=200, json=lambda: {"issues": []})
+            result = next(first_page_attempts)
+            if isinstance(result, Exception):
+                raise result
+            return result
+        get.side_effect = get_page
 
         result = mantis.execute_mantis_page_scan("", limit=1, constraints={})
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual([row["id"] for row in result["issues_list"]], [300])
-        self.assertEqual(get.call_count, 2)
+        self.assertEqual(sum(call.kwargs["params"]["page"] == 1 for call in get.call_args_list), 2)
         sleep.assert_called_once_with(1)
 
     @patch.object(mantis.time, "sleep")

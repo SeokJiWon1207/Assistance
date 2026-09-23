@@ -15,6 +15,7 @@ import time
 from contextlib import closing
 from datetime import date, datetime
 from functools import lru_cache
+from threading import BoundedSemaphore
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -37,6 +38,7 @@ from backend.config import (
 from backend.query_planning import plan_created_at_matches
 from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached
 from backend.understanding import (
     chroma_text_matches_constraints,
     field_matches_screen_number,
@@ -198,6 +200,9 @@ def find_matching_mantis_filter(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+_mantis_request_slots = BoundedSemaphore(6)
+
+
 def fetch_mantis_issues(
     params: Dict[str, Any],
     timeout: int = 30,
@@ -207,12 +212,13 @@ def fetch_mantis_issues(
     safe_attempts = max(1, min(int(attempts), 3))
     for attempt in range(1, safe_attempts + 1):
         try:
-            response = requests.get(
-                settings["url"],
-                headers=get_mantis_headers(),
-                params=params,
-                timeout=max(3, min(int(timeout), 60)),
-            )
+            with _mantis_request_slots:
+                response = requests.get(
+                    settings["url"],
+                    headers=get_mantis_headers(),
+                    params=params,
+                    timeout=max(3, min(int(timeout), 60)),
+                )
         except (requests.ConnectionError, requests.Timeout):
             if attempt == safe_attempts:
                 raise
@@ -274,28 +280,47 @@ def fetch_mantis_recent_issues(
     total_limit: int = 800,
     page_size: int = 100,
     request_timeout: int = 30,
+    *,
+    force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
-    total_limit = max(1, min(total_limit, 3000))
-    page_size = max(1, min(page_size, 100))
-    issues: List[Dict[str, Any]] = []
-    page = 1
-    while len(issues) < total_limit:
-        batch = fetch_mantis_issues(
-            {
-                "page_size": page_size,
-                "page": page,
-            },
-            timeout=request_timeout,
-        )
-        if not batch:
-            break
-        issues.extend(batch)
-        if len(batch) < page_size:
-            break
-        page += 1
-    issues = issues[:total_limit]
+    """API 선두 범위를 병렬 수집한 뒤 ID순으로 정렬한다(전역 최신순 보장 없음)."""
+    issues = _fetch_mantis_raw_issues(total_limit, page_size, request_timeout, force_refresh=force_refresh)
     issues.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
     return issues
+
+
+def _fetch_mantis_raw_issues(
+    total_limit: int, page_size: int, request_timeout: int, *, force_refresh: bool = False,
+) -> List[Dict[str, Any]]:
+    """페이지 검색과 집계가 공유하는 원본 수집. 조건별 결과/점수는 캐시하지 않는다."""
+    total_limit = max(1, min(total_limit, 3000))
+    page_size = max(1, min(page_size, 100))
+    settings = get_mantis_settings()
+
+    def fetch_page(page: int) -> List[Dict[str, Any]]:
+        return fetch_mantis_issues(
+            {"page_size": page_size, "page": page},
+            timeout=request_timeout,
+        )
+
+    return fetch_recent_cached(
+        (settings["url"], settings["token"]), fetch_page,
+        limit=total_limit, page_size=page_size, timeout=request_timeout,
+        workers=_mantis_collection_setting("MANTIS_LIVE_MAX_WORKERS", 6, 1, 6),
+        ttl=_mantis_collection_setting("MANTIS_LIVE_CACHE_TTL_SECONDS", 30, 0, 60),
+        force_refresh=force_refresh,
+    )
+
+
+def _mantis_collection_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return max(minimum, min(int(os.getenv(name, str(default))), maximum))
+    except ValueError:
+        return default
+
+
+def clear_mantis_recent_cache() -> None:
+    clear_recent_cache()
 
 
 def extract_snapshot_limit(text: str, default: int = 800) -> int:
@@ -880,49 +905,33 @@ def execute_mantis_page_scan(
     filtered_issues: List[Dict[str, Any]] = []
     scanned_issue_ids: set[int] = set()
     status_excluded_count = 0
-    page = 1
     page_size = 50
     max_pages = 16
 
     try:
-        while page <= max_pages:
-            issues = fetch_mantis_issues(
-                {"page_size": page_size, "page": page},
-                timeout=45,
-            )
-            if not issues:
-                break
-
-            for issue in issues:
-                issue_id = int(issue.get("id") or 0)
-                if issue_id:
-                    scanned_issue_ids.add(issue_id)
-                combined_text = issue_to_search_text(issue)
-                normalized_text = combined_text.casefold()
-                if constraints and has_constraint(constraints) and not issue_matches_constraints(
+        # 기존과 같은 50건 × 16페이지를 전부 읽은 뒤 조건을 적용한다.
+        # API 정렬이 보장되지 않으므로 표시 건수를 채워도 조기 종료하지 않는다.
+        raw_issues = _fetch_mantis_raw_issues(max_pages * page_size, page_size, 45)
+        for issue in raw_issues:
+            issue_id = int(issue.get("id") or 0)
+            if issue_id:
+                scanned_issue_ids.add(issue_id)
+            combined_text = issue_to_search_text(issue)
+            normalized_text = combined_text.casefold()
+            if constraints and has_constraint(constraints) and not issue_matches_constraints(
+                issue,
+                constraints,
+            ):
+                # 상태만 달라 탈락한 항목 수를 유지해 조건 안내에 사용한다.
+                if constraints.get("statuses") and issue_matches_constraints(
                     issue,
-                    constraints,
+                    {**constraints, "statuses": []},
                 ):
-                    # "확인된 이슈"처럼 상태 필터가 걸린 질문에서 다른 조건은 전부
-                    # 만족하는데 상태만 달라 탈락한 이슈를 센다. 결과가 예상보다
-                    # 적을 때 사용자에게 "상태 조건 제외 시 N건 더 있음"을 알려
-                    # 의도와 해석이 어긋난 경우 스스로 복구할 수 있게 한다.
-                    if constraints.get("statuses") and issue_matches_constraints(
-                        issue,
-                        {**constraints, "statuses": []},
-                    ):
-                        status_excluded_count += 1
-                    continue
-                if not keywords or all(keyword in normalized_text for keyword in keywords):
-                    issue["_assistant_match_score"] = mantis_keyword_match_score(issue, keywords)
-                    filtered_issues.append(issue)
-
-            # API가 마지막 페이지임을 알려주면 더 이상 호출하지 않는다. 요청 건수를
-            # 이미 채웠더라도 여기서 중단하지 않아야, 뒤 페이지의 더 최신 ID를
-            # 전역 정렬 후보에 포함할 수 있다.
-            if len(issues) < page_size:
-                break
-            page += 1
+                    status_excluded_count += 1
+                continue
+            if not keywords or all(keyword in normalized_text for keyword in keywords):
+                issue["_assistant_match_score"] = mantis_keyword_match_score(issue, keywords)
+                filtered_issues.append(issue)
     except HTTPException:
         raise
     except requests.RequestException as exc:
@@ -930,19 +939,13 @@ def execute_mantis_page_scan(
 
     if not filtered_issues and len(keywords) > 1 and not (constraints and has_constraint(constraints)):
         fallback_keyword = keywords[0]
-        try:
-            issues = fetch_mantis_issues(
-                {"page_size": page_size, "page": 1},
-                timeout=45,
-            )
-            filtered_issues = [
-                issue
-                for issue in issues
-                if fallback_keyword
-                in f"{issue.get('project', {}).get('name', '')} {issue.get('summary', '')}".lower()
-            ]
-        except (HTTPException, requests.RequestException):
-            pass
+        # 폴백은 기존처럼 첫 페이지에서만 찾되 같은 수집 세대의 원본을 재사용한다.
+        filtered_issues = [
+            issue
+            for issue in raw_issues[:page_size]
+            if fallback_keyword
+            in f"{issue.get('project', {}).get('name', '')} {issue.get('summary', '')}".lower()
+        ]
 
     filtered_issues.sort(
         key=lambda issue: (issue.get("_assistant_match_score", 0), issue.get("id", 0)),
@@ -967,7 +970,7 @@ def execute_mantis_page_scan(
                 if issue.get("id")
             ),
             "scanned_issue_ids": sorted(scanned_issue_ids),
-            "searched_pages": min(page, max_pages),
+            "searched_pages": min(len(raw_issues) // page_size + 1, max_pages),
             "status_excluded_count": status_excluded_count,
         },
         "issues_list": [normalize_issue(issue) for issue in target_batch],

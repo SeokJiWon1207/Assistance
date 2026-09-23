@@ -80,7 +80,11 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
         self.assertEqual(len(stage["meta"]["matched_customer_groups"]), 320)
         self.assertEqual(scan.call_args.kwargs["group_key"]({"project": "고객B"}), "고객B")
         raw = [{"id": i, "project": {"name": "고객A"}, "summary": "차트"} for i in range(1, 21)]
-        with patch.object(mantis, "fetch_mantis_issues", return_value=raw):
+        mantis.clear_mantis_recent_cache()
+        self.addCleanup(mantis.clear_mantis_recent_cache)
+        with patch.object(mantis, "fetch_mantis_issues", return_value=raw), patch.object(
+            mantis, "get_mantis_settings", return_value={"url": "https://template.test", "token": "test"},
+        ):
             stage = mantis.execute_mantis_page_scan("차트", 2, {})
         self.assertEqual(len(stage["issues_list"]), 2)
         self.assertEqual(len(stage["meta"]["matched_customer_groups"]), 20)
