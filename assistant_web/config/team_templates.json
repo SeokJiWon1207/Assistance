@@ -21,7 +21,7 @@
       "icon": "customer",
       "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}로 보여줘",
       "fields": [
-        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 유진증권" },
+        { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "period", "label": "기간", "type": "select", "value": "이번 달", "options": ["이번 주", "이번 달", "지난달", "올해"] },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
         { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] },
@@ -36,7 +36,7 @@
       "icon": "profile",
       "questionTemplate": "{period|최근 3개월} {customer} {platform?전체} {status?전체} 고객사 프로필을 만들어줘",
       "fields": [
-        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 신한투자증권" },
+        { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "period", "label": "조회 기간", "type": "select", "value": "최근 3개월", "options": ["최근 3개월", "최근 6개월", "올해"] },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
         { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] }
@@ -51,7 +51,7 @@
       "questionTemplate": "{customer} {platform?전체} {days|30}일 넘게 미종료된 이슈를 오래된 순으로 보여줘",
       "fields": [
         { "name": "days", "label": "기준 일수", "type": "number", "value": "30", "required": true, "min": 1, "max": 365 },
-        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "선택 입력" },
+        { "name": "customer", "label": "고객사", "type": "customer", "placeholder": "전체 고객사" },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
       ]
     },
@@ -63,7 +63,7 @@
       "icon": "report",
       "questionTemplate": "{month} {customer} {platform?전체} 월간 고객사 리포트를 만들어줘",
       "fields": [
-        { "name": "customer", "label": "고객사", "type": "text", "required": true, "placeholder": "예: 신한투자증권" },
+        { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "month", "label": "보고 월", "type": "month", "required": true, "dynamicValue": "current-month", "normalize": "month-korean" },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
       ]
@@ -88,7 +88,7 @@
       "questionTemplate": "{period|지난달} {customer|고객사별} {platform?전체} 공수와 평균 처리시간을 표로 보여줘",
       "fields": [
         { "name": "period", "label": "기간", "type": "select", "value": "지난달", "options": ["이번 달", "지난달", "올해"] },
-        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "선택 입력" },
+        { "name": "customer", "label": "고객사", "type": "customer", "placeholder": "전체 고객사" },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
       ]
     },
@@ -101,7 +101,7 @@
       "questionTemplate": "{period|지난주} {customer} 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서 형식으로 작성해줘",
       "fields": [
         { "name": "period", "label": "보고 기간", "type": "select", "value": "지난주", "options": ["지난주", "이번 주"] },
-        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "전체 고객사" }
+        { "name": "customer", "label": "고객사", "type": "customer", "placeholder": "전체 고객사" }
       ]
     },
     {
@@ -113,7 +113,7 @@
       "questionTemplate": "{urgency|일반} 우선순위로 {customer?전체 고객사} {platform?전체}에서 발생한 '{symptom}' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘",
       "fields": [
         { "name": "symptom", "label": "발생 증상", "type": "text", "required": true, "placeholder": "예: 로그인 후 주문 화면이 열리지 않음" },
-        { "name": "customer", "label": "고객사", "type": "text", "placeholder": "선택 입력" },
+        { "name": "customer", "label": "고객사", "type": "customer", "placeholder": "전체 고객사" },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
         { "name": "urgency", "label": "우선순위", "type": "select", "value": "긴급", "options": ["긴급", "높음", "일반"] }
       ]

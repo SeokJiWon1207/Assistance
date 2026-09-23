@@ -13,14 +13,38 @@
   }
 
   function enabledOptions(instance) {
-    return instance.options.filter((item) => !item.option.disabled);
+    return instance.options.filter((item) => !item.option.disabled && !item.element.hidden);
+  }
+
+  function normalizedSearchText(value) {
+    return String(value || "").normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, "");
+  }
+
+  function filterOptions(instance, value = "") {
+    if (!instance.searchInput) return;
+    const needle = normalizedSearchText(value);
+    let visibleCount = 0;
+    instance.options.forEach((item) => {
+      const searchText = item.option.dataset.searchTerms || item.option.textContent || "";
+      const hidden = Boolean(needle) && !normalizedSearchText(searchText).includes(needle);
+      item.element.hidden = hidden;
+      if (!hidden && !item.option.disabled) visibleCount += 1;
+    });
+    instance.emptyMessage.hidden = visibleCount > 0;
+    const candidates = enabledOptions(instance);
+    setActiveOption(instance, candidates[0] || null);
+    positionMenu(instance);
   }
 
   function setActiveOption(instance, item) {
-    if (!item || item.option.disabled) return;
     instance.options.forEach((candidate) => {
       candidate.element.classList.toggle("is-active", candidate === item);
     });
+    if (!item || item.option.disabled || item.element.hidden) {
+      instance.activeItem = null;
+      instance.trigger.removeAttribute("aria-activedescendant");
+      return;
+    }
     instance.activeItem = item;
     instance.trigger.setAttribute("aria-activedescendant", item.element.id);
     item.element.scrollIntoView({ block: "nearest" });
@@ -68,12 +92,17 @@
     instance.wrapper.classList.add("is-open");
     instance.trigger.setAttribute("aria-expanded", "true");
     openInstance = instance;
+    if (instance.searchInput) {
+      instance.searchInput.value = "";
+      filterOptions(instance);
+    }
     positionMenu(instance);
     setActiveOption(
       instance,
       instance.options.find((item) => item.option.selected && !item.option.disabled)
         || enabledOptions(instance)[0],
     );
+    if (instance.searchInput) requestAnimationFrame(() => instance.searchInput.focus());
   }
 
   function chooseOption(instance, item) {
@@ -99,7 +128,7 @@
   }
 
   function renderOptions(instance) {
-    instance.menu.innerHTML = "";
+    instance.optionsList.innerHTML = "";
     instance.options = Array.from(instance.select.options).map((option, index) => {
       const item = document.createElement("button");
       item.type = "button";
@@ -118,7 +147,7 @@
         event.stopPropagation();
         chooseOption(instance, instance.options[index]);
       });
-      instance.menu.appendChild(item);
+      instance.optionsList.appendChild(item);
       return { element: item, option };
     });
     syncSelect(instance.select);
@@ -155,7 +184,9 @@
     const trigger = document.createElement("button");
     const value = document.createElement("span");
     const menu = document.createElement("div");
+    const optionsList = document.createElement("div");
     const menuId = `custom-select-menu-${++nextId}`;
+    const listboxId = `${menuId}-listbox`;
 
     wrapper.className = "custom-select";
     trigger.type = "button";
@@ -163,7 +194,7 @@
     trigger.setAttribute("role", "combobox");
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
-    trigger.setAttribute("aria-controls", menuId);
+    trigger.setAttribute("aria-controls", listboxId);
     trigger.setAttribute("aria-label", selectLabel(select));
     value.className = "custom-select-value";
     trigger.append(value);
@@ -171,8 +202,30 @@
 
     menu.id = menuId;
     menu.className = "custom-select-menu";
-    menu.setAttribute("role", "listbox");
     menu.hidden = true;
+    optionsList.id = listboxId;
+    optionsList.className = "custom-select-options";
+    optionsList.setAttribute("role", "listbox");
+    let searchInput = null;
+    let emptyMessage = null;
+    if (select.dataset.searchable === "true") {
+      const search = document.createElement("div");
+      search.className = "custom-select-search";
+      search.insertAdjacentHTML("beforeend", '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>');
+      searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.placeholder = "고객사 검색";
+      searchInput.autocomplete = "off";
+      searchInput.spellcheck = false;
+      searchInput.setAttribute("aria-label", `${selectLabel(select)} 검색`);
+      search.appendChild(searchInput);
+      menu.appendChild(search);
+    }
+    emptyMessage = document.createElement("p");
+    emptyMessage.className = "custom-select-empty";
+    emptyMessage.textContent = "일치하는 고객사가 없습니다.";
+    emptyMessage.hidden = true;
+    menu.append(optionsList, emptyMessage);
     document.body.appendChild(menu);
 
     select.parentNode.insertBefore(wrapper, select);
@@ -182,7 +235,19 @@
     select.setAttribute("aria-hidden", "true");
     select.hidden = true;
 
-    const instance = { select, wrapper, trigger, value, menu, options: [], activeItem: null, label };
+    const instance = {
+      select,
+      wrapper,
+      trigger,
+      value,
+      menu,
+      optionsList,
+      searchInput,
+      emptyMessage,
+      options: [],
+      activeItem: null,
+      label,
+    };
     instances.set(select, instance);
     renderOptions(instance);
 
@@ -218,6 +283,23 @@
         else openDropdown(instance);
       }
     });
+    if (searchInput) {
+      searchInput.addEventListener("pointerdown", (event) => event.stopPropagation());
+      searchInput.addEventListener("input", () => filterOptions(instance, searchInput.value));
+      searchInput.addEventListener("keydown", (event) => {
+        if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        if (event.key === "Escape") {
+          closeDropdown(instance, true);
+        } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          moveActive(instance, event.key === "ArrowDown" ? 1 : -1);
+        } else if (event.key === "Enter") {
+          chooseOption(instance, instance.activeItem);
+        }
+      });
+    }
     select.addEventListener("change", () => syncSelect(select));
     select.addEventListener("invalid", () => trigger.focus());
 

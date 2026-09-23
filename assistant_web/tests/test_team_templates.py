@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from backend.team_templates import TeamTemplateConfigError, load_team_templates
+from backend.team_templates import (
+    TeamTemplateConfigError,
+    customer_template_options,
+    load_team_templates,
+)
 
 
 class TeamTemplateConfigTests(unittest.TestCase):
@@ -27,6 +31,28 @@ class TeamTemplateConfigTests(unittest.TestCase):
         self.assertIn("issue-handoff", template_ids)
         self.assertIn("incident-review", template_ids)
         self.assertIn("customer-notice", template_ids)
+
+    def test_all_customer_fields_share_the_complete_searchable_customer_list(self):
+        payload = load_team_templates()
+        customer_fields = [
+            field
+            for template in payload["templates"]
+            for field in template["fields"]
+            if field["name"] == "customer"
+        ]
+        expected_options = customer_template_options()
+
+        self.assertEqual(len(customer_fields), 7)
+        self.assertEqual(len(expected_options), 33)
+        self.assertEqual(len(expected_options), len(set(expected_options)))
+        for field in customer_fields:
+            self.assertEqual(field["type"], "customer")
+            self.assertEqual(field["options"], expected_options)
+            self.assertIn("미래에셋증권", field["options"])
+            self.assertIn("한국투자증권", field["options"])
+            self.assertIn("NH투자증권", field["options"])
+            self.assertIn("eBest", field["optionSearchTerms"]["이베스트증권"])
+            self.assertIn("101PopcornRenewal", field["optionSearchTerms"]["DB증권"])
 
     def test_undefined_question_placeholder_is_rejected(self):
         payload = {

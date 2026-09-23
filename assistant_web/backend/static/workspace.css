@@ -215,8 +215,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #2bb673;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #2bb673 14%, transparent);
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 14%, transparent);
 }
 
 .workspace-connection.is-warning {
@@ -504,7 +504,7 @@
   padding: 24px;
   border-radius: 16px;
   background: linear-gradient(135deg, var(--blue), var(--blue-pressed));
-  color: white;
+  color: var(--on-accent);
 }
 
 .workspace-brief-hero span {
@@ -584,7 +584,7 @@
 .workspace-primary-action {
   min-height: 46px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
@@ -721,11 +721,19 @@
 .playbook-editor input,
 .playbook-editor textarea {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   padding: 10px 12px;
+}
+
+.playbook-toolbar input:focus,
+.playbook-editor input:focus,
+.playbook-editor textarea:focus {
+  border-color: var(--blue);
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .playbook-toolbar input { flex: 1; min-width: 180px; }
 
@@ -740,11 +748,22 @@
 .playbook-toolbar form > .secondary-button { padding: 0 20px; }
 .playbook-toolbar form > select { min-width: 132px; }
 
+.playbook-toolbar form > .custom-select {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 132px;
+}
+
 /* 검색줄의 입력창·선택·버튼 높이를 새 플레이북 버튼(46px)에 맞춘다. */
 .playbook-toolbar input,
 .playbook-toolbar select,
 .playbook-toolbar form > .secondary-button {
   min-height: 46px;
+}
+
+.playbook-toolbar .custom-select-trigger {
+  min-height: 46px;
+  border-color: var(--line);
 }
 .playbook-list { display: grid; gap: 14px; }
 .playbook-card {
@@ -769,8 +788,8 @@
 .playbook-card section p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
 .playbook-card > footer { align-items: center; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
 .playbook-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 900; }
-.playbook-status.is-draft { color: #9a5b00; background: #fff1cf; }
-.playbook-status.is-published { color: #08705a; background: #dff8ed; }
+.playbook-status.is-draft { color: var(--warning-strong); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+.playbook-status.is-published { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .playbook-status.is-archived { color: var(--muted); background: var(--surface-alt); }
 .playbook-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .playbook-tags span { padding: 4px 8px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 10px; font-weight: 800; }
@@ -794,6 +813,19 @@
 .playbook-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .playbook-editor-actions .workspace-primary-action,
 .playbook-toolbar > .workspace-primary-action { width: auto; margin: 0; }
+
+:is(
+  .workspace-refresh-button,
+  .workspace-primary-action,
+  .workspace-item-action,
+  .workspace-notification button,
+  .workspace-decision-actions button,
+  .playbook-candidate-action button,
+  .playbook-card-actions button
+):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 @media (max-width: 720px) {
   .playbook-candidate-action,

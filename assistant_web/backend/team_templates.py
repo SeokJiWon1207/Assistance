@@ -6,17 +6,71 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.config import CONFIG_DIR
+from backend.config import CONFIG_DIR, CUSTOMER_ALIASES
 
 
 TEAM_TEMPLATES_PATH = CONFIG_DIR / "team_templates.json"
 TEMPLATE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 PLACEHOLDER_PATTERN = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}")
-ALLOWED_FIELD_TYPES = {"text", "select", "number", "month"}
+ALLOWED_FIELD_TYPES = {"text", "select", "customer", "number", "month"}
 ALLOWED_NORMALIZERS = {"issue-id", "month-korean"}
 ALLOWED_DYNAMIC_VALUES = {"current-month"}
 ALLOWED_ICONS = {"today", "customer", "profile", "spike", "aging", "similar", "effort", "report"}
+CUSTOMER_DISPLAY_OVERRIDES = {
+    "한투": "한국투자증권",
+    "SK증권": "SK증권",
+}
+
+
+def _customer_display_name(canonical: str, aliases: List[str]) -> str:
+    """검색 별칭 중 템플릿 선택기에 표시할 읽기 쉬운 대표 이름을 고른다."""
+    if canonical in CUSTOMER_DISPLAY_OVERRIDES:
+        return CUSTOMER_DISPLAY_OVERRIDES[canonical]
+    cleaned = [value.strip() for value in aliases if value.strip()]
+    securities_name = next(
+        (
+            value
+            for value in cleaned
+            if "증권" in value and not value[0].isdigit()
+        ),
+        "",
+    )
+    if securities_name:
+        return securities_name
+    korean_name = next(
+        (
+            value
+            for value in cleaned
+            if re.search(r"[가-힣]", value) and not value[0].isdigit()
+        ),
+        "",
+    )
+    return korean_name or (cleaned[0] if cleaned else canonical)
+
+
+def customer_template_options() -> List[str]:
+    """고객사 별칭 설정과 같은 순서로 중복 없는 대표 이름을 반환한다."""
+    options: List[str] = []
+    seen = set()
+    for canonical, aliases in CUSTOMER_ALIASES.items():
+        display_name = _customer_display_name(canonical, aliases)
+        normalized = display_name.casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        options.append(display_name)
+    return options
+
+
+def customer_template_search_terms() -> Dict[str, str]:
+    """대표 이름을 코드명과 모든 현업 별칭으로 검색할 수 있게 만든다."""
+    search_terms: Dict[str, str] = {}
+    for canonical, aliases in CUSTOMER_ALIASES.items():
+        display_name = _customer_display_name(canonical, aliases)
+        values = [display_name, canonical, *aliases]
+        search_terms[display_name] = " ".join(dict.fromkeys(value.strip() for value in values if value.strip()))
+    return search_terms
 
 
 class TeamTemplateConfigError(ValueError):
@@ -84,6 +138,11 @@ def _validate_field(raw: Any, template_id: str) -> Dict[str, Any]:
             raise TeamTemplateConfigError(f"{template_id}.{name}.options에 중복 값이 있습니다.")
         if field.get("value") and field["value"] not in field["options"]:
             raise TeamTemplateConfigError(f"{template_id}.{name}.value가 options에 없습니다.")
+    elif field_type == "customer":
+        field["options"] = customer_template_options()
+        field["optionSearchTerms"] = customer_template_search_terms()
+        if not field["options"]:
+            raise TeamTemplateConfigError(f"{template_id}.{name}에 표시할 고객사가 없습니다.")
 
     for key in ("min", "max"):
         if raw.get(key) is not None:

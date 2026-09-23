@@ -218,11 +218,20 @@ function renderTemplateFields(template) {
     const dynamicValue = field.dynamicValue === "current-month"
       ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
       : "";
-    const control = field.type === "select"
-      ? `<select id="${inputId}" name="${escapeHtml(field.name)}" ${required}>
-          ${field.options.map((option) => `<option value="${escapeHtml(option)}" ${option === field.value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
-        </select>`
-      : `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || dynamicValue)}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
+    let control;
+    if (field.type === "select" || field.type === "customer") {
+      const currentValue = field.value || "";
+      const emptyLabel = field.placeholder || (field.required ? "선택해 주세요" : "전체");
+      const emptyOption = field.type === "customer"
+        ? `<option value="" ${field.required ? "disabled" : ""} ${currentValue ? "" : "selected"}>${escapeHtml(emptyLabel)}</option>`
+        : "";
+      control = `<select id="${inputId}" name="${escapeHtml(field.name)}" ${field.type === "customer" ? 'data-searchable="true"' : ""} ${required}>
+          ${emptyOption}
+          ${field.options.map((option) => `<option value="${escapeHtml(option)}" data-search-terms="${escapeHtml(field.optionSearchTerms?.[option] || option)}" ${option === currentValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+        </select>`;
+    } else {
+      control = `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || dynamicValue)}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
+    }
     return `
       <label class="template-field" for="${inputId}">
         <span>${escapeHtml(field.label)} ${requiredLabel}</span>

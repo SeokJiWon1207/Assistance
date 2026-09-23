@@ -122,7 +122,7 @@
 
 .dashboard-source em { font-size: 10px; font-style: normal; font-weight: 800; }
 .dashboard-source-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-.dashboard-source.is-live .dashboard-source-dot { background: #20b878; box-shadow: 0 0 0 3px color-mix(in srgb, #20b878 15%, transparent); }
+.dashboard-source.is-live .dashboard-source-dot { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 15%, transparent); }
 .dashboard-source.is-snapshot .dashboard-source-dot { background: var(--warning); }
 .dashboard-source.is-error .dashboard-source-dot { background: var(--danger); }
 .dashboard-source.is-loading .dashboard-source-dot { background: var(--blue); animation: dashboard-pulse 1s ease-in-out infinite; }
@@ -143,11 +143,24 @@
   min-height: 36px;
   padding: 0 30px 0 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background-color: var(--surface);
   color: var(--text);
   font-size: 11px;
   font-weight: 750;
+}
+
+.dashboard-period .custom-select {
+  width: auto;
+  min-width: 112px;
+}
+
+.dashboard-period .custom-select-trigger {
+  min-height: 36px;
+  padding: 0 10px;
+  border-color: var(--line);
+  border-radius: var(--control-radius);
+  font-size: 11px;
 }
 
 .dashboard-body {
@@ -185,7 +198,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-metric-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dashboard-delta { color: var(--muted); font-size: 9px; font-style: normal; font-weight: 800; }
 .dashboard-delta.is-up { color: var(--danger); }
-.dashboard-delta.is-down { color: #139b69; }
+.dashboard-delta.is-down { color: var(--success); }
 
 .dashboard-filterbar {
   display: flex;
@@ -221,7 +234,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   min-height: 34px;
   padding: 0 11px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
@@ -257,7 +270,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   border-bottom: 1px solid var(--line);
 }
 .health-row:last-child { border-bottom: 0; }
-.health-status { width: 9px; height: 9px; border-radius: 50%; background: #20b878; }
+.health-status { width: 9px; height: 9px; border-radius: 50%; background: var(--success); }
 .health-status.is-attention { background: var(--warning); }
 .health-status.is-high { background: var(--danger); }
 .health-main { display: grid; min-width: 0; gap: 5px; }
@@ -359,6 +372,11 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 
 .dashboard-refresh-status .dashboard-spinner { width: 16px; height: 16px; border-width: 2px; }
 .dashboard-refresh-status.is-error { border-color: color-mix(in srgb, var(--danger) 22%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
+
+:is(.dashboard-ai-button, .dashboard-chip, button.workspace-metric):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 @media (max-width: 1180px) {
   .dashboard-header { align-items: flex-start; }

@@ -13,9 +13,15 @@
   --blue-soft: #e8f3ff;
   --danger: #f04452;
   --warning: #f59f00;
+  --success: #16834c;
+  --warning-strong: #a86600;
+  --purple: #7655d6;
   --shadow: 0 12px 32px rgba(25, 31, 40, 0.08);
+  --control-radius: 9px;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent);
   /* 강조색으로 채운 요소 위의 글자색 */
   --on-accent: #ffffff;
+  --on-danger: #ffffff;
   --chart-1: #3182f6;
   --chart-2: #1cab63;
   --chart-3: #f59f00;
@@ -39,9 +45,13 @@ body.theme-dark {
   --blue-soft: #17283f;
   --danger: #ff6b78;
   --warning: #ffbe3d;
+  --success: #34d399;
+  --warning-strong: #fbbf24;
+  --purple: #a78bfa;
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
   /* 밝은 파랑 위에는 흰 글자 대비가 2.77 이라 어두운 글자를 쓴다 */
   --on-accent: #111318;
+  --on-danger: #111318;
   --chart-1: #5b9bff;
   --chart-2: #34d399;
   --chart-3: #ffbe3d;
@@ -187,7 +197,7 @@ body.auth-pending .app-shell {
   min-height: 46px;
   padding: 0 13px;
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   outline: 0;
   background: var(--surface);
   color: var(--text);
@@ -196,14 +206,14 @@ body.auth-pending .app-shell {
 .login-form input:focus,
 .invite-result input:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--blue-soft);
+  box-shadow: var(--focus-ring);
 }
 
 .auth-primary-button {
   min-height: 48px;
   margin-top: 4px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
@@ -239,8 +249,8 @@ body.auth-pending .app-shell {
 }
 
 .login-error.is-success {
-  background: rgba(28, 171, 99, 0.1);
-  color: #16834c !important;
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--success) !important;
 }
 
 button,
@@ -655,7 +665,7 @@ select,
   width: 100%;
   min-height: 46px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
 }
@@ -669,7 +679,7 @@ select:focus,
 .field-row input:focus,
 .mini-range-row input:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 .custom-select {
@@ -700,7 +710,7 @@ select.custom-select-native {
   min-height: 46px;
   padding: 0 13px 0 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 2px rgba(25, 31, 40, 0.03);
@@ -768,6 +778,64 @@ select.custom-select-native {
   animation: custom-select-enter 0.14s ease-out;
 }
 
+.custom-select-options {
+  display: grid;
+  gap: 3px;
+}
+
+.custom-select-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.custom-select-search:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 14%, transparent);
+}
+
+.custom-select-search svg {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.custom-select-search input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  font: inherit;
+}
+
+.custom-select-search input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.custom-select-empty {
+  margin: 0;
+  padding: 15px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .custom-select-menu[data-placement="top"] {
   transform-origin: bottom center;
 }
@@ -832,6 +900,15 @@ select.custom-select-native {
 
 .template-field .custom-select-trigger {
   min-height: 44px;
+  padding: 10px 12px;
+  border-radius: var(--control-radius);
+}
+
+.field-row .custom-select-trigger {
+  min-height: 38px;
+  padding: 0 10px;
+  border-color: var(--line);
+  border-radius: var(--control-radius);
 }
 
 @keyframes custom-select-enter {
@@ -911,7 +988,7 @@ button.theme-toggle {
   min-height: 48px;
   padding: 8px 10px 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background-color: var(--surface);
   background-image: none;
   color: var(--text);
@@ -929,7 +1006,7 @@ button.theme-toggle:hover {
 button.theme-toggle:focus-visible {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 button.theme-toggle .theme-toggle-copy {
@@ -2088,9 +2165,9 @@ body.theme-dark .chat-header {
   width: 100%;
   min-height: 44px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
   cursor: pointer;
   font-weight: 800;
   transition: filter 0.15s ease, transform 0.15s ease;
@@ -2113,9 +2190,9 @@ body.theme-dark .chat-header {
   display: grid;
   gap: 8px;
   padding: 14px;
-  border: 1px solid rgba(28, 171, 99, 0.25);
+  border: 1px solid color-mix(in srgb, var(--success) 25%, var(--line));
   border-radius: 10px;
-  background: rgba(28, 171, 99, 0.08);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
 }
 
 .invite-result strong {
@@ -2199,7 +2276,7 @@ body.theme-dark .chat-header {
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   outline: none;
@@ -2210,7 +2287,7 @@ body.theme-dark .chat-header {
 .template-field select:focus,
 .feedback-comment-field textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 .template-preview {
@@ -2279,7 +2356,7 @@ body.theme-dark .chat-header {
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text-soft);
   font-size: 12px;
@@ -2810,16 +2887,12 @@ body.theme-dark .chat-header {
 }
 
 .callout-warning {
-  background: rgba(245, 159, 0, 0.1);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
   color: var(--text-soft);
 }
 
 .callout-warning svg {
   color: var(--warning);
-}
-
-body.theme-dark .callout-warning {
-  background: rgba(255, 190, 61, 0.12);
 }
 
 .status-badge {
@@ -2838,8 +2911,8 @@ body.theme-dark .callout-warning {
 }
 
 .status-badge.status-green {
-  background: rgba(28, 171, 99, 0.12);
-  color: #159455;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
 }
 
 .status-badge.status-blue {
@@ -2848,35 +2921,23 @@ body.theme-dark .callout-warning {
 }
 
 .status-badge.status-amber {
-  background: rgba(245, 159, 0, 0.13);
-  color: #b7791f;
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  color: var(--warning-strong);
 }
 
 .status-badge.status-red {
-  background: rgba(240, 68, 82, 0.11);
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
   color: var(--danger);
 }
 
 .status-badge.status-purple {
-  background: rgba(139, 92, 246, 0.12);
-  color: #7c5ce0;
+  background: color-mix(in srgb, var(--purple) 12%, transparent);
+  color: var(--purple);
 }
 
 .status-badge.status-neutral {
   background: var(--surface-alt);
   color: var(--text-soft);
-}
-
-body.theme-dark .status-badge.status-green {
-  color: #4ade80;
-}
-
-body.theme-dark .status-badge.status-amber {
-  color: #fbbf24;
-}
-
-body.theme-dark .status-badge.status-purple {
-  color: #a78bfa;
 }
 
 .markdown-table-wrap {
@@ -3659,17 +3720,17 @@ textarea:focus {
 }
 
 .verification-pass .verification-state {
-  background: rgba(28, 171, 99, 0.12);
-  color: #159455;
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
 }
 
 .verification-warning .verification-state {
-  background: rgba(245, 159, 0, 0.14);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
 }
 
 .verification-fail .verification-state {
-  background: rgba(240, 68, 82, 0.12);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 
@@ -3758,7 +3819,7 @@ textarea:focus {
 }
 
 .dimension-pass > header em {
-  color: #159455;
+  color: var(--success);
 }
 
 .dimension-warning > header em,
@@ -3802,7 +3863,7 @@ textarea:focus {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #1cab63;
+  background: var(--success);
 }
 
 .check-warning .check-mark {
@@ -3876,7 +3937,7 @@ textarea:focus {
   min-height: 40px;
   padding: 0 14px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
@@ -3954,7 +4015,7 @@ textarea:focus {
 }
 
 .feedback-log.feedback-helpful {
-  border-left-color: #1cab63;
+  border-left-color: var(--success);
 }
 
 .feedback-log.feedback-needs_improvement {
@@ -4035,11 +4096,11 @@ textarea:focus {
 }
 
 .case-pass {
-  border-color: rgba(28, 171, 99, 0.42);
+  border-color: color-mix(in srgb, var(--success) 42%, var(--line));
 }
 
 .case-fail {
-  border-color: rgba(240, 68, 82, 0.42);
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
 }
 
 .case-running {
@@ -4109,12 +4170,12 @@ textarea:focus {
 }
 
 .evaluation-history-chip.history-pass {
-  background: rgba(28, 171, 99, 0.14);
-  color: #159455;
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
 }
 
 .evaluation-history-chip.history-fail {
-  background: rgba(240, 68, 82, 0.14);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
   color: var(--danger);
 }
 
@@ -4165,11 +4226,11 @@ textarea:focus {
 }
 
 .accuracy-insight-card.freshness-fresh > strong {
-  color: #159455;
+  color: var(--success);
 }
 
 .accuracy-insight-card.freshness-warning > strong {
-  color: #b87900;
+  color: var(--warning-strong);
 }
 
 .accuracy-insight-card.freshness-stale > strong {
@@ -4288,7 +4349,7 @@ textarea:focus {
 }
 
 .evaluation-case li.passed strong {
-  color: #159455;
+  color: var(--success);
 }
 
 .validation-log {
@@ -4311,15 +4372,15 @@ textarea:focus {
 }
 
 .log-fail {
-  border-color: rgba(240, 68, 82, 0.42);
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
 }
 
 .log-warning {
-  border-color: rgba(245, 166, 35, 0.45);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
 }
 
 .log-pass {
-  border-color: rgba(28, 171, 99, 0.42);
+  border-color: color-mix(in srgb, var(--success) 42%, var(--line));
 }
 
 .validation-summary {
@@ -4353,11 +4414,25 @@ textarea:focus {
 }
 
 .summary-stat-card.tone-pass strong {
-  color: #159455;
+  color: var(--success);
 }
 
 .summary-stat-card.tone-warning strong {
-  color: #b7791f;
+  color: var(--warning-strong);
+}
+
+:is(
+  .auth-primary-button,
+  .secondary-button,
+  .run-evaluation-button,
+  .logout-confirm-button,
+  .modal-close,
+  .sidebar-action-button,
+  .signed-in-user-action,
+  .icon-command
+):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .summary-stat-card.tone-fail strong {

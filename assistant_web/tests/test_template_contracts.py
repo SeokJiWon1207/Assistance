@@ -32,7 +32,7 @@ def template_variants():
         choices = []
         for field in fields:
             name = field["name"]
-            if field.get("options"):
+            if field.get("options") and field.get("type") == "select":
                 values = field["options"]
             elif name == "customer":
                 values = ["미래에셋증권"] + ([] if field.get("required") else [""])
