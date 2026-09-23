@@ -11,6 +11,26 @@ from backend.notion.mapping import normalize_notion_page
 
 
 class NotionSearchParsingTests(unittest.TestCase):
+    def test_custom_status_exclusion_filters_returned_pages(self):
+        for status in ("운영반영", "배포승인대기"):
+            for ending in ("는 빼고", "를 제외하고", "가 아닌"):
+                with self.subTest(status=status, ending=ending):
+                    constraints = search.extract_notion_constraints(
+                        f"노션에서 '2022-10-20 코스콤 버전처리' 항목을 찾아줘. {status} 상태{ending}"
+                    )
+                    self.assertEqual(constraints["excluded_statuses"], [status])
+                    self.assertEqual(constraints["status"], "")
+                    self.assertFalse(search.notion_page_matches_constraints(
+                        {"title": "2022-10-20 코스콤 버전처리", "status": status}, constraints,
+                    ))
+                    self.assertTrue(search.notion_page_matches_constraints(
+                        {"title": "2022-10-20 코스콤 버전처리", "status": "진행중"}, constraints,
+                    ))
+
+    def test_custom_status_exclusion_inside_title_is_not_a_filter(self):
+        constraints = search.extract_notion_constraints("노션에서 '운영반영 상태는 빼고' 문서를 찾아줘")
+        self.assertEqual(constraints["excluded_statuses"], [])
+
     def test_personal_owner_words_are_not_free_text_terms(self):
         constraints = {
             "owner": "석지원",

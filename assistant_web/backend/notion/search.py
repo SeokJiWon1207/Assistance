@@ -390,7 +390,20 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
                 status = candidate
         remaining_status_text = pattern.sub(" ", remaining_status_text)
 
-    # 사용자 정의 상태는 명시적인 '상태가 X인' 표현만 받는다.
+    # DB별 사용자 정의 상태도 명시적인 'X 상태는 빼고'에서 추출한다.
+    # 제목은 이미 제거했으므로 제목 속 단어를 필터로 해석하지 않는다.
+    for match in re.finditer(
+        r"(?<![가-힣A-Za-z0-9_])([가-힣A-Za-z0-9_()-]+)\s+상태"
+        r"\s*(?:은|는|이|가|을|를)?\s*(?:아닌|말고|제외|빼고)",
+        constraint_text,
+    ):
+        value = match.group(1)
+        if value not in excluded_statuses:
+            excluded_statuses.append(value)
+        if status == value:
+            status = ""
+
+    # 사용자 정의 포함 상태는 명시적인 '상태가 X인' 표현만 받는다.
     # '상태가 변경된 항목'의 형용사를 옵션 이름으로 만들지 않는다.
     explicit_status = re.search(
         r"상태\s*(?:가|는|=|:)\s*([가-힣A-Za-z0-9_()-]+?)"
