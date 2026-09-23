@@ -125,16 +125,15 @@ test('late response from previous account cannot replace the next account histor
   assert.equal(h.storage.has('chats:user-b'), false);
 });
 
-test('personal workspace hides intermediate snapshot until live refresh finishes', async () => {
+test('personal workspace joins a single live lookup and hides lists until completion', async () => {
   const calls = [];
   const payloads = [
-    { summary: { open: 5 }, mantis: { status: 'snapshot', issues: [{ id: 1, title: '이전 업무' }] }, user: { mantisUsername: '석지원' } },
     { summary: { open: 2 }, mantis: { status: 'live', issues: [{ id: 2, title: '최신 업무' }] }, user: { mantisUsername: '석지원' } },
   ];
   let releaseLive;
   const h = await harness(async (url) => {
     calls.push(url);
-    if (url.includes('refresh=true')) await new Promise((resolve) => { releaseLive = resolve; });
+    await new Promise((resolve) => { releaseLive = resolve; });
     return { ok: true, json: async () => payloads.shift() };
   });
   const prefetch = h.api.loadMyWorkspace();
@@ -143,13 +142,13 @@ test('personal workspace hides intermediate snapshot until live refresh finishes
   await new Promise(setImmediate);
   assert.equal(h.els.workspaceRefreshBtn.disabled, true);
   assert.equal(h.els.workspaceRefreshBtn.textContent, '불러오는 중…');
-  assert.match(h.els.workspaceContent.innerHTML, /Mantis 최신 데이터를 확인하고 있습니다/);
+  assert.match(h.els.workspaceContent.innerHTML, /업무 정보를 불러오는 중입니다/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-overview|workspace-issue-list/);
   assert.ok(h.htmlWrites.every((html) => !html.includes('이전 업무')));
   releaseLive();
   await Promise.all([prefetch, loading, joined]);
-  assert.deepEqual(calls, ['/personal', '/personal?refresh=true']);
+  assert.deepEqual(calls, ['/personal?live=true']);
   assert.equal(h.state.myWorkspace.summary.open, 2);
   assert.equal(h.els.workspaceRefreshBtn.disabled, false);
   assert.equal(h.els.workspaceRefreshBtn.attributes['aria-busy'], 'false');
@@ -157,7 +156,7 @@ test('personal workspace hides intermediate snapshot until live refresh finishes
   assert.match(h.els.workspaceContent.innerHTML, /최신 업무/);
   assert.ok(h.htmlWrites.every((html) => !html.includes('이전 업무')));
   await h.api.ensureMyWorkspaceFresh();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 1);
 });
 
 test('personal refresh hides existing list and restores it only after failure', async () => {

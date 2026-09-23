@@ -130,6 +130,15 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("issue-handoff", template_ids)
         self.assertIn("incident-review", template_ids)
         self.assertIn("customer-notice", template_ids)
+        customer_fields = [
+            field
+            for template in payload["templates"]
+            for field in template["fields"]
+            if field["name"] == "customer"
+        ]
+        self.assertTrue(customer_fields)
+        self.assertTrue(all(field["type"] == "customer" for field in customer_fields))
+        self.assertTrue(all(len(field["options"]) == 33 for field in customer_fields))
 
     @patch.object(workspace_api, "get_weekly_team_brief")
     @patch.object(workspace_api, "current_request_user")
@@ -165,6 +174,7 @@ class ApiIntegrationTests(unittest.TestCase):
             users=list_users_mock.return_value,
             days=30,
             refresh=False,
+            live=False,
         )
 
     @patch.object(workspace_api, "list_users")
@@ -189,6 +199,7 @@ class ApiIntegrationTests(unittest.TestCase):
             users=list_users_mock.return_value,
             days=14,
             refresh=True,
+            live=False,
         )
 
     @patch.object(workspace_api, "build_my_workspace")
@@ -200,7 +211,16 @@ class ApiIntegrationTests(unittest.TestCase):
         response = self.client.get("/api/workspace/me?refresh=true")
 
         self.assertEqual(response.status_code, 200)
-        build_workspace.assert_called_once_with(current_user.return_value, refresh=True)
+        build_workspace.assert_called_once_with(current_user.return_value, refresh=True, live=False)
+
+    @patch.object(workspace_api, "build_my_workspace")
+    @patch.object(workspace_api, "current_request_user")
+    def test_personal_live_request_can_reuse_shared_data(self, current_user, build_workspace):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        build_workspace.return_value = {"summary": {"open": 0}}
+        response = self.client.get("/api/workspace/me?live=true")
+        self.assertEqual(response.status_code, 200)
+        build_workspace.assert_called_once_with(current_user.return_value, refresh=False, live=True)
 
     @patch.object(workspace_api, "current_request_user")
     def test_dashboard_endpoint_rejects_unsupported_period(self, current_user):

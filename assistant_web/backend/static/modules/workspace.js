@@ -682,14 +682,14 @@ function renderWorkspace() {
   updateWorkspaceUnread();
 }
 
-async function loadMyWorkspace(force = false) {
+async function loadMyWorkspace(force = false, revalidate = false) {
   if (workspaceLoadPromise) {
     const awaitedRefresh = workspaceLoadIsRefresh;
     await workspaceLoadPromise;
     if (force && !awaitedRefresh) return loadMyWorkspace(true);
     return state.myWorkspace;
   }
-  if (state.myWorkspace && !force) return state.myWorkspace;
+  if (state.myWorkspace && !force && !revalidate) return state.myWorkspace;
 
   workspaceLoadIsRefresh = force;
   workspaceLoading = true;
@@ -698,7 +698,7 @@ async function loadMyWorkspace(force = false) {
   updateWorkspaceLoadingControl();
   renderWorkspace();
   workspaceLoadPromise = (async () => {
-    const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : WORKSPACE_ENDPOINTS.personal;
+    const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : `${WORKSPACE_ENDPOINTS.personal}?live=true`;
     const response = await apiFetch(endpoint);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
@@ -730,12 +730,10 @@ async function ensureMyWorkspaceFresh() {
     renderWorkspace();
     return state.myWorkspace;
   }
-  // 저장 데이터 조회와 실시간 갱신을 한 번의 로딩으로 묶어 중간 목록을 표시하지 않는다.
+  // 최초 진입도 실시간 조회 한 번으로 끝내며 원본 캐시는 서버에서 공유한다.
   workspaceFreshPromise = Promise.resolve().then(async () => {
     if (workspaceLoadPromise) await workspaceLoadPromise;
-    if (!state.myWorkspace) await loadMyWorkspace();
-    const recent = state.myWorkspace?.mantis?.status === "live" && Date.now() - workspaceLastLiveAt < workspaceLiveTtlMs;
-    if (!recent && state.myWorkspace?.user?.mantisUsername) await loadMyWorkspace(true);
+    else await loadMyWorkspace(false, true);
     return state.myWorkspace;
   });
   updateWorkspaceLoadingControl();

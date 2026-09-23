@@ -14,7 +14,8 @@ from backend.common import clamp_int, extract_chroma_field, normalize_chroma_iss
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
 from backend.notion.property_roles import responsible_properties
 from backend.db_migrations import run_sqlite_migrations
-from backend.sources.mantis import fetch_mantis_recent_issues, normalize_issue
+from backend.sources.mantis import normalize_issue
+from backend.workspace_data import fetch_workspace_recent_issues
 from backend.sources.notion import (
     fetch_notion_database_schema,
     fetch_notion_database_title,
@@ -350,7 +351,7 @@ def user_mantis_name(user: Dict[str, Any]) -> str:
 
 
 def _my_mantis_issues(
-    user: Dict[str, Any], total_limit: int = 600, *, prefer_snapshot: bool = False
+    user: Dict[str, Any], total_limit: int = 600, *, prefer_snapshot: bool = False, force_refresh: bool = False
 ) -> tuple[str, List[Dict[str, Any]], Dict[str, Any]]:
     person = user_mantis_name(user)
     if not person:
@@ -365,8 +366,8 @@ def _my_mantis_issues(
             ]
             return person, matched, {**snapshot_meta, "matchedCount": len(matched)}
     try:
-        raw_issues = fetch_mantis_recent_issues(
-            total_limit=total_limit, request_timeout=6
+        raw_issues = fetch_workspace_recent_issues(
+            total_limit=total_limit, request_timeout=6, force_refresh=force_refresh
         )
         normalized = [normalize_issue(issue) for issue in raw_issues]
         matched = [
@@ -532,9 +533,9 @@ def mark_notification_read(user_uid: str, notification_id: str) -> None:
         )
 
 
-def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False) -> Dict[str, Any]:
+def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
     person, all_issues, mantis_meta = _my_mantis_issues(
-        user, prefer_snapshot=not refresh
+        user, prefer_snapshot=not (refresh or live), force_refresh=refresh
     )
     issues = [_issue_summary(issue) for issue in all_issues]
     issues.sort(
@@ -599,7 +600,7 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
     source_status = "live"
     source_reason = ""
     try:
-        raw_issues = fetch_mantis_recent_issues(total_limit=1000, request_timeout=6)
+        raw_issues = fetch_workspace_recent_issues(total_limit=1000, request_timeout=6)
         issues = [normalize_issue(issue) for issue in raw_issues]
     except Exception as exc:
         snapshot = scan_mantis_documents(

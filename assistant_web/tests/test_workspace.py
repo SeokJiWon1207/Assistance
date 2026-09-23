@@ -101,7 +101,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
         ]
         with patch.object(
             workspace,
-            "fetch_mantis_recent_issues",
+            "fetch_workspace_recent_issues",
             return_value=raw_issues,
         ), patch.object(workspace, "normalize_issue", side_effect=lambda issue: issue):
             person, issues, meta = workspace._my_mantis_issues(
@@ -121,7 +121,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
             workspace,
             "load_workspace_snapshot",
             return_value=(snapshot_issues, {"status": "snapshot", "matchedCount": 2}),
-        ), patch.object(workspace, "fetch_mantis_recent_issues") as fetch_live:
+        ), patch.object(workspace, "fetch_workspace_recent_issues") as fetch_live:
             person, issues, meta = workspace._my_mantis_issues(
                 {"mantisUsername": "석지원"}, prefer_snapshot=True
             )
@@ -135,7 +135,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
         snapshot_issue = {"id": 10, "handler": "석지원"}
         with patch.object(
             workspace,
-            "fetch_mantis_recent_issues",
+            "fetch_workspace_recent_issues",
             side_effect=TimeoutError("slow"),
         ), patch.object(
             workspace,
@@ -370,7 +370,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
 
 
 class TeamDashboardTests(unittest.TestCase):
-    @patch.object(workspace, "fetch_mantis_recent_issues")
+    @patch.object(workspace, "fetch_workspace_recent_issues")
     def test_team_dashboard_groups_by_approved_user_mapping(self, fetch_issues):
         fetch_issues.return_value = [
             {

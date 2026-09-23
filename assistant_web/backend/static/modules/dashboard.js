@@ -276,7 +276,7 @@ function renderDashboard() {
   });
 }
 
-async function loadDashboard(force = false) {
+async function loadDashboard(force = false, revalidate = false) {
   if (!canViewTeamDashboard()) return;
   if (dashboardLoadPromise) {
     const awaitedRefresh = dashboardLoadIsRefresh;
@@ -284,13 +284,13 @@ async function loadDashboard(force = false) {
     if (force && !awaitedRefresh) return loadDashboard(true);
     return dashboardState.data;
   }
-  if (dashboardState.data && !force) return dashboardState.data;
+  if (dashboardState.data && !force && !revalidate) return dashboardState.data;
   dashboardLoadIsRefresh = force;
   dashboardState.loading = true;
   dashboardState.error = "";
   renderDashboard();
   dashboardLoadPromise = (async () => {
-    const refresh = force ? "&refresh=true" : "";
+    const refresh = force ? "&refresh=true" : "&live=true";
     try {
       const response = await apiFetch(`${WORKSPACE_ENDPOINTS.dashboard}?days=${dashboardState.period}${refresh}`);
       const payload = await responseJson(response);
@@ -322,10 +322,7 @@ async function ensureDashboardFresh() {
   }
   dashboardFreshPromise = Promise.resolve().then(async () => {
     if (dashboardLoadPromise) await dashboardLoadPromise;
-    else if (!dashboardState.data) await loadDashboard();
-    if (!dashboardState.data) return;
-    const recent = dashboardState.data.meta?.source === "live" && Date.now() - dashboardState.lastLiveAt < dashboardLiveTtlMs;
-    if (!recent) await loadDashboard(true);
+    else await loadDashboard(false, true);
     return dashboardState.data;
   });
   renderDashboard();
@@ -493,7 +490,7 @@ function initDashboard() {
   }));
   els.dashboardPeriod.addEventListener("change", () => {
     dashboardState.period = Number(els.dashboardPeriod.value) || 30;
-    loadDashboard(true);
+    loadDashboard(false, true);
   });
   els.dashboardRefreshBtn.addEventListener("click", () => loadDashboard(true));
   els.dashboardBody.addEventListener("click", (event) => handleDashboardAction(event.target));

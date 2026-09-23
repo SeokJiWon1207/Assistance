@@ -56,12 +56,12 @@ def _valid_id(value: str, label: str) -> str:
 
 
 @router.get("/me")
-def my_workspace(request: Request, refresh: bool = False) -> Dict[str, Any]:
-    return build_my_workspace(_user(request), refresh=refresh)
+def my_workspace(request: Request, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
+    return build_my_workspace(_user(request), refresh=refresh, live=live)
 
 
 @router.get("/dashboard")
-def operations_dashboard(request: Request, days: int = 30, refresh: bool = False) -> Dict[str, Any]:
+def operations_dashboard(request: Request, days: int = 30, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
     user = _user(request)
     if days not in DASHBOARD_PERIOD_OPTIONS:
         raise HTTPException(
@@ -69,7 +69,7 @@ def operations_dashboard(request: Request, days: int = 30, refresh: bool = False
             detail="조회 기간은 7일, 14일, 30일, 90일 중 하나여야 합니다.",
         )
     users = list_users()
-    return build_operations_dashboard(user, users=users, days=days, refresh=refresh)
+    return build_operations_dashboard(user, users=users, days=days, refresh=refresh, live=live)
 
 
 @router.get("/conversations")

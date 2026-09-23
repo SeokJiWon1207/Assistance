@@ -84,7 +84,7 @@ test('member can open and load the team dashboard', async () => {
   assert.equal(h.els.viewDashboardBtn.hidden, false);
   assert.equal(h.els.dashboardPanel.hidden, false);
   assert.equal(h.els.personalPanel.hidden, true);
-  assert.deepEqual(h.calls, ['/dashboard?days=30']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
 });
 
 test('manual dashboard refresh bypasses the server fast path', async () => {
@@ -108,11 +108,11 @@ test('dashboard shows refresh progress while keeping its controls in sync', asyn
   assert.equal(h.els.dashboardRefreshBtn.attributes['aria-busy'], 'false');
 });
 
-test('dashboard keeps prefetched snapshot hidden until live lookup completes', async () => {
-  const payloads = [dashboard('snapshot', 5), dashboard('live', 2)];
+test('dashboard joins one live lookup and hides lists until completion', async () => {
+  const payloads = [dashboard('live', 2)];
   let releaseLive;
   const h = await harness('member', undefined, async (url) => {
-    if (url.includes('refresh=true')) await new Promise((resolve) => { releaseLive = resolve; });
+    await new Promise((resolve) => { releaseLive = resolve; });
     return { ok: true, payload: payloads.shift() };
   });
   const prefetch = h.api.loadDashboard();
@@ -132,7 +132,7 @@ test('dashboard keeps prefetched snapshot hidden until live lookup completes', a
   assert.equal(h.els.dashboardPeriod.disabled, false);
   assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
   await h.api.ensureDashboardFresh();
-  assert.deepEqual(h.calls, ['/dashboard?days=30', '/dashboard?days=30&refresh=true']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
 });
 
 test('dashboard manual refresh hides old sections until completion', async () => {
@@ -150,20 +150,18 @@ test('dashboard manual refresh hides old sections until completion', async () =>
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);
 });
 
-test('dashboard reveals fallback only after live lookup has failed', async () => {
+test('dashboard reveals server fallback only after the single lookup completes', async () => {
   let finish;
-  const h = await harness('member', undefined, async (url) => url.includes('refresh=true')
-    ? new Promise((resolve) => { finish = resolve; })
-    : { ok: true, payload: dashboard('snapshot', 5) });
+  const h = await harness('member', undefined, async () => new Promise((resolve) => { finish = resolve; }));
   const loading = h.api.ensureDashboardFresh();
   await new Promise(setImmediate);
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
-  finish({ ok: false, payload: { detail: '조회 실패' } });
+  finish({ ok: true, payload: dashboard('snapshot', 5) });
   await loading;
-  assert.match(h.els.dashboardBody.innerHTML, /조회 실패/);
   assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
   assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
 });
 
 test('dashboard joins failed prefetch without retrying or leaving a spinner', async () => {
@@ -174,7 +172,7 @@ test('dashboard joins failed prefetch without retrying or leaving a spinner', as
   await new Promise(setImmediate);
   finish({ ok: false, payload: { detail: '조회 실패' } });
   await Promise.all([prefetch, loading]);
-  assert.deepEqual(h.calls, ['/dashboard?days=30']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
   assert.match(h.els.dashboardBody.innerHTML, /조회 실패/);
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-spinner|dashboard-grid/);
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);

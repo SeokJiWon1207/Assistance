@@ -8,7 +8,8 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Tuple
 
 from backend.config import CHROMA_DB_PATH
-from backend.sources.mantis import fetch_mantis_recent_issues, normalize_issue
+from backend.sources.mantis import normalize_issue
+from backend.workspace_data import fetch_workspace_recent_issues
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
@@ -166,7 +167,7 @@ def _inside(issue: Dict[str, Any], start: date, end: date) -> bool:
     return start <= created <= end
 
 
-def _load_issues(*, prefer_snapshot: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+def _load_issues(*, prefer_snapshot: bool = False, force_refresh: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     if prefer_snapshot:
         issues, source = load_workspace_snapshot(TEAM_BRIEF_FETCH_LIMIT)
         if source.get("status") == "snapshot":
@@ -175,7 +176,7 @@ def _load_issues(*, prefer_snapshot: bool = False) -> Tuple[List[Dict[str, Any]]
                 "reason": str(source.get("reason") or ""),
             }
     try:
-        raw = fetch_mantis_recent_issues(total_limit=TEAM_BRIEF_FETCH_LIMIT, request_timeout=8)
+        raw = fetch_workspace_recent_issues(total_limit=TEAM_BRIEF_FETCH_LIMIT, request_timeout=8, force_refresh=force_refresh)
         return [normalize_issue(issue) for issue in raw], {"status": "live", "reason": ""}
     except Exception as exc:
         snapshot = scan_mantis_documents(
@@ -216,9 +217,9 @@ def _spikes(
     return sorted(rows, key=lambda row: (-row["count"], row["name"]))[:5]
 
 
-def _generate_team_brief(today: date) -> Dict[str, Any]:
+def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[str, Any]:
     current_start, previous_start, previous_end, baseline_start, baseline_end = _week_bounds(today)
-    issues, source = _load_issues()
+    issues, source = _load_issues(force_refresh=force_refresh)
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
     baseline = [issue for issue in issues if _inside(issue, baseline_start, baseline_end)]
     open_issues = [issue for issue in issues if _is_open(str(issue.get("status") or ""))]
@@ -292,7 +293,7 @@ def get_weekly_team_brief(user_uid: str, *, refresh: bool = False, today: date |
     if stored_payload and stored_payload.get("contentVersion") == TEAM_BRIEF_CONTENT_VERSION:
         payload = stored_payload
     else:
-        generated = _generate_team_brief(base)
+        generated = _generate_team_brief(base, force_refresh=refresh)
         serialized = json.dumps(generated, ensure_ascii=False)
         with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
             if refresh or row:
