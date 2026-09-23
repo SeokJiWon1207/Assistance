@@ -1,4 +1,6 @@
+import os
 import unittest
+from threading import Event
 from unittest.mock import Mock, patch
 
 import requests
@@ -733,6 +735,16 @@ class NotionSearchExecutionTests(unittest.TestCase):
         def normalize(raw, **kwargs):
             return {**raw, **kwargs}
 
+        db1_requested = Event()
+
+        def respond(url, payload, **_kwargs):
+            # 색인 DB(db2)의 응답이 db1보다 늦게 끝나도 병합은 db2가 먼저여야 한다.
+            if "/databases/db1/" in url:
+                db1_requested.set()
+                return newly_created_response
+            self.assertTrue(db1_requested.wait(timeout=3))
+            return indexed_response
+
         with (
             patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db1", "db2"]}),
             patch.object(search, "resolve_notion_read_scope", return_value=({"db1": "db1", "db2": "db2"}, True)),
@@ -740,20 +752,79 @@ class NotionSearchExecutionTests(unittest.TestCase):
             patch.object(search, "indexed_exact_title_database_ids", return_value=["db2"]),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
             patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
-            patch.object(search, "notion_post_json", side_effect=[indexed_response, newly_created_response]) as post,
+            patch.dict(os.environ, {"NOTION_SEARCH_MAX_WORKERS": "4"}),
+            patch.object(search, "notion_post_json", side_effect=respond) as post,
             patch.object(search, "normalize_notion_page", side_effect=normalize),
         ):
             result = search.execute_notion_search('노션에서 "배포 계획" 찾아줘', include_blocks=False)
 
+        # DB는 동시에 조회하므로 요청 순서가 아니라 병합 순서로 색인 우선을 확인한다.
         self.assertEqual(post.call_count, 2)
-        self.assertIn("/databases/db2/query", post.call_args_list[0].args[0])
-        self.assertIn("/databases/db1/query", post.call_args_list[1].args[0])
+        self.assertEqual([meta["database_id"] for meta in result["meta"]["databases"]], ["db2", "db1"])
         self.assertEqual({page["id"] for page in result["notion_pages"]}, {"p1", "p2"})
         self.assertEqual(result["notion_pages"][0]["match_method"], "notion_exact_title_filter")
         self.assertTrue(result["meta"]["exact_title_index_hit"])
 
+    def test_full_scan_stops_after_first_database_with_results_even_when_prefetched(self):
+        """제목 검색이 비었으면 2차 검색은 결과가 나온 DB까지만 반영한다.
+
+        뒤 DB를 미리 조회했더라도 그 결과가 섞이면 순차 처리와 달라진다.
+        """
+        queried = []
+
+        def respond(url, payload, **_kwargs):
+            database_id = url.split("/databases/")[1].split("/")[0]
+            queried.append((database_id, "filter" in payload))
+            response = Mock(status_code=200)
+            if "filter" in payload:
+                response.json.return_value = {"results": [], "has_more": False}
+            else:
+                response.json.return_value = {"results": [{
+                    "id": f"p-{database_id}",
+                    "title": f"신입사원 안내 {database_id}",
+                    "search_text": f"신입사원 안내 {database_id}",
+                    "last_edited_time": "2026-09-10",
+                }], "has_more": False}
+            return response
+
+        with (
+            patch.object(search, "get_notion_settings", return_value={
+                "token": "t", "database_ids": ["db1", "db2", "db3"],
+            }),
+            patch.object(
+                search,
+                "resolve_notion_read_scope",
+                return_value=({"db1": "db1", "db2": "db2", "db3": "db3"}, True),
+            ),
+            patch.object(search, "fetch_notion_database_title", return_value="업무 DB"),
+            patch.object(search, "indexed_title_term_database_ids", return_value=[]),
+            patch.object(search, "notion_database_status_filter", return_value=(False, None)),
+            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.dict(os.environ, {"NOTION_SEARCH_MAX_WORKERS": "4"}),
+            patch.object(search, "notion_post_json", side_effect=respond),
+            patch.object(
+                search,
+                "normalize_notion_page",
+                side_effect=lambda raw, **kwargs: {**raw, **kwargs},
+            ),
+        ):
+            result = search.execute_notion_search(
+                "노션에서 신입사원 관련 문서 찾아줘",
+                planned_terms=["신입사원"],
+                include_blocks=False,
+            )
+
+        self.assertEqual([page["id"] for page in result["notion_pages"]], ["p-db1"])
+        self.assertEqual(
+            [(meta["database_id"], meta.get("phase")) for meta in result["meta"]["databases"]],
+            [("db1", "title"), ("db2", "title"), ("db3", "title"), ("db1", None)],
+        )
+        self.assertTrue(result["meta"]["title_search_only"])
+        self.assertEqual(sorted(db for db, filtered in queried if filtered), ["db1", "db2", "db3"])
+
     def test_title_search_checks_unindexed_databases_before_skipping_body_scan(self):
         targeted = Mock(status_code=200)
+        new_title_response = self._new_title_response()
         targeted.json.return_value = {
             "results": [
                 {
@@ -779,7 +850,9 @@ class NotionSearchExecutionTests(unittest.TestCase):
             patch.object(search, "indexed_title_term_database_ids", return_value=["db2"]),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
             patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
-            patch.object(search, "notion_post_json", side_effect=[targeted, self._new_title_response()]) as post,
+            patch.object(search, "notion_post_json", side_effect=lambda url, *_args, **_kwargs: (
+                targeted if "/databases/db2/" in url else new_title_response
+            )) as post,
             patch.object(
                 search,
                 "normalize_notion_page",
@@ -793,8 +866,7 @@ class NotionSearchExecutionTests(unittest.TestCase):
             )
 
         self.assertEqual(post.call_count, 2)
-        self.assertIn("/databases/db2/query", post.call_args_list[0].args[0])
-        self.assertIn("/databases/db1/query", post.call_args_list[1].args[0])
+        self.assertEqual([meta["database_id"] for meta in result["meta"]["databases"]], ["db2", "db1"])
         self.assertTrue(all("filter" in call.args[1] for call in post.call_args_list))
         self.assertEqual(result["meta"]["displayed_count"], 4)
         self.assertTrue(result["meta"]["search_complete"])

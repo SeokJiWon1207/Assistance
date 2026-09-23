@@ -5,7 +5,9 @@ import json
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
-from functools import lru_cache
+from contextlib import closing
+from dataclasses import dataclass, field
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -30,6 +32,7 @@ from backend.config import (
     notion_unavailable_reason,
 )
 from backend.intent.constants import NOTION_QUERY_STOPWORDS
+from backend.ordered_prefetch import iter_in_order
 from backend.intent.entities import load_known_people
 from backend.notion.client import (
     NOTION_CONTENT_INCOMPLETE,
@@ -1044,6 +1047,31 @@ def indexed_title_term_database_ids(terms: List[str], database_ids: List[str]) -
     return list(dict.fromkeys(matched))
 
 
+@dataclass
+class _NotionDatabaseScan:
+    """DB 하나를 조회한 결과. 공유 상태는 호출자가 DB 순서대로 병합한다."""
+
+    database_id: str
+    meta: Optional[Dict[str, Any]] = None
+    # ("match", page)는 결과, ("candidate", page)는 본문 검색 후보다.
+    events: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
+    errors: List[Dict[str, Any]] = field(default_factory=list)
+    scanned_count: int = 0
+    incomplete_reasons: set[str] = field(default_factory=set)
+    search_incomplete: bool = False
+    title_incomplete: bool = False
+    candidate_count_incomplete: bool = False
+    result_window_complete: bool = False
+
+
+def notion_search_max_workers() -> int:
+    """DB를 동시에 조회할 수. 전역 요청 간격 제한은 그대로 적용된다."""
+    try:
+        return max(1, min(int(os.getenv("NOTION_SEARCH_MAX_WORKERS", "4")), 6))
+    except ValueError:
+        return 4
+
+
 def execute_notion_search(
     query_text: str,
     limit: int = 5,
@@ -1216,19 +1244,14 @@ def execute_notion_search(
     title_first = bool(title_terms and not exact_title)
     title_search_complete = True
     title_search_only = False
-    database_passes = (
-        [(database_id, True) for database_id in search_database_ids]
-        + [(database_id, False) for database_id in search_database_ids]
-        if title_first else [(database_id, False) for database_id in search_database_ids]
-    )
     try:
-        for database_id, title_pass in database_passes:
-            if (title_first and not title_pass and title_search_complete
-                    and pages and not require_complete_scan):
-                result_window_complete = True
-                candidate_count_complete = False
-                title_search_only = True
-                break
+        def scan_database(
+            database_id: str,
+            title_pass: bool,
+            seen_before: frozenset[str],
+        ) -> _NotionDatabaseScan:
+            """DB 하나를 조회한다. 공유 상태는 건드리지 않고 결과에 담아 돌려준다."""
+            scan = _NotionDatabaseScan(database_id)
             try:
                 database_label = fetch_notion_database_title(database_id)
                 root_id = read_scope.get(database_id)
@@ -1237,18 +1260,16 @@ def execute_notion_search(
             except (HTTPException, requests.RequestException) as exc:
                 # 다른 DB에서 확보한 결과를 한 DB의 스키마 장애 때문에
                 # 전부 버리지 않는다. 실패한 범위는 부분 오류로 남긴다.
-                title_search_complete = False
-                errors.append({
+                scan.title_incomplete = True
+                scan.errors.append({
                     "database_id": database_id,
                     "database_label": database_id,
                     "error_kind": "dependency",
                     "reason": f"Notion database schema failed: {exc}",
                 })
-                continue
+                return scan
             if target_database_label and normalize_for_match(target_database_label) not in normalize_for_match(database_label):
-                continue
-            database_found_count = 0
-            body_scan_candidates: List[Dict[str, Any]] = []
+                return scan
             created_filter_applied = False
             created_window_safe = False
             server_covered_fields: set[str] = set()
@@ -1257,14 +1278,14 @@ def execute_notion_search(
                 notion_constraints.get("status", ""),
             )
             if notion_constraints.get("status") and status_filter_supported and not status_api_filter:
-                database_meta.append(
+                scan.meta = (
                     {
                         "database_id": database_id,
                         "database_label": database_label,
                         "found_count": 0,
                     }
                 )
-                continue
+                return scan
             if status_api_filter:
                 server_covered_fields.add("status")
             common_clauses = notion_constraints.get("common_filter_clauses", [])
@@ -1291,8 +1312,8 @@ def execute_notion_search(
                             if clause["field"] == "deployed_at":
                                 server_covered_fields.add("deployed_at")
                     if any(date_filter is None for date_filter in date_filters):
-                        database_meta.append({"database_id": database_id, "database_label": database_label, "found_count": 0})
-                        continue
+                        scan.meta = {"database_id": database_id, "database_label": database_label, "found_count": 0}
+                        return scan
                     combined_filters = [item for item in [status_api_filter, *date_filters] if item]
                     status_api_filter = combined_filters[0] if len(combined_filters) == 1 else {"and": combined_filters}
                 except (HTTPException, requests.RequestException, ValueError):
@@ -1326,12 +1347,12 @@ def execute_notion_search(
                     owner_filter_decisive = False
                     owner_api_filter = None
                 if owner_filter_decisive and not owner_api_filter:
-                    database_meta.append({
+                    scan.meta = {
                         "database_id": database_id,
                         "database_label": database_label,
                         "found_count": 0,
-                    })
-                    continue
+                    }
+                    return scan
                 if owner_api_filter:
                     server_covered_fields.add("owner")
                     combined_filters = [
@@ -1384,7 +1405,7 @@ def execute_notion_search(
             except (HTTPException, requests.RequestException):
                 title_property = ""
             if exact_title and not title_property:
-                errors.append(
+                scan.errors.append(
                     {
                         "database_id": database_id,
                         "database_label": database_label,
@@ -1392,14 +1413,14 @@ def execute_notion_search(
                         "reason": "Notion title property could not be resolved",
                     }
                 )
-                database_meta.append(
+                scan.meta = (
                     {
                         "database_id": database_id,
                         "database_label": database_label,
                         "found_count": 0,
                     }
                 )
-                continue
+                return scan
             if exact_title and title_property:
                 title_filter: Dict[str, Any] = {
                     "property": title_property, "title": {"equals": exact_title},
@@ -1425,7 +1446,7 @@ def execute_notion_search(
                         exact_response.raise_for_status()
                     except requests.RequestException as exc:
                         response_status = getattr(exc.response, "status_code", None)
-                        errors.append({
+                        scan.errors.append({
                             "database_id": database_id,
                             "database_label": database_label,
                             "error_kind": "internal" if response_status and 400 <= response_status < 500
@@ -1435,7 +1456,7 @@ def execute_notion_search(
                         break
                     exact_data = exact_response.json()
                     exact_results = exact_data.get("results", [])
-                    scanned_count += len(exact_results)
+                    scan.scanned_count += len(exact_results)
                     for raw_page in exact_results:
                         page = normalize_notion_page(
                             raw_page,
@@ -1444,11 +1465,10 @@ def execute_notion_search(
                             database_label=database_label,
                         )
                         page_id = page.get("id", "")
-                        if page_id in seen_page_ids:
+                        if page_id in seen_before:
                             continue
                         if not notion_page_matches_and_enrich(page, notion_constraints):
                             continue
-                        seen_page_ids.add(page_id)
                         page["match_score"] = (
                             notion_page_match_score(page, terms)
                             + notion_exact_match_score(page, notion_constraints)
@@ -1456,31 +1476,30 @@ def execute_notion_search(
                         )
                         page["matched_terms"] = terms
                         page["match_method"] = "notion_exact_title_filter"
-                        pages.append(page)
-                        database_found_count += 1
+                        scan.events.append(("match", page))
                     if not exact_data.get("has_more"):
                         break
                     next_cursor = exact_data.get("next_cursor")
                     if not next_cursor or next_cursor == exact_payload.get("start_cursor"):
-                        search_complete = False
-                        incomplete_reasons.add("invalid_cursor")
+                        scan.search_incomplete = True
+                        scan.incomplete_reasons.add("invalid_cursor")
                         break
                     exact_payload["start_cursor"] = next_cursor
                 else:
-                    search_complete = False
-                    incomplete_reasons.add("page_limit")
+                    scan.search_incomplete = True
+                    scan.incomplete_reasons.add("page_limit")
                 # Exact-title requests are backed by Notion's server-side title
                 # filter. Do not fall through to a multi-thousand-row database
                 # scan when a literal title is absent or one database is slow.
-                database_meta.append(
+                scan.meta = (
                     {
                         "database_id": database_id,
                         "database_label": database_label,
-                        "found_count": database_found_count,
+                        "found_count": 0,
                         "page_limit": exact_max_pages,
                     }
                 )
-                continue
+                return scan
             if title_pass and title_property:
                 try:
                     title_filter = {
@@ -1505,12 +1524,12 @@ def execute_notion_search(
                     if targeted_response.status_code < 400:
                         targeted_data = targeted_response.json()
                         if targeted_data.get("has_more"):
-                            title_search_complete = False
-                            search_complete = False
-                            candidate_count_complete = False
-                            incomplete_reasons.add("title_page_limit")
+                            scan.title_incomplete = True
+                            scan.search_incomplete = True
+                            scan.candidate_count_incomplete = True
+                            scan.incomplete_reasons.add("title_page_limit")
                         targeted_results = targeted_data.get("results", [])
-                        scanned_count += len(targeted_results)
+                        scan.scanned_count += len(targeted_results)
                         for raw_page in targeted_results:
                             page = normalize_notion_page(
                                 raw_page,
@@ -1519,11 +1538,10 @@ def execute_notion_search(
                                 database_label=database_label,
                             )
                             page_id = page.get("id", "")
-                            if page_id in seen_page_ids:
+                            if page_id in seen_before:
                                 continue
                             if not notion_page_matches_and_enrich(page, notion_constraints):
                                 continue
-                            seen_page_ids.add(page_id)
                             page["match_score"] = (
                                 notion_page_match_score(page, terms)
                                 + notion_exact_match_score(page, notion_constraints)
@@ -1531,13 +1549,12 @@ def execute_notion_search(
                             )
                             page["matched_terms"] = terms
                             page["match_method"] = "notion_title_filter"
-                            pages.append(page)
-                            database_found_count += 1
+                            scan.events.append(("match", page))
                     else:
-                        title_search_complete = False
+                        scan.title_incomplete = True
                 except (HTTPException, requests.RequestException) as exc:
-                    title_search_complete = False
-                    errors.append(
+                    scan.title_incomplete = True
+                    scan.errors.append(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
@@ -1547,14 +1564,14 @@ def execute_notion_search(
                     )
             if title_pass:
                 if not title_property:
-                    title_search_complete = False
-                database_meta.append({
+                    scan.title_incomplete = True
+                scan.meta = {
                     "database_id": database_id,
                     "database_label": database_label,
-                    "found_count": database_found_count,
+                    "found_count": 0,
                     "phase": "title",
-                })
-                continue
+                }
+                return scan
             cursor = None
             for _ in range(database_max_pages):
                 payload: Dict[str, Any] = {
@@ -1581,7 +1598,7 @@ def execute_notion_search(
                         retries=2,
                     )
                 except requests.RequestException as exc:
-                    errors.append(
+                    scan.errors.append(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
@@ -1591,7 +1608,7 @@ def execute_notion_search(
                     )
                     break
                 if response.status_code >= 400:
-                    errors.append(
+                    scan.errors.append(
                         {
                             "database_id": database_id,
                             "database_label": database_label,
@@ -1607,7 +1624,7 @@ def execute_notion_search(
 
                 data = response.json()
                 results = data.get("results", [])
-                scanned_count += len(results)
+                scan.scanned_count += len(results)
                 for raw_page in results:
                     page = normalize_notion_page(
                         raw_page,
@@ -1616,13 +1633,12 @@ def execute_notion_search(
                         database_label=database_label,
                     )
                     page_id = page.get("id", "")
-                    if page_id in seen_page_ids:
+                    if page_id in seen_before:
                         continue
                     if not notion_page_matches_and_enrich(page, notion_constraints):
                         continue
                     match_score = notion_page_match_score(page, terms)
                     if notion_page_matches_terms(page, terms):
-                        seen_page_ids.add(page_id)
                         page["match_score"] = match_score + notion_exact_match_score(page, notion_constraints)
                         page["matched_terms"] = [
                             term
@@ -1630,44 +1646,101 @@ def execute_notion_search(
                             if normalize_for_match(term)
                             in normalize_for_match(page.get("search_text", ""))
                         ]
-                        pages.append(page)
-                        database_found_count += 1
+                        scan.events.append(("match", page))
                     elif terms:
-                        if len(body_scan_candidates) < NOTION_BODY_SCAN_MAX_PER_REQUEST:
-                            body_scan_candidates.append(page)
-                        else:
-                            body_scan_candidates_truncated = True
+                        scan.events.append(("candidate", page))
                 if server_filtered_list_window or (
                     created_list_window and created_filter_applied and created_window_safe
                 ):
                     # 서버가 모든 조건과 내림차순 정렬을 적용했으므로
                     # 목록에 필요한 상위 N건은 첫 응답만으로 확정된다.
-                    result_window_complete = True
+                    scan.result_window_complete = True
                     if data.get("has_more"):
-                        candidate_count_complete = False
+                        scan.candidate_count_incomplete = True
                     break
                 if not data.get("has_more"):
                     break
                 next_cursor = data.get("next_cursor")
                 if not next_cursor or next_cursor == cursor:
-                    search_complete = False
-                    incomplete_reasons.add("invalid_cursor")
+                    scan.search_incomplete = True
+                    scan.incomplete_reasons.add("invalid_cursor")
                     break
                 cursor = next_cursor
             else:
-                search_complete = False
-                incomplete_reasons.add("page_limit")
+                scan.search_incomplete = True
+                scan.incomplete_reasons.add("page_limit")
 
-            if terms and database_found_count < limit and body_scan_candidates:
-                body_scan_candidate_groups.append((database_id, body_scan_candidates))
-            database_meta.append(
+            scan.meta = (
                 {
                     "database_id": database_id,
                     "database_label": database_label,
-                    "found_count": database_found_count,
+                    "found_count": 0,
                     "page_limit": database_max_pages,
                 }
             )
+            return scan
+
+        def merge_scan(scan: _NotionDatabaseScan) -> None:
+            """DB 결과를 원래 조회 순서대로 반영한다. 중복 제거도 여기서 한다."""
+            nonlocal scanned_count, search_complete, title_search_complete
+            nonlocal candidate_count_complete, result_window_complete, body_scan_candidates_truncated
+            scanned_count += scan.scanned_count
+            errors.extend(scan.errors)
+            incomplete_reasons.update(scan.incomplete_reasons)
+            if scan.search_incomplete:
+                search_complete = False
+            if scan.title_incomplete:
+                title_search_complete = False
+            if scan.candidate_count_incomplete:
+                candidate_count_complete = False
+            if scan.result_window_complete:
+                result_window_complete = True
+            found_count = 0
+            body_scan_candidates: List[Dict[str, Any]] = []
+            for kind, page in scan.events:
+                page_id = page.get("id", "")
+                if page_id in seen_page_ids:
+                    continue
+                if kind == "match":
+                    seen_page_ids.add(page_id)
+                    pages.append(page)
+                    found_count += 1
+                elif len(body_scan_candidates) < NOTION_BODY_SCAN_MAX_PER_REQUEST:
+                    body_scan_candidates.append(page)
+                else:
+                    body_scan_candidates_truncated = True
+            if terms and found_count < limit and body_scan_candidates:
+                body_scan_candidate_groups.append((scan.database_id, body_scan_candidates))
+            if scan.meta is not None:
+                # found_count는 중복 제거 뒤의 값이라 병합 단계에서 채운다.
+                scan.meta["found_count"] = found_count
+                database_meta.append(scan.meta)
+
+        def title_results_suffice() -> bool:
+            # 제목 검색이 누락 없이 끝났고 결과가 있으면 전체 검색을 이어가지 않는다.
+            return bool(title_search_complete and pages and not require_complete_scan)
+
+        # DB 조회는 단계 안에서만 미리 실행하고, 병합과 종료 판단은 원래 DB 순서를 따른다.
+        workers = notion_search_max_workers()
+        for title_pass in ((True, False) if title_first else (False,)):
+            full_pass_after_title = title_first and not title_pass
+            if full_pass_after_title and title_results_suffice():
+                title_search_only = True
+                break
+            scans = iter_in_order(
+                partial(scan_database, title_pass=title_pass, seen_before=frozenset(seen_page_ids)),
+                search_database_ids,
+                workers=workers,
+            )
+            with closing(scans) as ordered_scans:
+                for _database_id, scan in ordered_scans:
+                    if full_pass_after_title and title_results_suffice():
+                        title_search_only = True
+                        break
+                    merge_scan(scan)
+        if title_search_only:
+            result_window_complete = True
+            candidate_count_complete = False
 
         # DB 순서가 결과를 좌우하지 않도록 후보를 라운드로빈으로 읽되,
         # 실제 본문 요청은 DB 수와 관계없이 요청 전체 30회까지만 허용한다.
