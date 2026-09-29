@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 
 from backend.common import normalize_for_match
+from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
 from backend.reports.customer import _health_content, _is_closed
 from backend.reports.team_brief import (
     TEAM_BRIEF_AGING_DAYS,
@@ -20,7 +21,6 @@ from backend.reports.team_brief import (
 from backend.workspace import (
     _issue_summary,
     _is_open,
-    _matches_person,
     _now,
     user_mantis_name,
 )
@@ -193,18 +193,10 @@ def _customer_health(
 
 
 def _member_rows(users: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
-    representatives: Dict[str, Dict[str, Any]] = {}
-    for user in (item for item in users if item.get("approved")):
-        person = user_mantis_name(user)
-        key = normalize_for_match(person) or f"uid:{user.get('uid')}"
-        current = representatives.get(key)
-        if not current or normalize_for_match(str(user.get("displayName") or "")) == normalize_for_match(person):
-            representatives[key] = user
-
     members: List[Dict[str, Any]] = []
-    for user in representatives.values():
+    for user in team_member_profiles(users):
         person = user_mantis_name(user)
-        assigned = [issue for issue in issues if person and _matches_person(str(issue.get("handler") or ""), person)]
+        assigned = [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) == normalize_for_match(person)]
         open_rows = [row for row in _summary_rows(assigned, today) if _is_open(str(row.get("status") or ""))]
         priorities = _priorities(open_rows, today)
         members.append(
@@ -270,6 +262,7 @@ def build_operations_dashboard(
     base = today or date.today()
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
     issues, source = _load_issues(prefer_snapshot=not (refresh or live), force_refresh=refresh)
+    issues = filter_team_issues(issues)
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
     priorities = _priorities(scoped_open, base)
@@ -317,6 +310,8 @@ def build_operations_dashboard(
             "comparisonFrom": previous_start.isoformat(),
             "comparisonTo": previous_end.isoformat(),
             "scope": scope,
+            "scopeLabel": TEAM_SCOPE_LABEL,
+            "scopeMembers": list(TEAM_MEMBERS),
             "loadedIssues": len(issues),
         },
         "user": {

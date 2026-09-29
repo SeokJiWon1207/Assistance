@@ -89,7 +89,7 @@ class OperationsDashboardTests(unittest.TestCase):
         )
 
         self.assertEqual(result["meta"]["scope"], "team")
-        self.assertEqual(result["summary"]["open"], 2)
+        self.assertEqual(result["summary"]["open"], 1)
         self.assertEqual(result["summary"]["overdue"], 1)
         self.assertEqual(result["summary"]["highRisk"], 1)
         self.assertEqual(result["priorities"][0]["id"], 101)
@@ -97,7 +97,7 @@ class OperationsDashboardTests(unittest.TestCase):
         self.assertNotIn("지난주", result["decisionSummary"]["headline"])
         self.assertEqual(result["customerHealth"][0]["customer"], "신한")
         self.assertEqual(result["customerHealth"][0]["level"], "high")
-        self.assertEqual(len(result["members"]), 1)
+        self.assertEqual(len(result["members"]), 13)
 
     def test_manager_dashboard_includes_team_workload_without_account_details(self):
         users = [
@@ -124,14 +124,47 @@ class OperationsDashboardTests(unittest.TestCase):
         )
 
         self.assertEqual(result["meta"]["scope"], "team")
-        self.assertEqual(result["summary"]["open"], 2)
-        self.assertEqual(len(result["members"]), 2)
+        self.assertEqual(result["summary"]["open"], 1)
+        self.assertEqual(len(result["members"]), 13)
         self.assertNotIn("email", result["members"][0])
         self.assertNotIn("uid", result["members"][0])
 
     def test_period_must_be_one_of_the_supported_options(self):
         with self.assertRaisesRegex(ValueError, "7일"):
             dashboard.build_operations_dashboard({"role": "member"}, days=15, today=date(2026, 8, 27))
+
+    def test_all_dashboard_sections_exclude_other_teams_and_include_extra_members(self):
+        template = self.issues[0]
+        self.issues += [
+            {**template, "id": 201, "handler": "하영훈", "project": "추가담당", "work_subject": "고객사"},
+            {**template, "id": 202, "handler": "이상신", "project": "추가담당"},
+        ]
+        for index, name in enumerate(["강민성", "cs이슈", "DRFN_NEXT", "석지원외부"]):
+            self.issues.append({**template, "id": 300 + index, "handler": name, "project": "외부고객",
+                                "screen_number": "9999", "created_at": "2026-08-20", "work_subject": "CS팀"})
+        users = [
+            {"displayName": "관리자", "mantisUsername": "석지원", "approved": True, "role": "admin"},
+            {"displayName": "석지원", "mantisUsername": "석지원", "approved": True, "role": "member"},
+            {"displayName": "강민성", "approved": True, "role": "member"},
+        ]
+        result = self._build({"role": "member", "displayName": "석지원"}, users)
+        self.assertEqual(result["summary"]["open"], 3)
+        self.assertEqual(result["summary"]["newIssues"], 1)
+        self.assertEqual(result["summary"]["previousNewIssues"], 1)
+        self.assertEqual(result["meta"]["loadedIssues"], 5)
+        self.assertEqual(sum(row["open"] for row in result["members"]), 3)
+        members = {row["mantisUsername"]: row for row in result["members"]}
+        self.assertEqual(len(members), 13)
+        self.assertEqual(members["하영훈"]["open"], 1)
+        self.assertEqual(members["이상신"]["open"], 1)
+        self.assertEqual(members["김진성"]["open"], 0)
+        self.assertEqual(members["석지원"]["role"], "member")
+        self.assertNotIn("강민성", members)
+        self.assertEqual({row["id"] for row in result["priorities"]}, {101, 201, 202})
+        self.assertEqual({row["id"] for row in result["todos"]}, {101, 201, 202})
+        self.assertNotIn("외부고객", {row["customer"] for row in result["customerHealth"]})
+        self.assertFalse(result["customerSpikes"])
+        self.assertFalse(result["screenSpikes"])
 
 class DashboardWholePopulationTests(unittest.TestCase):
     setUp = OperationsDashboardTests.setUp

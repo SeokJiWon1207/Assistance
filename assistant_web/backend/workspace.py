@@ -26,6 +26,7 @@ from backend.sources.notion import (
 from backend.schemas import ConversationMessage
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.workspace_data import load_workspace_snapshot
+from backend.team_scope import filter_team_issues, team_member_profiles
 
 
 def workspace_db_path() -> Path:
@@ -630,20 +631,12 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
         issues = snapshot.get("issues") or []
         source_status = "snapshot" if snapshot.get("available") else "error"
         source_reason = str(snapshot.get("reason") or type(exc).__name__)
-    approved_users = [user for user in users if user.get("approved")]
-    # 관리자용 보조 계정과 사내 이메일 계정이 같은 Mantis 담당자를 가리킬 수 있다.
-    # 업무량이 중복 집계되지 않도록 담당자별 대표 프로필 하나만 사용한다.
-    representative_users: Dict[str, Dict[str, Any]] = {}
-    for user in approved_users:
-        person = user_mantis_name(user)
-        key = normalize_for_match(person) or f"uid:{user.get('uid')}"
-        current = representative_users.get(key)
-        if not current or normalize_for_match(str(user.get("displayName") or "")) == normalize_for_match(person):
-            representative_users[key] = user
+    issues = filter_team_issues(issues)
+    representative_users = team_member_profiles(users)
     members = []
-    for user in representative_users.values():
+    for user in representative_users:
         person = user_mantis_name(user)
-        assigned = [issue for issue in issues if person and _matches_person(issue.get("handler", ""), person)]
+        assigned = [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) == normalize_for_match(person)]
         open_items = [_issue_summary(issue) for issue in assigned if _is_open(issue.get("status", ""))]
         members.append(
             {
@@ -667,7 +660,7 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "summary": {
             "members": len(members),
-            "approvedUsers": len(approved_users),
+            "approvedUsers": sum(bool(user.get("approved")) for user in representative_users),
             "recentIssues": len(issues),
             "open": len(team_open),
             "overdue": sum(item["overdue"] for item in team_open),

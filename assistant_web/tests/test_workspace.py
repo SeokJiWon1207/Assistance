@@ -409,7 +409,7 @@ class TeamDashboardTests(unittest.TestCase):
 
         result = workspace.build_team_dashboard(users)
 
-        self.assertEqual(result["summary"]["members"], 1)
+        self.assertEqual(result["summary"]["members"], 13)
         self.assertEqual(result["members"][0]["open"], 1)
         self.assertEqual(result["members"][0]["displayName"], "석지원")
 

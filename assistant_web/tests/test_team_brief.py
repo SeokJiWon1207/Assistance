@@ -16,7 +16,7 @@ class TeamBriefTests(unittest.TestCase):
     def test_weekly_brief_compares_previous_week_and_prioritizes_risks(self):
         issues = [
             {"id": 101, "summary": "지난주 신규", "project": "신한", "screen_number": "7600", "status": "confirmed",
-             "handler": "담당자 미지정", "created_at": "2026-08-05", "updated_at": "2026-08-06", "date_fields": {}},
+             "handler": "하영훈", "priority": "high", "created_at": "2026-08-05", "updated_at": "2026-08-06", "date_fields": {}},
             {"id": 102, "summary": "지난주 신규2", "project": "신한", "screen_number": "7600", "status": "closed",
              "handler": "석지원", "created_at": "2026-08-06", "updated_at": "2026-08-07", "date_fields": {}},
             {"id": 90, "summary": "직전 주", "project": "유진", "screen_number": "5000", "status": "closed",
@@ -31,7 +31,7 @@ class TeamBriefTests(unittest.TestCase):
         self.assertEqual(result["summary"]["newIssues"], 2)
         self.assertEqual(result["summary"]["previousNewIssues"], 1)
         self.assertEqual(result["summary"]["aging"], 1)
-        self.assertEqual(result["summary"]["unassigned"], 1)
+        self.assertEqual(result["summary"]["unassigned"], 0)
         self.assertEqual(result["customerSpikes"][0]["name"], "신한")
         self.assertEqual({item["id"] for item in result["priorities"]}, {80, 101})
         self.assertEqual(result["decisionSummary"]["riskLevel"], "attention")
@@ -45,6 +45,7 @@ class TeamBriefTests(unittest.TestCase):
     def test_weekly_snapshot_is_reused_and_read_state_is_per_user(self):
         generated = {
             "contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
+            "scopeMembers": list(team_brief.TEAM_MEMBERS),
             "weekStart": "2026-08-10",
             "title": "브리핑",
             "summaryPeriod": "2026-08-03 ~ 2026-08-09",
@@ -95,3 +96,27 @@ class TeamBriefTests(unittest.TestCase):
         generate.assert_called_once()
         self.assertEqual(result["contentVersion"], team_brief.TEAM_BRIEF_CONTENT_VERSION)
         self.assertEqual(result["title"], "판단 콘텐츠가 포함된 브리핑")
+
+    def test_weekly_brief_excludes_outsiders_and_shared_accounts(self):
+        issues = [
+            {"id": index, "handler": name, "status": "assigned", "project": name,
+             "created_at": "2026-08-05", "updated_at": "2026-08-05", "priority": "high"}
+            for index, name in enumerate(["하영훈", "이상신", "강민성", "cs이슈", "담당자 미지정"], 1)
+        ]
+        with patch.object(team_brief, "_load_issues", return_value=(issues, {"status": "live"})):
+            result = team_brief._generate_team_brief(date(2026, 8, 10))
+        self.assertEqual(result["summary"]["newIssues"], 2)
+        self.assertEqual(result["summary"]["carriedOpen"], 2)
+        self.assertEqual({row["handler"] for row in result["priorities"]}, {"하영훈", "이상신"})
+
+    def test_roster_change_invalidates_saved_brief(self):
+        generated = {"contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
+                     "scopeMembers": list(team_brief.TEAM_MEMBERS), "weekStart": "2026-08-10",
+                     "generatedAt": "2026-08-10T09:00:00+09:00"}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")}
+        ), patch.object(team_brief, "_generate_team_brief", return_value=generated) as generate:
+            team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+            with patch.object(team_brief, "TEAM_MEMBERS", (*team_brief.TEAM_MEMBERS, "변경된담당자")):
+                team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+        self.assertEqual(generate.call_count, 2)

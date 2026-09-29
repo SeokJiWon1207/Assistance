@@ -226,7 +226,8 @@ function updateSourceMeta(meta) {
   els.dashboardSource.className = `dashboard-source is-${source}`;
   els.dashboardSource.querySelector("em").textContent = `${sourceLabels[source] || "데이터 상태"}${meta?.search_complete === false ? " · 일부 범위" : ""}${meta?.refreshPending ? " · 갱신 중" : ""}`;
   els.dashboardSource.title = meta?.sourceReason || "";
-  els.dashboardGeneratedAt.textContent = meta?.fetchedAt ? `${formatDateTime(meta.fetchedAt)} 조회 기준` : "조회 기준 시각 미확인";
+  const fetchedLabel = meta?.fetchedAt ? `${formatDateTime(meta.fetchedAt)} 조회 기준` : "조회 기준 시각 미확인";
+  els.dashboardGeneratedAt.textContent = [meta?.scopeLabel, fetchedLabel].filter(Boolean).join(" · ");
 }
 
 function renderDashboard() {

@@ -15,13 +15,14 @@ from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
 from backend.workspace_data import load_workspace_snapshot
+from backend.team_scope import TEAM_MEMBERS, filter_team_issues
 
 
 TEAM_BRIEF_FETCH_LIMIT = 1000
 TEAM_BRIEF_AGING_DAYS = 30
 TEAM_BRIEF_SPIKE_MIN = 2
 TEAM_BRIEF_SPIKE_RATIO = 2.0
-TEAM_BRIEF_CONTENT_VERSION = 2
+TEAM_BRIEF_CONTENT_VERSION = 3
 
 
 def _parse_issue_date(value: Any) -> date | None:
@@ -224,6 +225,7 @@ def _spikes(
 def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[str, Any]:
     current_start, previous_start, previous_end, baseline_start, baseline_end = _week_bounds(today)
     issues, source = _load_issues(force_refresh=force_refresh)
+    issues = filter_team_issues(issues)
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
     baseline = [issue for issue in issues if _inside(issue, baseline_start, baseline_end)]
     open_issues = [issue for issue in issues if _is_open(str(issue.get("status") or ""))]
@@ -269,6 +271,7 @@ def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[st
     }
     return {
         "contentVersion": TEAM_BRIEF_CONTENT_VERSION,
+        "scopeMembers": list(TEAM_MEMBERS),
         "weekStart": current_start.isoformat(),
         "title": f"{current_start.month}월 {current_start.day}일 주간 팀 브리핑",
         "summaryPeriod": f"{previous_start.isoformat()} ~ {previous_end.isoformat()}",
@@ -294,7 +297,8 @@ def get_weekly_team_brief(user_uid: str, *, refresh: bool = False, today: date |
             "SELECT payload_json FROM weekly_team_briefs WHERE week_start = ?", (week_start,)
         ).fetchone()
     stored_payload = json.loads(row["payload_json"]) if row else None
-    if stored_payload and stored_payload.get("contentVersion") == TEAM_BRIEF_CONTENT_VERSION:
+    if (stored_payload and stored_payload.get("contentVersion") == TEAM_BRIEF_CONTENT_VERSION
+            and stored_payload.get("scopeMembers") == list(TEAM_MEMBERS)):
         payload = stored_payload
     else:
         generated = _generate_team_brief(base, force_refresh=refresh)
