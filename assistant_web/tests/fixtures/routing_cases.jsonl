@@ -108,3 +108,4 @@
 {"q": "동부증권 최근 이슈 보여줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "동부증권", "mantis_terms": []}
 {"q": "노션에서 한화 서버 자동주문 장애에 관한 건 알려줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "한화"}
 {"q": "노션에서 상태가 시작전인 '케이프증권 2026.09 정기점검' 항목을 정확히 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "케이프증권", "notion_constraints": {"exact_title": "케이프증권 2026.09 정기점검", "status": "시작전"}}
+{"q": "노션에서 이번 달에 만든 문서 보여줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": []}
