@@ -54,7 +54,7 @@ async function harness(role, stored, fetcher) {
 }
 
 const dashboard = (source, open) => ({
-  meta: { source, scope: 'team', periodFrom: '2026-08-13', periodTo: '2026-09-11', periodDays: 30, generatedAt: '2026-09-11T12:00:00' },
+  meta: { source, fetchedAt: new Date().toISOString(), search_complete: true, scope: 'team', periodFrom: '2026-08-13', periodTo: '2026-09-11', periodDays: 30, generatedAt: '2026-09-11T12:00:00' },
   user: { role: 'member' },
   summary: { open, carriedOpen: 0, overdue: 0, aging: 0, highRisk: 0, highPriority: 0, changeRate: 0 },
   decisionSummary: { riskLevel: 'watch', headline: `${source} 업무 요약`, signals: [], recommendedActions: [] },
@@ -200,4 +200,38 @@ test('personal view restores from account-scoped storage and requests missing da
   h.api.showPersonalView();
   assert.deepEqual(h.calls, ['personal', 'personal']);
   assert.equal(h.storage.get('team-ai-assistant-main-view-v1:user-admin'), 'personal');
+});
+
+
+test('dashboard does not renew freshness when receiving an old server cache', async () => {
+  const payload = dashboard('live', 2);
+  payload.meta.fetchedAt = new Date(Date.now() - 120000).toISOString();
+  const h = await harness('member', undefined, async () => ({ ok: true, payload }));
+  await h.api.loadDashboard();
+  await h.api.ensureDashboardFresh();
+  assert.equal(h.calls.length, 2);
+  assert.match(h.els.dashboardGeneratedAt.textContent, /조회 기준/);
+});
+
+
+test('a fresh snapshot reuses its validated aggregation window across tab visits', async () => {
+  const payload = dashboard('snapshot', 2);
+  payload.meta.fetchedAt = new Date(Date.now() - 600000).toISOString();
+  payload.meta.cacheUntil = new Date(Date.now() + 50000).toISOString();
+  const h = await harness('member', undefined, async () => ({ok:true, payload}));
+  await h.api.loadDashboard();
+  await h.api.ensureDashboardFresh();
+  assert.equal(h.calls.length, 1);
+  payload.meta.cacheUntil = new Date(Date.now() - 1).toISOString();
+  await h.api.ensureDashboardFresh();
+  assert.equal(h.calls.length, 2);
+});
+
+test('expired snapshot and live error never display zero dashboard metrics', async () => {
+  const payload = dashboard('error', 0);
+  payload.meta.sourceReason = '저장 데이터 만료 및 실시간 조회 실패';
+  const h = await harness('member', undefined, async () => ({ok:true, payload}));
+  await h.api.loadDashboard();
+  assert.match(h.els.dashboardBody.innerHTML, /저장 데이터 만료/);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-metrics/);
 });

@@ -3,6 +3,7 @@
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import datetime, timezone
 from threading import Lock
 import time
 from typing import Any, Callable, Generator
@@ -15,6 +16,18 @@ from backend.ordered_prefetch import iter_in_order
 _lock = Lock()
 _connection: tuple[str, str] | None = None
 _cache: OrderedDict[tuple[int, int, int], tuple[float, list[dict[str, Any]]]] = OrderedDict()
+
+
+class IssueBatch(list[dict[str, Any]]):
+    """원본 목록과 같은 수집 세대의 범위/시각을 함께 전달한다."""
+
+    def __init__(self, rows: list[dict[str, Any]], meta: dict[str, Any]):
+        super().__init__(rows)
+        self.meta = meta
+
+
+def collection_metadata(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return dict(getattr(rows, "meta", {"search_complete": False, "incomplete_reasons": ["unknown_coverage"]}))
 
 
 def clear_recent_cache() -> None:
@@ -33,6 +46,8 @@ def _collect(
     """API 응답 순서의 동일 범위를 수집한다. 전역 최신 N건을 뜻하지 않는다."""
     page_count = (limit + page_size - 1) // page_size
     rows: list[dict[str, Any]] = []
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    complete = False
     pool = ThreadPoolExecutor(max_workers=workers)
     futures = [pool.submit(fetch_page, page) for page in range(1, page_count + 1)]
     try:
@@ -42,11 +57,15 @@ def _collect(
             batch = future.result()
             rows.extend(batch)
             if len(batch) < page_size:
+                complete = len(rows) <= limit
                 break
     finally:
         # 짧은 페이지/오류 이후 아직 시작하지 않은 요청을 취소한다.
         pool.shutdown(wait=True, cancel_futures=True)
-    return rows[:limit]
+    return IssueBatch(rows[:limit], {
+        "search_complete": complete, "fetchedAt": fetched_at,
+        "incomplete_reasons": [] if complete else ["page_limit"],
+    })
 
 
 def _collect_unique(

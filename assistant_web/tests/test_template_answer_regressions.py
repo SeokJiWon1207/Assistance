@@ -190,7 +190,7 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
                 "source": "mantis_page_scan",
                 "status": "ok",
                 "issues_list": [],
-                "meta": {"displayed_count": 0},
+                "meta": {"displayed_count": 0, "search_complete": True},
             }],
         }
         answer = "조건에 맞는 이슈가 없습니다."
@@ -198,6 +198,15 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
         evidence = next(check for check in report["checks"] if check["id"] == "evidence")
         self.assertEqual(evidence["status"], "pass")
         self.assertIn("검색 완료", evidence["detail"])
+
+    def test_unknown_and_partial_empty_search_are_not_completed_evidence(self):
+        for meta in ({}, {"search_complete": False}):
+            retrieval = {"stages": [{"source": "mantis_page_scan", "status": "ok", "issues_list": [], "meta": meta}]}
+            report = build_verification_report("이번주 이슈 보여줘", "찾지 못했습니다.", [], retrieval, "deterministic_issue_list")
+            evidence = next(c for c in report["checks"] if c["id"] == "evidence")
+            completeness = next(c for c in report["checks"] if c["id"] == "search_completeness")
+            self.assertNotEqual(evidence["status"], "pass")
+            self.assertEqual(completeness["status"], "warning")
 
     def test_mantis_filter_connection_failure_becomes_dependency_stage(self):
         question = "이번주 이슈 보여줘"
@@ -258,3 +267,38 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
             self.assertIn("2.50", report["content"])
             self.assertIn("계산 불가", report["content"])
             self.assertIn("|", report["content"])
+
+
+class SearchCoverageContractTests(unittest.TestCase):
+    def report(self, meta, question='비슷한 이슈 2개 보여줘', source='chroma_db'):
+        return build_verification_report(question, '조회 결과', [],
+            {'stages': [{'source': source, 'status':'ok', 'meta':meta}]}, 'deterministic_issue_list')
+
+    def test_successful_top_k_search_does_not_imply_full_count_or_absence(self):
+        meta = {'query_complete':True, 'result_window_complete':True, 'search_complete':False, 'coverage':'top_k'}
+        report = self.report(meta)
+        self.assertFalse(any(c['id']=='search_completeness' for c in report['checks']))
+        evidence = next(c for c in report['checks'] if c['id']=='evidence')
+        self.assertNotEqual(evidence['status'], 'pass')
+        for question in ('이슈 몇 개야', '고객사별 이슈 건수'):
+            report = self.report(meta, question)
+            self.assertTrue(any(c['id']=='search_completeness' for c in report['checks']))
+
+    def test_failed_top_k_window_still_warns(self):
+        meta = {'query_complete':True, 'result_window_complete':False, 'search_complete':False, 'coverage':'top_k'}
+        self.assertTrue(any(c['id']=='search_completeness' for c in self.report(meta)['checks']))
+
+    def test_saved_filter_with_short_page_completes_only_its_own_scope(self):
+        from backend.sources import mantis
+        with (patch.object(mantis, 'find_matching_mantis_filter', return_value={'filter_id':1}),
+              patch.object(mantis, 'fetch_mantis_issues', return_value=[{'id':1}])):
+            stage = mantis.execute_mantis_filter_search('저장 필터', 5)
+        self.assertTrue(stage['meta']['search_complete'])
+        report = self.report(stage['meta'], source='mantis_filter')
+        self.assertFalse(any(c['id']=='search_completeness' for c in report['checks']))
+        evidence = next(c for c in report['checks'] if c['id']=='evidence')
+        self.assertNotEqual(evidence['status'], 'pass')
+        with (patch.object(mantis, 'find_matching_mantis_filter', return_value={'filter_id':1}),
+              patch.object(mantis, 'fetch_mantis_issues', return_value=[{'id':i} for i in range(1,6)])):
+            stage = mantis.execute_mantis_filter_search('저장 필터', 5)
+        self.assertFalse(stage['meta']['search_complete'])

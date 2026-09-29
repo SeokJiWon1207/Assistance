@@ -4,7 +4,7 @@ import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, mar
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
-const sourceLabels = { live: "실시간 데이터", snapshot: "저장 데이터", error: "연결 오류" };
+const sourceLabels = { live: "Mantis 조회 데이터", snapshot: "저장 데이터", error: "연결 오류" };
 
 const dashboardState = {
   data: null,
@@ -21,6 +21,7 @@ const dashboardLiveTtlMs = 60_000;
 let dashboardLoadPromise = null;
 let dashboardFreshPromise = null;
 let dashboardLoadIsRefresh = false;
+let dashboardSyncTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -223,9 +224,9 @@ function renderPriorities(priorities) {
 function updateSourceMeta(meta) {
   const source = meta?.source || "error";
   els.dashboardSource.className = `dashboard-source is-${source}`;
-  els.dashboardSource.querySelector("em").textContent = sourceLabels[source] || "데이터 상태";
+  els.dashboardSource.querySelector("em").textContent = `${sourceLabels[source] || "데이터 상태"}${meta?.search_complete === false ? " · 일부 범위" : ""}${meta?.refreshPending ? " · 갱신 중" : ""}`;
   els.dashboardSource.title = meta?.sourceReason || "";
-  els.dashboardGeneratedAt.textContent = meta?.generatedAt ? `${formatDateTime(meta.generatedAt)} 기준` : "";
+  els.dashboardGeneratedAt.textContent = meta?.fetchedAt ? `${formatDateTime(meta.fetchedAt)} 조회 기준` : "조회 기준 시각 미확인";
 }
 
 function renderDashboard() {
@@ -253,6 +254,10 @@ function renderDashboard() {
   const data = dashboardState.data;
   if (!data) return;
   updateSourceMeta(data.meta);
+  if (data.meta?.source === "error") {
+    els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>업무 데이터를 확인하지 못했습니다.</strong><p>${escapeHtml(data.meta.sourceReason || "잠시 후 다시 조회해 주세요.")}</p></div>`;
+    return;
+  }
   if (dashboardState.error) {
     els.dashboardSource.className = "dashboard-source is-error";
     els.dashboardSource.querySelector("em").textContent = "실시간 연결 오류";
@@ -276,7 +281,7 @@ function renderDashboard() {
   });
 }
 
-async function loadDashboard(force = false, revalidate = false) {
+async function loadDashboard(force = false, revalidate = false, background = false) {
   if (!canViewTeamDashboard()) return;
   if (dashboardLoadPromise) {
     const awaitedRefresh = dashboardLoadIsRefresh;
@@ -286,7 +291,7 @@ async function loadDashboard(force = false, revalidate = false) {
   }
   if (dashboardState.data && !force && !revalidate) return dashboardState.data;
   dashboardLoadIsRefresh = force;
-  dashboardState.loading = true;
+  dashboardState.loading = !background;
   dashboardState.error = "";
   renderDashboard();
   dashboardLoadPromise = (async () => {
@@ -296,7 +301,12 @@ async function loadDashboard(force = false, revalidate = false) {
       const payload = await responseJson(response);
       if (!response.ok) throw new Error(payload.detail || "운영 데이터를 불러오지 못했습니다.");
       dashboardState.data = payload;
-      if (payload.meta?.source === "live") dashboardState.lastLiveAt = Date.now();
+      dashboardState.lastLiveAt = Date.parse(payload.meta?.fetchedAt || "") || 0;
+      if (dashboardSyncTimer) clearTimeout(dashboardSyncTimer);
+      dashboardSyncTimer = payload.meta?.refreshPending ? setTimeout(() => {
+        dashboardSyncTimer = null;
+        if (state.currentUser?.uid) void loadDashboard(false, true, true);
+      }, 10000) : null;
     } catch (error) {
       dashboardState.error = error.message || "운영 데이터를 불러오지 못했습니다.";
     }
@@ -314,8 +324,11 @@ async function loadDashboard(force = false, revalidate = false) {
 
 async function ensureDashboardFresh() {
   if (dashboardFreshPromise) return dashboardFreshPromise;
-  const sourceIsLive = dashboardState.data?.meta?.source === "live";
-  const liveDataIsRecent = sourceIsLive && Date.now() - dashboardState.lastLiveAt < dashboardLiveTtlMs;
+  const meta = dashboardState.data?.meta;
+  const sourceCanBeReused = ["live", "snapshot"].includes(meta?.source);
+  const expiresAt = Date.parse(meta?.cacheUntil || "") || dashboardState.lastLiveAt + dashboardLiveTtlMs;
+  const liveDataIsRecent = sourceCanBeReused && dashboardState.lastLiveAt > 0
+    && Date.now() >= dashboardState.lastLiveAt && Date.now() < expiresAt && !meta?.refreshPending;
   if (!dashboardLoadPromise && liveDataIsRecent) {
     renderDashboard();
     return dashboardState.data;

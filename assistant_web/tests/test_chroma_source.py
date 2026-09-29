@@ -183,3 +183,26 @@ class ChromaSourceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ChromaCoverageTests(unittest.TestCase):
+    def test_semantic_window_reports_completion_without_claiming_full_scope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'chroma.sqlite3'
+            create_chroma_database(path, [])
+            with (
+                patch.object(chroma, 'CHROMA_DB_PATH', path),
+                patch.object(chroma, 'rank_chroma_documents_semantically', return_value=(
+                    [{'issue_id': 2, 'content': '문서'}, {'issue_id': 1, 'content': '문서'}],
+                    {'ranking': 'semantic_vector'},
+                )) as rank,
+                patch.object(chroma, 'fetch_mantis_issue_by_id', side_effect=lambda issue_id: {'id': issue_id}),
+            ):
+                meta = chroma.execute_chroma_search('비슷한 문서', limit=2, semantic=True)['meta']
+                self.assertTrue(meta['query_complete'])
+                self.assertTrue(meta['result_window_complete'])
+                self.assertFalse(meta['search_complete'])
+                self.assertEqual(meta['coverage'], 'top_k')
+                rank.return_value = ([], {'ranking':'semantic_vector'})
+                meta = chroma.execute_chroma_search('비슷한 문서', limit=2, semantic=True)['meta']
+                self.assertFalse(meta['result_window_complete'])
+                self.assertFalse(meta['search_complete'])

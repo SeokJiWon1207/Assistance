@@ -241,6 +241,7 @@ def execute_chroma_search(
     terms = build_keyword_terms(search_keyword, constraints)
     ranking_meta: Dict[str, Any] = {"ranking": "latest_issue_id"}
     candidate_documents: List[Dict[str, Any]]
+    candidate_scope_complete = False
     if semantic:
         try:
             candidate_documents, ranking_meta = rank_chroma_documents_semantically(
@@ -264,12 +265,14 @@ def execute_chroma_search(
         try:
             with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
                 rows = connection.execute(sql, params).fetchall()
+                candidate_scope_complete = len(rows) < 500
                 if not rows and has_constraint(constraints):
                     relaxed_where, relaxed_params = build_chroma_where(terms, constraints, include_terms=False)
                     rows = connection.execute(
                         f"SELECT string_value FROM embedding_metadata WHERE {relaxed_where} LIMIT 800",
                         relaxed_params,
                     ).fetchall()
+                    candidate_scope_complete = len(rows) < 800
                 if not rows and len(terms) > 1 and not has_constraint(constraints):
                     relaxed_where = "key = 'chroma:document' AND (" + " OR ".join(
                         ["string_value LIKE ?" for _ in terms[:4]]
@@ -278,6 +281,7 @@ def execute_chroma_search(
                         f"SELECT string_value FROM embedding_metadata WHERE {relaxed_where} LIMIT 160",
                         [f"%{term}%" for term in terms[:4]],
                     ).fetchall()
+                    candidate_scope_complete = len(rows) < 160
         except sqlite3.Error as exc:
             return {
                 "source": "chroma_db",
@@ -328,6 +332,13 @@ def execute_chroma_search(
         "status": "ok",
         "meta": {
             "search_keyword": search_keyword,
+            "query_complete": True,
+            "coverage": "top_k" if semantic else "snapshot_matches",
+            "search_complete": bool(not semantic and candidate_scope_complete and not live_refresh_failures
+                                    and len(candidate_documents) <= candidate_window),
+            "result_window_complete": bool(not live_refresh_failures and (
+                (len(documents) >= limit and (semantic or candidate_scope_complete)) or (not semantic and candidate_scope_complete
+                                           and len(candidate_documents) <= candidate_window))),
             "displayed_count": len(documents),
             "candidate_count": ranking_meta.get("candidate_count", len(candidate_documents)),
             "mantis_refreshed_count": refreshed_count,

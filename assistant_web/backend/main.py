@@ -40,7 +40,18 @@ async def lifespan(_application: FastAPI):
     prune_audit_logs()
     if os.getenv("APP_ENV", "development").strip().lower() == "production":
         load_workspace_snapshot()
-    yield
+    # 연결이 설정된 환경에서는 사용자 요청과 분리해 원본을 주기적으로 갱신한다.
+    configured = bool(os.getenv("MANTIS_API_URL", "").strip() and os.getenv("MANTIS_API_TOKEN", "").strip())
+    enabled = os.getenv("MANTIS_COMPLETE_SYNC_ENABLED", "true" if configured else "false")
+    stop = None
+    if enabled.lower() == "true":
+        from backend.sources.mantis_store import start_store_scheduler
+        stop = start_store_scheduler()
+    try:
+        yield
+    finally:
+        if stop is not None:
+            stop.set()
 
 
 class CacheRevalidatedStaticFiles(StaticFiles):

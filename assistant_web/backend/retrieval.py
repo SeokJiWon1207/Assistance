@@ -7,6 +7,7 @@
 """
 
 import re
+from backend.sources.mantis_store import with_store_scope
 from collections import Counter
 from typing import Any, Dict, List, Optional
 
@@ -164,6 +165,7 @@ def grounded_mantis_terms(
     return list(dict.fromkeys(grounded or deterministic_terms))[:6]
 
 
+@with_store_scope
 def run_retrieval_pipeline(
     query_text: str,
     limit: int,
@@ -725,6 +727,13 @@ def merge_combined_sources(sources: List[Dict[str, Any]]) -> List[Dict[str, Any]
 def build_snapshot_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
     """스냅샷 기반 결과에 데이터 기준일을 알려 최신 이슈 누락 가능성을 인지시킨다."""
     stages = retrieval_result.get("stages", [])
+    stored_stage = next((stage for stage in stages
+                         if stage.get("meta", {}).get("fetchedAt")
+                         and (stage.get("meta", {}).get("status") == "snapshot"
+                              or stage.get("source") == "mantis_snapshot")), None)
+    if stored_stage:
+        fetched_at = str(stored_stage["meta"]["fetchedAt"])
+        return f"데이터 기준: Mantis 저장 원본 {fetched_at} 조회분입니다. 이후 변경은 다음 동기화에 반영됩니다."
     snapshot_stage = next(
         (
             stage

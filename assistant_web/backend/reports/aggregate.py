@@ -4,6 +4,7 @@
 """
 
 import re
+from backend.sources.mantis_store import with_store_scope
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -184,6 +185,7 @@ def _spike_axis(text: str) -> Tuple[str, Any, str]:
     return "customer", (lambda issue: str(issue.get("project") or "")), "고객사"
 
 
+@with_store_scope
 def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
     """평소 대비 이슈가 급증한 축(고객사/화면번호/담당자)을 찾아 답한다.
 
@@ -359,6 +361,7 @@ def _detect_pivot_axis(text: str) -> Optional[Tuple[str, Any, str]]:
     return None
 
 
+@with_store_scope
 def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
     """축(고객사/화면번호/담당자/상태) × 월 교차 건수를 표로 보여준다.
 
@@ -491,6 +494,7 @@ def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
     }
 
 
+@with_store_scope
 def build_mantis_count_report(
     text: str,
     query_plan: Dict[str, Any],
@@ -676,6 +680,7 @@ def build_mantis_count_report(
     }
 
 
+@with_store_scope
 def build_mantis_month_count_report(
     text: str, *, recent_issues: Optional[List[Dict[str, Any]]] = None,
 ) -> Optional[Dict[str, Any]]:

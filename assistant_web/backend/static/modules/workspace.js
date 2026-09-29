@@ -330,9 +330,14 @@ function issueWorkspaceRow(issue) {
 }
 
 function renderPersonalOverview(data) {
+  if (data.mantis?.status === "error") {
+    return workspaceEmpty(data.mantis.reason || "업무 데이터를 확인하지 못했습니다. 잠시 후 다시 조회해 주세요.");
+  }
   const summary = data.summary || {};
   const issues = data.mantis?.issues || [];
-  const sourceLabel = data.mantis?.status === "snapshot" ? "로컬 스냅샷" : "실시간";
+  const sourceLabel = data.mantis?.status === "snapshot" ? "저장 데이터" : "Mantis 데이터";
+  const coverageLabel = data.mantis?.search_complete === true ? "수집 범위 전체" : "일부 범위 · 전체 건수 미확정";
+  const fetchedAtLabel = data.mantis?.fetchedAt ? new Date(data.mantis.fetchedAt).toLocaleString("ko-KR") : "미확인";
   const totalOpen = Number(summary.open || 0);
   const visibleCountLabel = issues.length === totalOpen
     ? `${issues.length}건 모두 표시`
@@ -340,14 +345,14 @@ function renderPersonalOverview(data) {
   const isConnected = Boolean(data.user?.mantisUsername);
   return `<div class="workspace-overview">
     <section class="workspace-summary-grid is-three">
-      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", "현재 처리할 전체 업무")}
+      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", data.mantis?.search_complete === true ? "조회 기준 시각의 전체 업무" : "확인한 범위의 업무")}
       ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "", summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중")}
       ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "", summary.aging ? "우선 확인이 필요한 장기 업무" : "장기 업무 없음")}
     </section>
-    <div class="workspace-connection ${["unlinked", "error", "snapshot"].includes(data.mantis?.status) ? "is-warning" : ""}">
+    <div class="workspace-connection ${(["unlinked", "error"].includes(data.mantis?.status) || data.mantis?.search_complete !== true) ? "is-warning" : ""}">
       <span class="workspace-connection-dot" aria-hidden="true"></span>
       ${isConnected
-        ? `<strong>${escapeHtml(sourceLabel)} 조회 완료</strong><span>담당자 ${escapeHtml(data.user.mantisUsername)}</span><span>${escapeHtml(visibleCountLabel)}</span>`
+        ? `<strong>${escapeHtml(sourceLabel)} · ${escapeHtml(coverageLabel)}</strong><span>조회 기준 ${escapeHtml(fetchedAtLabel)}${data.mantis?.refreshPending ? " · 갱신 중" : ""}</span><span>담당자 ${escapeHtml(data.user.mantisUsername)}</span><span>${escapeHtml(visibleCountLabel)}</span>`
         : "<strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span>"}
     </div>
     <section class="workspace-section workspace-section-single">
@@ -355,7 +360,7 @@ function renderPersonalOverview(data) {
         <div><span>Mantis</span><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
         <em class="workspace-visible-count"><strong>${issues.length}</strong>${issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
       </header>
-      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty("현재 담당한 미종료 이슈가 없습니다.")}</div>
+      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty(data.mantis?.search_complete === true ? "조회 기준 시각에 담당한 미종료 이슈가 없습니다." : "확인한 범위에 미종료 이슈가 없습니다. 전체 결과는 미확정입니다.")}</div>
     </section>
   </div>`;
 }
@@ -427,7 +432,7 @@ function renderTeamWeeklyBrief() {
       ${decisionSignals ? `<ul>${decisionSignals}</ul>` : ""}
       ${decisionActions ? `<div class="workspace-decision-actions">${decisionActions}</div>` : ""}
     </section>` : ""}
-    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">기준본 · ${brief.source?.status === "live" ? "Mantis 실시간 데이터로 생성" : "로컬 스냅샷으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
+    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">기준본 · ${brief.source?.status === "live" ? "Mantis 조회 데이터로 생성" : "로컬 스냅샷으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
     <div class="workspace-columns">
       <section class="workspace-section">
         <header><div><span>Customer change</span><h4>급증 고객사</h4></div></header>
@@ -629,6 +634,7 @@ let workspaceLoading = false;
 let workspaceLoadingMessage = "";
 let workspaceLoadingError = "";
 let workspaceLastLiveAt = 0;
+let workspaceSyncTimer = null;
 const workspaceLiveTtlMs = 60_000;
 
 function updateWorkspaceLoadingControl() {
@@ -682,7 +688,7 @@ function renderWorkspace() {
   updateWorkspaceUnread();
 }
 
-async function loadMyWorkspace(force = false, revalidate = false) {
+async function loadMyWorkspace(force = false, revalidate = false, background = false) {
   if (workspaceLoadPromise) {
     const awaitedRefresh = workspaceLoadIsRefresh;
     await workspaceLoadPromise;
@@ -692,7 +698,7 @@ async function loadMyWorkspace(force = false, revalidate = false) {
   if (state.myWorkspace && !force && !revalidate) return state.myWorkspace;
 
   workspaceLoadIsRefresh = force;
-  workspaceLoading = true;
+  workspaceLoading = !background;
   workspaceLoadingError = "";
   workspaceLoadingMessage = force ? "Mantis 최신 데이터를 확인하고 있습니다." : "업무 정보를 불러오는 중입니다.";
   updateWorkspaceLoadingControl();
@@ -703,7 +709,12 @@ async function loadMyWorkspace(force = false, revalidate = false) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
     state.myWorkspace = data;
-    if (data.mantis?.status === "live") workspaceLastLiveAt = Date.now();
+    workspaceLastLiveAt = Date.parse(data.mantis?.fetchedAt || "") || 0;
+    if (workspaceSyncTimer) clearTimeout(workspaceSyncTimer);
+    workspaceSyncTimer = data.mantis?.refreshPending ? setTimeout(() => {
+      workspaceSyncTimer = null;
+      if (state.currentUser?.uid) void loadMyWorkspace(false, true, true).catch(() => {});
+    }, 10000) : null;
     updateWorkspaceUnread();
     return data;
   })();
@@ -724,8 +735,11 @@ async function loadMyWorkspace(force = false, revalidate = false) {
 
 async function ensureMyWorkspaceFresh() {
   if (workspaceFreshPromise) return workspaceFreshPromise;
-  const sourceIsLive = state.myWorkspace?.mantis?.status === "live";
-  const liveDataIsRecent = sourceIsLive && Date.now() - workspaceLastLiveAt < workspaceLiveTtlMs;
+  const meta = state.myWorkspace?.mantis;
+  const sourceCanBeReused = ["live", "snapshot"].includes(meta?.status);
+  const expiresAt = Date.parse(meta?.cacheUntil || "") || workspaceLastLiveAt + workspaceLiveTtlMs;
+  const liveDataIsRecent = sourceCanBeReused && workspaceLastLiveAt > 0
+    && Date.now() >= workspaceLastLiveAt && Date.now() < expiresAt && !meta?.refreshPending;
   if (!workspaceLoadPromise && state.myWorkspace && (liveDataIsRecent || !state.myWorkspace.user?.mantisUsername)) {
     renderWorkspace();
     return state.myWorkspace;

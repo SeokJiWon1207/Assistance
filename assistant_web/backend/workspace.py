@@ -15,7 +15,8 @@ from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_not
 from backend.notion.property_roles import responsible_properties
 from backend.db_migrations import run_sqlite_migrations
 from backend.sources.mantis import normalize_issue
-from backend.workspace_data import fetch_workspace_recent_issues
+from backend.sources.mantis_collection import collection_metadata
+from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
 from backend.sources.notion import (
     fetch_notion_database_schema,
     fetch_notion_database_title,
@@ -356,6 +357,12 @@ def _my_mantis_issues(
     person = user_mantis_name(user)
     if not person:
         return "", [], {"status": "unlinked", "matchedCount": 0}
+    complete = load_complete_workspace(
+        force_refresh=force_refresh, predicate=lambda issue: _matches_person(issue.get("handler", ""), person),
+    )
+    if complete is not None:
+        rows, meta = complete
+        return person, rows, meta
     if prefer_snapshot:
         snapshot_issues, snapshot_meta = load_workspace_snapshot(max(total_limit, 1000))
         if snapshot_meta.get("status") == "snapshot":
@@ -375,8 +382,11 @@ def _my_mantis_issues(
             for issue in normalized
             if _matches_person(issue.get("handler", ""), person)
         ]
-        return person, matched, {"status": "live", "matchedCount": len(matched)}
+        return person, matched, {"status": "live", **collection_metadata(raw_issues), "matchedCount": len(matched)}
     except Exception as exc:
+        if complete_store_expired():
+            return person, [], {"status": "error", "matchedCount": 0, "search_complete": False,
+                                "reason": "저장 데이터가 만료됐고 실시간 조회에도 실패했습니다."}
         snapshot = scan_mantis_documents(
             CHROMA_DB_PATH,
             matches=lambda text: _matches_person(
@@ -570,6 +580,7 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             "unreadNotifications": sum(not item["read"] for item in notifications),
         },
         "mantis": {
+            **mantis_meta,
             "status": mantis_meta.get("status", "unknown"),
             "reason": mantis_meta.get("reason", ""),
             # 개인 워크스페이스의 기본 목록은 현재 할 일이다. 담당 이력 전체를
@@ -599,11 +610,17 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
 def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
     source_status = "live"
     source_reason = ""
+    source_meta: Dict[str, Any] = {"search_complete": False}
     try:
-        raw_issues = fetch_workspace_recent_issues(total_limit=1000, request_timeout=6)
-        issues = [normalize_issue(issue) for issue in raw_issues]
+        complete = load_complete_workspace()
+        if complete is not None:
+            issues, source_meta = complete
+        else:
+            raw_issues = fetch_workspace_recent_issues(total_limit=1000, request_timeout=6)
+            source_meta = collection_metadata(raw_issues)
+            issues = [normalize_issue(issue) for issue in raw_issues]
     except Exception as exc:
-        snapshot = scan_mantis_documents(
+        snapshot = {"available": False, "reason": "저장 데이터 만료 및 실시간 조회 실패"} if complete_store_expired() else scan_mantis_documents(
             CHROMA_DB_PATH,
             matches=lambda _text: True,
             normalize=normalize_chroma_issue_document,
@@ -612,7 +629,7 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
         )
         issues = snapshot.get("issues") or []
         source_status = "snapshot" if snapshot.get("available") else "error"
-        source_reason = snapshot.get("reason") or type(exc).__name__
+        source_reason = str(snapshot.get("reason") or type(exc).__name__)
     approved_users = [user for user in users if user.get("approved")]
     # 관리자용 보조 계정과 사내 이메일 계정이 같은 Mantis 담당자를 가리킬 수 있다.
     # 업무량이 중복 집계되지 않도록 담당자별 대표 프로필 하나만 사용한다.
@@ -658,6 +675,6 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
         },
         "members": members,
         "agingIssues": aging[:20],
-        "source": {"status": source_status, "reason": source_reason},
+        "source": {"status": source_status, "reason": source_reason, **source_meta},
         "generatedAt": _now(),
     }

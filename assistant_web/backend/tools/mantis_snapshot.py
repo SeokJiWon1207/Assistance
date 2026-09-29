@@ -204,6 +204,19 @@ def scan_mantis_documents(
     ``shadow`` (default) compares both engines but returns the legacy result,
     and ``primary`` returns the structured result when it is healthy.
     """
+    from backend.config import CHROMA_DB_PATH
+    from backend.sources.mantis_store import read_complete_store, render_document
+    stored = read_complete_store() if database_path == CHROMA_DB_PATH else None
+    if stored is not None:
+        selected = stored[:scan_limit] if scan_limit else stored
+        result = _scan_documents(
+            (render_document(raw) for raw in selected), matches, normalize,
+            example_limit=example_limit, group_key=group_key,
+        )
+        result.update(stored.meta)
+        # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.
+        result["search_complete"] = not scan_limit or len(stored) <= scan_limit
+        return result
     mode = os.getenv("MANTIS_INDEX_MODE", "shadow").strip().lower()
     if mode not in VALID_INDEX_MODES:
         LOGGER.warning("알 수 없는 MANTIS_INDEX_MODE=%s; shadow로 처리합니다.", mode)

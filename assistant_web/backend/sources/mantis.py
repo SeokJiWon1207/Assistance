@@ -38,7 +38,8 @@ from backend.config import (
 from backend.query_planning import plan_created_at_matches
 from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
-from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached
+from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
+from backend.sources.mantis_store import read_complete_store, read_store_metadata
 from backend.understanding import (
     chroma_text_matches_constraints,
     field_matches_screen_number,
@@ -288,6 +289,11 @@ def fetch_mantis_recent_issues(
     force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
     """API 선두 범위를 병렬 수집한 뒤 ID순으로 정렬한다(전역 최신순 보장 없음)."""
+    stored = None if force_refresh else read_complete_store()
+    if stored is not None:
+        # 명시적인 최신 N건 요청은 전체 원본을 정렬한 뒤 자른다.
+        from backend.sources.mantis_collection import IssueBatch
+        return IssueBatch(stored[:total_limit], {**stored.meta, "search_complete": len(stored) <= total_limit})
     issues = _fetch_mantis_raw_issues(total_limit, page_size, request_timeout, force_refresh=force_refresh)
     issues.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
     return issues
@@ -355,7 +361,7 @@ def issue_to_search_text(issue: Dict[str, Any]) -> str:
         else:
             custom_text_parts.append(f"{field_name} {field_value}")
     custom_text = " ".join(custom_text_parts)
-    notes_text = " ".join(note.get("text", "") for note in issue.get("notes", []))
+    notes_text = " ".join(str(note.get("text") or "") for note in (issue.get("notes") or []))
     return " ".join(
         [
             str((issue.get("project") or {}).get("name", "")),
@@ -386,7 +392,7 @@ def mantis_keyword_match_score(issue: Dict[str, Any], keywords: List[str]) -> in
             [
                 str(issue.get("description", "")),
                 str(issue.get("steps_to_reproduce", "")),
-                " ".join(note.get("text", "") for note in issue.get("notes", [])),
+                " ".join(str(note.get("text") or "") for note in (issue.get("notes") or [])),
             ]
         )
     )
@@ -527,6 +533,13 @@ def collect_mantis_live_ids_in_range(
     없어 월/연 단위 카운트가 0으로 새는 문제가 있다. 날짜 조건이 있는 집계에서는 이
     함수로 라이브 결과를 병합해 정확도를 보완한다. 실패 이유와 완료 여부를 함께
     반환해 호출부가 오래된 스냅샷 값을 현재의 확정값처럼 표시하지 않게 한다."""
+    stored = read_complete_store()
+    if stored is not None:
+        selected = stored[:scan_limit] if scan_limit else stored
+        return {"status": "ok", "error_kind": "", "reason": "", "complete": True,
+                "issues": {str(row["id"]): row for row in selected if issue_matches_constraints(row, constraints)},
+                "scanned_pages": 0, "scanned_ids": [int(row["id"]) for row in selected],
+                "fetchedAt": stored.meta["fetchedAt"]}
     collected: Dict[str, Dict[str, Any]] = {}
     scanned_ids: set[int] = set()
     scanned_pages = 0
@@ -578,6 +591,7 @@ def execute_mantis_filter_search(
             "page": 1,
         }
     )
+    scope_complete = len(issues) < limit
     if constraints and has_constraint(constraints):
         issues = [
             issue
@@ -595,6 +609,10 @@ def execute_mantis_filter_search(
         },
         "meta": {
             "displayed_count": len(issues[:limit]),
+            "query_complete": True,
+            "search_complete": scope_complete,
+            "coverage": "saved_filter" if scope_complete else "bounded",
+            "result_window_complete": scope_complete,
         },
         "issues_list": [normalize_issue(issue) for issue in issues[:limit]],
     }
@@ -621,6 +639,7 @@ def execute_mantis_id_lookup(
         "status": "ok" if issues else "not_found",
         "meta": {
             "issue_ids": issue_ids,
+            "search_complete": True,
             "missing_ids": missing_ids,
             "displayed_count": len(issues),
         },
@@ -676,6 +695,9 @@ def _snapshot_freshness_for_mtime(_mtime: float, _metadata_mtime: float) -> str:
 
 def get_mantis_snapshot_freshness() -> str:
     """로컬 Mantis 스냅샷의 데이터 기준일(YYYY-MM-DD). 없으면 빈 문자열."""
+    stored_meta = read_store_metadata()
+    if stored_meta is not None:
+        return datetime.fromisoformat(stored_meta["fetchedAt"]).astimezone().date().isoformat()
     if not CHROMA_DB_PATH.exists():
         return ""
     metadata_path = CHROMA_DB_PATH.parent / "freshness.json"
@@ -688,6 +710,13 @@ def get_mantis_snapshot_freshness() -> str:
 
 def get_mantis_snapshot_freshness_status() -> Dict[str, Any]:
     """Return a UI-friendly age and health status for the local snapshot."""
+    store_meta = read_store_metadata(allow_stale=True)
+    if store_meta is not None:
+        fetched = datetime.fromisoformat(store_meta["fetchedAt"]).astimezone()
+        fresh = store_meta["search_complete"]
+        return {"source": "mantis_complete_snapshot", "asOf": fetched.date().isoformat(),
+                "updatedAt": fetched.isoformat(), "ageDays": max(0, (date.today() - fetched.date()).days),
+                "status": "fresh" if fresh else "stale", "label": "최신" if fresh else "지연"}
     as_of = get_mantis_snapshot_freshness()
     updated_at = ""
     if CHROMA_DB_PATH.exists():
@@ -748,13 +777,15 @@ def execute_mantis_snapshot_search(
         "status": "ok",
         "reason": "",
         "meta": {
+            "search_complete": snapshot.get("search_complete", False),
+            "fetchedAt": snapshot.get("fetchedAt"),
             "scanned_count": snapshot["scanned_count"],
             "found_count": snapshot["matched_count"],
             "displayed_count": len(snapshot["issues"]),
             "matched_issue_ids": sorted(snapshot["matched_ids"]),
             "matched_customer_groups": snapshot.get("matched_groups") or {},
             "applied_filters": constraints,
-            "tool": "mantis_chroma_snapshot",
+            "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",
             "snapshot_as_of": get_mantis_snapshot_freshness(),
         },
         "issues_list": snapshot["issues"],
@@ -892,6 +923,9 @@ def revalidate_mantis_snapshot_stage(
             "live_fallback_count": fallback_count,
             "live_refill_attempt_count": refill_attempt_count,
             "live_refill_limit_reached": refill_limit_reached,
+            "search_complete": stage.get("meta", {}).get("search_complete") is True and not (
+                fallback_count or refill_dependency_error or refill_limit_reached
+            ),
             "live_revalidation_complete": not (
                 fallback_count or refill_dependency_error or refill_limit_reached
             ),
@@ -919,7 +953,10 @@ def execute_mantis_page_scan(
     try:
         # 기존과 같은 50건 × 16페이지를 전부 읽은 뒤 조건을 적용한다.
         # API 정렬이 보장되지 않으므로 표시 건수를 채워도 조기 종료하지 않는다.
-        raw_issues = _fetch_mantis_raw_issues(max_pages * page_size, page_size, MANTIS_PAGE_SCAN_TIMEOUT_SECONDS)
+        stored = read_complete_store()
+        raw_issues = stored if stored is not None else _fetch_mantis_raw_issues(
+            max_pages * page_size, page_size, MANTIS_PAGE_SCAN_TIMEOUT_SECONDS,
+        )
         for issue in raw_issues:
             issue_id = int(issue.get("id") or 0)
             if issue_id:
@@ -938,8 +975,7 @@ def execute_mantis_page_scan(
                     status_excluded_count += 1
                 continue
             if not keywords or all(keyword in normalized_text for keyword in keywords):
-                issue["_assistant_match_score"] = mantis_keyword_match_score(issue, keywords)
-                filtered_issues.append(issue)
+                filtered_issues.append({**issue, "_assistant_match_score": mantis_keyword_match_score(issue, keywords)})
     except HTTPException:
         raise
     except requests.RequestException as exc:
@@ -978,7 +1014,8 @@ def execute_mantis_page_scan(
                 if issue.get("id")
             ),
             "scanned_issue_ids": sorted(scanned_issue_ids),
-            "searched_pages": min(len(raw_issues) // page_size + 1, max_pages),
+            **collection_metadata(raw_issues),
+            "searched_pages": 0 if stored is not None else min(len(raw_issues) // page_size + 1, max_pages),
             "status_excluded_count": status_excluded_count,
         },
         "issues_list": [normalize_issue(issue) for issue in target_batch],

@@ -555,6 +555,15 @@ def format_deterministic_issue_answer(
     unverified_person_note = build_unverified_person_note(display_constraints, len(issues))
     snapshot_note = build_snapshot_note(retrieval_result)
     dependency_note = build_mantis_dependency_note(retrieval_result)
+    incomplete = any(
+        stage.get("meta", {}).get("search_complete") is False
+        for stage in retrieval_result.get("stages", [])
+        if str(stage.get("source") or "").startswith("mantis_")
+    )
+    if incomplete and not issues:
+        dependency_note = dependency_note or "조회한 범위에 일치하는 이슈가 없습니다. 전체 조회가 완료되지 않아 0건으로 확정할 수 없습니다."
+    if incomplete and issues:
+        snapshot_note = (snapshot_note + "\n" if snapshot_note else "") + "일부 범위의 결과입니다. 전체 건수와 최신순은 확정할 수 없습니다."
     if not issues and not customer_group_counts:
         intro = dependency_note or build_issue_intro_line(display_constraints, issues, 0)
         sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"

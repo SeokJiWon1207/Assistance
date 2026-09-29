@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 from backend.answers import display_constraints
 from backend.common import normalize_for_match
 from backend.notion.search import extract_notion_constraints, notion_page_matches_constraints
-from backend.query_planning import plan_created_at_matches, validate_query_plan
+from backend.query_planning import plan_created_at_matches, validate_query_plan, infer_operation, extract_group_by
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.retrieval import (
     build_model_retrieval_context,
@@ -108,7 +108,8 @@ def build_verification_report(
             "notion", "mantis_id_lookup", "mantis_filter", "mantis_page_scan",
             "mantis_snapshot", "chroma_db",
         }
-        and stage.get("meta", {}).get("search_complete") is not False
+        and stage.get("meta", {}).get("search_complete") is True
+        and stage.get("meta", {}).get("coverage") not in {"saved_filter", "top_k", "snapshot_matches"}
         for stage in (retrieval_result or {}).get("stages", [])
     )
     has_evidence = bool(
@@ -225,12 +226,30 @@ def build_verification_report(
         count_status = "pass"
         count_detail = f"확인 {len(sources)}건"
     retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
-    incomplete_stages = [
-        stage for stage in (retrieval_result or {}).get("stages", [])
-        if stage.get("status") == "partial_error"
-        or stage.get("error_kind") == "dependency"
-        or stage.get("meta", {}).get("search_complete") is False
-    ]
+    needs_full_scope = bool(
+        query_plan.get("operation") in {"count", "aggregate"}
+        or infer_operation(question) in {"count", "aggregate"}
+        or query_plan.get("group_by") or extract_group_by(question)
+    )
+
+    def stage_incomplete(stage):
+        if stage.get("status") == "partial_error" or stage.get("error_kind") == "dependency":
+            return True
+        if stage.get("status") != "ok":
+            return False
+        meta = stage.get("meta", {})
+        # 의미 검색 상위 N건은 전체 건수/부재를 증명하지 않지만 목록 요청은 충족할 수 있다.
+        if (not needs_full_scope and stage.get("source") == "chroma_db"
+                and meta.get("query_complete") is True and meta.get("result_window_complete") is True):
+            return False
+        if needs_full_scope and meta.get("coverage") in {"top_k", "saved_filter", "snapshot_matches"}:
+            return True
+        if meta.get("search_complete") is False:
+            return True
+        return (stage.get("source") in {"mantis_page_scan", "mantis_snapshot", "mantis_filter", "chroma_db", "notion"}
+                and "search_complete" not in meta)
+
+    incomplete_stages = [stage for stage in (retrieval_result or {}).get("stages", []) if stage_incomplete(stage)]
     if incomplete_stages:
         retrieval_checks.append({
             "id": "search_completeness", "label": "조회 완전성", "status": "warning",

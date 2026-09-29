@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Tuple
 
 from backend.config import CHROMA_DB_PATH
 from backend.sources.mantis import normalize_issue
-from backend.workspace_data import fetch_workspace_recent_issues
+from backend.sources.mantis_collection import collection_metadata
+from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
@@ -167,18 +168,21 @@ def _inside(issue: Dict[str, Any], start: date, end: date) -> bool:
     return start <= created <= end
 
 
-def _load_issues(*, prefer_snapshot: bool = False, force_refresh: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
+def _load_issues(*, prefer_snapshot: bool = False, force_refresh: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    complete = load_complete_workspace(force_refresh=force_refresh)
+    if complete is not None:
+        return complete
     if prefer_snapshot:
         issues, source = load_workspace_snapshot(TEAM_BRIEF_FETCH_LIMIT)
         if source.get("status") == "snapshot":
-            return issues, {
-                "status": "snapshot",
-                "reason": str(source.get("reason") or ""),
-            }
+            return issues, source
     try:
         raw = fetch_workspace_recent_issues(total_limit=TEAM_BRIEF_FETCH_LIMIT, request_timeout=8, force_refresh=force_refresh)
-        return [normalize_issue(issue) for issue in raw], {"status": "live", "reason": ""}
+        return [normalize_issue(issue) for issue in raw], {"status": "live", "reason": "", **collection_metadata(raw)}
     except Exception as exc:
+        if complete_store_expired():
+            return [], {"status": "error", "search_complete": False,
+                        "reason": "저장 데이터가 만료됐고 실시간 조회에도 실패했습니다."}
         snapshot = scan_mantis_documents(
             CHROMA_DB_PATH,
             matches=lambda _text: True,
@@ -188,7 +192,7 @@ def _load_issues(*, prefer_snapshot: bool = False, force_refresh: bool = False) 
         )
         status = "snapshot" if snapshot.get("available") else "error"
         return snapshot.get("issues") or [], {
-            "status": status,
+            "status": status, "search_complete": False,
             "reason": str(snapshot.get("reason") or type(exc).__name__)[:300],
         }
 

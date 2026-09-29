@@ -57,11 +57,22 @@ class WorkspaceDataCacheTests(unittest.TestCase):
     def test_larger_request_does_not_mix_old_and_new_pages(self):
         with (
             patch.object(workspace_data, "get_mantis_settings", return_value={"url": "u", "token": "t"}),
-            patch.object(workspace_data, "fetch_mantis_issues", return_value=[{"id": n} for n in range(100)]) as api,
+            patch.object(workspace_data, "fetch_mantis_issues", side_effect=lambda params, **kw: [{"id": params["page"] * 100 + n} for n in range(100)]) as api,
         ):
             workspace_data.fetch_workspace_recent_issues(100)
             workspace_data.fetch_workspace_recent_issues(200)
         self.assertEqual([c.args[0]["page"] for c in api.call_args_list], [1, 1, 2])
+
+    def test_duplicate_ids_never_enter_cache_or_dashboard_counts(self):
+        with (
+            patch.object(workspace_data, "get_mantis_settings", return_value={"url": "u", "token": "t"}),
+            patch.object(workspace_data, "fetch_mantis_issues", return_value=[{"id": n} for n in range(100)]) as api,
+        ):
+            from fastapi import HTTPException
+            with self.assertRaises(HTTPException):
+                workspace_data.fetch_workspace_recent_issues(200)
+            api.return_value = [{"id": 999}]
+            self.assertEqual(workspace_data.fetch_workspace_recent_issues(200), [{"id": 999}])
 
     def test_parallel_pages_keep_order_even_if_later_page_finishes_first(self):
         third_finished = Event()

@@ -110,7 +110,9 @@ class PersonalWorkspaceTests(unittest.TestCase):
 
         self.assertEqual(person, "석지원")
         self.assertEqual([issue["id"] for issue in issues], [1])
-        self.assertEqual(meta, {"status": "live", "matchedCount": 1})
+        self.assertEqual(meta["status"], "live")
+        self.assertEqual(meta["matchedCount"], 1)
+        self.assertFalse(meta["search_complete"])
 
     def test_default_workspace_uses_snapshot_without_waiting_for_live_data(self):
         snapshot_issues = [
