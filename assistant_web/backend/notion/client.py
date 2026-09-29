@@ -51,41 +51,44 @@ def notion_block_text(block: Dict[str, Any]) -> str:
     return convert(block)
 
 
-@lru_cache(maxsize=512)
 def fetch_notion_relation_title(page_id: str) -> str:
-    """Resolve a related Notion page ID to its title for owner grouping."""
-    if not page_id:
-        return ""
-    try:
-        notion_request_slot()
-        response = requests.get(
-            f"{NOTION_API_BASE}/pages/{page_id}",
-            headers=get_notion_headers(),
-            timeout=20,
-        )
-    except requests.RequestException:
-        return ""
-    if response.status_code != 200:
-        return ""
-    return notion_title(response.json().get("properties", {}))
+    return _lookup_name("pages", page_id)
 
 
-@lru_cache(maxsize=512)
 def fetch_notion_user_name(user_id: str) -> str:
-    if not user_id:
+    return _lookup_name("users", user_id)
+
+
+def _lookup_name(kind: str, identifier: str) -> str:
+    if not identifier:
         return ""
     try:
-        notion_request_slot()
-        response = requests.get(
-            f"{NOTION_API_BASE}/users/{user_id}",
-            headers=get_notion_headers(),
-            timeout=20,
+        return _lookup_name_cached(
+            kind, identifier, get_notion_headers().get("Authorization", ""), int(time.monotonic() // 300),
         )
-    except requests.RequestException:
+    except (requests.RequestException, LookupError, ValueError):
         return ""
+
+
+@lru_cache(maxsize=1024)
+def _lookup_name_cached(kind: str, identifier: str, token: str, bucket: int) -> str:
+    # 실패는 예외로 전달해야 lru_cache가 빈 값을 저장하지 않는다.
+    notion_request_slot()
+    response = requests.get(
+        f"{NOTION_API_BASE}/{kind}/{identifier}",
+        headers={**get_notion_headers(), "Authorization": token}, timeout=20,
+    )
     if response.status_code != 200:
-        return ""
-    return notion_user_name(response.json())
+        raise LookupError("Notion 이름 조회 실패")
+    data = response.json()
+    value = notion_title(data.get("properties", {})) if kind == "pages" else notion_user_name(data)
+    if not value:
+        raise LookupError("Notion 이름 없음")
+    return value
+
+
+fetch_notion_relation_title.cache_clear = _lookup_name_cached.cache_clear  # type: ignore[attr-defined]
+fetch_notion_user_name.cache_clear = _lookup_name_cached.cache_clear  # type: ignore[attr-defined]
 
 
 NOTION_CONTENT_INCOMPLETE = "[본문 일부 미확인: 하위 문서 또는 조회 한도 때문에 전체 내용을 읽지 못했습니다.]"

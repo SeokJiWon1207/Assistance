@@ -231,3 +231,24 @@ class NotionPostJsonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NotionNameRecoveryTests(unittest.TestCase):
+    def test_failed_lookup_can_recover_and_credentials_and_ttl_isolate_success(self):
+        client.fetch_notion_user_name.cache_clear()
+        self.addCleanup(client.fetch_notion_user_name.cache_clear)
+        response = Mock(status_code=200)
+        response.json.return_value = {"name": "김지원"}
+        with (
+            patch.object(client.requests, 'get', side_effect=[requests.Timeout(), response, response, response]) as get,
+            patch.object(client, 'get_notion_headers', return_value={'Authorization': 'a'}) as headers,
+            patch.object(client.time, 'monotonic', return_value=100) as clock,
+        ):
+            self.assertEqual(client.fetch_notion_user_name('u'), '')
+            self.assertEqual(client.fetch_notion_user_name('u'), '김지원')
+            self.assertEqual(client.fetch_notion_user_name('u'), '김지원')
+            self.assertEqual(get.call_count, 2)
+            headers.return_value = {'Authorization': 'b'}
+            client.fetch_notion_user_name('u')
+            clock.return_value = 400
+            client.fetch_notion_user_name('u')
+            self.assertEqual(get.call_count, 4)
