@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from threading import Event
@@ -7,6 +8,7 @@ import requests
 from fastapi import HTTPException
 
 from backend.notion import search
+from backend.understanding import extract_query_constraints
 from backend.notion.mapping import normalize_notion_page
 
 
@@ -1171,4 +1173,55 @@ class NotionFilterNestingTests(unittest.TestCase):
             for constraints in local_constraints
             for clause in constraints.get("common_filter_clauses", [])
         ))
+
+
+def effective_notion_terms(question):
+    """실제 검색 경로처럼 구조화된 조건을 넘겨 만든 노션 검색어."""
+    constraints = search.merge_common_notion_constraints(
+        search.extract_notion_constraints(question), extract_query_constraints(question),
+    )
+    return search.remove_structured_date_terms(search.build_notion_terms(question, constraints), constraints)
+
+
+class NotionDateTermTests(unittest.TestCase):
+    def test_spaced_or_particle_date_phrases_do_not_leak_into_search_terms(self):
+        """띄어 쓴 기간 표현의 조각("달에", "주에", "중에" 등)이 제목 검색어로 남던 회귀."""
+        for phrase in (
+            "이번 달에", "이번 달엔", "이번 달부터", "이번 달 중에", "이번 달 동안", "이번 달 안에",
+            "지난 달에", "저번 달에", "지난달엔", "이번 주에", "이번 주엔", "지난 주에",
+            "이번 해에", "올해", "올해에", "작년에", "올해 들어", "오늘자", "9월 중에",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(effective_notion_terms(f"노션에서 {phrase} 만든 문서 보여줘"), [])
+
+    def test_real_terms_next_to_date_phrases_are_kept(self):
+        self.assertEqual(effective_notion_terms("노션에서 이번 달에 만든 장애보고 문서 보여줘"), ["장애보고"])
+        self.assertEqual(effective_notion_terms("노션에서 올해 들어 등록된 KRX 연장 문서 찾아줘"), ["KRX", "연장"])
+        self.assertEqual(effective_notion_terms("노션에서 9월 중에 만든 서버 점검 문서"), ["서버", "점검"])
+
+    def test_range_words_are_kept_when_no_date_is_structured(self):
+        self.assertIn("동안", effective_notion_terms("노션에서 점검 동안 발생한 장애 찾아줘"))
+
+    def test_this_month_document_list_is_queried_by_date_only(self):
+        question = "노션에서 이번 달에 만든 문서 보여줘"
+        respond, payloads = fake_notion_query([])
+        with (
+            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
+            patch.object(search, "fetch_notion_database_title", return_value="이슈리스트"),
+            patch.object(search, "notion_property_schema", return_value={
+                "제목": {"type": "title"}, "등록일": {"type": "date"},
+            }),
+            patch.object(search, "notion_post_json", side_effect=respond),
+        ):
+            result = search.execute_notion_search(
+                question, constraints=extract_query_constraints(question), include_blocks=False,
+            )
+
+        self.assertEqual(result["meta"]["terms"], [])
+        self.assertTrue(payloads)
+        for payload in payloads:
+            # 제목 검색 조건 없이 등록일 조건만 서버에 보낸다.
+            self.assertNotIn('"title"', json.dumps(payload.get("filter"), ensure_ascii=False))
+            self.assertIn("등록일", json.dumps(payload.get("filter"), ensure_ascii=False))
 

@@ -84,9 +84,15 @@ _OWNER_SUFFIXES = ("이면서", "으로", "이고", "이며", "인", "이", "가
 _DATE_VALUE_TERM = re.compile(
     r"(?:"
     r"\d{1,4}[년월일]|20\d{2}[-./]\d{1,2}(?:[-./]\d{1,2})?|"
-    r"이번[달주월]?|금주|지난[달주월]?|저번[달주월]?|전주|다음[달주월]?|"
-    r"오늘|어제|내일|최근)(?:된|인|에|부터|까지|만)?"
+    r"이번[달주월해]?|금주|금년|올해|작년|재작년|내년|"
+    r"지난[달주월해]?|저번[달주월]?|전주|다음[달주월해]?|"
+    r"오늘|어제|내일|최근|"
+    # "이번 달에"처럼 띄어 쓰면 단위만 조사와 함께 남는다.
+    r"[달주월해](?=에|엔|부터|까지))"
+    r"(?:된|인|에|에는|엔|부터|까지|만|자)?"
 )
+# "이번 달 중에·동안·안에", "올해 들어"처럼 기간 뒤에 붙는 말.
+_DATE_RANGE_TAIL_TERM = re.compile(r"중에|동안(?:에)?|안에|이내(?:에)?|내에|들어(?:서)?")
 _CREATED_DATE_VERB = re.compile(
     r"(?:등록(?:된|한|됐|되었|되어)|접수(?:된|한|됐|되었|되어)|"
     r"생성(?:된|한|됐|되었|되어)|작성(?:된|한|됐|되었|되어)|만든|올라온|들어온)"
@@ -197,6 +203,7 @@ def remove_structured_date_terms(terms: List[str], constraints: Dict[str, Any]) 
     return [
         term for term in terms
         if not _DATE_VALUE_TERM.fullmatch(term)
+        and not _DATE_RANGE_TAIL_TERM.fullmatch(term)
         and normalize_for_match(term) not in field_terms
         and not (created_at and _CREATED_DATE_VERB.fullmatch(term))
     ]
