@@ -108,6 +108,11 @@
       && !event.repeat;
   }
 
+  // 인증을 끈 로컬 개발 환경에는 역할 정보가 없으므로 관리자 도구를 모두 보인다.
+  function canUseAdminTools(authEnabled, user) {
+    return !authEnabled || user?.role === "admin";
+  }
+
   function buildTeamTemplateQuestion(template, values = {}) {
     if (!template || typeof template.questionTemplate !== "string") return "";
     const fields = new Map((template.fields || []).map((field) => [field.name, field]));
@@ -150,6 +155,7 @@
     buildTeamTemplateQuestion,
     parseSseBuffer,
     shouldSubmitPromptOnKeydown,
+    canUseAdminTools,
   });
 
   globalScope.AssistantFrontendCore = api;

@@ -9,6 +9,7 @@ const {
   buildTeamTemplateQuestion,
   parseSseBuffer,
   shouldSubmitPromptOnKeydown,
+  canUseAdminTools,
 } = globalThis.AssistantFrontendCore;
 
 export const state = {
@@ -83,6 +84,7 @@ export const els = {
   searchLimit: document.querySelector("#searchLimit"),
   searchLimitValue: document.querySelector("#searchLimitValue"),
   resetOptionsBtn: document.querySelector("#resetOptionsBtn"),
+  adminGenerationSettings: document.querySelector("#adminGenerationSettings"),
   newChatBtn: document.querySelector("#newChatBtn"),
   brandHome: document.querySelector("#brandHome"),
   sidebar: document.querySelector(".sidebar"),
@@ -208,6 +210,7 @@ export {
   apiFetch,
   buildChatMessages,
   buildTeamTemplateQuestion,
+  canUseAdminTools,
   conversationContentChanged,
   deriveConversationTitle,
   parseSseBuffer,

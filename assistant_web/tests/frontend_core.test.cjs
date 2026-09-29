@@ -11,6 +11,7 @@ const {
   buildTeamTemplateQuestion,
   parseSseBuffer,
   shouldSubmitPromptOnKeydown,
+  canUseAdminTools,
 } = require("../backend/static/frontend_core.js");
 
 const configuredTemplates = JSON.parse(
@@ -111,6 +112,14 @@ test("shouldSubmitPromptOnKeydown ignores Korean IME composition and repeated En
   assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", which: 229 }), false);
   assert.equal(shouldSubmitPromptOnKeydown({ key: "Enter", repeat: true }), false);
   assert.equal(shouldSubmitPromptOnKeydown({ key: "a" }), false);
+});
+
+test("canUseAdminTools shows admin tools only to admins when auth is enabled", () => {
+  assert.equal(canUseAdminTools(true, { role: "admin" }), true);
+  assert.equal(canUseAdminTools(true, { role: "manager" }), false);
+  assert.equal(canUseAdminTools(true, { role: "member" }), false);
+  assert.equal(canUseAdminTools(true, null), false);
+  assert.equal(canUseAdminTools(false, null), true);
 });
 
 test("buildTeamTemplateQuestion creates every configured shared template question", () => {

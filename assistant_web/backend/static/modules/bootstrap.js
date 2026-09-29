@@ -1,5 +1,5 @@
 import "./events.js?v=20260911-6";
-import { state, els, defaultOptions } from "./runtime.js?v=20260911-6";
+import { state, els, defaultOptions, canUseAdminTools } from "./runtime.js?v=20260911-6";
 import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=20260911-6";
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
@@ -26,9 +26,9 @@ async function checkAppVersion() {
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
-  if (authState.enabled && state.currentUser?.role !== "admin") {
-    els.evaluationBtn.hidden = true;
-  }
+  const adminToolsVisible = canUseAdminTools(authState.enabled, state.currentUser);
+  els.evaluationBtn.hidden = !adminToolsVisible;
+  els.adminGenerationSettings.hidden = !adminToolsVisible;
   await Promise.all([
     loadConversations(),
     loadTeamTemplates().catch(() => {}),

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260921-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260929-1" />
     <link rel="stylesheet" href="/static/charts.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20260921-1" />
@@ -78,10 +78,9 @@
         </section>
 
         <details class="sidebar-advanced">
-          <summary>고급 설정</summary>
+          <summary>화면 설정</summary>
           <div class="sidebar-advanced-body">
             <div class="advanced-section">
-              <span class="field-caption">화면</span>
               <button id="darkModeToggle" class="theme-toggle" type="button" role="switch" aria-pressed="false">
                 <span class="theme-toggle-copy">
                   <strong>다크 모드</strong>
@@ -89,7 +88,20 @@
                 </span>
                 <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
               </button>
+              <button id="showSources" class="theme-toggle" type="button" role="switch" aria-pressed="true">
+                <span class="theme-toggle-copy"><strong>관련 이슈 표시</strong><small id="sourceDisplayLabel">On</small></span>
+                <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
+              </button>
             </div>
+          </div>
+        </details>
+
+        <!-- 생성 파라미터는 답변 품질을 크게 바꾸므로 관리자에게만 보인다.
+             bootstrap.js가 역할을 확인한 뒤 hidden을 해제한다. -->
+        <details id="adminGenerationSettings" class="sidebar-advanced" hidden>
+          <summary>관리자 · 생성 파라미터</summary>
+          <div class="sidebar-advanced-body">
+            <p class="admin-settings-note">여기서 바꾼 값은 내 질문에만 적용됩니다. 팀원에게는 보이지 않으며 항상 기본값으로 답변합니다.</p>
             <div class="advanced-section">
               <span class="field-caption parameter-heading">
                 응답 온도
@@ -147,10 +159,6 @@
                 <input id="searchLimit" type="range" min="1" max="20" step="1" value="5" aria-label="검색 결과 개수" />
                 <output id="searchLimitValue">5건</output>
               </div>
-              <button id="showSources" class="theme-toggle" type="button" role="switch" aria-pressed="true">
-                <span class="theme-toggle-copy"><strong>관련 이슈 표시</strong><small id="sourceDisplayLabel">On</small></span>
-                <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
-              </button>
               <button id="abTestToggle" class="theme-toggle" type="button" role="switch" aria-pressed="false">
                 <span class="theme-toggle-copy"><strong>A/B 비교</strong><small id="abTestLabel">Off · A 답변만</small></span>
                 <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>

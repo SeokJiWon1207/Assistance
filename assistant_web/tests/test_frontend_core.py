@@ -179,6 +179,38 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('method: "PATCH"', auth_js)
         self.assertIn("mantisUsername: form.elements.mantisUsername.value.trim()", auth_js)
 
+    def test_generation_parameters_are_admin_only(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        bootstrap_js = (STATIC_DIR / "modules" / "bootstrap.js").read_text(encoding="utf-8")
+
+        start = html.index('<details id="adminGenerationSettings"')
+        end = html.index("</details>", start)
+        admin_section = html[start:end]
+        admin_parser = IdCollector()
+        admin_parser.feed(admin_section)
+        rest_parser = IdCollector()
+        rest_parser.feed(html[:start] + html[end:])
+
+        self.assertIn(" hidden>", admin_section.split("\n", 1)[0])
+        for element_id in (
+            "temperature",
+            "topP",
+            "topK",
+            "minP",
+            "maxTokens",
+            "presencePenalty",
+            "frequencyPenalty",
+            "repetitionPenalty",
+            "seed",
+            "stop",
+            "searchLimit",
+            "abTestToggle",
+        ):
+            self.assertIn(element_id, admin_parser.ids)
+        for element_id in ("answerStyle", "darkModeToggle", "showSources"):
+            self.assertIn(element_id, rest_parser.ids)
+        self.assertIn("els.adminGenerationSettings.hidden = !adminToolsVisible", bootstrap_js)
+
     def test_chat_rate_limit_uses_retry_after_message(self):
         app_js = self.application_javascript()
 

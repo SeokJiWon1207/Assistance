@@ -651,6 +651,13 @@ body.theme-dark .sidebar {
   gap: 8px;
 }
 
+.admin-settings-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .control-group label,
 .section-label {
   color: var(--text-soft);
