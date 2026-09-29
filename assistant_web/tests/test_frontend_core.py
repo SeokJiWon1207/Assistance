@@ -147,6 +147,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (max-width: 860px)", dashboard_css)
         self.assertIn("@media (max-width: 560px)", dashboard_css)
 
+    def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
+        dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+        body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]
+        body_rule = body_rule[: body_rule.index("}")]
+
+        # overflow: hidden 섹션이 스크롤 grid 안에서 0 높이로 눌리지 않아야 한다.
+        self.assertIn("overflow-y: auto", body_rule)
+        self.assertIn("grid-auto-rows: max-content", body_rule)
+
     def test_chat_composer_stays_inside_tabbed_main_view(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
 

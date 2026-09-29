@@ -165,6 +165,9 @@
 
 .dashboard-body {
   display: grid;
+  /* 높이가 고정된 스크롤 grid에서는 overflow: hidden 섹션의 최소 높이가 0이 되어,
+     위 내용이 화면을 넘치면 아래 섹션이 테두리만 남기고 눌린다. 행을 내용 높이에 맞춘다. */
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 16px;
   min-height: 0;
