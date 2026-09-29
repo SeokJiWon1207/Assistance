@@ -13,12 +13,12 @@ async function harness(role, stored, fetcher) {
     classList: { toggle() {}, remove() {} },
     setAttribute(key, value) { this.attributes[key] = value; },
     addEventListener(type, fn) { this.handlers[type] = fn; },
-    querySelector() { return { textContent: '', addEventListener() {} }; },
+    querySelector() { return { textContent: '', addEventListener() {}, focus() {}, scrollIntoView() {} }; },
     focus() { focused = name; },
   });
   const els = Object.fromEntries([
     'viewChatBtn', 'viewPersonalBtn', 'viewDashboardBtn', 'chatPanel', 'personalPanel',
-    'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardBody',
+    'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardFilterbar', 'dashboardBody',
     'dashboardDetail', 'dashboardDetailClose', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
   ].map((name) => [name, element(name)]));
   const htmlWrites = [];
@@ -31,6 +31,7 @@ async function harness(role, stored, fetcher) {
   const context = vm.createContext({
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     document: { body: { classList: { remove() {} } }, addEventListener() {} },
+    CSS: { escape: (value) => String(value) },
   });
   const dependencies = {
     './runtime.js': { state, els, WORKSPACE_ENDPOINTS: { dashboard: '/dashboard' },
@@ -60,6 +61,16 @@ const dashboard = (source, open) => ({
   decisionSummary: { riskLevel: 'watch', headline: `${source} 업무 요약`, signals: [], recommendedActions: [] },
   todos: [], customerHealth: [], customerHealthSummary: {}, customerSpikes: [], screenSpikes: [], members: [], priorities: [],
 });
+
+const filterableDashboard = () => ({
+  ...dashboard('live', 3),
+  priorities: [
+    { id: 1, title: '지연 이슈', project: '고객사 A', overdue: true, ageDays: 40, riskLevel: 'high' },
+    { id: 2, title: '장기 이슈', project: '고객사 B', overdue: false, ageDays: 45, riskLevel: 'attention' },
+    { id: 3, title: '최근 이슈', project: '고객사 A', overdue: false, ageDays: 3, riskLevel: 'watch' },
+  ],
+});
+const clickTarget = (selector, dataset) => ({ closest: (query) => (query === selector ? { dataset } : null) });
 
 test('manager can switch among three panels without losing personal tab state', async () => {
   const h = await harness('manager');
@@ -225,6 +236,53 @@ test('a fresh snapshot reuses its validated aggregation window across tab visits
   payload.meta.cacheUntil = new Date(Date.now() - 1).toISOString();
   await h.api.ensureDashboardFresh();
   assert.equal(h.calls.length, 2);
+});
+
+test('priority queue follows the metrics and filters stay above the scrolling body', async () => {
+  const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.ok(html.indexOf('dashboard-metrics') < html.indexOf('dashboard-priority-section'));
+  assert.ok(html.indexOf('dashboard-priority-section') < html.indexOf('dashboard-decision'));
+  assert.doesNotMatch(html, /dashboard-filterbar/);
+  assert.equal(h.els.dashboardFilterbar.hidden, false);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
+  assert.match(html, /data-dashboard-metric="open" aria-pressed="true"/);
+
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-metric]', { dashboardMetric: 'overdue' }) });
+  assert.match(h.els.dashboardFilterbar.innerHTML, /일정 지연 ×/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /우선 확인 이슈 1건 보기/);
+  assert.match(h.els.dashboardBody.innerHTML, /1 \/ 3건/);
+  assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-metric="open" aria-pressed="false"/);
+
+  // '미종료 이슈' 카드는 지표 필터를 푸는 전체 보기로 동작한다.
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-metric]', { dashboardMetric: 'open' }) });
+  assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
+  assert.match(h.els.dashboardBody.innerHTML, /3 \/ 3건/);
+});
+
+test('customer rows toggle their filter and the filter bar hides while reloading', async () => {
+  let finish;
+  let requests = 0;
+  const h = await harness('member', undefined, async () => (++requests === 1
+    ? { ok: true, payload: filterableDashboard() }
+    : new Promise((resolve) => { finish = resolve; })));
+  await h.api.loadDashboard();
+  const pickCustomer = () => h.els.dashboardBody.handlers.click({
+    target: clickTarget('[data-dashboard-customer]', { dashboardCustomer: '고객사 A' }),
+  });
+  pickCustomer();
+  assert.match(h.els.dashboardFilterbar.innerHTML, /고객사: 고객사 A ×/);
+  assert.match(h.els.dashboardBody.innerHTML, /2 \/ 3건/);
+  pickCustomer();
+  assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
+  assert.match(h.els.dashboardBody.innerHTML, /3 \/ 3건/);
+
+  const reloading = h.api.loadDashboard(true);
+  assert.equal(h.els.dashboardFilterbar.hidden, true);
+  finish({ ok: true, payload: filterableDashboard() });
+  await reloading;
+  assert.equal(h.els.dashboardFilterbar.hidden, false);
 });
 
 test('expired snapshot and live error never display zero dashboard metrics', async () => {

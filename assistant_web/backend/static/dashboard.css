@@ -71,7 +71,9 @@
 
 .view-switch-tab:focus-visible,
 .dashboard-clickable:focus-visible,
-.dashboard-chip:focus-visible {
+.dashboard-chip:focus-visible,
+.dashboard-filter-jump:focus-visible,
+.dashboard-priority-section:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
@@ -79,7 +81,8 @@
 .dashboard-panel {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* 헤더 · 적용 필터 줄 · 스크롤 본문. 필터 줄이 숨겨져도 본문이 남은 높이를 쓰도록 행을 고정한다. */
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -87,6 +90,7 @@
 }
 
 .dashboard-header {
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -164,6 +168,7 @@
 }
 
 .dashboard-body {
+  grid-row: 3;
   display: grid;
   /* 높이가 고정된 스크롤 grid에서는 overflow: hidden 섹션의 최소 높이가 0이 되어,
      위 내용이 화면을 넘치면 아래 섹션이 테두리만 남기고 눌린다. 행을 내용 높이에 맞춘다. */
@@ -204,27 +209,52 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-delta.is-down { color: var(--success); }
 
 .dashboard-filterbar {
+  grid-row: 2;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 7px;
-  min-height: 34px;
+  gap: 8px;
+  min-height: 46px;
+  padding: 7px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
-.dashboard-filterbar > span { color: var(--muted); font-size: 10px; font-weight: 800; }
+.dashboard-filterbar-label { color: var(--muted); font-size: 12px; font-weight: 800; }
+.dashboard-filterbar-hint { color: var(--muted); font-size: 12px; }
 .dashboard-chip {
-  min-height: 27px;
-  padding: 0 9px;
+  min-height: 30px;
+  padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
 }
 .dashboard-chip:hover { border-color: var(--blue); color: var(--blue); }
 .dashboard-chip-clear { background: var(--blue-soft); color: var(--blue); }
+.dashboard-filter-jump {
+  min-height: 30px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboard-priority-section.is-filtered { border-color: color-mix(in srgb, var(--blue) 55%, var(--line)); }
+.dashboard-priority-section:focus:not(:focus-visible) { outline: none; }
+.dashboard-clickable.is-selected {
+  background: var(--blue-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent);
+}
 
 .dashboard-decision { position: relative; }
 .dashboard-decision h4 { padding-right: 110px; }
@@ -398,6 +428,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   .dashboard-heading p { display: none; }
   .dashboard-toolbar { gap: 7px; }
   .dashboard-period > span, .dashboard-source { display: none; }
+  .dashboard-filterbar { padding: 7px 16px; }
   .dashboard-body { padding: 18px 16px 30px; }
   .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid { grid-template-columns: 1fr; }
@@ -414,6 +445,9 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   .dashboard-period { display: none; }
   .dashboard-header .workspace-refresh-button { width: 36px; overflow: hidden; padding: 0; color: transparent; }
   .dashboard-header .workspace-refresh-button::before { color: var(--text-soft); content: "↻"; font-size: 17px; }
+  .dashboard-filterbar { padding: 7px 12px; }
+  .dashboard-filterbar-hint { display: none; }
+  .dashboard-filter-jump { margin-left: 0; }
   .dashboard-body { gap: 13px; padding: 15px 12px 26px; }
   .dashboard-welcome { align-items: flex-start; flex-direction: column; }
   .dashboard-welcome h3 { font-size: 16px; }

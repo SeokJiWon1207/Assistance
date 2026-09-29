@@ -149,6 +149,7 @@ export const els = {
   dashboardGeneratedAt: document.querySelector("#dashboardGeneratedAt"),
   dashboardPeriod: document.querySelector("#dashboardPeriod"),
   dashboardRefreshBtn: document.querySelector("#dashboardRefreshBtn"),
+  dashboardFilterbar: document.querySelector("#dashboardFilterbar"),
   dashboardBody: document.querySelector("#dashboardBody"),
   dashboardDetail: document.querySelector("#dashboardDetail"),
   dashboardDetailTitle: document.querySelector("#dashboardDetailTitle"),
