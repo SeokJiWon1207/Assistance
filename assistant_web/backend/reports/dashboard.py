@@ -83,7 +83,7 @@ def _priorities(open_rows: List[Dict[str, Any]], today: date) -> List[Dict[str, 
             str(row.get("updatedAt") or ""),
         )
     )
-    return enriched[:DASHBOARD_PRIORITY_LIMIT]
+    return enriched
 
 
 def _todo_rows(open_rows: List[Dict[str, Any]], priorities: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
@@ -189,7 +189,7 @@ def _customer_health(
             str(row["customer"]),
         )
     )
-    return rows[:DASHBOARD_CUSTOMER_LIMIT]
+    return rows
 
 
 def _member_rows(users: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
@@ -324,10 +324,10 @@ def build_operations_dashboard(
         "summary": summary,
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),
-        "priorities": priorities,
+        "priorities": priorities[:DASHBOARD_PRIORITY_LIMIT],
         "customerSpikes": customer_spikes,
         "screenSpikes": screen_spikes,
-        "customerHealth": health,
+        "customerHealth": health[:DASHBOARD_CUSTOMER_LIMIT],
         "customerHealthSummary": {
             "high": health_counts.get("high", 0),
             "attention": health_counts.get("attention", 0),

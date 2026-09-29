@@ -132,3 +132,14 @@ class OperationsDashboardTests(unittest.TestCase):
     def test_period_must_be_one_of_the_supported_options(self):
         with self.assertRaisesRegex(ValueError, "7일"):
             dashboard.build_operations_dashboard({"role": "member"}, days=15, today=date(2026, 8, 27))
+
+class DashboardWholePopulationTests(unittest.TestCase):
+    setUp = OperationsDashboardTests.setUp
+    _build = OperationsDashboardTests._build
+    def test_counts_include_rows_beyond_display_limits(self):
+        self.issues = [{**self.issues[0], "id": i + 1, "project": f"고객사{i}"} for i in range(40)]
+        result = self._build({"role": "manager", "displayName": "팀장"})
+        self.assertEqual(result['summary']['highRisk'], 40)
+        self.assertEqual(len(result['priorities']), dashboard.DASHBOARD_PRIORITY_LIMIT)
+        self.assertEqual(sum(result['customerHealthSummary'].values()), 40)
+        self.assertEqual(len(result['customerHealth']), dashboard.DASHBOARD_CUSTOMER_LIMIT)
