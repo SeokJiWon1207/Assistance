@@ -1,5 +1,6 @@
 import { state, els, apiFetch, ADMIN_ENDPOINTS } from "./runtime.js?v=20260911-6";
-import { statusLabel, TEAM_TEMPLATES, escapeHtml } from "./chat.js?v=20260911-6";
+import { statusLabel, escapeHtml } from "./chat.js?v=20260911-6";
+import { TEAM_TEMPLATES } from "./template_picker.js?v=20260911-6";
 
 async function loadEvaluationData() {
   const [casesResponse, logsResponse, summaryResponse, historyResponse, feedbackResponse] = await Promise.all([

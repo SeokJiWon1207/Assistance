@@ -1,8 +1,11 @@
-import { state, els, apiFetch, buildTeamTemplateQuestion, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
+import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
 import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
-import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, selectedTeamTemplate, templateFormValues, updateTemplatePreview, openTemplateModal, closeTemplateModal, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
+import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
+import { initTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
+
+initTemplatePicker();
 
 function cancelMessageEdit() {
   state.editingMessageIndex = null;
@@ -33,8 +36,14 @@ els.form.addEventListener("submit", async (event) => {
   await requestAssistant(content, questionAskedAt, templateId);
 });
 
-els.input.addEventListener("input", autoResizeInput);
+els.input.addEventListener("input", () => {
+  autoResizeInput();
+  // 템플릿 문장을 넣은 뒤 입력창을 비우면 다음 질문에 템플릿 ID가 남지 않게 한다.
+  if (!els.input.value.trim()) state.pendingTemplateId = null;
+  syncTemplatePickerWithPrompt();
+});
 els.input.addEventListener("keydown", (event) => {
+  if (handleTemplatePickerKeydown(event)) return;
   if (shouldSubmitPromptOnKeydown(event)) {
     event.preventDefault();
     els.form.requestSubmit();
@@ -44,22 +53,28 @@ els.input.addEventListener("keydown", (event) => {
 els.messages.addEventListener("click", (event) => {
   const templateCard = event.target.closest("[data-template-id]");
   if (!templateCard || state.busy) return;
-  openTemplateModal(templateCard.dataset.templateId);
+  showTemplateForm(templateCard.dataset.templateId);
 });
 
-els.templateFields?.addEventListener("input", updateTemplatePreview);
-els.templateFields?.addEventListener("change", updateTemplatePreview);
+function applyTemplateQuestion() {
+  const completed = completedTemplateQuestion();
+  if (!completed) return false;
+  rememberTemplate(completed.template.id);
+  state.pendingTemplateId = completed.template.id;
+  els.input.value = completed.question;
+  autoResizeInput();
+  return true;
+}
+
 els.templateForm?.addEventListener("submit", (event) => {
   event.preventDefault();
-  const template = selectedTeamTemplate();
-  if (!template) return;
-  const question = buildTeamTemplateQuestion(template, templateFormValues());
-  if (!question) return;
-  state.pendingTemplateId = template.id;
-  els.input.value = question;
-  autoResizeInput();
-  closeTemplateModal();
+  if (!applyTemplateQuestion()) return;
+  closeTemplatePicker({ clearSlash: false, restoreFocus: false });
   els.form.requestSubmit();
+});
+els.templateInsertBtn?.addEventListener("click", () => {
+  if (!applyTemplateQuestion()) return;
+  closeTemplatePicker({ clearSlash: false });
 });
 
 els.temperature.addEventListener("input", () => {
@@ -218,11 +233,6 @@ els.conversationList.addEventListener("click", (event) => {
   }
 });
 els.evaluationBtn.addEventListener("click", openEvaluationModal);
-els.templateModalClose?.addEventListener("click", closeTemplateModal);
-els.templateCancelBtn?.addEventListener("click", closeTemplateModal);
-els.templateModal?.addEventListener("click", (event) => {
-  if (event.target === els.templateModal) closeTemplateModal();
-});
 els.feedbackModalClose?.addEventListener("click", closeFeedbackModal);
 els.feedbackCancelBtn?.addEventListener("click", closeFeedbackModal);
 els.feedbackModal?.addEventListener("click", (event) => {
@@ -545,8 +555,8 @@ els.chromaModal.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.templateModal.hidden) {
-    closeTemplateModal();
+  if (event.key === "Escape" && isTemplatePickerOpen()) {
+    closeTemplatePicker();
   } else if (event.key === "Escape" && !els.feedbackModal.hidden) {
     closeFeedbackModal();
   } else if (event.key === "Escape" && !els.chromaModal.hidden) {

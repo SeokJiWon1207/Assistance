@@ -1,0 +1,528 @@
+/* 입력창 템플릿 팝오버 */
+.chat-panel {
+  position: relative;
+}
+
+.composer {
+  grid-template-columns: auto minmax(0, 1fr) 88px;
+}
+
+.template-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 54px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.template-toggle-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.template-toggle-button:hover,
+.template-toggle-button.is-active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.template-toggle-button:focus-visible {
+  border-color: var(--blue);
+  outline: none;
+  box-shadow: var(--focus-ring), var(--shadow);
+}
+
+.template-toggle-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chat-panel.template-picker-open .scroll-to-top-button {
+  visibility: hidden;
+}
+
+.template-picker {
+  position: absolute;
+  bottom: var(--template-picker-bottom, 96px);
+  left: 36px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(600px, calc(100% - 72px));
+  max-height: calc(100% - var(--template-picker-bottom, 96px) - 16px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 18px 44px rgba(25, 31, 40, 0.16);
+}
+
+body.theme-dark .template-picker {
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+}
+
+.template-picker-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.template-picker-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 8px;
+}
+
+.template-picker-header strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.template-picker-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.template-picker-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.template-picker-group {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.template-picker-group span {
+  margin-left: 2px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.template-picker-group[aria-pressed="true"] {
+  background: var(--text);
+  color: var(--surface);
+}
+
+.template-picker-group[aria-pressed="true"] span {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.template-picker-group:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.template-picker-list {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 344px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.template-picker-section-label {
+  padding: 8px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.template-picker-option {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.template-picker-option.is-active {
+  background: var(--blue-soft);
+}
+
+.template-picker-option-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+}
+
+.template-picker-option.is-active .template-picker-option-icon {
+  background: var(--surface);
+  color: var(--blue);
+}
+
+.template-picker-option-icon svg,
+.template-picker-form-icon svg,
+.template-picker-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.template-picker-option-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.template-picker-option-copy strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.template-picker-option-copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-picker-option-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.template-picker-option-enter {
+  display: none;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
+  border-radius: 5px;
+  color: var(--blue);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.template-picker-option.is-active .template-picker-option-meta {
+  display: none;
+}
+
+.template-picker-option.is-active .template-picker-option-enter {
+  display: inline-block;
+}
+
+.template-picker-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.template-picker-empty strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.template-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-alt);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 조건 입력 */
+.template-picker-form-header {
+  display: grid;
+  grid-template-columns: auto 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.template-picker-icon-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.template-picker-icon-button:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.template-picker-icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.template-picker-form-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.template-picker-form-heading {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.template-picker-form-heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.template-picker-form-heading p {
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-picker-form-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.template-picker .template-fields {
+  grid-template-columns: 1fr;
+}
+
+.template-picker .template-field {
+  grid-template-columns: 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.template-picker .template-field > span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.template-picker .template-field .required-mark {
+  font-size: 12px;
+}
+
+.template-picker .template-field input:not([type="radio"]),
+.template-picker .template-field .custom-select-trigger {
+  min-height: 40px;
+}
+
+.template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-chip {
+  position: relative;
+}
+
+.template-picker .template-chip input {
+  position: absolute;
+  width: 1px;
+  min-height: 0;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+}
+
+.template-chip span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.template-chip span:hover {
+  border-color: var(--blue);
+}
+
+.template-chip input:checked + span {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.template-chip input:focus-visible + span {
+  box-shadow: var(--focus-ring);
+}
+
+.template-picker-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.template-missing-hint {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.template-missing-hint.is-missing {
+  color: #c62a39;
+}
+
+body.theme-dark .template-missing-hint.is-missing {
+  color: var(--danger);
+}
+
+.template-picker-form-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.template-picker-form-actions .secondary-button,
+.template-picker-form-actions .run-evaluation-button {
+  width: auto;
+  min-height: 38px;
+  margin-top: 0;
+  padding: 0 14px;
+  font-size: 14px;
+}
+
+.template-picker-form-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .template-picker {
+    animation: template-picker-enter 0.14s ease-out;
+  }
+}
+
+@keyframes template-picker-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (max-width: 860px) {
+  .composer {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .composer .send-button {
+    grid-column: 1 / -1;
+  }
+
+  .template-picker {
+    right: 20px;
+    left: 20px;
+    width: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .template-toggle-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .template-picker {
+    right: 12px;
+    left: 12px;
+  }
+
+  .template-picker .template-field {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .template-picker-footer span:first-child {
+    display: none;
+  }
+
+  .template-picker-form-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .template-picker-form-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  }
+
+  .template-picker-form-actions .secondary-button,
+  .template-picker-form-actions .run-evaluation-button {
+    min-height: 46px;
+  }
+}

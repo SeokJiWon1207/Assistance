@@ -1,4 +1,5 @@
-import { state, els, defaultOptions, themeStorageKey, apiFetch, buildTeamTemplateQuestion, automaticSourceTools } from "./runtime.js?v=20260911-6";
+import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools } from "./runtime.js?v=20260911-6";
+import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js?v=20260911-6";
 import {
@@ -150,117 +151,6 @@ function sourceToolsPayload() {
   return automaticSourceTools();
 }
 
-const TEAM_TEMPLATES = [];
-
-const STARTER_ICONS = {
-  today: '<path d="M5 8h14M8 3v4M16 3v4M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z"/><path d="m8 14 2.2 2.2L16 10.5"/>',
-  customer: '<path d="M4 20v-2.2c0-2.1 1.8-3.8 4-3.8s4 1.7 4 3.8V20M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM15 5h5M15 9h5M15 13h4"/>',
-  profile: '<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="9" cy="10" r="2.5"/><path d="M6.5 17c.4-2 1.4-3 2.5-3s2.1 1 2.5 3M14 8h3M14 12h3M14 16h3"/>',
-  spike: '<path d="M4 18 9 12l3 3 7-9"/><path d="M14 6h5v5"/>',
-  aging: '<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>',
-  similar: '<circle cx="10" cy="10" r="6"/><path d="m14.5 14.5 5 5M7 10h6M10 7v6"/>',
-  effort: '<path d="M5 20V10M12 20V4M19 20v-7"/><path d="M3 20h18"/>',
-  report: '<path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 11h6M9 15h6"/>',
-};
-
-function renderTeamTemplates() {
-  return TEAM_TEMPLATES.map((item) => `
-    <button type="button" class="starter-card" data-template-id="${escapeHtml(item.id)}">
-      <span class="starter-card-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24">${STARTER_ICONS[item.icon] || STARTER_ICONS.report}</svg>
-      </span>
-      <span class="starter-card-copy">
-        <small>${escapeHtml(item.category)}</small>
-        <strong>${escapeHtml(item.title)}</strong>
-        <em>${escapeHtml(item.description)}</em>
-      </span>
-      <span class="starter-card-arrow" aria-hidden="true">→</span>
-    </button>
-  `).join("");
-}
-
-async function loadTeamTemplates() {
-  try {
-    const response = await apiFetch("/api/templates");
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || "팀 템플릿을 불러오지 못했습니다.");
-    if (!Array.isArray(payload.templates)) throw new Error("팀 템플릿 응답 형식이 올바르지 않습니다.");
-    TEAM_TEMPLATES.splice(0, TEAM_TEMPLATES.length, ...payload.templates);
-    state.teamTemplatesError = "";
-  } catch (error) {
-    TEAM_TEMPLATES.splice(0, TEAM_TEMPLATES.length);
-    state.teamTemplatesError = error.message || "팀 템플릿을 불러오지 못했습니다.";
-    throw error;
-  }
-}
-
-function selectedTeamTemplate() {
-  return TEAM_TEMPLATES.find((template) => template.id === state.activeTemplateId) || null;
-}
-
-function templateFormValues() {
-  if (!els.templateForm) return {};
-  return Object.fromEntries(new FormData(els.templateForm).entries());
-}
-
-function updateTemplatePreview() {
-  const template = selectedTeamTemplate();
-  if (!template || !els.templateQuestionPreview) return;
-  els.templateQuestionPreview.textContent = buildTeamTemplateQuestion(template, templateFormValues());
-}
-
-function renderTemplateFields(template) {
-  els.templateFields.innerHTML = template.fields.map((field) => {
-    const inputId = `templateField-${field.name}`;
-    const required = field.required ? "required" : "";
-    const requiredLabel = field.required ? '<small class="required-mark">필수</small>' : '<small>선택</small>';
-    const today = new Date();
-    const dynamicValue = field.dynamicValue === "current-month"
-      ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-      : "";
-    let control;
-    if (field.type === "select" || field.type === "customer") {
-      const currentValue = field.value || "";
-      const emptyLabel = field.placeholder || (field.required ? "선택해 주세요" : "전체");
-      const emptyOption = field.type === "customer"
-        ? `<option value="" ${field.required ? "disabled" : ""} ${currentValue ? "" : "selected"}>${escapeHtml(emptyLabel)}</option>`
-        : "";
-      control = `<select id="${inputId}" name="${escapeHtml(field.name)}" ${field.type === "customer" ? 'data-searchable="true"' : ""} ${required}>
-          ${emptyOption}
-          ${field.options.map((option) => `<option value="${escapeHtml(option)}" data-search-terms="${escapeHtml(field.optionSearchTerms?.[option] || option)}" ${option === currentValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
-        </select>`;
-    } else {
-      control = `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || dynamicValue)}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
-    }
-    return `
-      <label class="template-field" for="${inputId}">
-        <span>${escapeHtml(field.label)} ${requiredLabel}</span>
-        ${control}
-      </label>
-    `;
-  }).join("");
-  globalThis.AssistantCustomSelect?.enhanceAll(els.templateFields);
-}
-
-function openTemplateModal(templateId) {
-  const template = TEAM_TEMPLATES.find((item) => item.id === templateId);
-  if (!template || !els.templateModal) return;
-  state.activeTemplateId = template.id;
-  els.templateModalTitle.textContent = template.title;
-  els.templateModalDescription.textContent = template.description;
-  renderTemplateFields(template);
-  updateTemplatePreview();
-  els.templateModal.hidden = false;
-  document.body.classList.add("modal-open");
-  els.templateFields.querySelector("input, .custom-select-trigger, select")?.focus();
-}
-
-function closeTemplateModal() {
-  if (!els.templateModal) return;
-  els.templateModal.hidden = true;
-  document.body.classList.remove("modal-open");
-}
-
 function formatQuestionAskedAt(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -308,7 +198,7 @@ function renderMessages() {
         </svg>
         <p class="empty-state-eyebrow">팀 공용 템플릿 ${TEAM_TEMPLATES.length}개</p>
         <h3>조건만 고르면 업무 질문이 완성됩니다</h3>
-        <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요.</p>
+        <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요. 대화 중에는 입력창에 / 를 입력하면 템플릿이 열립니다.</p>
         <div class="starter-grid" aria-label="팀 공용 템플릿">
           ${state.teamTemplatesError
             ? `<p class="status-warning">${escapeHtml(state.teamTemplatesError)} 직접 질문은 계속 사용할 수 있습니다.</p>`
@@ -672,6 +562,7 @@ function renderAbComparison(message, aBubble, messageIndex) {
 function setBusy(busy) {
   state.busy = busy;
   els.input.disabled = busy;
+  if (els.templateToggleBtn) els.templateToggleBtn.disabled = busy;
   // 첫 서버 응답 전에는 중복 submit이 최초 요청을 취소하지 못하게 한다.
   const canStop = busy && state.chatCanAbort;
   els.sendBtn.disabled = busy && !canStop;
@@ -816,16 +707,6 @@ export {
   setAbComparison,
   abComparisonEnabled,
   sourceToolsPayload,
-  TEAM_TEMPLATES,
-  loadTeamTemplates,
-  STARTER_ICONS,
-  renderTeamTemplates,
-  selectedTeamTemplate,
-  templateFormValues,
-  updateTemplatePreview,
-  renderTemplateFields,
-  openTemplateModal,
-  closeTemplateModal,
   formatQuestionAskedAt,
   renderQuestionTimestamp,
   renderMessages,

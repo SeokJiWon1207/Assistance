@@ -9,6 +9,7 @@ const {
   conversationContentChanged,
   buildChatMessages,
   buildTeamTemplateQuestion,
+  describeTeamTemplateQuestion,
   parseSseBuffer,
   shouldSubmitPromptOnKeydown,
   canUseAdminTools,
@@ -186,6 +187,23 @@ test("buildTeamTemplateQuestion applies defaults, omissions, and field normalize
     "고객사 항목을 입력해 주세요.",
   );
   assert.equal(buildTeamTemplateQuestion(null, {}), "");
+});
+
+test("describeTeamTemplateQuestion previews missing required fields as placeholders", () => {
+  assert.deepEqual(
+    describeTeamTemplateQuestion(template("customer-profile"), { period: "최근 3개월" }),
+    { question: "최근 3개월 [고객사] 고객사 프로필을 만들어줘", missing: ["고객사"] },
+  );
+  assert.deepEqual(
+    describeTeamTemplateQuestion(template("similar-issues"), { issueId: "#" }),
+    { question: "#[기준 이슈 ID]와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘", missing: ["기준 이슈 ID"] },
+  );
+  const values = { month: "2026-08", customer: "신한투자증권", platform: "전체" };
+  assert.deepEqual(
+    describeTeamTemplateQuestion(template("monthly-customer-report"), values),
+    { question: buildTeamTemplateQuestion(template("monthly-customer-report"), values), missing: [] },
+  );
+  assert.deepEqual(describeTeamTemplateQuestion(null, {}), { question: "", missing: [] });
 });
 
 test("storageSafeMessages preserves a bounded playbook candidate", () => {

@@ -113,14 +113,13 @@
     return !authEnabled || user?.role === "admin";
   }
 
-  function buildTeamTemplateQuestion(template, values = {}) {
-    if (!template || typeof template.questionTemplate !== "string") return "";
-    const fields = new Map((template.fields || []).map((field) => [field.name, field]));
+  function normalizeTeamTemplateValues(template, values = {}) {
     const normalizedValues = Object.fromEntries(Object.entries(values).map(([key, value]) => [
       key,
       String(value ?? "").trim(),
     ]));
-    fields.forEach((field, name) => {
+    (template.fields || []).forEach((field) => {
+      const name = field.name;
       if (field.normalize === "issue-id") {
         normalizedValues[name] = String(normalizedValues[name] || "").replace(/^#/, "");
       } else if (field.normalize === "month-korean") {
@@ -130,12 +129,11 @@
         );
       }
     });
-    const missingRequired = (template.fields || []).find(
-      (field) => field.required && !normalizedValues[field.name],
-    );
-    if (missingRequired) return `${missingRequired.label} 항목을 입력해 주세요.`;
+    return normalizedValues;
+  }
 
-    return template.questionTemplate.replace(
+  function fillTeamTemplateQuestion(questionTemplate, normalizedValues) {
+    return questionTemplate.replace(
       /\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}/g,
       (_token, name, operator, operand = "") => {
         const value = normalizedValues[name] || "";
@@ -146,6 +144,32 @@
     ).replace(/\s+/g, " ").trim();
   }
 
+  function buildTeamTemplateQuestion(template, values = {}) {
+    if (!template || typeof template.questionTemplate !== "string") return "";
+    const normalizedValues = normalizeTeamTemplateValues(template, values);
+    const missingRequired = (template.fields || []).find(
+      (field) => field.required && !normalizedValues[field.name],
+    );
+    if (missingRequired) return `${missingRequired.label} 항목을 입력해 주세요.`;
+    return fillTeamTemplateQuestion(template.questionTemplate, normalizedValues);
+  }
+
+  // 조건 입력 중 미리보기용: 비어 있는 필수 항목을 [항목명]으로 채운 문장과 누락 목록을 함께 준다.
+  function describeTeamTemplateQuestion(template, values = {}) {
+    if (!template || typeof template.questionTemplate !== "string") return { question: "", missing: [] };
+    const normalizedValues = normalizeTeamTemplateValues(template, values);
+    const missingFields = (template.fields || []).filter(
+      (field) => field.required && !normalizedValues[field.name],
+    );
+    missingFields.forEach((field) => {
+      normalizedValues[field.name] = `[${field.label}]`;
+    });
+    return {
+      question: fillTeamTemplateQuestion(template.questionTemplate, normalizedValues),
+      missing: missingFields.map((field) => field.label),
+    };
+  }
+
   const api = Object.freeze({
     storageSafeMessages,
     mergeConversations,
@@ -153,6 +177,7 @@
     conversationContentChanged,
     buildChatMessages,
     buildTeamTemplateQuestion,
+    describeTeamTemplateQuestion,
     parseSseBuffer,
     shouldSubmitPromptOnKeydown,
     canUseAdminTools,

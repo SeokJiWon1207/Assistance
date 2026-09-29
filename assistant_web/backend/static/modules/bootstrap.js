@@ -1,7 +1,8 @@
 import "./events.js?v=20260911-6";
 import { state, els, defaultOptions, canUseAdminTools } from "./runtime.js?v=20260911-6";
 import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=20260911-6";
-import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, loadTeamTemplates } from "./chat.js?v=20260911-6";
+import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus } from "./chat.js?v=20260911-6";
+import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
 
 let loadedAppVersion = "";

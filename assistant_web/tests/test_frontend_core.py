@@ -77,8 +77,9 @@ class FrontendCoreTests(unittest.TestCase):
             "messages",
             "newChatBtn",
             "evaluationModal",
-            "templateModal",
+            "templatePicker",
             "templateForm",
+            "templateToggleBtn",
             "feedbackModal",
             "feedbackForm",
             "authGate",
@@ -106,6 +107,7 @@ class FrontendCoreTests(unittest.TestCase):
             "responsive.css",
             "workspace.css",
             "dashboard.css",
+            "template_picker.css",
         )
         positions = []
         for name in stylesheet_names:
@@ -210,6 +212,20 @@ class FrontendCoreTests(unittest.TestCase):
         for element_id in ("answerStyle", "darkModeToggle", "showSources"):
             self.assertIn(element_id, rest_parser.ids)
         self.assertIn("els.adminGenerationSettings.hidden = !adminToolsVisible", bootstrap_js)
+
+    def test_template_picker_sits_beside_composer_without_nested_forms(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        events_js = (STATIC_DIR / "modules" / "events.js").read_text(encoding="utf-8")
+
+        chat_form = html[html.index('<form id="chatForm"') : html.index("</form>", html.index('<form id="chatForm"'))]
+        self.assertIn('id="templateToggleBtn"', chat_form)
+        self.assertNotIn("<form", chat_form[1:])
+        self.assertNotIn('id="templateModal"', html)
+        picker_start = html.index('<div id="templatePicker"')
+        self.assertLess(html.index('<form id="chatForm"'), picker_start)
+        self.assertLess(picker_start, html.index('<form id="templateForm"'))
+        self.assertIn("if (handleTemplatePickerKeydown(event)) return;", events_js)
+        self.assertIn("syncTemplatePickerWithPrompt();", events_js)
 
     def test_chat_rate_limit_uses_retry_after_message(self):
         app_js = self.application_javascript()

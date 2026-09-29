@@ -4,11 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260929-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260929-2" />
     <link rel="stylesheet" href="/static/charts.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20260921-1" />
     <link rel="stylesheet" href="/static/dashboard.css?v=20260921-1" />
+    <link rel="stylesheet" href="/static/template_picker.css?v=20260929-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -283,15 +284,66 @@
             <span>이 질문부터 다시 작성합니다.</span>
             <button id="cancelEditBtn" type="button">취소</button>
           </div>
+          <button id="templateToggleBtn" class="template-toggle-button" type="button" aria-controls="templatePicker" aria-expanded="false" aria-label="팀 템플릿 열기">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16M10 10v10" /></svg>
+            <span class="template-toggle-label">템플릿</span>
+          </button>
           <textarea
             id="promptInput"
             rows="1"
-            placeholder="이슈를 찾거나, 요약하거나, 원인을 물어보세요."
+            aria-autocomplete="list"
+            placeholder="이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다."
           ></textarea>
           <button id="sendBtn" class="send-button" type="submit" aria-label="전송">
             <span>전송</span>
           </button>
         </form>
+
+        <!-- 입력창 위에 붙는 템플릿 팝오버. templateForm이 chatForm 안에 중첩되지 않도록
+             composer 밖에 두고, template_picker.js가 composer 높이에 맞춰 위치를 잡는다. -->
+        <div id="templatePicker" class="template-picker" hidden>
+          <section id="templatePickerListView" class="template-picker-view" aria-labelledby="templatePickerTitle">
+            <header class="template-picker-header">
+              <strong id="templatePickerTitle">팀 템플릿</strong>
+              <span id="templatePickerHint">이어서 입력하면 바로 걸러집니다</span>
+            </header>
+            <div id="templatePickerGroups" class="template-picker-groups" role="group" aria-label="템플릿 분류"></div>
+            <div id="templatePickerList" class="template-picker-list" role="listbox" aria-label="템플릿 목록"></div>
+            <footer class="template-picker-footer">
+              <span>↑↓ 이동 · Enter 선택 · Esc 닫기</span>
+              <span id="templatePickerCount"></span>
+            </footer>
+          </section>
+          <form id="templateForm" class="template-picker-view" aria-labelledby="templateFormTitle" hidden>
+            <header class="template-picker-form-header">
+              <button id="templateBackBtn" class="template-picker-icon-button" type="button" aria-label="템플릿 목록으로 돌아가기">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+              </button>
+              <span id="templateFormIcon" class="template-picker-form-icon" aria-hidden="true"></span>
+              <div class="template-picker-form-heading">
+                <h3 id="templateFormTitle">질문 조건 입력</h3>
+                <p id="templateFormDescription"></p>
+              </div>
+              <button id="templateCloseBtn" class="template-picker-icon-button" type="button" aria-label="템플릿 닫기">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
+              </button>
+            </header>
+            <div class="template-picker-form-body">
+              <div id="templateFields" class="template-fields"></div>
+              <div class="template-preview" aria-live="polite">
+                <span>완성 질문</span>
+                <p id="templateQuestionPreview"></p>
+              </div>
+            </div>
+            <footer class="template-picker-form-footer">
+              <span id="templateMissingHint" class="template-missing-hint"></span>
+              <div class="template-picker-form-actions">
+                <button id="templateInsertBtn" class="secondary-button" type="button">입력창에 넣기</button>
+                <button id="templateSubmitBtn" class="run-evaluation-button" type="submit">바로 질문</button>
+              </div>
+            </footer>
+          </form>
+        </div>
         </section>
       </section>
     </main>
@@ -313,30 +365,6 @@
             <button id="logoutConfirmBtn" class="logout-confirm-button" type="button">로그아웃</button>
           </div>
         </div>
-      </section>
-    </div>
-
-    <div id="templateModal" class="modal-backdrop" hidden>
-      <section class="modal template-modal" role="dialog" aria-modal="true" aria-labelledby="templateModalTitle">
-        <header class="modal-header">
-          <div>
-            <p>팀 공용 템플릿</p>
-            <h3 id="templateModalTitle">질문 조건 입력</h3>
-          </div>
-          <button id="templateModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
-        </header>
-        <form id="templateForm" class="modal-form">
-          <p id="templateModalDescription" class="modal-form-description"></p>
-          <div id="templateFields" class="template-fields"></div>
-          <div class="template-preview" aria-live="polite">
-            <span>완성 질문</span>
-            <p id="templateQuestionPreview"></p>
-          </div>
-          <div class="modal-form-actions">
-            <button id="templateCancelBtn" class="secondary-button" type="button">취소</button>
-            <button class="run-evaluation-button" type="submit">질문 실행</button>
-          </div>
-        </form>
       </section>
     </div>
 

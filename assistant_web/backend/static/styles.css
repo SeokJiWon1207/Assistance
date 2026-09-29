@@ -2012,7 +2012,6 @@ body.theme-dark .chat-header {
   line-height: 1.65;
 }
 
-.template-modal,
 .feedback-modal,
 .invite-modal {
   width: min(680px, 100%);
