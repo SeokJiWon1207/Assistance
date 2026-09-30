@@ -6,6 +6,7 @@ HTTP 라우팅과 분리해 질문 해석, 검색, 결정형 응답, 모델 폴�
 import json
 import os
 import re
+from time import perf_counter
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -43,6 +44,8 @@ from backend.llm import (
     post_model_chat,
 )
 from backend.query_planning import build_query_plan, extract_group_by
+from backend.timing import TIMINGS, measured, request_timing
+from backend.intent.search_terms import build_keyword_terms
 from backend.intent.confirmed_context import confirmed_scope_text
 from backend.reports.aggregate import (
     build_mantis_count_report,
@@ -553,6 +556,7 @@ class ChatPipelineContext:
     status_resolution: Optional[Dict[str, Any]] = None
 
 
+@measured("context")
 def prepare_chat_pipeline(
     request: ChatRequest,
     latest_user_text: str,
@@ -691,6 +695,7 @@ def prepare_chat_pipeline(
     )
 
 
+@measured("planning")
 def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if user and not context.authenticated_owner and should_scope_to_authenticated_mantis_user(context.latest_user_text):
         return {"modelId": request.modelId, "content": "개인 이슈를 조회할 담당자명이 등록되어 있지 않습니다. 관리자에게 Mantis 담당자명 등록을 요청해 주세요.",
@@ -717,13 +722,31 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
         return _plan_chat_query(request, context, user)
 
 
+def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: Dict[str, Any]) -> bool:
+    """의미가 이미 확정된 단순 조회만 일반 플래너를 생략한다."""
+    if rule_plan.get("source") not in {"mantis", "general"}:
+        return False
+    if re.search(r"비슷|유사|원인|분석|비교|추이|예측|관련|방법|해결책", text):
+        return False
+    from backend.query_planning import infer_operation
+    operation = infer_operation(text)
+    if operation == "get" and constraints.get("issue_ids"):
+        return True
+    if operation != "count" or extract_group_by(text):
+        return False
+    if not (constraints.get("customer_key") or constraints.get("mantis_team_members")):
+        return False
+    keyword_text = re.sub(r"(?:전체|모든)\s*상태(?:로는|로|만)?", " ", text)
+    return not build_keyword_terms(keyword_text, constraints)
+
+
 def _plan_chat_query(
     request: ChatRequest,
     context: ChatPipelineContext,
     user: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     """결정형 리포트와 질의 계획을 평가하고 즉시 응답이 있으면 반환한다."""
-    deterministic = build_deterministic_report(
+    deterministic = measured("reports")(build_deterministic_report)(
         context.latest_user_text,
         context.retrieval_text,
         context.enabled_tools,
@@ -737,6 +760,10 @@ def _plan_chat_query(
         return None
 
     rule_plan = rule_based_search_intent(context.retrieval_text, context.query_constraints)
+    fast_path = can_skip_general_planner(context.retrieval_text, context.query_constraints, rule_plan)
+    if fast_path:
+        # '그중 전체 상태 몇 건'은 소스 단어가 생략되어도 확정 고객사 범위가 있다.
+        rule_plan = {**rule_plan, "source": "mantis", "reason": "확정된 구조화 조회"}
     model_plan: Dict[str, Any] = {}
     planner_enabled = os.getenv("QUERY_PLANNER_ENABLED", "true").strip().lower() not in {
         "0",
@@ -745,6 +772,7 @@ def _plan_chat_query(
     }
     should_plan = (
         planner_enabled
+        and not fast_path
         and any(context.enabled_tools.get(key) for key in ("mantis", "notion", "vectorDb"))
         and (
             rule_plan.get("source") in {"mantis", "notion", "both"}
@@ -753,7 +781,7 @@ def _plan_chat_query(
     )
     if should_plan:
         emit_chat_status("질문을 도구 실행 계획으로 변환하고 있습니다", "routing")
-        model_plan = plan_search_intent_with_model(
+        model_plan = measured("query_planner")(plan_search_intent_with_model)(
             context.retrieval_text,
             context.model,
             context.api_key,
@@ -793,7 +821,7 @@ def _plan_chat_query(
         return {"modelId": request.modelId, **context.pending_effort_report}
 
     if context.enabled_tools.get("mantis"):
-        count_report = build_mantis_count_report(context.retrieval_text, query_plan)
+        count_report = measured("count")(build_mantis_count_report)(context.retrieval_text, query_plan)
         if count_report:
             return {"modelId": request.modelId, **count_report}
     return None
@@ -906,6 +934,7 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
     )
 
 
+@measured("retrieval")
 def retrieve_chat_evidence(
     request: ChatRequest,
     context: ChatPipelineContext,
@@ -978,12 +1007,16 @@ class ChatService:
         """라우터가 admission lease를 이미 보유한 요청을 실행한다."""
         return self._build_response(request, user=user)
 
+    @request_timing
     def _build_response(
         self,
         request: ChatRequest,
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        started = perf_counter()
         def finalize_chat_response(response: Dict[str, Any]) -> Dict[str, Any]:
+            response["timings"] = {"stages": dict(TIMINGS.get() or {}),
+                                   "beforeFinalizationMs": round((perf_counter() - started) * 1000, 2)}
             return persist_chat_response(
                 request,
                 latest_user_text,
@@ -1022,7 +1055,7 @@ class ChatService:
                 0,
                 {"role": "system", "content": "\n\n".join(context.system_notes)},
             )
-        generated_response = generate_model_response(
+        generated_response = measured("generation")(generate_model_response)(
             request,
             context.model,
             context.messages,

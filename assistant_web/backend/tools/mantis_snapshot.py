@@ -197,6 +197,7 @@ def scan_mantis_documents(
     group_key: Optional[Callable[[Dict[str, Any]], str]] = None,
     constraints: Optional[Dict[str, Any]] = None,
     index_database_path: Optional[Path] = None,
+    use_raw_constraints: bool = False,
 ) -> Dict[str, Any]:
     """Count and sample matching issues with shadow comparison and fallback.
 
@@ -209,9 +210,14 @@ def scan_mantis_documents(
     stored = read_complete_store() if database_path == CHROMA_DB_PATH else None
     if stored is not None:
         selected = stored[:scan_limit] if scan_limit else stored
+        scanned_count = len(selected)
+        if use_raw_constraints and constraints is not None:
+            from backend.sources.mantis import select_mantis_rows
+            selected = select_mantis_rows(selected, constraints)
         result = _scan_documents(
-            (render_document(raw) for raw in selected), matches, normalize,
-            example_limit=example_limit, group_key=group_key,
+            (render_document(raw) for raw in selected),
+            (lambda _text: True) if use_raw_constraints and constraints is not None else matches, normalize,
+            example_limit=example_limit, group_key=group_key, scanned_count=scanned_count,
         )
         result.update(stored.meta)
         # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.

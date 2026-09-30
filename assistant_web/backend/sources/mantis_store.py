@@ -22,6 +22,7 @@ from fastapi import HTTPException
 
 from backend.config import RUNTIME_DIR, get_mantis_settings
 from backend.sources.mantis_collection import IssueBatch, iter_pages_in_order
+from backend.timing import measured
 
 LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
@@ -83,6 +84,7 @@ def read_store_metadata(*, allow_stale: bool = False) -> dict[str, Any] | None:
         return None
 
 
+@measured("store_read")
 def read_complete_store(*, allow_stale: bool = False, summary_only: bool = False) -> IssueBatch | None:
     scope = _request_store.get()
     try:

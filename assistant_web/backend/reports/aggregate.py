@@ -212,6 +212,7 @@ def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
         example_limit=1,
         group_key=group_key,
         constraints=constraints,
+        use_raw_constraints=True,
     )
     if not snapshot["available"]:
         return {
@@ -388,6 +389,7 @@ def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
         example_limit=1,
         group_key=group_key,
         constraints=constraints,
+        use_raw_constraints=True,
     )
     if not snapshot["available"]:
         return {
@@ -525,6 +527,7 @@ def build_mantis_count_report(
         scan_limit=snapshot_limit,
         group_key=count_group_key(group_by),
         constraints=constraints,
+        use_raw_constraints=True,
     )
     if not snapshot["available"] and not (date_range or explicit_snapshot):
         return {

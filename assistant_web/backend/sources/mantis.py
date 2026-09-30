@@ -40,6 +40,7 @@ from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
 from backend.sources.mantis_store import read_complete_store, read_store_metadata
+from backend.timing import measured
 from backend.understanding import (
     chroma_text_matches_constraints,
     field_matches_screen_number,
@@ -508,6 +509,7 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     }, constraints.get("filter_clauses") or [])
 
 
+@measured("filter")
 def select_mantis_rows(rows, constraints, *, matcher=None):
     """목록·집계·보고서가 공유하는 원본 조건 검사."""
     match = matcher or issue_matches_constraints
@@ -777,6 +779,7 @@ def execute_mantis_snapshot_search(
         example_limit=limit,
         group_key=lambda issue: str(issue.get("project") or "미상"),
         constraints=constraints,
+        use_raw_constraints=True,
     )
     if not snapshot["available"]:
         return {

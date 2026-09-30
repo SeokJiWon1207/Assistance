@@ -5,6 +5,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from time import perf_counter
 from contextlib import closing
 from typing import Any, Callable, Dict, TypeVar
 
@@ -38,6 +39,7 @@ def finalize_chat_response(
     response: Dict[str, Any],
     user_uid: str = "",
 ) -> Dict[str, Any]:
+    finalization_started = perf_counter()
     generate_followups = _compat_dependency(
         "generate_follow_up_questions", generate_follow_up_questions
     )
@@ -145,12 +147,15 @@ def finalize_chat_response(
     # 모델 fallback이 일어난 경우 response["modelId"]는 실제로 답변한 모델이다.
     # 감사 로그는 사용자가 고른 모델이 아니라 실제로 응답을 생성한 모델을 기록해야 한다.
     answered_model_id = response.get("modelId") or request.modelId
+    timings = response.setdefault("timings", {})
+    timings["verificationAndFormattingMs"] = round((perf_counter() - finalization_started) * 1000, 2)
     payload = {
         "question": question,
         "userUid": str(user_uid or "").strip(),
         "answer": response.get("content", ""),
         "modelId": answered_model_id,
         "mode": mode,
+        "timings": timings,
         "generation": {
             "temperature": request.temperature,
             "answerStyle": request.answerStyle,

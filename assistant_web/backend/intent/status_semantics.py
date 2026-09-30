@@ -11,6 +11,7 @@ import requests
 
 from backend.config import CONFIG_DIR, CUSTOMER_ALIASES, PLATFORM_ALIASES
 from backend.llm import get_model_registry, get_model_api_key, post_model_chat, extract_model_content
+from backend.timing import measured
 
 STATUS_RESOLUTION: ContextVar[Optional[Dict[str, Any]]] = ContextVar("status_resolution", default=None)
 NON_WORK_EVIDENCE = re.compile(r"공수|기간|시간|일정|목표일|기한|예산|금액|휴가|연차|배포일")
@@ -57,6 +58,7 @@ def valid_open_evidence(question: str, evidence: Any) -> bool:
     return True
 
 
+@measured("status_resolution")
 def resolve_status_intent(question: str, constraints: Dict[str, Any]) -> Dict[str, Any]:
     base: Dict[str, Any] = {"version": 1, "grounding_text": question, "status_intent": None,
                             "evidence": "", "needs_clarification": False, "origin": "rule"}
