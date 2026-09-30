@@ -1184,6 +1184,12 @@ def effective_notion_terms(question):
 
 
 class NotionDateTermTests(unittest.TestCase):
+    def test_follow_up_month_query_does_not_search_for_demonstrative_words(self):
+        for prefix in ("그중", "그 중", "이중", "이 중"):
+            with self.subTest(prefix=prefix):
+                self.assertEqual(effective_notion_terms(f"노션 {prefix} 지난달에 등록된 문서 5개 보여줘"), [])
+                self.assertEqual(effective_notion_terms(f"노션 {prefix} 지난달에 등록된 장애보고 문서 보여줘"), ["장애보고"])
+
     def test_spaced_or_particle_date_phrases_do_not_leak_into_search_terms(self):
         """띄어 쓴 기간 표현의 조각("달에", "주에", "중에" 등)이 제목 검색어로 남던 회귀."""
         for phrase in (
@@ -1224,4 +1230,3 @@ class NotionDateTermTests(unittest.TestCase):
             # 제목 검색 조건 없이 등록일 조건만 서버에 보낸다.
             self.assertNotIn('"title"', json.dumps(payload.get("filter"), ensure_ascii=False))
             self.assertIn("등록일", json.dumps(payload.get("filter"), ensure_ascii=False))
-

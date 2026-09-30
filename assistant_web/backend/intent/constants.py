@@ -97,6 +97,7 @@ SOURCE_NAME_ALIASES = {
 }
 
 NOTION_QUERY_STOPWORDS = {
+    "그중", "이중",
     "notion",
     "노션",
     "노선",
