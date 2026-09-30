@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260929-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260929-3" />
     <link rel="stylesheet" href="/static/charts.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20260820-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20260921-1" />
     <link rel="stylesheet" href="/static/dashboard.css?v=20260929-2" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20260929-1" />
+    <link rel="stylesheet" href="/static/conversation_list.css?v=20260929-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -52,9 +53,14 @@
 
         <section class="conversation-section" aria-labelledby="conversationHistoryLabel">
           <div class="conversation-heading">
-            <span id="conversationHistoryLabel" class="section-label">이전 대화</span>
+            <span id="conversationHistoryLabel" class="section-label">이전 대화 <small id="conversationCount" class="conversation-count"></small></span>
             <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화">＋</button>
           </div>
+          <div class="conversation-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /></svg>
+            <input id="conversationSearch" type="search" placeholder="제목·내용으로 대화 검색" autocomplete="off" aria-label="대화 검색" aria-controls="conversationList" />
+          </div>
+          <p id="conversationSearchStatus" class="conversation-search-status" aria-live="polite" hidden></p>
           <div id="conversationList" class="conversation-list"></div>
         </section>
 

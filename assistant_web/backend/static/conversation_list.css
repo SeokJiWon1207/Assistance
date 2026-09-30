@@ -1,0 +1,281 @@
+/* 사이드바 대화 목록: 검색, 날짜 묶음, 더 보기 */
+.conversation-section {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 220px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--line);
+}
+
+.conversation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.conversation-count {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.conversation-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.conversation-search svg {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.conversation-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px 0 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.conversation-search input:focus {
+  border-color: var(--blue);
+  background: var(--surface);
+  box-shadow: var(--focus-ring);
+}
+
+.conversation-search-status {
+  margin: 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.conversation-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.conversation-group {
+  display: grid;
+  gap: 2px;
+}
+
+.conversation-group-label {
+  padding: 8px 4px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.conversation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 36px;
+  border-radius: 7px;
+}
+
+.conversation-row.active {
+  background: var(--blue-soft);
+}
+
+.conversation-row:hover,
+.conversation-row:focus-within {
+  background: var(--surface-alt);
+}
+
+.conversation-row.active:hover,
+.conversation-row.active:focus-within {
+  background: var(--blue-soft);
+}
+
+.conversation-open {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.conversation-title,
+.conversation-snippet {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.conversation-row.active .conversation-title {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.conversation-snippet {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conversation-open mark {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--warning) 28%, transparent);
+  color: inherit;
+}
+
+.conversation-time {
+  grid-column: 2;
+  grid-row: 1;
+  /* 버튼 두 개와 같은 폭을 잡아 두어 마우스를 올려도 제목 폭이 흔들리지 않게 한다. */
+  min-width: 58px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 즐겨찾기·삭제는 행에 마우스를 올리거나 키보드로 들어왔을 때 시간 자리에 나타난다. */
+.conversation-actions {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+  align-items: center;
+  padding-right: 2px;
+}
+
+.conversation-row:hover .conversation-actions,
+.conversation-row:focus-within .conversation-actions {
+  display: flex;
+}
+
+.conversation-row:hover .conversation-time,
+.conversation-row:focus-within .conversation-time {
+  visibility: hidden;
+}
+
+.conversation-favorite,
+.conversation-delete {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.conversation-favorite svg,
+.conversation-delete svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conversation-favorite.active {
+  color: var(--warning);
+}
+
+.conversation-favorite.active svg {
+  fill: currentColor;
+}
+
+.conversation-favorite:hover,
+.conversation-delete:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.conversation-favorite:focus-visible,
+.conversation-delete:focus-visible,
+.conversation-open:focus-visible,
+.conversation-more:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.conversation-more {
+  flex-shrink: 0;
+  min-height: 34px;
+  margin: 6px 2px 2px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.conversation-more:disabled {
+  color: var(--muted);
+  cursor: wait;
+}
+
+.conversation-empty {
+  margin: 0;
+  padding: 16px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* 마우스가 없는 기기에서는 즐겨찾기·삭제 버튼을 항상 보여 준다. */
+@media (hover: none) {
+  .conversation-actions {
+    display: flex;
+  }
+
+  .conversation-time {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .conversation-section {
+    min-height: 0;
+  }
+
+  .conversation-list {
+    max-height: 40vh;
+  }
+}

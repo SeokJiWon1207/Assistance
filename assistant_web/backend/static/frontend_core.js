@@ -47,6 +47,83 @@
     return JSON.stringify(stored) !== JSON.stringify(current);
   }
 
+  const CONVERSATION_DATE_GROUPS = ["오늘", "어제", "지난 7일", "이전"];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  function conversationTimestamp(conversation) {
+    const time = Date.parse(conversation?.updatedAt || conversation?.createdAt || "");
+    return Number.isNaN(time) ? 0 : time;
+  }
+
+  function conversationDateGroup(conversation, now = new Date()) {
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const time = conversationTimestamp(conversation);
+    if (time >= today) return "오늘";
+    if (time >= today - DAY_MS) return "어제";
+    if (time >= today - 6 * DAY_MS) return "지난 7일";
+    return "이전";
+  }
+
+  function conversationTimeLabel(conversation, now = new Date()) {
+    const time = conversationTimestamp(conversation);
+    if (!time) return "";
+    const date = new Date(time);
+    const group = conversationDateGroup(conversation, now);
+    if (group === "오늘") return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
+    if (group === "어제") return "어제";
+    if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`;
+    return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
+  }
+
+  function byFavoriteThenRecent(a, b) {
+    return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
+      || conversationTimestamp(b) - conversationTimestamp(a);
+  }
+
+  // 즐겨찾기는 모두 맨 위 묶음에 두고, 나머지는 최근 limit개만 날짜별로 나눈다.
+  function conversationListSections(conversations, { now = new Date(), limit = 8, expanded = false } = {}) {
+    const sorted = [...conversations].sort(byFavoriteThenRecent);
+    const favorites = sorted.filter((item) => item.favorite);
+    const others = sorted.filter((item) => !item.favorite);
+    const shown = expanded ? others : others.slice(0, limit);
+    const groups = favorites.length ? [{ label: "즐겨찾기", items: favorites }] : [];
+    CONVERSATION_DATE_GROUPS.forEach((label) => {
+      const items = shown.filter((item) => conversationDateGroup(item, now) === label);
+      if (items.length) groups.push({ label, items });
+    });
+    return { groups, hiddenCount: others.length - shown.length, collapsible: others.length > limit };
+  }
+
+  // 제목에서 먼저 찾고, 제목에 없으면 질문·답변 내용에서 찾은 문장을 한 줄 미리보기로 돌려준다.
+  function searchConversations(conversations, query) {
+    const needle = String(query || "").trim().toLocaleLowerCase();
+    if (!needle) return [];
+    const results = [];
+    [...conversations].sort(byFavoriteThenRecent).forEach((conversation) => {
+      const title = conversation.title || "새 대화";
+      const titleIndex = title.toLocaleLowerCase().indexOf(needle);
+      if (titleIndex >= 0) {
+        results.push({ conversation, titleRange: [titleIndex, titleIndex + needle.length], snippet: null });
+        return;
+      }
+      for (const message of conversation.messages || []) {
+        const text = String(message?.content || "").replace(/\s+/g, " ").trim();
+        const index = text.toLocaleLowerCase().indexOf(needle);
+        if (index < 0) continue;
+        const from = Math.max(0, index - 12);
+        const prefix = from > 0 ? "…" : "";
+        const start = prefix.length + index - from;
+        results.push({
+          conversation,
+          titleRange: null,
+          snippet: { text: `${prefix}${text.slice(from, index + needle.length + 36)}`, start, end: start + needle.length },
+        });
+        return;
+      }
+    });
+    return results;
+  }
+
   function buildChatMessages(messages, currentContent, historyLimit = 20) {
     const safeLimit = Math.max(1, Number(historyLimit) || 20);
     const history = messages
@@ -175,6 +252,9 @@
     mergeConversations,
     deriveConversationTitle,
     conversationContentChanged,
+    conversationTimeLabel,
+    conversationListSections,
+    searchConversations,
     buildChatMessages,
     buildTeamTemplateQuestion,
     describeTeamTemplateQuestion,

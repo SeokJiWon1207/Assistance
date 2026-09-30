@@ -1,5 +1,5 @@
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
-import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
@@ -162,7 +162,31 @@ els.cancelEditBtn.addEventListener("click", () => {
   autoResizeInput();
   els.input.focus();
 });
+els.conversationSearch?.addEventListener("input", () => setConversationQuery(els.conversationSearch.value));
+els.conversationSearch?.addEventListener("keydown", (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === "Escape" && els.conversationSearch.value) {
+    // 검색어만 지우고, 좁은 화면의 사이드바를 닫는 문서 Escape 처리까지는 올리지 않는다.
+    event.preventDefault();
+    event.stopPropagation();
+    els.conversationSearch.value = "";
+    setConversationQuery("");
+  } else if (event.key === "Enter") {
+    const firstResult = els.conversationList.querySelector("[data-conversation-id]");
+    if (!firstResult) return;
+    event.preventDefault();
+    firstResult.click();
+  }
+});
 els.conversationList.addEventListener("click", (event) => {
+  if (event.target.closest("[data-conversation-more]")) {
+    toggleConversationListExpanded();
+    return;
+  }
+  if (event.target.closest("[data-conversation-load-more]")) {
+    loadMoreConversations();
+    return;
+  }
   const favoriteButton = event.target.closest("[data-favorite-conversation-id]");
   if (favoriteButton) {
     if (state.busy) return;
@@ -175,6 +199,8 @@ els.conversationList.addEventListener("click", (event) => {
     scheduleConversationSync(conversation);
     if (state.workspaceTab === "favorites" && !els.personalPanel?.hidden) renderWorkspace();
     showToast(conversation.favorite ? "대화를 즐겨찾기에 추가했어요." : "즐겨찾기에서 해제했어요.");
+    // 목록을 다시 그려도 방금 누른 즐겨찾기 버튼에 키보드 포커스를 되돌린다.
+    els.conversationList.querySelector(`[data-favorite-conversation-id="${CSS.escape(conversation.id)}"]`)?.focus();
     return;
   }
   const deleteButton = event.target.closest("[data-delete-conversation-id]");

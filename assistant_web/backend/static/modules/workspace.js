@@ -1,4 +1,4 @@
-import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, deriveConversationTitle, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
+import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, conversationListSections, conversationTimeLabel, deriveConversationTitle, searchConversations, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
 
@@ -73,7 +73,6 @@ function persistConversations() {
     Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
     || String(b.updatedAt).localeCompare(String(a.updatedAt))
   ));
-  state.conversations = state.conversations.filter((item, index) => item.syncPending || index < maxStoredConversations);
   saveLocalConversations();
   if (active && activeChanged) scheduleConversationSync(active);
   renderConversationList();
@@ -81,9 +80,11 @@ function persistConversations() {
 
 const syncQueues = new Map();
 
+// 목록은 서버에서 받은 대화까지 모두 보여 주고, 기기에는 최근 대화와 동기화 대기 중인 대화만 보관한다.
 function saveLocalConversations() {
+  const stored = state.conversations.filter((item, index) => item.syncPending || index < maxStoredConversations);
   try {
-    localStorage.setItem(conversationsStorageKey(), JSON.stringify(state.conversations));
+    localStorage.setItem(conversationsStorageKey(), JSON.stringify(stored));
     localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
   } catch {
     showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했습니다. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
@@ -167,6 +168,25 @@ globalThis.addEventListener?.("online", () => {
   state.conversations.filter((item) => item.syncPending).forEach(scheduleConversationSync);
 });
 
+// 서버 목록은 메시지 전체를 담아 무거우므로 처음에는 최근 대화만 받고, 더 필요할 때 최대치까지 받는다.
+const INITIAL_CONVERSATION_LIMIT = 40;
+const MAX_CONVERSATION_LIMIT = 100;
+const VISIBLE_RECENT_CONVERSATIONS = 8;
+const conversationListView = { query: "", expanded: false, serverHasMore: false, loadingMore: false };
+
+async function mergeServerConversations(limit, loadingUid) {
+  const response = await apiFetch(`/api/workspace/conversations?limit=${limit}`);
+  if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
+  const serverItems = (await response.json()).conversations || [];
+  if (state.currentUser?.uid !== loadingUid) return false;
+  state.conversations = globalThis.AssistantFrontendCore.mergeConversations(state.conversations, serverItems);
+  conversationListView.serverHasMore = serverItems.length >= limit && limit < MAX_CONVERSATION_LIMIT;
+  state.conversations.filter((item) => item.syncPending || (!item.serverUpdatedAt && item.messages?.length))
+    .forEach(scheduleConversationSync);
+  saveLocalConversations();
+  return true;
+}
+
 async function loadConversations() {
   const loadingUid = state.currentUser?.uid;
   try {
@@ -177,15 +197,7 @@ async function loadConversations() {
   }
   if (state.currentUser?.uid) {
     try {
-      const response = await apiFetch("/api/workspace/conversations?limit=40");
-      if (response.ok) {
-        const serverItems = (await response.json()).conversations || [];
-        if (state.currentUser?.uid !== loadingUid) return;
-        state.conversations = globalThis.AssistantFrontendCore.mergeConversations(state.conversations, serverItems);
-        state.conversations.filter((item) => item.syncPending || (!item.serverUpdatedAt && item.messages?.length))
-          .forEach(scheduleConversationSync);
-        saveLocalConversations();
-      }
+      await mergeServerConversations(INITIAL_CONVERSATION_LIMIT, loadingUid);
     } catch {
       // 오프라인 또는 서버 오류 시 사용자별 로컬 기록으로 계속 동작한다.
     }
@@ -205,36 +217,173 @@ function updateActiveConversationTitle() {
   els.activeConversationTitle.textContent = active?.title || "새 대화";
 }
 
+const CONVERSATION_ICONS = {
+  favorite: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.4l-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg>',
+  delete: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+};
+
+function appendHighlighted(element, text, range) {
+  if (!range) {
+    element.textContent = text;
+    return;
+  }
+  const mark = document.createElement("mark");
+  mark.textContent = text.slice(range[0], range[1]);
+  element.append(text.slice(0, range[0]), mark, text.slice(range[1]));
+}
+
+function conversationRow(conversation, { titleRange = null, snippet = null } = {}) {
+  const title = conversation.title || "새 대화";
+  const active = conversation.id === state.activeConversationId;
+  const row = document.createElement("div");
+  row.className = `conversation-row${active ? " active" : ""}`;
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "conversation-open";
+  openButton.dataset.conversationId = conversation.id;
+  openButton.title = title;
+  if (active) openButton.setAttribute("aria-current", "true");
+  const titleLine = document.createElement("span");
+  titleLine.className = "conversation-title";
+  appendHighlighted(titleLine, title, titleRange);
+  openButton.appendChild(titleLine);
+  if (snippet) {
+    const snippetLine = document.createElement("span");
+    snippetLine.className = "conversation-snippet";
+    appendHighlighted(snippetLine, snippet.text, [snippet.start, snippet.end]);
+    openButton.appendChild(snippetLine);
+  }
+  const time = document.createElement("span");
+  time.className = "conversation-time";
+  time.textContent = conversationTimeLabel(conversation);
+  const actions = document.createElement("span");
+  actions.className = "conversation-actions";
+  const favoriteButton = document.createElement("button");
+  favoriteButton.type = "button";
+  favoriteButton.className = `conversation-favorite${conversation.favorite ? " active" : ""}`;
+  favoriteButton.dataset.favoriteConversationId = conversation.id;
+  favoriteButton.setAttribute("aria-label", conversation.favorite ? `${title} 즐겨찾기 해제` : `${title} 즐겨찾기 추가`);
+  favoriteButton.setAttribute("aria-pressed", String(Boolean(conversation.favorite)));
+  favoriteButton.title = conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가";
+  favoriteButton.innerHTML = CONVERSATION_ICONS.favorite;
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "conversation-delete";
+  deleteButton.dataset.deleteConversationId = conversation.id;
+  deleteButton.setAttribute("aria-label", `${title} 삭제`);
+  deleteButton.title = "대화 삭제";
+  deleteButton.innerHTML = CONVERSATION_ICONS.delete;
+  actions.append(favoriteButton, deleteButton);
+  row.append(openButton, time, actions);
+  return row;
+}
+
+function conversationListButton(label, dataName, { disabled = false, expanded = null } = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "conversation-more";
+  button.dataset[dataName] = "true";
+  button.textContent = label;
+  button.disabled = disabled;
+  if (expanded !== null) button.setAttribute("aria-expanded", String(expanded));
+  return button;
+}
+
+function loadMoreButton(label) {
+  return conversationListButton(conversationListView.loadingMore ? "불러오는 중…" : label, "conversationLoadMore", {
+    disabled: conversationListView.loadingMore,
+  });
+}
+
+function renderConversationGroups() {
+  const { groups, hiddenCount, collapsible } = conversationListSections(state.conversations, {
+    limit: VISIBLE_RECENT_CONVERSATIONS,
+    expanded: conversationListView.expanded,
+  });
+  groups.forEach((group, index) => {
+    const section = document.createElement("div");
+    section.className = "conversation-group";
+    section.setAttribute("role", "group");
+    const label = document.createElement("div");
+    label.className = "conversation-group-label";
+    label.id = `conversation-group-${index}`;
+    label.textContent = group.label;
+    section.setAttribute("aria-labelledby", label.id);
+    section.appendChild(label);
+    group.items.forEach((conversation) => section.appendChild(conversationRow(conversation)));
+    els.conversationList.appendChild(section);
+  });
+  if (collapsible) {
+    const label = conversationListView.expanded ? `최근 ${VISIBLE_RECENT_CONVERSATIONS}개만 보기` : `대화 ${hiddenCount}개 더 보기`;
+    els.conversationList.appendChild(conversationListButton(label, "conversationMore", { expanded: conversationListView.expanded }));
+  }
+  if ((conversationListView.expanded || !collapsible) && conversationListView.serverHasMore) {
+    els.conversationList.appendChild(loadMoreButton("이전 대화 더 불러오기"));
+  }
+}
+
+function renderConversationSearch(query) {
+  const results = searchConversations(state.conversations, query);
+  results.forEach(({ conversation, titleRange, snippet }) => {
+    els.conversationList.appendChild(conversationRow(conversation, { titleRange, snippet }));
+  });
+  if (!results.length) {
+    const empty = document.createElement("p");
+    empty.className = "conversation-empty";
+    empty.textContent = "일치하는 대화가 없습니다. 제목과 질문·답변 내용에서 찾았습니다.";
+    els.conversationList.appendChild(empty);
+  }
+  if (conversationListView.serverHasMore) {
+    els.conversationList.appendChild(loadMoreButton("이전 대화까지 찾기"));
+  }
+  return results.length;
+}
+
 function renderConversationList() {
   updateActiveConversationTitle();
   if (!els.conversationList) return;
   els.conversationList.innerHTML = "";
-  state.conversations.slice(0, 8).forEach((conversation) => {
-    const row = document.createElement("div");
-    row.className = `conversation-row${conversation.id === state.activeConversationId ? " active" : ""}`;
-    const openButton = document.createElement("button");
-    openButton.type = "button";
-    openButton.className = "conversation-open";
-    openButton.dataset.conversationId = conversation.id;
-    openButton.textContent = conversation.title || "새 대화";
-    openButton.title = conversation.title || "새 대화";
-    const favoriteButton = document.createElement("button");
-    favoriteButton.type = "button";
-    favoriteButton.className = `conversation-favorite${conversation.favorite ? " active" : ""}`;
-    favoriteButton.dataset.favoriteConversationId = conversation.id;
-    favoriteButton.setAttribute("aria-label", conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가");
-    favoriteButton.title = conversation.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가";
-    favoriteButton.textContent = conversation.favorite ? "★" : "☆";
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "conversation-delete";
-    deleteButton.dataset.deleteConversationId = conversation.id;
-    deleteButton.setAttribute("aria-label", `${conversation.title || "대화"} 삭제`);
-    deleteButton.title = "대화 삭제";
-    deleteButton.textContent = "×";
-    row.append(openButton, favoriteButton, deleteButton);
-    els.conversationList.appendChild(row);
-  });
+  if (els.conversationCount) els.conversationCount.textContent = `${state.conversations.length}개`;
+  const query = conversationListView.query.trim();
+  if (!query) {
+    if (els.conversationSearchStatus) els.conversationSearchStatus.hidden = true;
+    renderConversationGroups();
+    return;
+  }
+  const count = renderConversationSearch(query);
+  if (els.conversationSearchStatus) {
+    els.conversationSearchStatus.hidden = false;
+    els.conversationSearchStatus.textContent = `‘${query}’ 검색 결과 ${count}개`;
+  }
+}
+
+function setConversationQuery(query) {
+  conversationListView.query = String(query || "");
+  renderConversationList();
+}
+
+function toggleConversationListExpanded() {
+  conversationListView.expanded = !conversationListView.expanded;
+  renderConversationList();
+  els.conversationList.querySelector("[data-conversation-more]")?.focus();
+}
+
+async function loadMoreConversations() {
+  const uid = state.currentUser?.uid;
+  if (!uid || conversationListView.loadingMore) return;
+  // 병합 전에 열려 있는 대화의 최신 메시지를 목록에 반영해 둔다.
+  persistConversations();
+  conversationListView.loadingMore = true;
+  renderConversationList();
+  try {
+    await mergeServerConversations(MAX_CONVERSATION_LIMIT, uid);
+    conversationListView.expanded = true;
+  } catch {
+    showToast("이전 대화를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
+  } finally {
+    conversationListView.loadingMore = false;
+    if (state.currentUser?.uid === uid) renderConversationList();
+  }
 }
 
 function startNewConversation() {
@@ -793,6 +942,9 @@ export {
   loadConversations,
   updateActiveConversationTitle,
   renderConversationList,
+  setConversationQuery,
+  toggleConversationListExpanded,
+  loadMoreConversations,
   startNewConversation,
   openConversation,
   safeExternalUrl,

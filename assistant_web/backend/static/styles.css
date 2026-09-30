@@ -354,20 +354,6 @@ body.theme-dark .sidebar {
   line-height: 1.4;
 }
 
-.conversation-section {
-  display: grid;
-  gap: 8px;
-  padding: 10px 0 2px;
-  border-top: 1px solid var(--line);
-}
-
-.conversation-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
 .icon-command {
   display: grid;
   place-items: center;
@@ -380,68 +366,6 @@ body.theme-dark .sidebar {
   color: var(--text);
   font-size: 19px;
   cursor: pointer;
-}
-
-.conversation-list {
-  display: grid;
-  gap: 4px;
-  max-height: 152px;
-  overflow-y: auto;
-}
-
-.conversation-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 26px 28px;
-  align-items: center;
-  border-radius: 7px;
-}
-
-.conversation-row.active {
-  background: var(--blue-soft);
-}
-
-.conversation-open,
-.conversation-favorite,
-.conversation-delete {
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-soft);
-  cursor: pointer;
-}
-
-.conversation-favorite {
-  width: 26px;
-  height: 28px;
-  padding: 0;
-  color: var(--muted);
-  font-size: 15px;
-}
-
-.conversation-favorite.active {
-  color: var(--warning);
-}
-
-.conversation-open {
-  padding: 9px 10px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.conversation-delete {
-  width: 28px;
-  height: 28px;
-  color: var(--muted);
-  font-size: 17px;
-}
-
-.conversation-row:hover,
-.conversation-row:focus-within {
-  background: var(--surface-alt);
 }
 
 .workspace-navigation {
