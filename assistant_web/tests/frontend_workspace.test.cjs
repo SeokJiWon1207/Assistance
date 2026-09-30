@@ -106,6 +106,32 @@ test('delete waits for in-flight PUT and cancels delayed saves', async () => {
   assert.equal([...h.timers.values()].filter((timer) => timer.ms === 350).length, 0);
 });
 
+const serverConversations = (count) => Array.from({ length: count }, (_, index) => ({
+  id: `server-${index}`, title: `질문 ${index}`, messages: [message(`질문 ${index}`)],
+  updatedAt: new Date(Date.UTC(2026, 8, 30) - index * 60000).toISOString(),
+}));
+
+test('conversation list keeps every loaded conversation while the device stores only recent ones', async () => {
+  const h = await harness(async () => ({ ok: true, json: async () => ({ conversations: serverConversations(25) }) }));
+  await h.api.loadConversations();
+  h.api.persistConversations();
+  assert.equal(h.state.conversations.length, 25);
+  assert.equal(JSON.parse(h.storage.get('chats:user-a')).length, 20);
+});
+
+test('older conversations load up to the server maximum only on request', async () => {
+  const urls = [];
+  const h = await harness(async (url) => {
+    urls.push(url);
+    return { ok: true, json: async () => ({ conversations: serverConversations(url.includes('limit=100') ? 60 : 40) }) };
+  });
+  await h.api.loadConversations();
+  assert.equal(h.state.conversations.length, 40);
+  await h.api.loadMoreConversations();
+  assert.equal(h.state.conversations.length, 60);
+  assert.deepEqual(urls, ['/api/workspace/conversations?limit=40', '/api/workspace/conversations?limit=100']);
+});
+
 test('Notion action id survives storage and is sent with confirmation', () => {
   const history = core.storageSafeMessages([{ role: 'assistant', content: '확인', notionActionId: 'a'.repeat(32) }]);
   const messages = core.buildChatMessages([...history, message('네')], '네');

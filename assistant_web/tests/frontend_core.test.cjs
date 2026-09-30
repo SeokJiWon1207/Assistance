@@ -7,6 +7,9 @@ const {
   storageSafeMessages,
   deriveConversationTitle,
   conversationContentChanged,
+  conversationListSections,
+  conversationTimeLabel,
+  searchConversations,
   buildChatMessages,
   buildTeamTemplateQuestion,
   describeTeamTemplateQuestion,
@@ -84,6 +87,64 @@ test("buildChatMessages caps history and includes the current question once", ()
   assert.deepEqual(payload[0], { role: "assistant", content: "m5" });
   assert.deepEqual(payload.at(-1), { role: "user", content: "current" });
   assert.equal(payload.filter((message) => message.content === "current").length, 1);
+});
+
+const now = new Date(2026, 8, 30, 15, 0);
+const daysAgo = (days, hour = 10) => new Date(2026, 8, 30 - days, hour, 0).toISOString();
+
+test("conversationListSections pins favorites and groups the recent limit by date", () => {
+  const conversations = [
+    { id: "old", title: "오래된 질문", updatedAt: daysAgo(20) },
+    { id: "today", title: "오늘 질문", updatedAt: daysAgo(0) },
+    { id: "favorite", title: "즐겨찾기", favorite: true, updatedAt: daysAgo(40) },
+    { id: "yesterday", title: "어제 질문", updatedAt: daysAgo(1) },
+    { id: "week", title: "이번 주 질문", updatedAt: daysAgo(3) },
+  ];
+  const summary = (sections) => sections.groups.map((group) => [group.label, group.items.map((item) => item.id)]);
+
+  const collapsed = conversationListSections(conversations, { now, limit: 3 });
+  assert.deepEqual(summary(collapsed), [
+    ["즐겨찾기", ["favorite"]],
+    ["오늘", ["today"]],
+    ["어제", ["yesterday"]],
+    ["지난 7일", ["week"]],
+  ]);
+  assert.equal(collapsed.hiddenCount, 1);
+  assert.equal(collapsed.collapsible, true);
+
+  const expanded = conversationListSections(conversations, { now, limit: 3, expanded: true });
+  assert.deepEqual(summary(expanded).at(-1), ["이전", ["old"]]);
+  assert.equal(expanded.hiddenCount, 0);
+});
+
+test("searchConversations matches titles first and previews matching message text", () => {
+  const conversations = [
+    { id: "title", title: "주간 보고서 작성", updatedAt: daysAgo(2), messages: [] },
+    { id: "content", title: "고객사 추이", updatedAt: daysAgo(0), messages: [
+      { role: "assistant", content: "최근 3개월 추이를\n주간 보고서에 넣을 수 있게 표로 정리했습니다." },
+    ] },
+    { id: "favorite", title: "보고서 모음", favorite: true, updatedAt: daysAgo(30), messages: [] },
+    { id: "miss", title: "공수", updatedAt: daysAgo(1), messages: [{ role: "user", content: "공수 알려줘" }] },
+  ];
+
+  const results = searchConversations(conversations, " 보고서 ");
+  assert.deepEqual(results.map((result) => result.conversation.id), ["favorite", "content", "title"]);
+  const byId = Object.fromEntries(results.map((result) => [result.conversation.id, result]));
+  assert.deepEqual(byId.title.titleRange, [3, 6]);
+  assert.equal(byId.title.snippet, null);
+  const { snippet } = byId.content;
+  assert.equal(byId.content.titleRange, null);
+  assert.equal(snippet.text.slice(snippet.start, snippet.end), "보고서");
+  assert.doesNotMatch(snippet.text, /\n/);
+  assert.deepEqual(searchConversations(conversations, "   "), []);
+});
+
+test("conversationTimeLabel shows time today, then relative day or date", () => {
+  assert.match(conversationTimeLabel({ updatedAt: daysAgo(0, 15) }, now), /3:00/);
+  assert.equal(conversationTimeLabel({ updatedAt: daysAgo(1) }, now), "어제");
+  assert.equal(conversationTimeLabel({ updatedAt: daysAgo(5) }, now), "9/25");
+  assert.equal(conversationTimeLabel({ updatedAt: new Date(2025, 11, 3).toISOString() }, now), "2025.12.3");
+  assert.equal(conversationTimeLabel({}, now), "");
 });
 
 test("parseSseBuffer preserves fragmented frames and parses CRLF frames", () => {

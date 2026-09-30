@@ -108,6 +108,7 @@ class FrontendCoreTests(unittest.TestCase):
             "workspace.css",
             "dashboard.css",
             "template_picker.css",
+            "conversation_list.css",
         )
         positions = []
         for name in stylesheet_names:
