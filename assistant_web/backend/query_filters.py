@@ -11,6 +11,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from backend.common import normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
 from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_MATCH_ALIASES
+from backend.mantis_status import matches_mantis_status
 
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -162,7 +163,8 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
         )
         if field == "status":
             equal = any(
-                text_matches_any_alias(str(candidate), STATUS_MATCH_ALIASES.get(value, [value]))
+                (text_matches_any_alias(str(candidate), STATUS_MATCH_ALIASES.get(value, [value]))
+                 if source == "notion" else matches_mantis_status(str(candidate), str(value)))
                 for candidate in raw_candidates
                 for value in raw_values
             )

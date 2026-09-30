@@ -163,6 +163,7 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
     text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
     cleaned = re.sub(r"[#,:;!?()\[\]{}\"']", " ", text)
     cleaned = re.sub(r"\d+\s*(개|건)\s*만?", " ", cleaned)
+    cleaned = re.sub(r"(?<![가-힣])(?:문서|항목|페이지|자료)(?:들)?(?:만|을|를|은|는)?(?=\s|$)", " ", cleaned)
     notion_stopwords = {
         normalize_for_match(keyword)
         for keyword in {*STOPWORDS, *NOTION_QUERY_STOPWORDS, "관한", "관해서", "관하여"}
@@ -430,7 +431,7 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         " ",
         constraint_text,
     )
-    owner = ""
+    owner = known_notion_owner(owner_text)
     # "담당자 미지정 항목만"은 미지정이라는 이름을 찾는 게 아니라 담당자가
     # 비어 있는 항목을 찾는 요청이다.
     unassigned_owner = bool(
@@ -448,15 +449,17 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         owner_text,
         re.IGNORECASE,
     )
-    if owner_match and not unassigned_owner:
+    if owner_match and not unassigned_owner and not owner:
         candidate = trim_owner_adnominal(owner_match.group(1), owner_text[owner_match.end(1):])
         # 조사가 붙은 일반 명사가 이름으로 잡히지 않도록 어간까지 검증한다.
-        if is_valid_person_name(candidate) and is_valid_person_name(
+        if candidate not in {"문서", "항목", "업무", "자료", "페이지", "이슈", "모두"} and is_valid_person_name(candidate) and is_valid_person_name(
             strip_korean_particle(candidate)
         ):
             owner = candidate
     if not owner and not unassigned_owner:
         owner = known_notion_owner(owner_text)
+    if unassigned_owner:
+        owner = ""
 
     result = {
         "database_label": extract_notion_database_label_from_text(constraint_text) or "",

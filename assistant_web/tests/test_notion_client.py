@@ -241,6 +241,8 @@ class NotionNameRecoveryTests(unittest.TestCase):
         with (
             patch.object(client.requests, 'get', side_effect=[requests.Timeout(), response, response, response]) as get,
             patch.object(client, 'get_notion_headers', return_value={'Authorization': 'a'}) as headers,
+            # 캐시 시계를 고정해도 실제 요청 제한기의 시계/대기는 실행하지 않는다.
+            patch.object(client, 'notion_request_slot'),
             patch.object(client.time, 'monotonic', return_value=100) as clock,
         ):
             self.assertEqual(client.fetch_notion_user_name('u'), '')

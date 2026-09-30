@@ -14,7 +14,7 @@ from backend.common import (
     text_matches_any_alias,
     text_matches_customer_aliases,
 )
-from backend.config import STATUS_MATCH_ALIASES
+from backend.mantis_status import matches_mantis_status
 from backend.query_filters import normalize_filter_clauses, matches_source_filters, screen_filter_values
 from backend.query_planning import plan_created_at_matches
 
@@ -60,7 +60,7 @@ def text_matches_status(text: str, statuses: List[str]) -> bool:
     if not statuses:
         return True
     return any(
-        text_matches_any_alias(text, STATUS_MATCH_ALIASES.get(status, [status]))
+        matches_mantis_status(text, status)
         for status in statuses
     )
 
@@ -161,18 +161,16 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         constraints["excluded_customer_aliases"],
     ):
         return False
+    media_type = extract_chroma_field(text, "매체구분")
+    platform_source = media_type if media_type and media_type != "기타/미상" else text
     if constraints.get("platform_aliases"):
         # 재구축된 스냅샷 문서에는 '매체구분' 헤더가 있다. 있으면 그 값으로만 판정해
         # 본문의 "MTS에서는 됩니다" 같은 비교 언급 오탐을 막는다(라이브 검색의
         # issue_matches_platform과 동일한 규칙). 구버전 문서(필드 없음)는 기존처럼
         # 전문 검색으로 폴백한다.
-        media_type = extract_chroma_field(text, "매체구분")
-        platform_source = media_type if media_type and media_type != "기타/미상" else text
         if not text_matches_any_alias(platform_source, constraints["platform_aliases"]):
             return False
     if constraints.get("excluded_platform_aliases"):
-        media_type = extract_chroma_field(text, "매체구분")
-        platform_source = media_type if media_type and media_type != "기타/미상" else text
         if text_matches_any_alias(platform_source, constraints["excluded_platform_aliases"]):
             return False
     if not text_matches_status(
@@ -205,7 +203,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         return False
     return matches_source_filters("chroma", {
         "customer": extract_project_from_chroma_text(text),
-        "platform": extract_chroma_field(text, "매체구분") or text,
+        "platform": platform_source,
         "status": extract_chroma_field(text, "현재 상태"),
         "owner": extract_chroma_field(text, "담당자"),
         "issue_id": str(issue_id),

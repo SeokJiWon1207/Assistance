@@ -10,6 +10,7 @@ import requests
 
 from backend.audit import load_audit_sources
 from backend.common import normalize_for_match
+from backend.config import STATUS_ALIASES
 from backend.intent.constants import (
     DEMONSTRATIVE_ISSUE_PATTERN,
     FOLLOW_UP_CONTINUATION_MARKERS,
@@ -19,6 +20,7 @@ from backend.intent.constants import (
     KOREAN_ORDINAL_WORDS,
 )
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
+from backend.intent.status_semantics import ALL_STATUSES
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_planning import extract_created_at_range
 from backend.schemas import ChatMessage
@@ -74,6 +76,13 @@ def is_follow_up_question(text: str) -> bool:
         for marker in FOLLOW_UP_CONTINUATION_MARKERS
     ) and not has_targeting_constraint(extract_query_constraints(text)):
         return True
+    # 'NH MTS 몇 건이야'의 '몇 건'만으로 직전 단건 ID를 물려받지 않는다.
+    # 명시적인 제외·교체 표현은 기존 범위를 수정하는 후속으로 유지한다.
+    direct = extract_query_constraints(text)
+    if (direct.get("customer_key") or direct.get("issue_ids")) and not re.search(
+        r"빼줘|빼고|제외|말고|바꿔|변경", text
+    ):
+        return False
     if len(text.strip()) > FOLLOW_UP_WEAK_MAX_LEN:
         return False
     return any(normalize_for_match(marker) in normalized for marker in FOLLOW_UP_WEAK_MARKERS)
@@ -199,6 +208,13 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
     if not recent:
         return "", False
     latest = recent[0]
+    # 직전 독립 질문까지가 현재 검색 문맥이다. 그 이전의 조건은 상속하지 않는다.
+    chain = [latest]
+    for prior in recent[1:]:
+        chain.append(prior)
+        if not is_follow_up_question(prior):
+            break
+    recent = chain
     latest_constraints = extract_query_constraints(latest)
     follow_up = is_follow_up_question(latest)
     if (
@@ -226,10 +242,13 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
     excluded: List[str] = []
     seen_customer = bool(latest_constraints.get("customer_key") or latest_constraints.get("excluded_customer_keys"))
     seen_platform = bool(latest_constraints.get("platform_key") or latest_constraints.get("excluded_platform_keys"))
-    seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses"))
-    seen_issue_ids = False
-    seen_screen_numbers = False
+    seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses") or ALL_STATUSES.search(latest))
+    seen_issue_ids = bool(latest_constraints.get("issue_ids") or latest_constraints.get("exclude_issue_ids"))
+    seen_screen_numbers = bool(latest_constraints.get("screen_numbers"))
+    seen_date_fields = set((latest_constraints.get("date_fields") or {}).keys())
     seen_created_at = bool(latest_constraints.get("created_at"))
+    seen_people = bool(latest_constraints.get("people", {}).get("names") or latest_constraints.get("unassigned_people"))
+    seen_notion_db = bool(re.search(r"DB\d{2}_", latest, re.IGNORECASE))
     # "그중 4월 것만"처럼 연도 없이 월만 좁히는 후속 질문은 이전 턴의 연도를
     # 물려받아야 한다. 물려받지 못하면 모델이 임의의 연도를 채워 넣는다.
     latest_month = re.search(r"(?<!\d)(1[0-2]|0?[1-9])\s*월", latest)
@@ -252,6 +271,18 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
 
     for prior in recent[1:]:
         prior_constraints = extract_query_constraints(prior)
+        for field, value in (prior_constraints.get("date_fields") or {}).items():
+            if field not in seen_date_fields:
+                inherited.append(f"{field} {value}")
+                seen_date_fields.add(field)
+        if not seen_issue_ids and prior_constraints.get("exclude_issue_ids"):
+            excluded.extend(f"#{value} 제외" for value in prior_constraints["exclude_issue_ids"])
+            seen_issue_ids = True
+        if not seen_notion_db:
+            database = re.search(r"DB\d{2}_[가-힣A-Za-z0-9_]+?(?=에서|\s|$)", prior, re.IGNORECASE)
+            if database:
+                inherited.append("노션 " + database.group(0))
+                seen_notion_db = True
         # 이슈ID/화면번호처럼 특정 대상을 정확히 가리키는 조건을 최우선으로 상속한다.
         # 그래야 "이슈 3187번 알려줘" -> "그 이슈 상태 어때?" 같은 후속 질문이
         # 대상을 잃지 않는다.
@@ -276,14 +307,20 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_platform_keys"])
             seen_platform = True
         if not seen_status and prior_constraints.get("statuses"):
-            inherited.extend(prior_constraints["statuses"])
+            inherited.extend(STATUS_ALIASES.get(status, [status])[0] for status in prior_constraints["statuses"])
             seen_status = True
         if not seen_status and prior_constraints.get("excluded_statuses"):
             excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_statuses"])
             seen_status = True
-        for name in prior_constraints.get("people", {}).get("names") or []:
-            if name not in inherited:
-                inherited.append(name)
+        if not seen_people:
+            names = prior_constraints.get("people", {}).get("names") or []
+            if names:
+                role = "요청자" if prior_constraints.get("people", {}).get("role") == "reporter" else "담당자"
+                inherited.append(role + " " + ", ".join(names))
+                seen_people = True
+            elif prior_constraints.get("unassigned_people"):
+                inherited.append("담당자 미지정")
+                seen_people = True
         if seen_customer and seen_platform and seen_status and seen_issue_ids and seen_screen_numbers:
             break
 

@@ -25,9 +25,13 @@ from backend.answers import (
     should_return_deterministic_issue_list,
 )
 from backend.intent.request_scope import AUTHENTICATED_OWNER, authenticated_owner_scope
+from backend.intent.status_semantics import (
+    ALL_STATUSES, apply_status_resolution, resolution_is_grounded,
+    resolve_status_intent, status_resolution_scope,
+)
 from backend.team_scope import has_mantis_team_scope
 from backend.admission import CHAT_ADMISSION
-from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status
+from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status, load_audit_query_plan
 from backend.common import clamp_int
 from backend.llm import (
     build_generation_options,
@@ -39,6 +43,7 @@ from backend.llm import (
     post_model_chat,
 )
 from backend.query_planning import build_query_plan, extract_group_by
+from backend.intent.confirmed_context import confirmed_scope_text
 from backend.reports.aggregate import (
     build_mantis_count_report,
     build_mantis_pivot_report,
@@ -545,6 +550,7 @@ class ChatPipelineContext:
     pending_effort_report: Optional[Dict[str, Any]] = None
     intent_plan: Optional[Dict[str, Any]] = None
     retrieval_result: Optional[Dict[str, Any]] = None
+    status_resolution: Optional[Dict[str, Any]] = None
 
 
 def prepare_chat_pipeline(
@@ -572,6 +578,39 @@ def prepare_chat_pipeline(
         messages = messages[-history_limit:]
 
     retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
+    inherited_resolution = None
+    latest_constraints = extract_query_constraints(latest_user_text)
+    # 확인 질문 직후의 짧은 상태 선택은 서버에 저장된 해당 턴에만 연결한다.
+    status_choice = bool(re.fullmatch(
+        r"\s*(?:미종료|전체\s*상태|모든\s*상태|상태\s*무관)(?:로|만|으로)?"
+        r"\s*(?:보여줘|조회해줘|알려줘)?[.!?]?\s*", latest_user_text,
+    ))
+    prior_questions = get_recent_user_texts(request.messages, limit=2)
+    prior_plan = load_audit_query_plan(
+        request.contextAuditId or "", str((user or {}).get("uid") or ""),
+        prior_questions[1] if len(prior_questions) > 1 else "",
+    ) if (status_choice or is_follow_up_question(latest_user_text)) else {}
+    prior_resolution = prior_plan.get("status_resolution") or {}
+    if (prior_plan.get("source") == "mantis" and prior_plan.get("resolved_constraints")
+            and (is_follow_up_question(latest_user_text) or (status_choice and prior_resolution.get("needs_clarification")))):
+        # 이전 자연어를 다시 추측하지 않고 서버가 확정한 범위를 복원한다.
+        prior_text = confirmed_scope_text(prior_plan["resolved_constraints"])
+        scope_messages = [request.messages[-1].model_copy(update={"content": prior_text}),
+                          request.messages[-1].model_copy(update={"content": latest_user_text if is_follow_up_question(latest_user_text) else f"그중 {latest_user_text}"})]
+        retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(scope_messages)
+    elif status_choice and prior_resolution.get("needs_clarification"):
+        follow_up_messages = [*request.messages[:-1], request.messages[-1].model_copy(
+            update={"content": f"그중 {latest_user_text}"},
+        )]
+        retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(follow_up_messages)
+    if (is_follow_up_question(latest_user_text) and not latest_constraints.get("statuses")
+            and not latest_constraints.get("excluded_statuses") and not ALL_STATUSES.search(latest_user_text)
+            and not latest_constraints.get("issue_ids")):
+        if prior_plan.get("source") == "mantis" and resolution_is_grounded(prior_resolution):
+            inherited_resolution = {**prior_resolution, "origin": "inherited",
+                "parent_grounding_text": prior_resolution.get("parent_grounding_text") or prior_resolution.get("grounding_text"),
+                "parent_audit_id": request.contextAuditId}
+            needs_follow_up_rewrite = False
     team_scope = has_mantis_team_scope(retrieval_text)
     resolved_reference = resolve_reference_from_context(
         latest_user_text,
@@ -581,6 +620,7 @@ def prepare_chat_pipeline(
     if resolved_reference:
         retrieval_text = resolved_reference
         needs_follow_up_rewrite = False
+        inherited_resolution = None
     else:
         notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
         if notion_prefix and not team_scope:
@@ -628,6 +668,8 @@ def prepare_chat_pipeline(
     )
     with authenticated_owner_scope(owner):
         scoped_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
+    if inherited_resolution:
+        inherited_resolution["grounding_text"] = retrieval_text
     enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
     system_notes = [
         answer_style_instruction(request.answerStyle),
@@ -645,6 +687,7 @@ def prepare_chat_pipeline(
         query_constraints=scoped_constraints,
         authenticated_owner=owner,
         active_limit=clamp_int(request.searchLimit, 1, 20) or 5,
+        status_resolution=inherited_resolution,
     )
 
 
@@ -656,6 +699,21 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
         return {"modelId": request.modelId, "content": "개인 Notion 문서를 조회할 사용자 이름이 등록되어 있지 않습니다. 계정 표시 이름을 확인해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_notion_scope"}}
     with authenticated_owner_scope(context.authenticated_owner):
+        source = rule_based_search_intent(context.retrieval_text, context.query_constraints).get("source")
+        mantis_scope = source == "mantis" or (source == "general" and bool(
+            context.query_constraints.get("customer_key") or context.query_constraints.get("platform_key")
+        ))
+        if context.enabled_tools.get("mantis") and mantis_scope:
+            resolution = context.status_resolution or resolve_status_intent(context.retrieval_text, context.query_constraints)
+            context.status_resolution = resolution
+            if resolution.get("needs_clarification"):
+                return {"modelId": request.modelId,
+                    "content": "조회할 상태를 확정하지 못했습니다. 해결·종료를 제외한 미종료 이슈를 뜻하시나요, 아니면 상태와 관계없는 전체 이슈를 뜻하시나요? 상태 조건을 빼고 집계하지 않았습니다.",
+                    "sources": [], "raw": {"mode": "status_clarification"}}
+            with status_resolution_scope(resolution):
+                context.query_constraints = apply_status_resolution(context.retrieval_text, context.query_constraints, resolution)
+                return _plan_chat_query(request, context, user)
+        context.status_resolution = None
         return _plan_chat_query(request, context, user)
 
 
@@ -882,6 +940,24 @@ def retrieve_chat_evidence(
     return None
 
 
+def attach_status_resolution(response: Dict[str, Any], context: ChatPipelineContext) -> Dict[str, Any]:
+    resolution = context.status_resolution
+    if not resolution:
+        return response
+    retrieval = response.setdefault("retrieval", {"query": context.retrieval_text, "stages": []})
+    constraints = retrieval.setdefault("constraints", dict(context.query_constraints))
+    constraints["status_resolution"] = resolution
+    plan = retrieval.get("query_plan") or build_query_plan(context.retrieval_text, {"source": "mantis"}, constraints)
+    plan["status_resolution"] = resolution
+    plan["resolved_constraints"] = {key: value for key, value in constraints.items() if key != "status_resolution"}
+    retrieval["query_plan"] = plan
+    if resolution.get("status_intent") == "open" and not resolution.get("needs_clarification"):
+        evidence = str(resolution.get("evidence") or "")
+        inherited = "이전 질문에서 상속한 " if resolution.get("origin") == "inherited" else ""
+        response["content"] = f"미종료 기준 적용({inherited}근거: ‘{evidence}’, 해결·종료 제외)\n\n" + response.get("content", "")
+    return response
+
+
 class ChatService:
     """단일 채팅 요청의 전체 검색·답변 파이프라인을 실행한다."""
 
@@ -935,11 +1011,11 @@ class ChatService:
         context = prepare_chat_pipeline(request, latest_user_text, user)
         planned_response = plan_chat_query(request, context, user)
         if planned_response:
-            return finalize_chat_response(planned_response)
+            return finalize_chat_response(attach_status_resolution(planned_response, context))
 
         retrieval_response = retrieve_chat_evidence(request, context)
         if retrieval_response:
-            return finalize_chat_response(retrieval_response)
+            return finalize_chat_response(attach_status_resolution(retrieval_response, context))
 
         if context.system_notes:
             context.messages.insert(
@@ -954,6 +1030,6 @@ class ChatService:
             context.query_constraints,
             context.active_limit,
         )
-        return finalize_chat_response(generated_response)
+        return finalize_chat_response(attach_status_resolution(generated_response, context))
 
 chat_service = ChatService()

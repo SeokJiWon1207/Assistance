@@ -790,7 +790,7 @@ class QueryPlanningTests(unittest.TestCase):
         )
         # 사용자가 실제로 요청한 상태 제외는 그대로 남아야 한다.
         self.assertIn(
-            {"field": "status", "operator": "not_equals", "value": "closed"},
+            {"field": "status", "operator": "not_in", "value": ["closed"]},
             plan["filter_clauses"],
         )
 

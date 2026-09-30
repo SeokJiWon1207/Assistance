@@ -96,6 +96,9 @@ class RuntimeResilienceTests(unittest.TestCase):
             ), patch.object(
                 chat_service_module, "plan_search_intent_with_model", return_value={}
             ), patch.object(
+                chat_service_module, "resolve_status_intent",
+                return_value={"status_intent": None, "needs_clarification": False, "origin": "llm"},
+            ), patch.object(
                 chat_service_module, "run_retrieval_pipeline", return_value=retrieval
             ), patch.object(
                 chat_service_module, "should_run_retrieval", return_value=True

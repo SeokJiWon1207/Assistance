@@ -7,6 +7,7 @@ from backend.common import LOOKUP_REQUEST_PATTERN, extract_quoted_value, is_cont
 from backend.intent.constants import TRIAGE_REQUEST_PATTERN
 from backend.config import (
     KOREAN_COUNT_WORDS,
+    PENDING_WORK_QUERY_PATTERN,
     STATUS_ALIASES,
     STATUS_MATCH_ALIASES,
     STOPWORDS,
@@ -73,6 +74,12 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    resolution = (constraints or {}).get("status_resolution") or {}
+    if resolution.get("status_intent") == "open" and resolution.get("evidence") and not resolution.get("needs_clarification"):
+        text = text.replace(str(resolution["evidence"]), " ")
+    if constraints and constraints.get("statuses") and PENDING_WORK_QUERY_PATTERN.search(text):
+        text = PENDING_WORK_QUERY_PATTERN.sub(" ", text)
+        text = re.sub(r"(?<![가-힣])(?:아직|거|것|건)(?:만|들|은|는|이|을|를)?(?=\s|$)", " ", text)
     if constraints and constraints.get("mantis_team_members"):
         text = remove_team_scope_phrase(text)
     if TRIAGE_REQUEST_PATTERN.search(text) and (symptom := extract_quoted_value(text)):

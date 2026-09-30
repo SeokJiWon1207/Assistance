@@ -264,13 +264,22 @@ STATUS_ALIASES = {
     "dev_done": ["개발완료", "개발 완료", "developed"],
 }
 
+MANTIS_STATUS_NAMES = {
+    "new": ("new", "신규", "신규 이슈"),
+    "feedback": ("feedback", "need_info", "정보 부족"),
+    "acknowledged": ("acknowledged", "review", "이슈 검토", "검토"),
+    "confirmed": ("confirmed", "확인", "확인된 이슈"),
+    "assigned": ("assigned", "할당", "할당된 이슈"),
+    "developed": ("developed", "dev_done", "개발완료", "개발 완료"),
+    "resolved": ("resolved", "해결", "해결된 이슈", "해결 및 종료"),
+    "closed": ("closed", "close", "종료", "종료된 이슈", "닫힌", "완료"),
+}
+MANTIS_OPEN_STATUSES = frozenset({"new", "feedback", "acknowledged", "confirmed", "assigned", "developed"})
+
 STATUS_MATCH_ALIASES = {
     # 스냅샷은 상태를 한글로, 라이브 API는 영문으로 준다. 한쪽만 두면
     # 스냅샷 결과를 라이브로 재검증할 때 열린 이슈가 전부 탈락한다.
-    "open": [
-        "할당된 이슈", "확인된 이슈", "이슈 검토", "정보 부족", "개발완료",
-        "assigned", "confirmed", "acknowledged", "feedback", "new", "developed",
-    ],
+    "open": [alias for status, aliases in MANTIS_STATUS_NAMES.items() if status in MANTIS_OPEN_STATUSES for alias in aliases],
     "closed": ["종료된 이슈", "종료", "closed"],
     "confirmed": ["확인된 이슈", "확인", "confirmed"],
     "assigned": ["할당된 이슈", "할당", "assigned"],
@@ -283,8 +292,19 @@ STATUS_MATCH_ALIASES = {
 # 상태 별칭은 부분 문자열로 찾기 때문에 "종료 안 된"에서도 먼저 "종료"가
 # 발견될 수 있다. 상태 별칭을 적용하기 전에 자주 쓰는 부정 표현을 별도로
 # 판별해, closed의 반대 의미가 closed 필터로 뒤집히지 않게 한다.
+PENDING_WORK_QUERY_PATTERN = re.compile(
+    # '남은 시간/기간/공수'는 상태가 아니다. 잔여 업무를 가리키는 목적어만 받는다.
+    r"(?:남(?:은|아\s*있(?:는|던)|았던)|잔여)\s*(?:이슈|티켓|업무|항목|할\s*일|건|거|것)"
+    r"|(?:이슈|티켓|업무|항목)(?:가|는|이|은)?\s*(?:아직\s*)?남(?:아\s*있|았)"
+    r"|(?<![가-힣])미\s*(?:처리|해결|완료|종료)"
+    r"|(?:처리|해결|완료|종료)(?:가|는|이|은)?\s*(?:안|못)\s*(?:되는|된|됐|한|했|됨)"
+    r"|(?:처리|해결|완료|종료)(?:되|하)?지\s*(?:않|못)(?:은|한|했|하)"
+    r"|(?:안|못)\s*(?:처리|해결|완료|종료)\s*(?:된|한|했|됐)"
+    r"|(?:안\s*끝(?:난|낸)|끝(?:나|내)지\s*않은)"
+)
+
 NON_CLOSED_STATUS_PATTERNS = (
-    re.compile(r"미(?:종료|완료)"),
+    re.compile(r"(?<!이)미(?:종료|완료)"),  # '이미 완료/종료'는 미완료가 아니다.
     re.compile(r"(?:종료|완료|closed)(?:가|는|은|이|를)?안(?:된|됨|됐|되어|돼|되는)"),
     re.compile(r"(?:종료|완료)(?:가|는|은|이)?(?:되|하)?지않"),
     re.compile(r"닫히지않"),

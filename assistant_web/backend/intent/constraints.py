@@ -62,6 +62,11 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         return empty_query_constraints()
     team_scope = has_mantis_team_scope(text)
     constraints = extract_scope_constraints(remove_team_scope_phrase(text) if team_scope else text)
+    from backend.intent.status_semantics import ALL_STATUSES
+    if ALL_STATUSES.search(text) and not set(constraints.get("statuses") or []) - {"open", "closed"}:
+        constraints["statuses"] = []
+        constraints["excluded_statuses"] = []
+        constraints["filter_clauses"] = [clause for clause in constraints["filter_clauses"] if clause["field"] != "status"]
     if team_scope:
         constraints["mantis_team_members"] = list(TEAM_MEMBERS)
         constraints["mantis_team_label"] = TEAM_SCOPE_LABEL
@@ -70,7 +75,8 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         constraints["people"] = {"names": [owner], "role": "handler", "name_origins": {owner: "known"}, "candidates": []}
         constraints["filter_clauses"] = [item for item in constraints.get("filter_clauses", []) if item["field"] != "owner"]
         add_filter_clause(constraints["filter_clauses"], "owner", "equals", owner)
-    return constraints
+    from backend.intent.status_semantics import apply_status_resolution
+    return apply_status_resolution(text, constraints)
 
 
 def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:
@@ -174,6 +180,12 @@ def merge_query_plan_constraints(
     for clause in planned_clauses:
         field, operator, value = clause["field"], clause["operator"], clause.get("value")
         values = value if isinstance(value, list) else [value]
+        if field == "customer" and operator in {"equals", "in"} and any(
+            normalize_for_match(str(item)) in {
+                normalize_for_match(alias) for alias in merged["excluded_customer_aliases"]
+            } for item in values
+        ):
+            continue
         if field == "issue_id" and operator in {"equals", "in", "not_equals", "not_in"}:
             planned_issue_ids = [int(str(item).lstrip("#")) for item in values if str(item).lstrip("#").isdigit()]
             grounding_text = str((query_plan or {}).get("grounding_text") or "")
@@ -277,7 +289,10 @@ def merge_query_plan_constraints(
             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) and start <= end:
                 merged["created_at"] = {"from": start, "to": end, "precision": "range"}
 
-    if isinstance(filters, dict) and not merged.get("customer_key") and filters.get("customer"):
+    if (isinstance(filters, dict) and not merged.get("customer_key") and filters.get("customer")
+            and normalize_for_match(str(filters["customer"])) not in {
+                normalize_for_match(alias) for alias in merged["excluded_customer_aliases"]
+            }):
         planned_customer = extract_query_constraints(str(filters["customer"]))
         if planned_customer.get("customer_key"):
             for key in ("customer_key", "customer_aliases", "customer_exact"):
@@ -312,6 +327,16 @@ def merge_query_plan_constraints(
         merged["created_at"] = None
         merged["filter_clauses"] = [clause for clause in merged["filter_clauses"] if clause["field"] != "created_at"]
 
+    if (query_plan or {}).get("source") == "notion":
+        from backend.notion.search import extract_notion_constraints
+        native = extract_notion_constraints(str((query_plan or {}).get("grounding_text") or ""))
+        if native.get("status") or native.get("excluded_statuses"):
+            merged["statuses"] = [native["status"]] if native.get("status") else []
+            merged["excluded_statuses"] = list(native.get("excluded_statuses") or [])
+            merged["filter_clauses"] = [c for c in merged["filter_clauses"] if c["field"] != "status"]
+            for operator, values in (("in", merged["statuses"]), ("not_in", merged["excluded_statuses"])):
+                if values:
+                    merged["filter_clauses"].append({"field": "status", "operator": operator, "value": values})
     return merged
 
 
@@ -362,7 +387,8 @@ def plan_search_intent_with_model(
         "not_contains, exists, not_exists, gte, lte, between 중 하나다. "
         "'빼고/제외/아닌/말고/없는'은 반드시 not_equals, not_in, not_contains, not_exists 중 하나로 표현해라. "
         '예: \'MTS는 빼고\'는 {"field":"platform","operator":"not_equals","value":"mts"}다. '
-        '\'종료 안 된/종료되지 않은/미종료\'는 {"field":"status","operator":"not_equals","value":"closed"}다. '
+        "Mantis의 상태 의미는 별도 상태 플래너가 확정한다. Mantis status 필터는 생성하지 마라. "
+        "미종료는 resolved와 closed를 모두 제외하며 신규와 개발완료를 포함한다. "
         "'고객사별로/담당자별로/상태별로/유형별로'처럼 결과를 묶어 달라는 요청은 필터로 만들지 말고 "
         "각각 group_by를 customer/platform/owner/status/type으로 출력해라. "
         "created_at은 등록일 기준이며 from/to를 YYYY-MM-DD로 출력한다. 예를 들어 2025년은 "

@@ -430,8 +430,15 @@ function renderIssueDetailCard(issue, sources = [], messageIndex = 0) {
   const bodyText = document.createElement("div");
   bodyText.className = "issue-detail-text";
   issue.body.split(/\n{2,}/).forEach((part) => {
-    const paragraphText = part.trim();
+    let paragraphText = part.trim();
     if (!paragraphText) return;
+    const section = paragraphText.match(/^\*\*(사유 및 원인|조치 및 개선)\*\*\s*\n([\s\S]*)$/);
+    if (section) {
+      const heading = document.createElement("h4");
+      heading.textContent = section[1];
+      bodyText.appendChild(heading);
+      paragraphText = section[2];
+    }
     const paragraph = document.createElement("p");
     paragraph.textContent = paragraphText;
     bodyText.appendChild(paragraph);

@@ -23,6 +23,7 @@ from backend.schemas import ChatMessage, ChatRequest
 from backend.intent.request_scope import authenticated_owner_scope, AUTHENTICATED_OWNER
 from backend.services import chat_service as chat
 from backend.sources import mantis
+from backend.sources.mantis_collection import IssueBatch
 from backend.understanding import extract_query_constraints, merge_query_plan_constraints
 from scripts import runtime_databases
 
@@ -63,7 +64,7 @@ class SearchRegressionTests(unittest.TestCase):
     def test_personal_sla_report_retains_authenticated_scope(self):
         question = "내 장기 미종료 이슈 알려줘"
         text = chat.apply_authenticated_mantis_scope(question, {"mantisUsername": "테스트갑"})
-        with patch.object(sla, "fetch_mantis_recent_issues", return_value=[issue(1), issue(2, "테스트을")]):
+        with patch.object(sla, "read_complete_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})):
             result = chat.build_deterministic_report(
                 question, text, {"mantis": True}, [], {"uid": "a", "mantisUsername": "테스트갑"}
             ).response
@@ -78,7 +79,7 @@ class SearchRegressionTests(unittest.TestCase):
         with (
             patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}),
             patch.object(chat, "get_model_api_key", return_value="synthetic"),
-            patch.object(sla, "fetch_mantis_recent_issues", return_value=[issue(1), issue(2, "테스트을")]),
+            patch.object(sla, "read_complete_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})),
         ):
             result = chat.chat_service.build_response(
                 request, user={"uid": "synthetic-scope", "mantisUsername": "테스트갑"}

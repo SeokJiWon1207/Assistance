@@ -20,6 +20,7 @@ from backend.config import (
     CHROMA_DB_PATH,
     CUSTOMER_ALIASES,
     NON_CLOSED_STATUS_PATTERNS,
+    PENDING_WORK_QUERY_PATTERN,
     PERSON_ROLE_ALIASES,
     STATUS_ALIASES,
     STOPWORDS,
@@ -189,9 +190,16 @@ def extract_status_constraints(text: str) -> List[str]:
         r"확인\s*(?:해\s*(?:줘|주세요|줄래(?:요)?)|부탁(?:해|드려)?|할\s*수\s*있)",
         " ", remove_date_field_phrases(text),
     )
+    pending_work = bool(PENDING_WORK_QUERY_PATTERN.search(status_text))
+    # 부정된 '해결/완료'를 긍정 상태로 중복 추출하지 않는다.
+    status_text = PENDING_WORK_QUERY_PATTERN.sub(" ", status_text)
     normalized_text = normalize_for_match(status_text)
     statuses = []
     for status_key, aliases in STATUS_ALIASES.items():
+        alias_text = normalized_text
+        if status_key == "closed":
+            # 복합 상태명의 '완료'는 종료가 아니다. 별도로 적은 종료는 유지한다.
+            alias_text = re.sub(r"개발완료", "", alias_text)
         # 확인·해결·검토는 상태명 외에도 문서 작성 지시에서 매우 자주 쓰인다.
         # 상태 문맥이나 "확인된 이슈"처럼 상태 대상을 함께 말한 경우에만
         # 구조화 조건으로 사용한다.
@@ -222,11 +230,11 @@ def extract_status_constraints(text: str) -> List[str]:
                 r"(?:상태\s*(?:가|는|만|를|=|:)?\s*feedback\b|"
                 r"\bfeedback\s*(?:인|상태(?:인)?|로|으로)(?=\s|$|[,.;!?]))",
                 status_text, re.IGNORECASE,
-            )) if alias == "feedback" else normalize_for_match(alias) in normalized_text
+            )) if alias == "feedback" else normalize_for_match(alias) in alias_text
             for alias in aliases
         ):
             statuses.append(status_key)
-    if any(pattern.search(normalized_text) for pattern in NON_CLOSED_STATUS_PATTERNS):
+    if pending_work or any(pattern.search(normalized_text) for pattern in NON_CLOSED_STATUS_PATTERNS):
         statuses = [status for status in statuses if status != "closed"]
         # "종료 안 된 할당 이슈"처럼 더 구체적인 미종료 상태가 함께 있으면
         # 그 상태를 유지하고, 구체 상태가 없을 때만 전체 미종료(open)로 넓힌다.

@@ -13,6 +13,7 @@ from backend.query_planning import build_query_plan
 from backend.reports import incident_triage, sla
 from backend.retrieval import build_model_retrieval_context, collect_retrieved_customer_groups, run_retrieval_pipeline
 from backend.sources import mantis
+from backend.sources.mantis_collection import IssueBatch
 from backend.understanding import build_keyword_terms, extract_query_constraints
 
 
@@ -250,7 +251,7 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
                             ("이번 달 등록된 이슈 중 30일 넘게 미종료", [])):
             with self.subTest(q=q), patch.object(sla, "date", FixedDate), patch(
                 "backend.query_planning.date", FixedDate,
-            ), patch.object(sla, "fetch_mantis_recent_issues", return_value=raw):
+            ), patch.object(sla, "read_complete_store", return_value=IssueBatch(raw, {"search_complete": True})):
                 report = sla.build_sla_report(q)
             rows = report["retrieval"]["stages"][0].get("issues_list", [])
             self.assertEqual([row["id"] for row in rows], expected)

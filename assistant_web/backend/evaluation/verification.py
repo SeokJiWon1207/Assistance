@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 
 from backend.answers import display_constraints
 from backend.common import normalize_for_match
+from backend.mantis_status import source_status
 from backend.notion.search import extract_notion_constraints, notion_page_matches_constraints
 from backend.query_planning import plan_created_at_matches, validate_query_plan, infer_operation, extract_group_by
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
@@ -31,6 +32,7 @@ from backend.understanding import (
 def ungrounded_constraint_labels(
     grounding_text: str,
     constraints: Dict[str, Any],
+    source: str = "",
 ) -> List[str]:
     """질문에 근거가 없는 검색 조건을 찾는다.
 
@@ -69,6 +71,13 @@ def ungrounded_constraint_labels(
             labels.append(f"화면번호={number}")
 
     expected = extract_query_constraints(grounding_text)
+    from backend.intent.status_semantics import resolution_is_grounded
+    if source in {"mantis", "both"} and resolution_is_grounded(constraints.get("status_resolution") or {}):
+        if not expected.get("statuses"):
+            expected["statuses"] = ["open"]
+    if source == "notion":
+        native = extract_notion_constraints(grounding_text)
+        expected["statuses"] = [native["status"]] if native.get("status") else []
     for status in constraints.get("statuses") or []:
         if status not in (expected.get("statuses") or []):
             labels.append(f"상태={status}")
@@ -88,7 +97,24 @@ def build_verification_report(
 ) -> Dict[str, Any]:
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     query_plan = (retrieval_result or {}).get("query_plan") or (retrieval_result or {}).get("intent_plan") or {}
+    if mode == "status_clarification":
+        resolution = query_plan.get("status_resolution") or {}
+        check = {"id": "status_clarification", "label": "상태 확인 대기", "status": "warning",
+                 "detail": f"{resolution.get('origin', 'unknown')} · {resolution.get('reason', '')} · 상태를 확정하지 못해 조회·집계를 실행하지 않음"}
+        return {"score": 0, "status": "warning", "checks": [check],
+            "dimensions": [{"id": "intent", "label": "상태 확인 대기", "score": None, "status": "warning", "checks": [check]}],
+            "completedDimensions": 0, "applicableDimensions": 1, "constraints": display_constraints(constraints),
+            "queryPlan": query_plan, "trace": [], "sourceCount": 0, "mode": mode,
+            "verifiedAt": datetime.now().astimezone().isoformat(), "note": "사용자 확인 전에는 결과를 확정하지 않습니다."}
     retrieval_checks: List[Dict[str, str]] = []
+    resolution = query_plan.get("status_resolution") or constraints.get("status_resolution") or {}
+    if resolution:
+        from backend.intent.status_semantics import resolution_is_grounded
+        status = "warning" if resolution.get("needs_clarification") else "pass"
+        if resolution.get("status_intent") == "open" and not resolution_is_grounded(resolution):
+            status = "fail"
+        retrieval_checks.append({"id": "status_resolution", "label": "상태 해석 경로", "status": status,
+            "detail": f"{resolution.get('origin')} · {resolution.get('reason')} · 근거: {resolution.get('evidence') or '명시 조건/상태 제한 없음'}"})
     retrieval_used = bool(retrieval_result)
     successful_count_stage = next(
         (
@@ -103,10 +129,12 @@ def build_verification_report(
         for stage in (retrieval_result or {}).get("stages", [])
     )
     completed_empty_search = any(
-        stage.get("status") == "ok"
+        (stage.get("status") == "ok" or (
+            stage.get("source") == "mantis_id_lookup" and stage.get("status") == "not_found"
+        ))
         and stage.get("source") in {
             "notion", "mantis_id_lookup", "mantis_filter", "mantis_page_scan",
-            "mantis_snapshot", "chroma_db",
+            "mantis_snapshot", "mantis_sla", "chroma_db",
         }
         and stage.get("meta", {}).get("search_complete") is True
         and stage.get("meta", {}).get("coverage") not in {"saved_filter", "top_k", "snapshot_matches"}
@@ -143,11 +171,17 @@ def build_verification_report(
         }
     )
 
-    answer_ids = {int(value) for value in re.findall(r"#?0*(\d{5,6})\b", content or "")}
+    # 날짜 소수부·전체 저장본 건수를 ID로 오인하지 않는다.
+    answer_ids = {int(value) for value in re.findall(r"(?:#|이슈\s*(?:ID\s*[:：]?\s*)?)0*(\d{3,7})\b", content or "", re.IGNORECASE)}
     source_ids = {int(source["issue_id"]) for source in sources if source.get("issue_id")}
     similar_base_issue_ids = set(similar_base_issue_ids_from_retrieval(retrieval_result or {}))
     unsupported_ids = sorted(answer_ids - source_ids)
     unsupported_ids = [issue_id for issue_id in unsupported_ids if issue_id not in similar_base_issue_ids]
+    if completed_empty_search and not sources:
+        # 조회 실패 안내에서 사용자가 요청한 ID를 반복하는 것은 사실 생성이 아니다.
+        requested_ids = set(extract_query_constraints(question).get("issue_ids") or [])
+        if re.search(r"찾지 못|없습니다|없어요", content or ""):
+            unsupported_ids = [issue_id for issue_id in unsupported_ids if issue_id not in requested_ids]
     retrieval_checks.append(
         {
             "id": "issue_ids",
@@ -164,6 +198,18 @@ def build_verification_report(
     matched_sources = []
     definite_mismatches = 0
     notion_constraints = extract_notion_constraints(str((retrieval_result or {}).get("query") or question))
+    expected_people = extract_query_constraints(str((retrieval_result or {}).get("query") or question)).get("people", {}).get("names") or []
+    for stage in (retrieval_result or {}).get("stages", []):
+        if stage.get("source") != "notion":
+            continue
+        actual = stage.get("meta", {}).get("constraints", {})
+        if expected_people and actual.get("owner"):
+            matched_owner = normalize_for_match(str(actual["owner"])) in {normalize_for_match(name) for name in expected_people}
+            retrieval_checks.append({
+                "id": "notion_owner_intent", "label": "Notion 담당자 조건",
+                "status": "pass" if matched_owner else "fail",
+                "detail": f"요청 담당자 {', '.join(expected_people)} · 실행 담당자 {actual['owner']}",
+            })
     for source in sources:
         if source.get("type") == "notion":
             matched = notion_page_matches_constraints(
@@ -178,7 +224,7 @@ def build_verification_report(
         source_text = json.dumps(source, ensure_ascii=False, default=str)
         source_issue_id = source.get("issue_id")
         matches = text_matches_constraints(source_text, match_constraints)
-        matches = matches and text_matches_status(source_text, match_constraints.get("statuses", []))
+        matches = matches and text_matches_status(source_status(source), match_constraints.get("statuses", []))
         matches = matches and text_matches_screen_numbers(source_text, match_constraints.get("screen_numbers", []))
         matches = matches and text_matches_people(source_text, match_constraints.get("people", {}))
         matches = matches and plan_created_at_matches(
@@ -204,6 +250,7 @@ def build_verification_report(
     ungrounded = ungrounded_constraint_labels(
         str((retrieval_result or {}).get("query") or question),
         constraints,
+        str(query_plan.get("source") or ""),
     )
     retrieval_checks.append(
         {

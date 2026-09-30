@@ -491,6 +491,7 @@ class TeamQuestionSearchTests(unittest.TestCase):
                 })
             with (
                 self.subTest(question=question),
+                patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
                 patch.object(search, "load_known_people", return_value=(("김지은",) if not question.startswith("담당자") else (), ())),
                 patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
                 patch.object(search, "fetch_notion_database_title", return_value="업무"),
@@ -585,6 +586,7 @@ class TeamQuestionSearchTests(unittest.TestCase):
             }
             responses.append(response)
         with (
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
             patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
             patch.object(search, "fetch_notion_database_title", return_value="업무"),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
@@ -621,6 +623,7 @@ class TeamQuestionSearchTests(unittest.TestCase):
             responses.append(response)
         status_filter = {"property": "상태", "status": {"equals": "시작전"}}
         with (
+            patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
             patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
             patch.object(search, "fetch_notion_database_title", return_value="업무"),
             patch.object(search, "notion_database_status_filter", return_value=(True, status_filter)),

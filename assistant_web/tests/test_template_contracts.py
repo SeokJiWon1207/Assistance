@@ -15,6 +15,7 @@ from backend.intent.source_router import rule_based_search_intent
 from backend.reports import customer, incident_triage, monthly_customer, similar, sla, weekly_customer
 from backend.services.chat_service import build_deterministic_report
 from backend.sources.mantis import normalize_issue
+from backend.sources.mantis_collection import IssueBatch
 from backend.team_templates import load_team_templates
 from backend.understanding import build_keyword_terms, extract_query_constraints
 
@@ -87,6 +88,7 @@ class TemplateContractTests(unittest.TestCase):
             "similar-issues": "deterministic_similar_resolution",
         }
         with ExitStack() as stack:
+            stack.enter_context(patch.object(sla, "read_complete_store", return_value=IssueBatch(raw, {"search_complete": True})))
             stack.enter_context(patch("backend.query_planning.date", FixedDate))
             for module in (customer, monthly_customer, sla, weekly_customer):
                 stack.enter_context(patch.object(module, "fetch_mantis_recent_issues", return_value=raw))

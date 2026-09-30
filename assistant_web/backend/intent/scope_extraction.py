@@ -90,6 +90,14 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
     if hana_count_expression:
         customer_matches = [item for item in customer_matches if normalize_for_match(item[1]) != "하나"]
 
+    # 긴 제외 별칭 안의 짧은 별칭(NH증권/NH)을 포함 조건으로 되살리지 않는다.
+    excluded_aliases = {
+        normalize_for_match(alias)
+        for _, _, group in excluded_matches for alias in group
+    }
+    customer_matches = [
+        item for item in customer_matches if normalize_for_match(item[1]) not in excluded_aliases
+    ]
     customer_key = None
     customer_aliases: List[str] = []
     customer_exact = None
@@ -169,18 +177,19 @@ def extract_people_scope(text: str, customer_scope: Dict[str, Any]) -> Dict[str,
     )
     customer_aliases = customer_scope["customer_aliases"]
     if people.get("names") and customer_aliases:
+        customer_alias_norms = {normalize_for_match(alias) for alias in customer_aliases}
+        overlapping_names = [name for name in people.get("names") or [] if normalize_for_match(name) in customer_alias_norms]
         explicit_handler = bool(re.search(r"(?:담당자|담당)\s*[:=]?\s*", text, re.IGNORECASE))
-        if explicit_handler and people.get("role") == "handler":
+        if overlapping_names and explicit_handler and people.get("role") == "handler":
             customer_scope.update(
                 customer_key=None,
                 customer_aliases=[],
                 customer_exact=None,
             )
         else:
-            customer_alias_norms = {normalize_for_match(alias) for alias in customer_aliases}
             people = drop_people(
                 people,
-                [name for name in people.get("names") or [] if normalize_for_match(name) in customer_alias_norms],
+                overlapping_names,
             )
     return {"people": people, "unassigned_people": unassigned_people}
 

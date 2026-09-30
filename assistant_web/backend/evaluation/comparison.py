@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from backend.answers import answer_style_instruction
 from backend.common import clamp_int, normalize_for_match
+from backend.mantis_status import source_status
 from backend.llm import (
     build_generation_options,
     extract_model_content,
@@ -103,7 +104,7 @@ def evaluate_ab_variant(
             continue
         source_text = json.dumps(source, ensure_ascii=False, default=str)
         matched = text_matches_constraints(source_text, constraints)
-        matched = matched and text_matches_status(source_text, constraints.get("statuses", []))
+        matched = matched and text_matches_status(source_status(source), constraints.get("statuses", []))
         matched = matched and text_matches_screen_numbers(source_text, constraints.get("screen_numbers", []))
         matched = matched and text_matches_people(source_text, constraints.get("people", {}))
         if constraints.get("issue_ids"):
@@ -363,6 +364,7 @@ def should_attach_ab_test(request: ChatRequest, retrieval_result: Any, mode: str
     if not request.abTest or retrieval_result is None:
         return False
     return not mode.startswith("notion_write") and mode not in {
+        "status_clarification",
         "notion_create",
         "notion_update",
         "notion_create_missing_title",

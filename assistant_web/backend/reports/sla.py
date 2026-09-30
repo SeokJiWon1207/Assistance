@@ -16,15 +16,19 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.query_planning import extract_group_by
+from backend.query_planning import extract_group_by, build_query_plan
+from backend.mantis_status import mantis_status_bucket
 from backend.reports.effort import parse_effort_field_value
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
     issue_matches_constraints,
+    select_mantis_rows,
     normalize_issue,
 )
-from backend.understanding import extract_query_constraints
+from backend.understanding import extract_query_constraints, extract_requested_limit
+from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis_collection import collection_metadata
 
 
 # 처리시간을 묻는 질문. 완료(리드타임)와 적체(경과일)를 구분해 잡는다.
@@ -58,8 +62,7 @@ DIAGNOSTIC_CONSTRAINTS = (
 
 
 def _is_closed(status_label: str) -> bool:
-    label = str(status_label or "")
-    return "종료" in label or "closed" in label.casefold()
+    return mantis_status_bucket(status_label) == "done"
 
 
 def _parse_date(value: str) -> Optional[date]:
@@ -119,8 +122,7 @@ def _match_issues(
 ) -> List[Dict[str, Any]]:
     return [
         normalize_issue(issue)
-        for issue in raw_issues
-        if issue_matches_constraints(issue, constraints)
+        for issue in select_mantis_rows(raw_issues, constraints, matcher=issue_matches_constraints)
     ]
 
 
@@ -140,10 +142,11 @@ def _constraint_is_active(constraints: Dict[str, Any], keys: Tuple[str, ...]) ->
 def _no_match_reason(
     raw_issues: List[Dict[str, Any]],
     constraints: Dict[str, Any],
+    scope: str = "최근 라이브",
 ) -> str:
     """0건일 때 조건을 하나씩 빼보고 어느 조건이 결과를 비웠는지 알려준다."""
     lines = [
-        f"최근 라이브 {len(raw_issues)}건에서 질문의 조건을 모두 만족하는 이슈를 찾지 못했습니다.",
+        f"{scope} {len(raw_issues)}건에서 질문의 조건을 모두 만족하는 이슈를 찾지 못했습니다.",
     ]
     hints = []
     for label, keys in DIAGNOSTIC_CONSTRAINTS:
@@ -212,13 +215,27 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
         if period_constraints.get("created_at"):
             constraints = period_constraints
     match_constraints = constraints
+    coverage: Dict[str, Any] = {}
     try:
-        raw_issues = fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
+        # 매체 미입력 이슈의 본문 폴백까지 목록·집계와 같은 원본으로 판정한다.
+        stored = read_complete_store() if mode == "aging" else None
+        raw_issues = stored if stored is not None else fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
+        coverage = collection_metadata(raw_issues)
     except Exception as exc:  # 네트워크/설정 오류는 조용히 흘리지 않고 사유를 남긴다.
         return _unavailable(text, constraints, f"Mantis 라이브 조회 실패: {exc}")
 
+    if mode == "aging" and not coverage.get("search_complete"):
+        return _unavailable(text, constraints, "전체 조회가 완료되지 않아 장기 이슈의 총건수와 오래된 순위를 확정할 수 없습니다. 저장본 동기화 후 다시 요청해 주세요.")
+
     issues = _match_issues(raw_issues, match_constraints)
     if not issues:
+        if mode == "aging":
+            result = _finalize(text, match_constraints, [
+                "조건에 맞는 이슈가 없습니다.", "",
+                _no_match_reason(raw_issues, match_constraints, "전체 조회"),
+            ], [], mode)
+            result["retrieval"]["stages"][0]["meta"].update({**coverage, "found_count": 0, "coverage": "complete"})
+            return result
         # 조회 자체는 성공했으므로 '도구 사용 불가'가 아니라 '조건에 맞는 건이 없음'이다.
         return _sla_failure(
             text,
@@ -239,6 +256,7 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
         issues,
         axis,
         threshold_days,
+        coverage,
     )
 
 
@@ -358,11 +376,12 @@ def _build_aging_report(
     issues: List[Dict[str, Any]],
     axis: Optional[Tuple[str, Any, str]],
     threshold_days: int,
+    coverage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     today = date.today()
     rows: List[Dict[str, Any]] = []
     for issue in issues:
-        if _is_closed(str(issue.get("status") or "")):
+        if mantis_status_bucket(str(issue.get("status") or "")) != "open":
             continue
         created = _parse_date(str(issue.get("created_at") or ""))
         if not created:
@@ -373,13 +392,15 @@ def _build_aging_report(
         rows.append({**issue, "age_days": age})
 
     over_threshold = [row for row in rows if row["age_days"] >= threshold_days]
-    scope = f"최근 라이브 {len(issues)}건 중 미종료 이슈 {len(rows)}건"
+    scope = f"전체 조회 후 조건에 맞는 {len(issues)}건 중 미종료 이슈 {len(rows)}건"
     lines = [
         f"장기 미종료(적체) 분석 — {threshold_days}일 이상 경과",
         f"기준: {scope} (기준일 {today.isoformat()})",
         "",
         f"- {threshold_days}일 이상 경과한 미종료 이슈: **{len(over_threshold)}건**",
     ]
+    if (coverage or {}).get("fetchedAt"):
+        lines.insert(2, f"저장본 수집 시각: {(coverage or {})['fetchedAt']}")
     if rows:
         ages = [row["age_days"] for row in rows]
         lines.append(f"- 미종료 이슈 평균 경과일: **{sum(ages) / len(ages):.1f}일** (최장 {max(ages)}일)")
@@ -396,9 +417,10 @@ def _build_aging_report(
             lines.append(f"- {name} — {count}건")
 
     over_threshold.sort(key=lambda row: row["age_days"], reverse=True)
+    display_limit = extract_requested_limit(text) or SLA_TOP_N
     if over_threshold:
         lines.extend(["", "가장 오래 방치된 미종료 이슈"])
-        for row in over_threshold[:SLA_TOP_N]:
+        for row in over_threshold[:display_limit]:
             lines.append(
                 f"- #{row['id']} {row['summary']} — {row['age_days']}일 경과 "
                 f"({row['project']} · 등록 {row['created_at']})"
@@ -408,7 +430,11 @@ def _build_aging_report(
     created_at = constraints.get("created_at") or {}
     if created_at:
         lines.extend(["", f"등록일 조건: {created_at.get('from') or '시작 제한 없음'} ~ {created_at.get('to') or '종료 제한 없음'}"])
-    return _finalize(text, constraints, lines, over_threshold[:SLA_TOP_N], "aging")
+    result = _finalize(text, constraints, lines, over_threshold[:display_limit], "aging")
+    result["retrieval"]["stages"][0]["meta"].update({
+        **(coverage or {}), "found_count": len(over_threshold), "coverage": "complete",
+    })
+    return result
 
 
 def _finalize(
@@ -419,9 +445,13 @@ def _finalize(
     mode: str,
 ) -> Dict[str, Any]:
     sources = build_sources_from_issue_rows(example_rows) if example_rows else []
+    plan = build_query_plan(text, {"source": "mantis"}, constraints)
+    # 적체 기간의 열린 시작일도 실제 실행한 조건 그대로 감사에 전달한다.
+    plan["filters"]["created_at"] = constraints.get("created_at")
     retrieval = {
         "query": text,
         "constraints": constraints,
+        "query_plan": plan,
         "stages": [{
             "source": "mantis_sla",
             "status": "ok",

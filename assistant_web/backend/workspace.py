@@ -288,15 +288,8 @@ def _parse_date(value: Any) -> Optional[date]:
 
 
 def _is_open(status: str) -> bool:
-    normalized = normalize_for_match(str(status or ""))
-    if not normalized:
-        return False
-    # 업무 단계상 개발완료는 후속 확인이 남은 미종료 상태지만, 해결과 종료는
-    # 최종 상태이므로 개인·팀 업무 건수에서 제외한다.
-    return not any(
-        marker in normalized
-        for marker in ("resolved", "해결된이슈", "해결및종료", "closed", "종료된이슈", "종료")
-    )
+    from backend.mantis_status import mantis_status_bucket
+    return mantis_status_bucket(status) == "open"
 
 
 def _is_notion_closed(status: str) -> bool:

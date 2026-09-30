@@ -113,6 +113,7 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
     work_subject = "미상"
     effort_fields: Dict[str, str] = {}
     date_fields: Dict[str, str] = {}
+    resolution_fields: Dict[str, str] = {}
     for custom_field in issue.get("custom_fields", []):
         field_name = custom_field.get("field", {}).get("name")
         field_value = custom_field.get("value", "")
@@ -126,6 +127,8 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
             date_fields[str(field_name)] = format_mantis_custom_date(field_value)
         elif field_name and "공수" in field_name:
             effort_fields[str(field_name)] = str(field_value)
+        elif field_name in {"사유 및 원인", "조치 및 개선"}:
+            resolution_fields[str(field_name)] = str(field_value or "")
     if screen_number == "미상":
         title_screen = re.match(r"^\s*\[\s*(\d{3,5})\s*\]", str(issue.get("summary") or ""))
         if title_screen:
@@ -165,6 +168,7 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
         "work_subject": work_subject,
         "effort_fields": effort_fields,
         "date_fields": date_fields,
+        "resolution_fields": resolution_fields,
         "reporter": (issue.get("reporter") or {}).get("real_name", "미상"),
         "handler": (issue.get("handler") or {}).get("real_name", "담당자 미지정"),
         "created_at": str(issue.get("created_at", ""))[:10],
@@ -502,6 +506,12 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         "title": str(issue.get("summary", "")), "keyword": combined_text,
         "owner": handler_text, "reporter": reporter_text,
     }, constraints.get("filter_clauses") or [])
+
+
+def select_mantis_rows(rows, constraints, *, matcher=None):
+    """목록·집계·보고서가 공유하는 원본 조건 검사."""
+    match = matcher or issue_matches_constraints
+    return [row for row in rows if match(row, constraints or {})]
 
 
 def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

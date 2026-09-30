@@ -8,10 +8,15 @@ from datetime import date, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.reports import similar, sla
+from backend.sources.mantis_collection import IssueBatch
+from unittest.mock import patch
 
 
 class SlaReportTest(unittest.TestCase):
     def setUp(self):
+        store = patch.object(sla, "read_complete_store", return_value=None)
+        store.start()
+        self.addCleanup(store.stop)
         self._originals = {
             "fetch": sla.fetch_mantis_recent_issues,
             "normalize": sla.normalize_issue,
@@ -32,7 +37,7 @@ class SlaReportTest(unittest.TestCase):
         sla.build_sources_from_issue_rows = self._originals["sources"]
 
     def _set_issues(self, issues):
-        sla.fetch_mantis_recent_issues = lambda **kwargs: issues
+        sla.fetch_mantis_recent_issues = lambda **kwargs: IssueBatch(issues, {"search_complete": True})
 
     def test_mode_detection_distinguishes_duration_and_aging(self):
         self.assertEqual(sla._sla_mode("평균 처리시간 며칠 걸려?"), "duration")

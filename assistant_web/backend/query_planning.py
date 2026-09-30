@@ -48,11 +48,14 @@ def infer_operation(question: str) -> str:
         return "aggregate"
     if any(marker in normalized for marker in COUNT_MARKERS):
         return "count"
-    if re.search(r"(?:이슈\s*)?#?0*\d{5,7}\b", question, re.IGNORECASE) and any(
+    if extract_group_by(question) and "집계" in normalized:
+        return "count"
+    issue_reference = re.search(r"(?<!\d)(?:이슈\s*)?#?0*\d{5,7}(?!\d)(?:\b|(?=[의은는을를과와]))", question, re.IGNORECASE)
+    if issue_reference and any(
         marker in normalized for marker in SIMILAR_MARKERS
     ):
         return "search"
-    if re.search(r"(?:이슈\s*)?#?0*\d{5,7}\b", question, re.IGNORECASE):
+    if issue_reference:
         return "get"
     return "search"
 
@@ -505,9 +508,11 @@ def build_query_plan(
             # 두 범위가 함께 남으면 교집합만 검색해 정상 항목을 조용히 누락한다.
             # 질문에 시점 표현이 없거나 월 표현이 잘못된 경우도 모델 날짜를 버린다.
             continue
-        if clause["field"] == "status" and not question_mentions_status:
+        if clause["field"] == "status" and (not question_mentions_status or source in {"mantis", "both"}):
             # 질문에 상태 표현이 없는데 모델이 "종료 제외" 같은 필터를 붙이면
             # 사용자가 요청한 개수보다 훨씬 적은 결과가 조용히 나간다.
+            # Mantis 상태는 규칙이 확정한다. 개발완료에 모델의 resolved를
+            # 겹쳐 붙여 교집합이 0건이 되는 경우도 차단한다.
             continue
         if _clause_contradicts_filters(clause, filters):
             # 규칙이 이미 조건으로 잡은 값을 모델이 다시 제외하면(예: 플랫폼=MTS인데
@@ -539,10 +544,24 @@ def build_query_plan(
             "between",
             [temporal_date_range["from"], temporal_date_range["to"]],
         )
+    if source == "notion":
+        from backend.notion.search import extract_notion_constraints
+        native = extract_notion_constraints(question)
+        if native.get("status") or native.get("excluded_statuses"):
+            filters["statuses"] = [native["status"]] if native.get("status") else []
+            filter_clauses = [clause for clause in filter_clauses if clause["field"] != "status"]
+            for operator, values in (("in", filters["statuses"]), ("not_in", native.get("excluded_statuses") or [])):
+                if values:
+                    add_filter_clause(filter_clauses, "status", operator, values)
     terms = model_plan.get("terms") or source_plan.get("terms") or []
+    resolution = constraints.get("status_resolution") or {}
+    if resolution.get("status_intent") == "open" and resolution.get("evidence"):
+        evidence = re.sub(r"\s+", "", resolution["evidence"]).casefold()
+        terms = [term for term in terms if re.sub(r"\s+", "", str(term)).casefold() not in evidence]
     return {
         "version": 2,
         "grounding_text": question,
+        "status_resolution": constraints.get("status_resolution"),
         "operation": operation,
         "source": source,
         "filters": filters,
@@ -614,6 +633,28 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         "detail": f"소스={source or '미상'}",
     })
     clauses = normalize_filter_clauses(plan.get("filter_clauses") or [])
+    if source in {"mantis", "both"}:
+        from backend.intent.entities import extract_status_constraints
+        expected_statuses = set(extract_status_constraints(question))
+        from backend.intent.status_semantics import ALL_STATUSES, resolution_is_grounded
+        if ALL_STATUSES.search(question) and not expected_statuses - {"open", "closed"}:
+            expected_statuses = set()
+        resolution = plan.get("status_resolution") or {}
+        if not expected_statuses and resolution_is_grounded(resolution):
+            expected_statuses = {"open"}
+        if expected_statuses:
+            planned_statuses = set(filters.get("statuses") or [])
+            clause_statuses: set[str] = set()
+            for clause in clauses:
+                if clause["field"] == "status" and clause["operator"] in {"equals", "in"}:
+                    values = clause["value"] if isinstance(clause["value"], list) else [clause["value"]]
+                    clause_statuses.update(str(value) for value in values)
+            status_passed = expected_statuses == planned_statuses == clause_statuses
+            checks.append({
+                "id": "status_intent", "label": "상태 조건 해석",
+                "status": "pass" if status_passed else "fail",
+                "detail": f"요청={','.join(sorted(expected_statuses))} · 계획={','.join(sorted(planned_statuses)) or '없음'}",
+            })
     raw_clauses = plan.get("filter_clauses") or []
     schema_passed = len(clauses) == len(raw_clauses) if isinstance(raw_clauses, list) else False
     checks.append({

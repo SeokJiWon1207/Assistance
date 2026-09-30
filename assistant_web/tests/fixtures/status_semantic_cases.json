@@ -1,0 +1,9 @@
+[
+  {"question":"NH MTS 아직 손봐야 할 이슈 몇 건이야?","intent":"open","evidence":"아직 손봐야 할 이슈","clarify":false},
+  {"question":"NH MTS 마무리 못 한 것만 보여줘","intent":"open","evidence":"마무리 못 한 것","clarify":false},
+  {"question":"KB 수습할 일이 있는 이슈 오래된 순으로 5건 보여줘","intent":"open","evidence":"수습할 일이 있는 이슈","clarify":false},
+  {"question":"NH MTS 챙겨야 하는 것은?","intent":null,"evidence":"챙겨야 하는 것","clarify":true},
+  {"question":"NH MTS 남은 공수 알려줘","intent":null,"evidence":"","clarify":false},
+  {"question":"NH MTS 이번 달 남은 배포 일정 보여줘","intent":null,"evidence":"","clarify":false},
+  {"question":"NH MTS 전체 이슈 몇 건이야?","intent":null,"evidence":"","clarify":false}
+]

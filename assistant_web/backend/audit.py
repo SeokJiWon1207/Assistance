@@ -200,3 +200,21 @@ def load_audit_sources(audit_id: str, user_uid: str = "") -> List[Dict[str, Any]
         return []
     sources = payload.get("sources")
     return sources if isinstance(sources, list) else []
+
+
+def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str) -> Dict[str, Any]:
+    """동일 사용자·직전 질문에 묶인 확정 계획만 상속한다."""
+    if not user_uid or not expected_question or not re.fullmatch(r"[0-9a-f]{32}", audit_id or ""):
+        return {}
+    try:
+        init_audit_db()
+        with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection:
+            row = connection.execute(
+                "SELECT payload FROM validation_logs WHERE id = ? AND user_uid = ? AND question = ?",
+                (audit_id, user_uid, expected_question),
+            ).fetchone()
+        payload = json.loads(row[0]) if row else {}
+        plan = payload.get("queryPlan")
+        return plan if isinstance(plan, dict) else {}
+    except (sqlite3.Error, ValueError, TypeError):
+        return {}

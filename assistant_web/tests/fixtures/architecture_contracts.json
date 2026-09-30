@@ -26,7 +26,7 @@
       "source": "notion",
       "operation": "search",
       "filters": {
-        "statuses": ["closed"]
+        "statuses": ["완료"]
       }
     }
   ],

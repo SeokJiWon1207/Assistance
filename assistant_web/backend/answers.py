@@ -197,6 +197,10 @@ def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any
     if not has_constraint(constraints) and not group_by:
         return False
     normalized_text = normalize_for_match(text)
+    if constraints.get("issue_ids") and any(
+        field in normalized_text for field in ("사유및원인", "조치및개선")
+    ):
+        return True
     # 그룹별 요약은 전체 후보의 건수를 기준으로 계산해야 한다. 모델에 상위 몇 건만
     # 넘기면 고객사별 건수가 틀릴 수 있으므로 결정형 포맷을 우선한다.
     if any(
@@ -619,6 +623,9 @@ def format_deterministic_issue_answer(
             )
             if wants_issue_history_detail(query_text):
                 lines.extend(format_issue_history_sections(detail))
+            if any(field in normalize_for_match(query_text) for field in ("사유및원인", "조치및개선")):
+                for field in ("사유 및 원인", "조치 및 개선"):
+                    lines.extend(["", f"**{field}**", (detail.get("resolution_fields") or {}).get(field) or "원문에 등록되지 않았습니다."])
         return "\n".join(lines)
 
     lines = [
