@@ -205,7 +205,7 @@ def scan_mantis_documents(
     and ``primary`` returns the structured result when it is healthy.
     """
     from backend.config import CHROMA_DB_PATH
-    from backend.sources.mantis_store import read_complete_store, render_document
+    from backend.sources.mantis_store import read_complete_store, read_store_metadata, render_document
     stored = read_complete_store() if database_path == CHROMA_DB_PATH else None
     if stored is not None:
         selected = stored[:scan_limit] if scan_limit else stored
@@ -217,6 +217,12 @@ def scan_mantis_documents(
         # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.
         result["search_complete"] = not scan_limit or len(stored) <= scan_limit
         return result
+    if database_path == CHROMA_DB_PATH and (constraints or {}).get("mantis_team_members"):
+        metadata = read_store_metadata(allow_stale=True)
+        if metadata and not metadata["search_complete"]:
+            # 팀 대시보드가 폐기한 만료 세대를 더 오래된 Chroma로 대체하지 않는다.
+            return {**_empty_result("Mantis 전체 저장본의 갱신이 지연되었습니다. 새로고침 후 다시 조회해 주세요."),
+                    **metadata}
     mode = os.getenv("MANTIS_INDEX_MODE", "shadow").strip().lower()
     if mode not in VALID_INDEX_MODES:
         LOGGER.warning("알 수 없는 MANTIS_INDEX_MODE=%s; shadow로 처리합니다.", mode)

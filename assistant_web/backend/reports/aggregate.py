@@ -544,6 +544,7 @@ def build_mantis_count_report(
     total_count = int(snapshot["matched_count"])
     scan_complete = not explicit_snapshot
     merged_live = False
+    merged_from_store = False
     live_error = ""
     live_error_kind = ""
     live_scanned_pages = 0
@@ -557,6 +558,7 @@ def build_mantis_count_report(
         if window_match:
             window_pages = max(1, min((int(window_match.group(1)) + 99) // 100, 30))
         live_result = collect_mantis_live_ids_in_range(constraints, max_pages=window_pages, scan_limit=snapshot_limit)
+        merged_from_store = bool(live_result.get("fetchedAt"))
         live_map = live_result.get("issues") or {}
         live_scanned_pages = int(live_result.get("scanned_pages") or 0)
         if live_result.get("status") == "ok":
@@ -605,14 +607,19 @@ def build_mantis_count_report(
             live_error = str(live_result.get("reason") or "Mantis live count query failed")
             live_error_kind = str(live_result.get("error_kind") or "dependency")
     criteria = format_issue_list_criteria(constraints, normalized_issues)
-    if merged_live and explicit_snapshot:
+    if merged_live and merged_from_store:
+        scope = f"Mantis 전체 저장본 중 최신 {snapshot_limit}건 기준" if explicit_snapshot else f"Mantis 전체 저장본 {snapshot['scanned_count']}건 기준"
+    elif merged_live and explicit_snapshot:
         scope = f"Mantis 실시간 최신 {snapshot_limit}건 기준"
     elif merged_live:
         scope = "Mantis 스냅샷 + 실시간 병합 기준"
     elif explicit_snapshot:
         scope = f"최신 {snapshot_limit}건 기준"
     else:
-        scope = f"Mantis 인덱스 전체 {snapshot['scanned_count']}건 기준"
+        source_label = "전체 저장본" if snapshot.get("fetchedAt") else "인덱스 전체"
+        scope = f"Mantis {source_label} {snapshot['scanned_count']}건 기준"
+    if snapshot.get("fetchedAt"):
+        scope += f", 저장본 수집 시각={snapshot['fetchedAt']}"
     if live_error:
         lines = [
             f"검색 기준: {criteria}, {scope}",
@@ -664,7 +671,8 @@ def build_mantis_count_report(
                     "total_count": total_count,
                     "displayed_count": len(representative_issues),
                     "applied_filters": constraints,
-                    "tool": "mantis_chroma_snapshot",
+                    "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",
+                    "fetchedAt": snapshot.get("fetchedAt"),
                 },
                 "issues_list": representative_issues,
             }
@@ -756,6 +764,8 @@ def format_issue_list_criteria(
     issues: List[Dict[str, Any]],
 ) -> str:
     criteria = []
+    if constraints.get("mantis_team_members"):
+        criteria.append(f"팀={constraints['mantis_team_label']} ({len(constraints['mantis_team_members'])}명)")
     if constraints.get("similar_base_issue_ids"):
         criteria.append(
             "기준 이슈="

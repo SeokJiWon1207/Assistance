@@ -53,13 +53,18 @@ from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
 from backend.query_planning import infer_operation
 from backend.intent.request_scope import AUTHENTICATED_OWNER
+from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase
 
 
 def extract_query_constraints(text: str) -> Dict[str, Any]:
     # "하이"는 하이투자증권의 현업 약칭이기도 하지만, 단독 입력은 인사로 취급한다.
     if is_simple_greeting(text):
         return empty_query_constraints()
-    constraints = extract_scope_constraints(text)
+    team_scope = has_mantis_team_scope(text)
+    constraints = extract_scope_constraints(remove_team_scope_phrase(text) if team_scope else text)
+    if team_scope:
+        constraints["mantis_team_members"] = list(TEAM_MEMBERS)
+        constraints["mantis_team_label"] = TEAM_SCOPE_LABEL
     owner = AUTHENTICATED_OWNER.get()
     if owner:
         constraints["people"] = {"names": [owner], "role": "handler", "name_origins": {owner: "known"}, "candidates": []}
@@ -86,7 +91,8 @@ def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:
 
 def has_constraint(constraints: Dict[str, Any]) -> bool:
     return bool(
-        constraints.get("customer_key")
+        constraints.get("mantis_team_members")
+        or constraints.get("customer_key")
         or constraints.get("platform_key")
         or constraints.get("excluded_customer_keys")
         or constraints.get("excluded_platform_keys")

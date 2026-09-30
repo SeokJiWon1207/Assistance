@@ -25,6 +25,7 @@ from backend.answers import (
     should_return_deterministic_issue_list,
 )
 from backend.intent.request_scope import AUTHENTICATED_OWNER, authenticated_owner_scope
+from backend.team_scope import has_mantis_team_scope
 from backend.admission import CHAT_ADMISSION
 from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status
 from backend.common import clamp_int
@@ -187,6 +188,8 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
     if any(marker in normalized for marker in ("notion", "노션", "노선")):
         return False
     constraints = extract_query_constraints(text)
+    if constraints.get("mantis_team_members"):
+        return False
     explicit_names = {
         str(name or "").strip().casefold()
         for name in constraints.get("people", {}).get("names") or []
@@ -569,6 +572,7 @@ def prepare_chat_pipeline(
         messages = messages[-history_limit:]
 
     retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
+    team_scope = has_mantis_team_scope(retrieval_text)
     resolved_reference = resolve_reference_from_context(
         latest_user_text,
         request.contextAuditId,
@@ -579,7 +583,7 @@ def prepare_chat_pipeline(
         needs_follow_up_rewrite = False
     else:
         notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
-        if notion_prefix:
+        if notion_prefix and not team_scope:
             retrieval_text = f"{notion_prefix} {latest_user_text}".strip()
             needs_follow_up_rewrite = False
 
@@ -593,6 +597,8 @@ def prepare_chat_pipeline(
             retrieval_text = rewritten
 
     retrieval_text = retrieval_text or latest_user_text
+    if team_scope and not has_mantis_team_scope(retrieval_text):
+        retrieval_text = f"우리 팀 {retrieval_text}"
     scope_text = retrieval_text
     if is_follow_up_question(latest_user_text):
         scope_text = " ".join(get_recent_user_texts(request.messages, limit=5))

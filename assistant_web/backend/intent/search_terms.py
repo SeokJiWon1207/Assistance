@@ -12,6 +12,7 @@ from backend.config import (
     STOPWORDS,
 )
 from backend.intent.entities import extract_mantis_keyword
+from backend.team_scope import remove_team_scope_phrase
 
 
 def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bool:
@@ -72,6 +73,8 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    if constraints and constraints.get("mantis_team_members"):
+        text = remove_team_scope_phrase(text)
     if TRIAGE_REQUEST_PATTERN.search(text) and (symptom := extract_quoted_value(text)):
         text = symptom
     text = re.sub(r"(?<![가-힣])(?:표|목록|리스트|요약)(?:로|으로)\s*(?=보여|정리|만들|작성|알려)", " ", text)
@@ -93,9 +96,9 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
         "플랫폼별", "플랫폼마다", "매체별", "매체마다", "매체구분별", "매체구분마다",
         "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
-        "방금", "아까", "해당", "위", "조건",
+        "방금", "아까", "해당", "위", "조건", "그중", "그",
         "아니", "그대로", "그대", "두고", "유지", "유지하고", "바꿔", "바꿔서", "변경",
-        "고객사는", "프로젝트는", "플랫폼은", "매체는", "상태만", "담당자만",
+        "고객사는", "프로젝트는", "플랫폼은", "매체는", "상태만", "담당자만", "담당만",
         "업무보고서", "업무보고서를", "주간보고서", "주간보고서를",
         "보고서", "보고서를", "작성", "작성해", "작성해줘", "작성해주세요",
         "요약해줘", "요약해주세요", "정리해줘", "정리해주세요", "비교해줘", "비교해주세요",

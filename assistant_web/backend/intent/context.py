@@ -22,6 +22,7 @@ from backend.intent.constraints import extract_query_constraints, has_targeting_
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_planning import extract_created_at_range
 from backend.schemas import ChatMessage
+from backend.team_scope import has_mantis_team_scope
 
 
 Dependency = TypeVar("Dependency", bound=Callable[..., Any])
@@ -212,6 +213,14 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
         return latest, False
 
     inherited: List[str] = []
+    # 팀 범위는 연속 후속 질문에만 상속한다. 중간의 독립 질문을 넘어가지 않는다.
+    if not has_mantis_team_scope(latest) and not re.search(r"전사|전체\s*(?:팀|회사)|팀\s*(?:제한|범위).*해제|노션|notion", latest, re.IGNORECASE):
+        for prior in recent[1:]:
+            if has_mantis_team_scope(prior):
+                inherited.append("우리 팀")
+                break
+            if not is_follow_up_question(prior):
+                break
     # 제외 표현은 바로 뒤 단어를 제외 대상으로 삼으므로 항상 맨 뒤에 모아 붙인다.
     # "mts 제외 유진"처럼 앞에 오면 상속한 고객사가 제외 대상으로 뒤집힌다.
     excluded: List[str] = []

@@ -79,6 +79,25 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.assertFalse(collection_metadata(partial)['search_complete'])
         self.assertTrue(collection_metadata(full)['search_complete'])
 
+    def test_expired_team_count_does_not_fall_back_to_old_chroma(self):
+        from backend.reports.aggregate import build_mantis_count_report
+        self.sync([{'id': 77, 'handler': {'real_name': '석지원'}, 'status': {'name': 'assigned'}, 'created_at': '2026-09-10'}])
+        with patch.object(mantis_store, 'MAX_AGE_SECONDS', -1), \
+             patch('backend.tools.mantis_snapshot._scan_chroma_documents') as legacy:
+            response = build_mantis_count_report('우리 팀 미종료 이슈 몇 건이야', {'operation': 'count', 'source': 'mantis'})
+        legacy.assert_not_called()
+        self.assertIn('갱신이 지연', response['content'])
+        self.assertEqual(response['retrieval']['stages'][0]['status'], 'error')
+
+        # 새 세대에서는 동일 명단으로 정상 집계한다.
+        response = build_mantis_count_report('우리 팀 미종료 이슈 몇 건이야', {'operation': 'count', 'source': 'mantis'})
+        self.assertIn('총 1건', response['content'])
+        self.assertEqual(response['retrieval']['stages'][0]['meta']['tool'], 'mantis_complete_snapshot')
+        dated = build_mantis_count_report('우리 팀 2026년 9월 등록된 미종료 이슈 몇 건이야', {'operation': 'count', 'source': 'mantis'})
+        self.assertIn('총 1건', dated['content'])
+        self.assertIn('전체 저장본', dated['content'])
+        self.assertNotIn('실시간 병합', dated['content'])
+
     def test_structured_search_uses_same_new_generation(self):
         from backend.config import CHROMA_DB_PATH
         from backend.common import normalize_chroma_issue_document

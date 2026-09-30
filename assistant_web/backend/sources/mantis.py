@@ -427,6 +427,10 @@ def issue_matches_screen_numbers(issue: Dict[str, Any], screen_numbers: List[str
 
 
 def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
+    from backend.team_scope import matches_team_constraint
+
+    if not matches_team_constraint(str((issue.get("handler") or {}).get("real_name") or ""), constraints):
+        return False
     if issue.get("id") in constraints.get("exclude_issue_ids", []):
         return False
     max_issue_id = constraints.get("max_issue_id_exclusive")
@@ -804,7 +808,8 @@ def revalidate_mantis_snapshot_stage(
     live API is unavailable so existing offline fallback behavior is preserved.
     """
     mutable_filter = bool(
-        (constraints.get("people") or {}).get("names")
+        constraints.get("mantis_team_members")
+        or (constraints.get("people") or {}).get("names")
         or constraints.get("statuses")
         or constraints.get("excluded_statuses")
         or constraints.get("platform_key")

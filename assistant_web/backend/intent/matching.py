@@ -137,6 +137,10 @@ def text_matches_people(text: str, people: Dict[str, Any], role_text: str = "") 
 
 
 def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
+    from backend.team_scope import matches_team_constraint
+
+    if not matches_team_constraint(extract_chroma_field(text, "담당자"), constraints):
+        return False
     issue_id = extract_issue_id_from_text(text)
     if issue_id in constraints.get("exclude_issue_ids", []):
         return False
