@@ -86,7 +86,7 @@ function buildOption(trend, metric, palette) {
             </div>`;
           })
           .join("");
-        return `<div style="font-weight:800;margin-bottom:6px">${header}</div>${rows}`;
+        return `<div style="font-weight:700;margin-bottom:6px">${header}</div>${rows}`;
       },
     },
     legend: {

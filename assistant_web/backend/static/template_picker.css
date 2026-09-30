@@ -19,7 +19,7 @@
   color: var(--text-soft);
   font: inherit;
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
   box-shadow: var(--shadow);
 }
@@ -231,7 +231,7 @@ body.theme-dark .template-picker {
   color: var(--blue);
   font: inherit;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .template-picker-option.is-active .template-picker-option-meta {
@@ -408,7 +408,7 @@ body.theme-dark .template-picker {
   border-color: var(--blue);
   background: var(--blue-soft);
   color: var(--blue);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .template-chip input:focus-visible + span {

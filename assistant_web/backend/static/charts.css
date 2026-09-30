@@ -22,7 +22,7 @@
 
 .effort-stat-card strong {
   font-size: 22px;
-  line-height: 1.1;
+  line-height: 31px;
   letter-spacing: 0;
 }
 
@@ -32,7 +32,7 @@
 
 .effort-stat-card span {
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.5;
 }
 
 .effort-chart .summary-section {
@@ -44,7 +44,7 @@
   margin: 0;
   color: var(--text-soft);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 @media (max-width: 560px) {
@@ -70,12 +70,12 @@
 
 .donut-chart-total {
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 700;
   fill: var(--text);
 }
 
 .donut-chart-total-label {
-  font-size: 8px;
+  font-size: 11px;
   fill: var(--muted);
 }
 
@@ -131,7 +131,7 @@
 
 .bar-chart-value-label {
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   fill: var(--text-soft);
   font-variant-numeric: tabular-nums;
 }
@@ -155,7 +155,7 @@
 }
 
 .bar-chart-tick-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   fill: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -212,7 +212,7 @@
 
 .chart-tooltip strong {
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -296,7 +296,7 @@
   background: transparent;
   color: var(--text-soft);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease;
 }

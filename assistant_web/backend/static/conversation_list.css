@@ -139,7 +139,7 @@
 
 .conversation-row.active .conversation-title {
   color: var(--text);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .conversation-snippet {

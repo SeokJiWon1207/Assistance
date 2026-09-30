@@ -1,3 +1,4 @@
+import re
 import shutil
 import subprocess
 import unittest
@@ -147,6 +148,19 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("dashboardState.customer", dashboard_js)
         self.assertIn("@media (max-width: 860px)", dashboard_css)
         self.assertIn("@media (max-width: 560px)", dashboard_css)
+
+    def test_stylesheets_use_tds_type_sizes_and_weights(self):
+        # TDS Typography 1~7과 sub Typography 1~13의 크기(11~30px), Light~Bold 굵기만 쓴다.
+        tds_sizes = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30}
+        tds_weights = {300, 400, 500, 600, 700}
+        for path in sorted(STATIC_DIR.glob("*.css")):
+            # @font-face의 굵기 범위는 글꼴 파일이 지원하는 범위라 화면 스타일 검사에서 뺀다.
+            text = re.sub(r"@font-face\s*\{[^}]*\}", "", path.read_text(encoding="utf-8"))
+            with self.subTest(stylesheet=path.name):
+                sizes = {float(value) for value in re.findall(r"font-size:\s*([0-9.]+)px", text)}
+                weights = {int(value) for value in re.findall(r"font-weight:\s*([0-9]+)", text)}
+                self.assertLessEqual(sizes, tds_sizes)
+                self.assertLessEqual(weights, tds_weights)
 
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
