@@ -22,5 +22,5 @@ cd ..
 assistant_web/.venv/bin/python scripts/make_vector_db.py --refresh-days 7
 
 cd assistant_web
-.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+.venv/bin/python tests/run_test_suite.py
 ```
