@@ -951,6 +951,7 @@ export {
   safeExternalUrl,
   workspaceMetric,
   workspaceEmpty,
+  workspaceStatusLabel,
   issueWorkspaceRow,
   renderPersonalOverview,
   renderWeeklyBrief,

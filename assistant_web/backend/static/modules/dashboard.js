@@ -1,7 +1,7 @@
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js?v=20260911-6";
+import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
@@ -54,6 +54,11 @@ function riskLabel(level) {
   return { high: "위험", attention: "주의", watch: "관찰" }[level] || "관찰";
 }
 
+function priorityLabel(value) {
+  const raw = String(value || "").trim();
+  return { none: "없음", low: "낮음", normal: "보통", high: "높음", urgent: "긴급", immediate: "즉시" }[raw.toLowerCase()] || raw || "미상";
+}
+
 function emptyBlock(message) {
   return `<div class="workspace-empty"><span aria-hidden="true">${icon("check", 20)}</span><p>${escapeHtml(message)}</p></div>`;
 }
@@ -74,18 +79,18 @@ function metricCard(key, label, value, helper, tone = "", delta = "") {
     </button>`;
 }
 
-function renderMetrics(summary) {
+function renderMetrics(summary, complete = true) {
   const rate = summary.changeRate;
   const delta = rate == null
-    ? '<em class="dashboard-delta">비교 기준 없음</em>'
-    : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">${rate > 0 ? icon("arrow-up", 14, "is-bold") : rate < 0 ? icon("arrow-down", 14, "is-bold") : "–"}${Math.abs(rate)}%</em>`;
+    ? '<em class="dashboard-delta">신규 증감 비교 기준 없음</em>'
+    : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">신규 ${rate > 0 ? "증가" : rate < 0 ? "감소" : "변동"} ${Math.abs(rate)}%</em>`;
   return `
     <section class="workspace-summary-grid dashboard-metrics" aria-label="핵심 운영 지표">
-      ${metricCard("open", "미종료 이슈", summary.open, `전체 보기 · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue", delta)}
+      ${metricCard("open", complete ? "미종료 이슈" : "확인된 미종료", summary.open, `${complete ? "전체 보기" : "전체 미확정"} · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue")}
       ${metricCard("overdue", "일정 지연", summary.overdue, "완료 예정일 경과", "is-danger")}
       ${metricCard("aging", "장기 미종료", summary.aging, "30일 이상 미종료", "is-warning")}
       ${metricCard("highRisk", "고위험", summary.highRisk, `우선순위 높음 ${formatNumber(summary.highPriority)}건`, "is-danger")}
-    </section>`;
+    </section><p class="dashboard-new-change">${delta} · 직전 동일 기간 대비 신규 이슈 기준</p>`;
 }
 
 function renderDecision(decision, periodDays) {
@@ -231,7 +236,7 @@ function renderPriorities(priorities, filtered) {
       <td><span class="dashboard-risk-badge is-${escapeHtml(issue.riskLevel)}">${riskLabel(issue.riskLevel)}</span></td>
       <td><strong class="dashboard-issue-title">#${escapeHtml(issue.id)} ${escapeHtml(issue.title)}</strong><small>${escapeHtml((issue.riskReasons || []).join(" · "))}</small></td>
       <td>${escapeHtml(issue.project || "-")}</td><td>${escapeHtml(issue.handler || "미지정")}</td>
-      <td>${issue.ageDays == null ? "-" : `${formatNumber(issue.ageDays)}일`}</td><td>${issue.overdue ? '<span class="danger-text">지연</span>' : escapeHtml(issue.status || "-")}</td>
+      <td>${issue.ageDays == null ? "-" : `${formatNumber(issue.ageDays)}일`}</td><td>${escapeHtml(workspaceStatusLabel(issue.status))}${issue.overdue ? ' · <span class="danger-text">지연</span>' : ""}</td>
     </tr>`).join("");
   return `
     <section class="workspace-section dashboard-priority-section${filtering ? " is-filtered" : ""}" tabindex="-1" aria-label="우선 확인 이슈">
@@ -285,9 +290,10 @@ function renderDashboard() {
     els.dashboardSource.className = "dashboard-source is-error";
     els.dashboardSource.querySelector("em").textContent = "실시간 연결 오류";
   }
-  const scopeLabel = data.meta.scope === "team" ? "팀 전체 기준" : "내 담당 업무 기준";
+  const complete = data.meta.search_complete === true;
+  const scopeLabel = complete ? (data.meta.scope === "team" ? "팀 전체 기준" : "내 담당 업무 기준") : "일부 조회 범위 · 전체 미확정";
   els.dashboardSubtitle.textContent = `${scopeLabel} · ${data.meta.periodFrom} ~ ${data.meta.periodTo}`;
-  const priorities = data.priorities || [];
+  const priorities = data.openIssues || data.priorities || [];
   const filtered = filteredPriorities(priorities);
   renderFilterbar(filtered.length);
   // 지표 카드와 고객사로 거른 결과가 누른 자리 바로 아래에서 바뀌도록 우선 확인 이슈를 지표 다음에 둔다.
@@ -295,8 +301,9 @@ function renderDashboard() {
     ${dashboardState.error
         ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시합니다.</strong></div>`
         : ""}
-    <div class="dashboard-welcome"><div><h3>팀 전체 업무 현황</h3><p>${escapeHtml(data.meta.periodFrom)}부터 ${escapeHtml(data.meta.periodTo)}까지, 직전 동일 기간과 비교합니다.</p></div><span class="dashboard-scope">${escapeHtml(scopeLabel)} · ${escapeHtml(roleLabels[data.user.role] || data.user.role)}</span></div>
-    ${renderMetrics(data.summary)}
+    ${!complete ? '<div class="dashboard-refresh-status is-error" role="status">전체 데이터를 확보하지 못했습니다. 아래 수치는 조회된 일부 이슈 기준이며 팀 전체 건수가 아닙니다.</div>' : ""}
+    <div class="dashboard-welcome"><div><h3>${complete ? "팀 전체 업무 현황" : "확인된 업무 현황"}</h3><p>${escapeHtml(data.meta.periodFrom)}부터 ${escapeHtml(data.meta.periodTo)}까지, 직전 동일 기간과 비교합니다.</p></div><span class="dashboard-scope">${escapeHtml(scopeLabel)} · ${escapeHtml(roleLabels[data.user.role] || data.user.role)}</span></div>
+    ${renderMetrics(data.summary, complete)}
     ${renderPriorities(priorities, filtered)}
     ${renderDecision(data.decisionSummary, data.meta.periodDays)}
     <div class="dashboard-grid">${renderTodos(data.todos || [])}${renderCustomerHealth(data.customerHealth || [], data.customerHealthSummary || {})}${renderSpikes(data.customerSpikes || [], data.screenSpikes || [])}</div>
@@ -465,7 +472,7 @@ function askFromDashboard(question) {
 }
 
 function issueById(id) {
-  const items = [...(dashboardState.data?.priorities || []), ...(dashboardState.data?.todos || [])];
+  const items = [...(dashboardState.data?.openIssues || dashboardState.data?.priorities || []), ...(dashboardState.data?.todos || [])];
   return items.find((item) => String(item.id) === String(id));
 }
 
@@ -479,7 +486,7 @@ function openIssueDetail(id) {
     <div class="dashboard-detail-meta">
       <div><span>고객사</span><strong>${escapeHtml(issue.project || "-")}</strong></div>
       <div><span>담당자</span><strong>${escapeHtml(issue.handler || "미지정")}</strong></div>
-      <div><span>상태 / 우선순위</span><strong>${escapeHtml(issue.status || "-")} · ${escapeHtml(issue.priority || "-")}</strong></div>
+      <div><span>상태 / 우선순위</span><strong>${escapeHtml(workspaceStatusLabel(issue.status))} · ${escapeHtml(priorityLabel(issue.priority))}</strong></div>
       <div><span>화면번호</span><strong>${escapeHtml(issue.screenNumber || "-")}</strong></div>
       <div><span>등록일</span><strong>${escapeHtml(issue.createdAt || "-")}</strong></div>
       <div><span>완료 예정일</span><strong>${escapeHtml(issue.dueDate || "-")}</strong></div>

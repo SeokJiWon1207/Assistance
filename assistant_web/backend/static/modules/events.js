@@ -152,7 +152,10 @@ els.sidebar?.addEventListener("click", (event) => {
 // 직접 붙일 수 없어, 문서 클릭이 사이드바 바깥인지로 판단한다.
 document.addEventListener("click", (event) => {
   if (!document.body.classList.contains("sidebar-open")) return;
-  if (event.target.closest(".sidebar") || event.target.closest("#sidebarMenuToggle")) return;
+  // 목록 펼치기는 클릭 도중 DOM을 교체한다. 원래 전파 경로로 판단해야
+  // 이미 분리된 버튼을 사이드바 바깥 클릭으로 오인하지 않는다.
+  if (event.composedPath().some((node) => node === els.sidebar ||
+      [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle, els.adminSidebarMenuToggle].includes(node))) return;
   closeMobileSidebar();
 });
 els.cancelEditBtn.addEventListener("click", () => {

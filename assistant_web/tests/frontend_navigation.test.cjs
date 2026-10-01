@@ -19,7 +19,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const els = Object.fromEntries([
     'viewChatBtn', 'viewPersonalBtn', 'viewDashboardBtn', 'chatPanel', 'personalPanel',
     'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardFilterbar', 'dashboardBody',
-    'dashboardDetail', 'dashboardDetailClose', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
+    'dashboardDetail', 'dashboardDetailClose', 'dashboardDetailTitle', 'dashboardDetailBody', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
     ...(adminCenter ? ['viewAdminBtn', 'adminPanel'] : []),
   ].map((name) => [name, element(name)]));
   const htmlWrites = [];
@@ -45,6 +45,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     './workspace.js': {
       ensureMyWorkspaceFresh: async () => { calls.push('personal'); }, renderWorkspace() {},
       loadTeamWeeklyBrief: async () => {}, renderTeamWeeklyBrief: () => '', markTeamWeeklyBriefRead: async () => {},
+      workspaceStatusLabel: (value) => ({developed: '개발완료', confirmed: '확인된 이슈'}[value] || value || '상태 미상'),
     },
   };
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard.js'), 'utf8'), { context });
@@ -78,6 +79,56 @@ const filterableDashboard = () => ({
   ],
 });
 const clickTarget = (selector, dataset) => ({ closest: (query) => (query === selector ? { dataset } : null) });
+
+test('filters and detail use the entire open population beyond the priority preview', async () => {
+  const payload = filterableDashboard();
+  payload.openIssues = [...payload.priorities, {
+    id: 99, title: '상위 목록 밖', project: '고객사 A', overdue: true, ageDays: 55,
+    riskLevel: 'high', status: 'developed', priority: 'normal',
+  }];
+  const h = await harness('member', undefined, async () => ({ok: true, payload}));
+  await h.api.loadDashboard();
+  assert.match(h.els.dashboardBody.innerHTML, /4 \/ 4건/);
+  for (const [metric, count] of [['overdue', 2], ['aging', 3], ['highRisk', 2]]) {
+    h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-metric]', {dashboardMetric: metric})});
+    assert.match(h.els.dashboardBody.innerHTML, new RegExp(`${count} / 4건`));
+    assert.match(h.els.dashboardBody.innerHTML, /상위 목록 밖/);
+  }
+  h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-issue]', {dashboardIssue: '99'})});
+  assert.equal(h.els.dashboardDetail.hidden, false);
+  assert.match(h.els.dashboardDetailBody.innerHTML, /개발완료 · 보통/);
+  assert.doesNotMatch(h.els.dashboardDetailBody.innerHTML, /developed|normal/);
+});
+
+test('new issue change is separated from open count and partial totals are explicit', async () => {
+  const payload = dashboard('live', 69);
+  payload.meta.search_complete = false;
+  payload.summary.changeRate = 12.8;
+  const h = await harness('member', undefined, async () => ({ok: true, payload}));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.match(html, /일부 이슈 기준이며 팀 전체 건수가 아닙니다/);
+  assert.match(html, /확인된 미종료/);
+  assert.match(html, /신규 증가 12.8%/);
+  assert.ok(html.indexOf('dashboard-new-change') > html.indexOf('data-dashboard-metric="highRisk"'));
+});
+
+test('detached sidebar controls use their original event path instead of closing the menu', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/events.js'), 'utf8');
+  const start = source.indexOf('document.addEventListener("click", (event) => {');
+  const end = source.indexOf('\n});', start) + 4;
+  let handler, closed = 0;
+  const sidebar = {}, menu = {};
+  vm.runInNewContext(source.slice(start, end), {
+    document: {body: {classList: {contains: () => true}}, addEventListener: (_, fn) => {handler = fn;}},
+    els: {sidebar, sidebarMenuToggle: menu}, closeMobileSidebar: () => {closed++;},
+  });
+  handler({composedPath: () => [{}, sidebar, {}]});
+  handler({composedPath: () => [menu, {}]});
+  assert.equal(closed, 0);
+  handler({composedPath: () => [{}, {}]});
+  assert.equal(closed, 1);
+});
 
 test('manager can switch among three panels without losing personal tab state', async () => {
   const h = await harness('manager');
