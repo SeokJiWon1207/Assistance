@@ -443,6 +443,8 @@ function renderLogsSection() {
   const issueLogs = logs.filter((log) => log.status !== "pass");
   const shown = state.adminLogFilter === "issue" ? issueLogs : logs;
   const counts = summary.statusCounts || {};
+  const latency = summary.latency || {};
+  const latencyLabels = { beforeFinalizationMs: "답변 준비 전체", verificationAndFormattingMs: "검증·서식", "stage:context": "문맥", "stage:planning": "계획 전체", "stage:status_resolution": "상태 해석", "stage:query_planner": "일반 플래너", "stage:reports": "리포트", "stage:count": "집계", "stage:store_read": "저장본 읽기", "stage:filter": "필터", "stage:retrieval": "검색", "stage:generation": "답변 생성" };
   els.adminContent.innerHTML = `
     ${sectionHeader("감사 로그", `답변마다 자동으로 채점한 기록입니다. 최근 ${logs.length}건을 보여 드려요.`, chips("log", [["all", "전체", logs.length], ["issue", "실패·확인 필요", issueLogs.length]], state.adminLogFilter))}
     ${summary.total ? `<div class="admin-metrics">
@@ -451,6 +453,11 @@ function renderLogsSection() {
       <div class="admin-metric"><small>확인 필요</small><strong class="${counts.warning ? "is-warning" : ""}">${counts.warning || 0}건</strong><span>${Math.round(((counts.warning || 0) / summary.total) * 100)}%</span></div>
       <div class="admin-metric"><small>실패</small><strong class="${counts.fail ? "is-danger" : ""}">${counts.fail || 0}건</strong><span>${Math.round(((counts.fail || 0) / summary.total) * 100)}%</span></div>
     </div>` : ""}
+    <section class="admin-card" aria-label="단계별 응답 시간">
+      <div class="admin-card-head"><h2>단계별 응답 시간</h2><span>${Number(latency.sampleCount) || 0}건 측정</span></div>
+      ${Object.entries(latency.groups?.all || {}).map(([key, value]) => `<div class="admin-row"><strong>${escapeHtml(latencyLabels[key] || key)}</strong><span>중앙값 ${Number(value.medianMs).toLocaleString()} ms · p95 ${Number(value.p95Ms).toLocaleString()} ms · ${Number(value.count)}건</span></div>`).join("") || '<p class="admin-empty">아직 측정된 응답이 없어요.</p>'}
+      <p class="admin-muted">${escapeHtml(latency.note || "단계 시간은 중첩되어 합산하지 않습니다.")}</p>
+    </section>
     <section class="admin-card admin-table" aria-label="감사 로그 목록">
       <div class="admin-row admin-log-row admin-th" aria-hidden="true"><span>시각</span><span>답변 방식</span><span>질문</span><span class="admin-num">점수</span><span>상태</span></div>
       ${shown.length ? shown.map((log) => {
