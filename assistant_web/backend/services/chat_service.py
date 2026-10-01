@@ -46,7 +46,7 @@ from backend.llm import (
 from backend.query_planning import build_query_plan, extract_group_by
 from backend.timing import TIMINGS, measured, request_timing
 from backend.intent.search_terms import build_keyword_terms
-from backend.intent.confirmed_context import confirmed_scope_text
+from backend.intent.confirmed_context import confirmed_scope_text, confirmed_constraints_scope, merge_confirmed_constraints
 from backend.reports.aggregate import (
     build_mantis_count_report,
     build_mantis_pivot_report,
@@ -583,6 +583,7 @@ def prepare_chat_pipeline(
 
     retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
     inherited_resolution = None
+    inherited_constraints = None
     latest_constraints = extract_query_constraints(latest_user_text)
     # 확인 질문 직후의 짧은 상태 선택은 서버에 저장된 해당 턴에만 연결한다.
     status_choice = bool(re.fullmatch(
@@ -602,6 +603,12 @@ def prepare_chat_pipeline(
         scope_messages = [request.messages[-1].model_copy(update={"content": prior_text}),
                           request.messages[-1].model_copy(update={"content": latest_user_text if is_follow_up_question(latest_user_text) else f"그중 {latest_user_text}"})]
         retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(scope_messages)
+        retrieval_text = "멘티스 " + retrieval_text
+        inherited_constraints = prior_plan["resolved_constraints"]
+        # 문장은 라우팅/표시에만 사용하고 실행 조건은 아래에서 구조적으로 병합한다.
+        inherited_constraints = {**inherited_constraints,
+            "inherited_terms": prior_plan.get("terms") or inherited_constraints.get("inherited_terms") or []}
+        needs_follow_up_rewrite = False
     elif status_choice and prior_resolution.get("needs_clarification"):
         follow_up_messages = [*request.messages[:-1], request.messages[-1].model_copy(
             update={"content": f"그중 {latest_user_text}"},
@@ -625,9 +632,10 @@ def prepare_chat_pipeline(
         retrieval_text = resolved_reference
         needs_follow_up_rewrite = False
         inherited_resolution = None
+        inherited_constraints = None
     else:
         notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
-        if notion_prefix and not team_scope:
+        if notion_prefix and not team_scope and inherited_constraints is None:
             retrieval_text = f"{notion_prefix} {latest_user_text}".strip()
             needs_follow_up_rewrite = False
 
@@ -672,6 +680,11 @@ def prepare_chat_pipeline(
     )
     with authenticated_owner_scope(owner):
         scoped_constraints = extract_query_constraints(retrieval_text) if retrieval_text else {}
+        if inherited_constraints is not None:
+            scoped_constraints = merge_confirmed_constraints(
+                inherited_constraints, extract_query_constraints(latest_user_text), latest_user_text,
+            )
+            scoped_constraints["inherited_from_audit_id"] = request.contextAuditId
     if inherited_resolution:
         inherited_resolution["grounding_text"] = retrieval_text
     enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
@@ -732,7 +745,9 @@ def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: 
     operation = infer_operation(text)
     if operation == "get" and constraints.get("issue_ids"):
         return True
-    if operation != "count" or extract_group_by(text):
+    if operation not in {"count", "search"} or extract_group_by(text):
+        return False
+    if operation == "search" and not re.search(r"이슈|목록|리스트", text):
         return False
     if not (constraints.get("customer_key") or constraints.get("mantis_team_members")):
         return False
@@ -978,7 +993,10 @@ def attach_status_resolution(response: Dict[str, Any], context: ChatPipelineCont
     constraints["status_resolution"] = resolution
     plan = retrieval.get("query_plan") or build_query_plan(context.retrieval_text, {"source": "mantis"}, constraints)
     plan["status_resolution"] = resolution
+    plan["terms"] = build_keyword_terms(context.retrieval_text, constraints)
     plan["resolved_constraints"] = {key: value for key, value in constraints.items() if key != "status_resolution"}
+    if constraints.get("inherited_from_audit_id"):
+        plan["inherited_from_audit_id"] = constraints["inherited_from_audit_id"]
     retrieval["query_plan"] = plan
     if resolution.get("status_intent") == "open" and not resolution.get("needs_clarification"):
         evidence = str(resolution.get("evidence") or "")
@@ -1042,6 +1060,10 @@ class ChatService:
             )
 
         context = prepare_chat_pipeline(request, latest_user_text, user)
+        with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
+            return self._complete_response(request, context, user, finalize_chat_response)
+
+    def _complete_response(self, request, context, user, finalize_chat_response):
         planned_response = plan_chat_query(request, context, user)
         if planned_response:
             return finalize_chat_response(attach_status_resolution(planned_response, context))

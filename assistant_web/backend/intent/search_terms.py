@@ -60,6 +60,12 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
         ),
     ]
     normalized_term = normalize_for_match(term)
+    for clause in constraints.get("filter_clauses") or []:
+        if clause.get("field") in {"title", "keyword"}:
+            values = clause.get("value")
+            values = values if isinstance(values, list) else [values]
+            if any(normalized_term == normalize_for_match(str(value or "")) for value in values):
+                return True
     if "open" in constraints.get("statuses", []) and normalized_term in {
         "남은", "남아있는", "잔여", "안끝난", "미종료",
     }:
@@ -99,7 +105,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     )
     filter_control_terms = {
         "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
-        "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함",
+        "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함", "포함된",
         "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
         "플랫폼별", "플랫폼마다", "매체별", "매체마다", "매체구분별", "매체구분마다",
         "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
@@ -127,7 +133,8 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     ]
     if constraints:
         terms = [term for term in terms if not term_is_covered_by_constraints(term, constraints)]
-    return terms[:4]
+    inherited = (constraints or {}).get("inherited_terms") or []
+    return list(dict.fromkeys([*terms[:4], *inherited]))
 
 
 def wants_similar_issue_search(text: str, constraints: Optional[Dict[str, Any]] = None) -> bool:

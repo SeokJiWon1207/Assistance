@@ -439,7 +439,7 @@ def build_query_plan(
         model_plan.get("filter_clauses")
         or (model_plan.get("filters") if isinstance(model_plan.get("filters"), list) else [])
     )
-    detected_created_at = extract_created_at_range(question)
+    detected_created_at = constraints.get("created_at") or extract_created_at_range(question)
     model_created_at = model_filters.get("created_at") or model_plan.get("created_at")
     if not model_created_at:
         for clause in model_filter_clauses:

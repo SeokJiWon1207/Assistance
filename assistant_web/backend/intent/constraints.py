@@ -57,6 +57,12 @@ from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_s
 
 
 def extract_query_constraints(text: str) -> Dict[str, Any]:
+    from backend.intent.confirmed_context import CONFIRMED_CONSTRAINTS
+    from copy import deepcopy
+    confirmed = CONFIRMED_CONSTRAINTS.get()
+    if confirmed is not None and confirmed[0] == text:
+        from backend.intent.status_semantics import apply_status_resolution
+        return apply_status_resolution(text, deepcopy(confirmed[1]))
     # "하이"는 하이투자증권의 현업 약칭이기도 하지만, 단독 입력은 인사로 취급한다.
     if is_simple_greeting(text):
         return empty_query_constraints()

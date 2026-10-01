@@ -320,7 +320,9 @@ def expression_is_excluded(text: str, value: str) -> bool:
     negative = r"(?:제외|빼고|빼줘|빼주세요|말고|아닌|아니고|없이|제외한|제외하고|미포함)"
     return bool(
         re.search(re.escape(normalized_value) + particle + bridge + negative, normalized_text)
-        or re.search(r"(?:제외|미포함)" + particle + re.escape(normalized_value), normalized_text)
+        # 'NH 제외 미종료'에서 제외는 NH에 붙는다. 앞 단어의 제외를 다음
+        # 상태/매체로 넘기지 않도록 전치형은 문장 시작에서만 허용한다.
+        or re.search(r"^(?:제외|미포함)" + particle + re.escape(normalized_value), normalized_text)
     )
 
 
@@ -329,6 +331,10 @@ def extract_explicit_keyword_filter_clauses(text: str) -> List[Dict[str, Any]]:
     if not re.search(r"제목|본문|내용|키워드", text, re.IGNORECASE):
         return []
     clauses: List[Dict[str, Any]] = []
+    for match in re.finditer(r'''(제목|본문|내용|키워드)(?:에|에서|에는|은|는)?\s*["'“‘]([^"'”’]{1,160})["'”’]\s*((?:은|는|이|가)?\s*(?:없(?:는|고)?|제외|빼고|미포함|있(?:는|고)?|포함(?:된)?))?''', text):
+        field = "title" if match.group(1) == "제목" else "keyword"
+        negative = bool(re.search(r"없|제외|빼고|미포함", match.group(3) or ""))
+        add_filter_clause(clauses, field, "not_contains" if negative else "contains", match.group(2))
     token = r"([가-힣A-Za-z0-9_.-]{2,40}?)"
     for match in re.finditer(token + r"(?:은|는|이|가)?\s*(?:없(?:는|고)?|제외|빼고|미포함)", text):
         add_filter_clause(clauses, "keyword", "not_contains", match.group(1))

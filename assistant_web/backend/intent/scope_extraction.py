@@ -216,8 +216,13 @@ def extract_status_scope(
 
 
 def extract_scope_constraints(text: str) -> Dict[str, Any]:
+    keyword_text = text
+    if re.search(r"제목|본문|내용|키워드", text):
+        text = re.sub(r'''["'“‘][^"'”’]+["'”’]''', " ", text)
     normalized_text = normalize_for_match(text)
-    customer = extract_customer_scope(text, normalized_text)
+    # 명시한 기술 계정 안의 고객사 약칭(DRFN_NEXT → DRFN)을 고객 조건으로 삼지 않는다.
+    customer_text = re.sub(r"(?:담당자|요청자)\s+[A-Za-z][A-Za-z0-9_]+", " ", text)
+    customer = extract_customer_scope(customer_text, normalize_for_match(customer_text))
     platform = extract_platform_scope(text, normalized_text)
     people_scope = extract_people_scope(text, customer)
     status_scope = extract_status_scope(text, normalized_text, people_scope["people"])
@@ -257,7 +262,7 @@ def extract_scope_constraints(text: str) -> Dict[str, Any]:
             "between",
             [created_at["from"], created_at["to"]],
         )
-    filter_clauses.extend(extract_explicit_keyword_filter_clauses(text))
+    filter_clauses.extend(extract_explicit_keyword_filter_clauses(keyword_text))
 
     excluded_customer_matches = customer.pop("excluded_customer_matches")
     return {
