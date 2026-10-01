@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
-from threading import Event, Thread
+from threading import Event, Thread, Lock
 import time
 from typing import Any, Callable
 
@@ -23,10 +23,23 @@ from fastapi import HTTPException
 from backend.config import RUNTIME_DIR, get_mantis_settings
 from backend.sources.mantis_collection import IssueBatch, iter_pages_in_order
 from backend.timing import measured
+from backend.sources.immutable import freeze
 
 LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
 _request_store: ContextVar[dict | None] = ContextVar("mantis_request_store", default=None)
+_generation_lock = Lock()
+_generation_cache: dict[tuple, tuple] = {}
+
+
+def _generation_key(path: Path) -> tuple:
+    def stamp(target):
+        try:
+            stat = target.stat()
+            return (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        except FileNotFoundError:
+            return None
+    return (str(path.resolve()), connection_key(), stamp(path), stamp(Path(str(path) + "-wal")))
 
 
 @contextmanager
@@ -100,6 +113,40 @@ def read_complete_store(*, allow_stale: bool = False, summary_only: bool = False
 
 
 def _read_complete_store(*, allow_stale: bool = False, summary_only: bool = False) -> IssueBatch | None:
+    # 하나의 세대만 유지하고 동시 요청의 중복 디코딩을 막는다. 요청별 목록과
+    # 메타데이터는 분리하되 중첩 원본은 읽기 전용으로 공유한다.
+    try:
+        with _generation_lock:
+            generation = _generation_key(store_path())
+            key = (generation, summary_only)
+            cached = _generation_cache.get(key)
+            if cached is None:
+                rows = _load_complete_store(allow_stale=True, summary_only=summary_only)
+                if rows is None:
+                    return None
+                if generation != _generation_key(store_path()):
+                    # 읽는 동안 게시된 세대는 다음 요청에서 다시 읽는다.
+                    return None
+                cached = (tuple(freeze(row) for row in rows), rows.meta["fetchedAt"])
+                for old in list(_generation_cache):
+                    if old[0] != generation:
+                        del _generation_cache[old]
+                _generation_cache[key] = cached
+            age = time.time() - datetime.fromisoformat(cached[1]).timestamp()
+            fresh = 0 <= age < MAX_AGE_SECONDS
+            if not fresh and not allow_stale:
+                return None
+            return IssueBatch(cached[0], {
+                "status": "snapshot", "fetchedAt": cached[1],
+                "search_complete": fresh, "snapshot_complete": True,
+                "incomplete_reasons": [] if fresh else ["stale_snapshot"],
+                "reason": "" if fresh else "저장 데이터의 갱신이 지연되었습니다.",
+            })
+    except (OSError, ValueError, TypeError, HTTPException):
+        return None
+
+
+def _load_complete_store(*, allow_stale: bool = False, summary_only: bool = False) -> IssueBatch | None:
     # 메타데이터와 원본은 같은 연결에서 읽어 교체 중 서로 다른 세대를 합치지 않는다.
     path = store_path()
     if not path.exists():

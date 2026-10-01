@@ -319,11 +319,17 @@ def run_retrieval_pipeline(
         # 이슈 ID 기준 중복 제거는 collect_retrieved_issues가 처리한다.
         snapshot_covers_range = False
         if historical_snapshot_used:
+            snapshot_meta = snapshot_stage.get("meta") or {}
             snapshot_as_of = get_mantis_snapshot_freshness()
             requested_to = str((constraints.get("created_at") or {}).get("to") or "")
             snapshot_covers_range = bool(
                 snapshot_as_of and requested_to and requested_to <= snapshot_as_of
             )
+            # 최신 전체 원본의 구조화 필터가 이미 끝났다면 페이지 스캔 역시
+            # 동일 저장본을 다시 훑을 뿐이다. 구형 인덱스/불완전 검증은 보완한다.
+            if (not keyword and snapshot_meta.get("tool") == "mantis_complete_snapshot"
+                    and snapshot_meta.get("search_complete") is True):
+                snapshot_covers_range = True
 
         if not exact_issue_lookup and not similar_issue_search and (not historical_snapshot_used or not snapshot_covers_range):
             # 저장 필터는 화면번호를 부분 문자열이나 별도 조건으로 해석할 수 있다.
