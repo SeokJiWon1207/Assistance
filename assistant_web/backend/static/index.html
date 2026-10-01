@@ -4,13 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260930-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260930-3" />
     <link rel="stylesheet" href="/static/charts.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/responsive.css?v=20260820-1" />
+    <link rel="stylesheet" href="/static/responsive.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/dashboard.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
+    <link rel="stylesheet" href="/static/admin_center.css?v=20260930-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -180,13 +181,10 @@
             <strong id="signedInUserName">사용자</strong>
             <small id="signedInUserMeta"></small>
           </span>
-          <button id="adminUsersBtn" class="signed-in-user-action" type="button" title="사용자 관리" aria-label="사용자 관리" hidden>⚙</button>
-          <button id="adminInviteBtn" class="signed-in-user-action" type="button" title="사용자 초대" aria-label="사용자 초대" hidden>＋</button>
-          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃">↗</button>
+          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg></button>
         </section>
 
         <div class="sidebar-footer-actions">
-          <button id="evaluationBtn" class="sidebar-action-button" type="button"><span aria-hidden="true">✓</span><strong>검증</strong></button>
           <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><span aria-hidden="true">↻</span><strong>초기화</strong></button>
         </div>
       </aside>
@@ -204,6 +202,10 @@
           <button id="viewDashboardBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel" tabindex="-1" hidden>
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             팀 대시보드
+          </button>
+          <button id="viewAdminBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="adminPanel" tabindex="-1" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6Z"/><path d="m9 12 2 2 4-4"/></svg>
+            관리자 센터 <em id="adminPendingBadge" hidden>0</em>
           </button>
         </nav>
 
@@ -260,6 +262,29 @@
               <button id="dashboardDetailClose" class="modal-close" type="button" aria-label="이슈 상세 닫기">×</button>
             </header>
             <div id="dashboardDetailBody" class="dashboard-detail-body"></div>
+          </aside>
+        </section>
+
+        <section id="adminPanel" class="admin-panel" role="tabpanel" aria-labelledby="viewAdminBtn" hidden>
+          <nav class="admin-nav" aria-label="관리자 메뉴">
+            <button id="adminSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+            <p>관리자 센터</p>
+            <button type="button" data-admin-section="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>품질 현황</button>
+            <button type="button" data-admin-section="run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>검증 실행</button>
+            <button type="button" data-admin-section="feedback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4V10ZM7 10l4-7c1.6 0 2.6 1.2 2.3 2.8L12.7 9H19a2 2 0 0 1 2 2.3l-1.3 7a2 2 0 0 1-2 1.7H7"/></svg>답변 피드백</button>
+            <button type="button" data-admin-section="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>감사 로그</button>
+            <button type="button" data-admin-section="users"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>사용자 <em id="adminNavPendingBadge" hidden>0</em></button>
+          </nav>
+          <div id="adminContent" class="admin-content" tabindex="-1">
+            <p class="admin-empty">관리자 정보를 불러오는 중입니다.</p>
+          </div>
+          <div id="adminDrawerBackdrop" class="admin-drawer-backdrop" hidden></div>
+          <aside id="adminDrawer" class="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="adminDrawerTitle" hidden>
+            <header>
+              <div><h2 id="adminDrawerTitle">사용자</h2><p id="adminDrawerSub"></p></div>
+              <button id="adminDrawerClose" class="admin-icon-button" type="button" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+            </header>
+            <form id="adminDrawerForm" class="admin-drawer-form" novalidate></form>
           </aside>
         </section>
 
@@ -407,58 +432,6 @@
       </section>
     </div>
 
-    <div id="inviteModal" class="modal-backdrop" hidden>
-      <section class="modal invite-modal" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
-        <header class="modal-header">
-          <div>
-            <p>관리자</p>
-            <h3 id="inviteModalTitle">팀 사용자 초대</h3>
-          </div>
-          <button id="inviteModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
-        </header>
-        <form id="inviteForm" class="modal-form">
-          <p class="modal-form-description">Firebase 계정을 만들거나 기존 계정을 승인하고 비밀번호 설정 링크를 발급합니다.</p>
-          <div class="template-fields">
-            <label class="template-field" for="inviteEmail"><span>이메일 <small class="required-mark">필수</small></span><input id="inviteEmail" name="email" type="email" required /></label>
-            <label class="template-field" for="inviteDisplayName"><span>이름 <small>선택</small></span><input id="inviteDisplayName" name="displayName" type="text" maxlength="100" /></label>
-            <label class="template-field" for="inviteRole"><span>권한</span><select id="inviteRole" name="role"><option value="member">팀원</option><option value="manager">팀장</option><option value="admin">관리자</option></select></label>
-            <label class="template-field" for="inviteMantisUsername"><span>Mantis 담당자명 <small>선택</small></span><input id="inviteMantisUsername" name="mantisUsername" type="text" maxlength="100" /></label>
-            <label class="template-field" for="inviteTeam"><span>팀 <small>선택</small></span><input id="inviteTeam" name="team" type="text" maxlength="100" /></label>
-          </div>
-          <div id="inviteResult" class="invite-result" hidden>
-            <strong>비밀번호 설정 링크</strong>
-            <p>아래 링크를 사용자에게 안전하게 전달해 주세요.</p>
-            <div><input id="inviteSetupUrl" type="text" readonly aria-label="비밀번호 설정 링크" /><button id="copyInviteUrlBtn" class="secondary-button" type="button">복사</button></div>
-          </div>
-          <p id="inviteError" class="login-error" role="alert" hidden></p>
-          <div class="modal-form-actions">
-            <button id="inviteCancelBtn" class="secondary-button" type="button">닫기</button>
-            <button id="inviteSubmitBtn" class="run-evaluation-button" type="submit">초대 링크 만들기</button>
-          </div>
-        </form>
-      </section>
-    </div>
-
-    <div id="userManagementModal" class="modal-backdrop" hidden>
-      <section class="modal user-management-modal" role="dialog" aria-modal="true" aria-labelledby="userManagementModalTitle">
-        <header class="modal-header">
-          <div>
-            <p>관리자</p>
-            <h3 id="userManagementModalTitle">사용자 관리</h3>
-          </div>
-          <button id="userManagementModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
-        </header>
-        <div class="user-management-body">
-          <div class="user-management-intro">
-            <p>기존 사용자의 권한, Mantis 담당자명과 팀 정보를 수정합니다.</p>
-            <button id="userManagementRefreshBtn" class="secondary-button" type="button">새로고침</button>
-          </div>
-          <p id="userManagementError" class="login-error" role="alert" hidden></p>
-          <div id="userManagementList" class="user-management-list" aria-live="polite"></div>
-        </div>
-      </section>
-    </div>
-
     <div id="chromaModal" class="modal-backdrop" hidden>
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="chromaModalTitle">
         <header class="modal-header">
@@ -469,30 +442,6 @@
           <button id="chromaModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
         </header>
         <div id="chromaModalContent" class="modal-content"></div>
-      </section>
-    </div>
-
-    <div id="evaluationModal" class="modal-backdrop" hidden>
-      <section class="modal evaluation-modal" role="dialog" aria-modal="true" aria-labelledby="evaluationModalTitle">
-        <header class="modal-header">
-          <div>
-            <p>AI 품질 관리</p>
-            <h3 id="evaluationModalTitle">결과 검증 센터</h3>
-          </div>
-          <button id="evaluationModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
-        </header>
-        <div class="evaluation-toolbar">
-          <div id="evaluationSummary" class="evaluation-summary">검증 질문을 불러오는 중입니다.</div>
-          <button id="runEvaluationBtn" class="run-evaluation-button" type="button">전체 테스트 실행</button>
-        </div>
-        <div class="evaluation-tabs" role="tablist">
-          <button class="evaluation-tab" type="button" data-evaluation-tab="summary">요약</button>
-          <button class="evaluation-tab active" type="button" data-evaluation-tab="cases">검증 질문</button>
-          <button class="evaluation-tab" type="button" data-evaluation-tab="accuracy">답변 정확도</button>
-          <button class="evaluation-tab" type="button" data-evaluation-tab="feedback">답변 피드백</button>
-          <button class="evaluation-tab" type="button" data-evaluation-tab="logs">감사 로그</button>
-        </div>
-        <div id="evaluationContent" class="evaluation-content"></div>
       </section>
     </div>
 

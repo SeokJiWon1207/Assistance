@@ -108,14 +108,8 @@
     right: 20px;
   }
 
-  .verification-checks,
-  .evaluation-case ul {
+  .verification-checks {
     grid-template-columns: 1fr;
-  }
-
-  .evaluation-toolbar {
-    align-items: stretch;
-    flex-direction: column;
   }
 }
 
@@ -153,45 +147,12 @@
   }
 
   .template-fields,
-  .feedback-reason-group,
-  .user-management-fields {
+  .feedback-reason-group {
     grid-template-columns: 1fr;
-  }
-
-  .user-management-body {
-    padding: 18px;
-  }
-
-  .user-management-intro,
-  .user-management-card-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .user-management-intro .secondary-button,
-  .user-management-card-actions .run-evaluation-button {
-    width: 100%;
-  }
-
-  .user-approved-toggle {
-    margin-right: 0;
-  }
-
-  .user-save-status {
-    max-width: none;
-    text-align: left;
   }
 
   .modal-form-actions {
     grid-template-columns: 1fr;
-  }
-
-  .feedback-template-row {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .feedback-template-row em {
-    grid-column: 1 / -1;
   }
 
   .message-feedback-label,

@@ -377,18 +377,32 @@ function canViewTeamDashboard() {
   return Boolean(state.currentUser?.uid);
 }
 
+// 다른 모듈이 맡은 화면(관리자 센터)은 여기서 불러오는 함수만 등록해 둔다.
+const mainViewLoaders = new Map();
+
+function setMainViewLoader(view, loader) {
+  mainViewLoaders.set(view, loader);
+}
+
+function canViewAdminCenter() {
+  return Boolean(state.adminToolsVisible && els.viewAdminBtn && els.adminPanel);
+}
+
 function mainViews() {
   return [
     ["chat", els.viewChatBtn, els.chatPanel],
     ["personal", els.viewPersonalBtn, els.personalPanel],
     ["dashboard", els.viewDashboardBtn, els.dashboardPanel],
-  ];
+    ["admin", els.viewAdminBtn, els.adminPanel],
+  ].filter(([, button, panel]) => button && panel);
 }
 
 function setActiveView(view, { remember = true, load = true } = {}) {
   if (view === "dashboard" && !canViewTeamDashboard()) view = "personal";
-  if (!["chat", "personal", "dashboard"].includes(view)) view = "chat";
+  if (view === "admin" && !canViewAdminCenter()) view = "chat";
+  if (!["chat", "personal", "dashboard", "admin"].includes(view)) view = "chat";
   els.viewDashboardBtn.hidden = !canViewTeamDashboard();
+  if (els.viewAdminBtn) els.viewAdminBtn.hidden = !canViewAdminCenter();
   for (const [name, button, panel] of mainViews()) {
     const selected = name === view;
     panel.hidden = !selected;
@@ -398,10 +412,11 @@ function setActiveView(view, { remember = true, load = true } = {}) {
   }
   if (remember) localStorage.setItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`, view);
   document.body.classList.remove("sidebar-open");
-  for (const button of [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle]) {
+  for (const button of [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle, els.adminSidebarMenuToggle]) {
     button?.setAttribute("aria-expanded", "false");
   }
   if (view === "dashboard" && load) ensureDashboardFresh();
+  if (load) mainViewLoaders.get(view)?.();
   if (view === "personal" && load) {
     ensureMyWorkspaceFresh().catch((error) => {
       if (!state.myWorkspace) {
@@ -434,6 +449,10 @@ function showDashboardView(options) {
 
 function showChatView(options) {
   setActiveView("chat", options);
+}
+
+function showAdminView(options) {
+  setActiveView("admin", options);
 }
 
 function askFromDashboard(question) {
@@ -537,6 +556,7 @@ function initDashboard() {
   els.viewDashboardBtn.addEventListener("click", () => showDashboardView());
   els.viewPersonalBtn.addEventListener("click", () => showPersonalView());
   els.viewChatBtn.addEventListener("click", () => showChatView());
+  els.viewAdminBtn?.addEventListener("click", () => showAdminView());
   mainViews().forEach(([, button]) => button.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
@@ -562,18 +582,17 @@ function initDashboard() {
   });
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);
-  [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle].forEach((button) => button?.addEventListener("click", () => {
+  const panelMenuToggles = [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle, els.adminSidebarMenuToggle];
+  panelMenuToggles.forEach((button) => button?.addEventListener("click", () => {
     const open = document.body.classList.toggle("sidebar-open");
-    els.dashboardSidebarMenuToggle.setAttribute("aria-expanded", String(open));
-    els.sidebarMenuToggle?.setAttribute("aria-expanded", String(open));
-    els.personalSidebarMenuToggle?.setAttribute("aria-expanded", String(open));
+    for (const toggle of [els.sidebarMenuToggle, ...panelMenuToggles]) toggle?.setAttribute("aria-expanded", String(open));
   }));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.dashboardDetail.hidden) closeIssueDetail();
   });
   const stored = localStorage.getItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`);
-  const initialView = ["chat", "personal", "dashboard"].includes(stored) ? stored : "chat";
+  const initialView = ["chat", "personal", "dashboard", "admin"].includes(stored) ? stored : "chat";
   setActiveView(initialView, { remember: false, load: true });
 }
 
-export { initDashboard, loadDashboard, ensureDashboardFresh, renderDashboard, showDashboardView, showPersonalView, showChatView };
+export { initDashboard, loadDashboard, ensureDashboardFresh, renderDashboard, setMainViewLoader, showAdminView, showDashboardView, showPersonalView, showChatView };

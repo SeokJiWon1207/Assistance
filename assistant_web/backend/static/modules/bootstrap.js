@@ -4,6 +4,7 @@ import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus } from "./chat.js?v=20260911-6";
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
+import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
 
 let loadedAppVersion = "";
 let appUpdateNotified = false;
@@ -27,8 +28,9 @@ async function checkAppVersion() {
 
 async function bootstrapApplication(authState = {}) {
   state.currentUser = authState.user || globalThis.AssistantCurrentUser || null;
+  state.authEnabled = Boolean(authState.enabled);
   const adminToolsVisible = canUseAdminTools(authState.enabled, state.currentUser);
-  els.evaluationBtn.hidden = !adminToolsVisible;
+  state.adminToolsVisible = adminToolsVisible;
   els.adminGenerationSettings.hidden = !adminToolsVisible;
   await Promise.all([
     loadConversations(),
@@ -50,7 +52,10 @@ async function bootstrapApplication(authState = {}) {
   loadTheme();
   setAbComparison(defaultOptions.abTest);
   renderMessages();
+  initAdminCenter();
   initDashboard();
+  // 승인 대기 배지는 관리자 센터를 열기 전에도 보여야 하므로 미리 불러 둔다.
+  if (adminToolsVisible) preloadAdminBadges();
   if (state.currentUser?.uid) workspaceReady.finally(() => loadDashboard());
   globalThis.setInterval(() => checkAppVersion().catch(() => {}), 60_000);
 }

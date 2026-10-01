@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-async function harness(role, stored, fetcher) {
+async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const calls = [];
   const storage = new Map(stored ? [[`team-ai-assistant-main-view-v1:user-${role}`, stored]] : []);
   let focused;
@@ -20,6 +20,7 @@ async function harness(role, stored, fetcher) {
     'viewChatBtn', 'viewPersonalBtn', 'viewDashboardBtn', 'chatPanel', 'personalPanel',
     'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardFilterbar', 'dashboardBody',
     'dashboardDetail', 'dashboardDetailClose', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
+    ...(adminCenter ? ['viewAdminBtn', 'adminPanel'] : []),
   ].map((name) => [name, element(name)]));
   const htmlWrites = [];
   Object.defineProperty(els.dashboardBody, 'innerHTML', {
@@ -27,7 +28,10 @@ async function harness(role, stored, fetcher) {
     set: (html) => htmlWrites.push(html),
   });
   els.viewChatBtn.hidden = els.viewPersonalBtn.hidden = false;
-  const state = { currentUser: { uid: `user-${role}`, role }, workspaceTab: 'overview', myWorkspace: { summary: {} } };
+  const state = {
+    currentUser: { uid: `user-${role}`, role }, workspaceTab: 'overview', myWorkspace: { summary: {} },
+    adminToolsVisible: adminCenter && role === 'admin',
+  };
   const context = vm.createContext({
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     document: { body: { classList: { remove() {} } }, addEventListener() {} },
@@ -50,8 +54,10 @@ async function harness(role, stored, fetcher) {
     }, { context });
   });
   await module.evaluate();
+  const loaderCalls = [];
+  module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
+  return { loaderCalls, api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -292,4 +298,25 @@ test('expired snapshot and live error never display zero dashboard metrics', asy
   await h.api.loadDashboard();
   assert.match(h.els.dashboardBody.innerHTML, /저장 데이터 만료/);
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-metrics/);
+});
+
+test('admin center is a fourth tab only for admins and loads when shown', async () => {
+  const admin = await harness('admin', 'admin', null, { adminCenter: true });
+  assert.equal(admin.els.viewAdminBtn.hidden, false);
+  assert.equal(admin.els.adminPanel.hidden, false);
+  assert.equal(admin.els.chatPanel.hidden, true);
+  assert.deepEqual(admin.loaderCalls, ['admin']);
+  const key = (button, value) => admin.els[button].handlers.keydown({ key: value, preventDefault() {} });
+  key('viewChatBtn', 'End');
+  assert.equal(admin.focus(), 'viewAdminBtn');
+  admin.api.showChatView();
+  assert.equal(admin.els.adminPanel.hidden, true);
+  assert.equal(admin.els.viewAdminBtn.attributes['aria-selected'], 'false');
+
+  // 관리자가 아닌 계정에 남아 있던 저장값은 대화 화면으로 돌린다.
+  const member = await harness('member', 'admin', null, { adminCenter: true });
+  assert.equal(member.els.viewAdminBtn.hidden, true);
+  assert.equal(member.els.adminPanel.hidden, true);
+  assert.equal(member.els.chatPanel.hidden, false);
+  assert.deepEqual(member.loaderCalls, []);
 });

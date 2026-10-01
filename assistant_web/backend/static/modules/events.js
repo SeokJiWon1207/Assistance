@@ -1,7 +1,6 @@
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
 import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
-import { renderEvaluationContent, runAccuracyCheck, openEvaluationModal, closeEvaluationModal, runEvaluations } from "./admin.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
 import { initTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
@@ -258,7 +257,6 @@ els.conversationList.addEventListener("click", (event) => {
     openConversation(openButton.dataset.conversationId);
   }
 });
-els.evaluationBtn.addEventListener("click", openEvaluationModal);
 els.feedbackModalClose?.addEventListener("click", closeFeedbackModal);
 els.feedbackCancelBtn?.addEventListener("click", closeFeedbackModal);
 els.feedbackModal?.addEventListener("click", (event) => {
@@ -279,21 +277,6 @@ els.feedbackForm?.addEventListener("submit", async (event) => {
   } finally {
     submitButton.disabled = false;
   }
-});
-els.evaluationModalClose.addEventListener("click", closeEvaluationModal);
-els.runEvaluationBtn.addEventListener("click", () => runEvaluations());
-els.evaluationContent.addEventListener("click", (event) => {
-  const accuracyButton = event.target.closest("[data-accuracy-run]");
-  if (accuracyButton && !accuracyButton.disabled) {
-    runAccuracyCheck();
-    return;
-  }
-  const rerunButton = event.target.closest("[data-evaluation-rerun]");
-  if (!rerunButton || rerunButton.disabled) return;
-  runEvaluations([rerunButton.dataset.evaluationRerun]);
-});
-els.evaluationModal.addEventListener("click", (event) => {
-  if (event.target === els.evaluationModal) closeEvaluationModal();
 });
 els.workspaceRefreshBtn?.addEventListener("click", async () => {
   try {
@@ -433,12 +416,6 @@ els.workspaceContent?.addEventListener("submit", async (event) => {
     showToast(error.message, "warning");
     submitButton.disabled = false;
   }
-});
-document.querySelectorAll(".evaluation-tab").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.evaluationTab = button.dataset.evaluationTab;
-    renderEvaluationContent();
-  });
 });
 
 els.messages.addEventListener("scroll", updateComposerShadow, { passive: true });
@@ -587,8 +564,6 @@ document.addEventListener("keydown", (event) => {
     closeFeedbackModal();
   } else if (event.key === "Escape" && !els.chromaModal.hidden) {
     closeChromaModal();
-  } else if (event.key === "Escape" && !els.evaluationModal.hidden) {
-    closeEvaluationModal();
   } else if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     // 모달이 모두 닫혀 있을 때만 좁은 화면의 사이드바를 닫는다.
     closeMobileSidebar();

@@ -230,6 +230,7 @@ class FrontendArchitectureContractTests(unittest.TestCase):
             "charts.js": "export function renderDonutChart(",
             "notion.js": "function renderNotionAnswer(",
             "admin.js": "function renderEvaluationContent()",
+            "admin_users.js": "function renderUsersSection(",
             "events.js": 'els.form.addEventListener("submit"',
             "runtime.js": "export const state =",
         }
@@ -257,10 +258,10 @@ class FrontendArchitectureContractTests(unittest.TestCase):
             "promptInput",
             "messages",
             "signedInUser",
-            "evaluationModal",
+            "adminPanel",
             "personalPanel",
             "dashboardPanel",
-            "inviteModal",
+            "adminDrawer",
         ):
             self.assertIn(f'id="{element_id}"', html)
         for endpoint in (

@@ -77,7 +77,7 @@ class FrontendCoreTests(unittest.TestCase):
             "sendBtn",
             "messages",
             "newChatBtn",
-            "evaluationModal",
+            "adminPanel",
             "templatePicker",
             "templateForm",
             "templateToggleBtn",
@@ -89,11 +89,10 @@ class FrontendCoreTests(unittest.TestCase):
             "logoutConfirmModal",
             "logoutConfirmBtn",
             "logoutCancelBtn",
-            "inviteModal",
-            "inviteForm",
-            "adminUsersBtn",
-            "userManagementModal",
-            "userManagementList",
+            "viewAdminBtn",
+            "adminContent",
+            "adminDrawer",
+            "adminDrawerForm",
         ):
             self.assertIn(required_id, parser.ids)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
@@ -110,6 +109,7 @@ class FrontendCoreTests(unittest.TestCase):
             "dashboard.css",
             "template_picker.css",
             "conversation_list.css",
+            "admin_center.css",
         )
         positions = []
         for name in stylesheet_names:
@@ -197,13 +197,36 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('apiFetch("/api/auth/logout", { method: "POST" })', auth_js)
 
     def test_admin_can_manage_existing_users_without_invite(self):
+        users_js = (STATIC_DIR / "modules" / "admin_users.js").read_text(encoding="utf-8")
+
+        self.assertIn('apiFetch("/api/auth/users")', users_js)
+        self.assertIn('method: "PATCH"', users_js)
+        self.assertIn("mantisUsername: form.elements.mantisUsername.value.trim()", users_js)
+        # 승인 대기 사용자는 편집 패널을 열지 않고 목록에서 바로 승인할 수 있다.
+        self.assertIn("patchUser(uid, { approved: true })", users_js)
+        self.assertIn('apiFetch("/api/auth/users/invite"', users_js)
+
+    def test_admin_tools_live_in_one_admin_center_view(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         auth_js = (STATIC_DIR / "auth.js").read_text(encoding="utf-8")
+        admin_js = (STATIC_DIR / "modules" / "admin.js").read_text(encoding="utf-8")
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
 
-        self.assertIn("사용자 관리", html)
-        self.assertIn('apiFetch("/api/auth/users")', auth_js)
-        self.assertIn('method: "PATCH"', auth_js)
-        self.assertIn("mantisUsername: form.elements.mantisUsername.value.trim()", auth_js)
+        # 흩어져 있던 모달 세 개와 문자 기호 버튼 대신 화면 탭 하나로 들어간다.
+        for removed_id in ("evaluationModal", "userManagementModal", "inviteModal", "adminUsersBtn", "adminInviteBtn", "evaluationBtn"):
+            self.assertNotIn(f'id="{removed_id}"', html)
+        self.assertLess(html.index('id="viewDashboardBtn"'), html.index('id="viewAdminBtn"'))
+        admin_tab = html[html.index('id="viewAdminBtn"') : html.index("</button>", html.index('id="viewAdminBtn"'))]
+        self.assertIn(" hidden>", admin_tab)
+        self.assertIn('["admin", els.viewAdminBtn, els.adminPanel]', dashboard_js)
+        self.assertIn('if (view === "admin" && !canViewAdminCenter()) view = "chat";', dashboard_js)
+        for section in ("overview", "run", "feedback", "logs", "users"):
+            self.assertIn(f'data-admin-section="{section}"', html)
+        # 권한과 답변 방식은 내부 영문 값 대신 한국어로 보여 준다.
+        self.assertIn('ROLE_LABELS = { member: "팀원", manager: "팀장", admin: "관리자" }', auth_js)
+        self.assertIn("modeLabel(log.mode)", admin_js)
+        self.assertIn('return "자동 집계";', admin_js)
+        self.assertNotIn("Firebase", html[html.index('id="adminPanel"') :])
 
     def test_generation_parameters_are_admin_only(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
