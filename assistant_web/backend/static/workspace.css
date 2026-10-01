@@ -269,8 +269,6 @@
   color: var(--blue);
   font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .workspace-section h4 {
@@ -552,7 +550,6 @@
   font-size: 12px;
   font-style: normal;
   font-weight: 700;
-  letter-spacing: 0.05em;
 }
 
 .workspace-decision.is-high > header span,
@@ -787,7 +784,7 @@
 .playbook-card header small,
 .playbook-card footer span { color: var(--muted); font-size: 12px; }
 .playbook-card section { margin-top: 15px; }
-.playbook-card section strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.playbook-card section strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
 .playbook-card section p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
 .playbook-card > footer { align-items: center; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
 .playbook-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
@@ -809,7 +806,6 @@
   background: color-mix(in srgb, var(--blue) 4%, var(--surface));
 }
 .playbook-editor header h4 { margin: 3px 0 0; }
-.playbook-editor header span { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
 .playbook-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .playbook-editor textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
 .playbook-editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

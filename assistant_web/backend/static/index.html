@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20261001-2" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20261001-2" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261001-3" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/admin_center.css?v=20261001-1" />
@@ -271,20 +271,17 @@
             <button id="dashboardSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
             <div class="dashboard-heading">
               <h2>팀 대시보드</h2>
-              <p id="dashboardSubtitle">팀 전체 업무량과 고객사 위험 신호를 확인합니다.</p>
+              <p id="dashboardSubtitle">운영 데이터를 조회하고 있습니다.</p>
             </div>
             <div class="dashboard-toolbar">
               <span id="dashboardSource" class="dashboard-source"><span class="dashboard-source-dot" aria-hidden="true"></span><em>확인 중</em></span>
-              <span id="dashboardGeneratedAt" class="dashboard-generated"></span>
-              <label class="dashboard-period" for="dashboardPeriod">
-                <span>변화 비교 기간</span>
-                <select id="dashboardPeriod">
-                  <option value="7">최근 7일</option>
-                  <option value="14">최근 14일</option>
-                  <option value="30" selected>최근 30일</option>
-                  <option value="90">최근 90일</option>
-                </select>
-              </label>
+              <fieldset id="dashboardPeriod" class="dashboard-period">
+                <legend class="sr-only">비교 기간</legend>
+                <button type="button" data-dashboard-period="7" aria-pressed="false">7일</button>
+                <button type="button" data-dashboard-period="14" aria-pressed="false">14일</button>
+                <button type="button" data-dashboard-period="30" aria-pressed="true">30일</button>
+                <button type="button" data-dashboard-period="90" aria-pressed="false">90일</button>
+              </fieldset>
               <button id="dashboardRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
             </div>
           </header>
@@ -292,7 +289,7 @@
           <div id="dashboardBody" class="dashboard-body" aria-live="polite"></div>
           <aside id="dashboardDetail" class="dashboard-detail" aria-labelledby="dashboardDetailTitle" hidden>
             <header>
-              <div><span>ISSUE DETAIL</span><h3 id="dashboardDetailTitle">이슈 상세</h3></div>
+              <div><span>우선 확인 이슈</span><h3 id="dashboardDetailTitle">이슈 상세</h3></div>
               <button id="dashboardDetailClose" class="modal-close" type="button" aria-label="이슈 상세 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
             </header>
             <div id="dashboardDetailBody" class="dashboard-detail-body"></div>

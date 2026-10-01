@@ -169,7 +169,6 @@ export const els = {
   adminDrawerClose: document.querySelector("#adminDrawerClose"),
   dashboardSubtitle: document.querySelector("#dashboardSubtitle"),
   dashboardSource: document.querySelector("#dashboardSource"),
-  dashboardGeneratedAt: document.querySelector("#dashboardGeneratedAt"),
   dashboardPeriod: document.querySelector("#dashboardPeriod"),
   dashboardRefreshBtn: document.querySelector("#dashboardRefreshBtn"),
   dashboardFilterbar: document.querySelector("#dashboardFilterbar"),

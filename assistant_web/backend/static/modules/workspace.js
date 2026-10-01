@@ -531,7 +531,7 @@ function renderWeeklyBrief(data) {
       ${workspaceMetric("일정 지연", brief.overdueIssues, brief.overdueIssues ? "is-danger" : "")}
     </section>
     <section class="workspace-section workspace-section-single">
-      <header><div><span>Priority</span><h4>이번 주 확인할 항목</h4></div></header>
+      <header><div><h4>이번 주 확인할 항목</h4></div></header>
       <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty("이번 주 우선 확인할 이슈가 없습니다.")}</div>
     </section>
     <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
@@ -566,7 +566,7 @@ function renderTeamWeeklyBrief() {
     </button>`).join("");
   return `
     <section class="workspace-brief-hero">
-      <span>WEEKLY TEAM BRIEF</span>
+      <span>주간 팀 브리핑</span>
       <h4>${escapeHtml(brief.title || "이번 주 팀 브리핑")}</h4>
       <p>지난주 ${escapeHtml(brief.summaryPeriod || "")} · 생성 ${escapeHtml(String(brief.generatedAt || "").slice(0, 16).replace("T", " "))}</p>
     </section>
@@ -585,16 +585,16 @@ function renderTeamWeeklyBrief() {
     <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">기준본 · ${brief.source?.status === "live" ? "Mantis 조회 데이터로 생성" : "로컬 스냅샷으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
     <div class="workspace-columns">
       <section class="workspace-section">
-        <header><div><span>Customer change</span><h4>급증 고객사</h4></div></header>
+        <header><div><h4>급증 고객사</h4></div></header>
         <div class="workspace-insight-list">${briefSpikeRows(brief.customerSpikes || [], "급증한 고객사가 없습니다.")}</div>
       </section>
       <section class="workspace-section">
-        <header><div><span>Screen change</span><h4>급증 화면번호</h4></div></header>
+        <header><div><h4>급증 화면번호</h4></div></header>
         <div class="workspace-insight-list">${briefSpikeRows(brief.screenSpikes || [], "급증한 화면번호가 없습니다.")}</div>
       </section>
     </div>
     <section class="workspace-section workspace-section-single">
-      <header><div><span>Priority</span><h4>이번 주 우선 확인</h4></div><em>${priorities.length}건 표시</em></header>
+      <header><div><h4>이번 주 우선 확인</h4></div><em>${priorities.length}건 표시</em></header>
       <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty("우선 확인할 이슈가 없습니다.")}</div>
     </section>
     ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 정보로 기준본 재생성</button>' : ""}`;
@@ -604,7 +604,7 @@ function renderNotifications(data) {
   const notifications = data.notifications || [];
   return `
     <section class="workspace-section workspace-section-single">
-      <header><div><span>Notifications</span><h4>업무 알림</h4></div><em>${notifications.filter((item) => !item.read).length}개 안 읽음</em></header>
+      <header><div><h4>업무 알림</h4></div><em>${notifications.filter((item) => !item.read).length}개 안 읽음</em></header>
       <div class="workspace-list">${notifications.length ? notifications.map((item) => `
         <article class="workspace-notification ${item.read ? "is-read" : ""}">
           <span class="workspace-notification-dot" aria-hidden="true"></span>
@@ -618,7 +618,7 @@ function renderFavoriteConversations() {
   const favorites = state.conversations.filter((item) => item.favorite);
   return `
     <section class="workspace-section workspace-section-single">
-      <header><div><span>Saved</span><h4>즐겨찾는 대화</h4></div><em>${favorites.length}개</em></header>
+      <header><div><h4>즐겨찾는 대화</h4></div><em>${favorites.length}개</em></header>
       <div class="workspace-list">${favorites.length ? favorites.map((conversation) => `
         <article class="workspace-item">
           <div class="workspace-item-main"><strong>${escapeHtml(conversation.title || "새 대화")}</strong><small>${escapeHtml(String(conversation.updatedAt || "").slice(0, 10))} · ${(conversation.messages || []).length}개 메시지</small></div>
@@ -636,7 +636,7 @@ function playbookEditorForm() {
   if (!editor || !state.playbooksCanCurate) return "";
   return `
     <form class="playbook-editor" data-playbook-editor data-playbook-id="${escapeHtml(editor.id || "")}">
-      <header><div><span>CURATION</span><h4>${editor.id ? "플레이북 편집" : "새 플레이북 작성"}</h4></div></header>
+      <header><div><h4>${editor.id ? "플레이북 편집" : "새 플레이북 작성"}</h4></div></header>
       <label>제목<input name="title" maxlength="200" required value="${escapeHtml(editor.title || "")}" /></label>
       <label>증상<textarea name="symptom" maxlength="4000" required>${escapeHtml(editor.symptom || "")}</textarea></label>
       <label>원인<textarea name="cause" maxlength="4000" placeholder="확인된 원인이 없으면 비워둘 수 있습니다.">${escapeHtml(editor.cause || "")}</textarea></label>

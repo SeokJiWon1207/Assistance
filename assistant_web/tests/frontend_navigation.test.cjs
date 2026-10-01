@@ -19,7 +19,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const els = Object.fromEntries([
     'viewChatBtn', 'viewPersonalBtn', 'viewDashboardBtn', 'chatPanel', 'personalPanel',
     'dashboardPanel', 'dashboardRefreshBtn', 'dashboardPeriod', 'dashboardFilterbar', 'dashboardBody',
-    'dashboardDetail', 'dashboardDetailClose', 'dashboardDetailTitle', 'dashboardDetailBody', 'workspaceContent', 'dashboardSource', 'dashboardGeneratedAt', 'dashboardSubtitle',
+    'dashboardDetail', 'dashboardDetailClose', 'dashboardDetailTitle', 'dashboardDetailBody', 'workspaceContent', 'dashboardSource', 'dashboardSubtitle',
     ...(adminCenter ? ['viewAdminBtn', 'adminPanel'] : []),
   ].map((name) => [name, element(name)]));
   const htmlWrites = [];
@@ -168,12 +168,13 @@ test('dashboard shows refresh progress while keeping its controls in sync', asyn
   const loading = h.api.loadDashboard(true);
   await new Promise(setImmediate);
   assert.equal(h.els.dashboardRefreshBtn.disabled, true);
-  assert.equal(h.els.dashboardRefreshBtn.textContent, '불러오는 중…');
+  assert.match(h.els.dashboardRefreshBtn.innerHTML, /<span>불러오는 중…<\/span>/);
+  assert.match(h.els.dashboardRefreshBtn.innerHTML, /data-icon="refresh"/);
   assert.equal(h.els.dashboardRefreshBtn.attributes['aria-busy'], 'true');
   finish({ ok: false });
   await loading;
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);
-  assert.equal(h.els.dashboardRefreshBtn.textContent, '새로고침');
+  assert.match(h.els.dashboardRefreshBtn.innerHTML, /<span>새로고침<\/span>/);
   assert.equal(h.els.dashboardRefreshBtn.attributes['aria-busy'], 'false');
 });
 
@@ -279,7 +280,7 @@ test('dashboard does not renew freshness when receiving an old server cache', as
   await h.api.loadDashboard();
   await h.api.ensureDashboardFresh();
   assert.equal(h.calls.length, 2);
-  assert.match(h.els.dashboardGeneratedAt.textContent, /조회 기준/);
+  assert.match(h.els.dashboardSource.title, /조회 기준/);
 });
 
 
@@ -371,4 +372,23 @@ test('admin center is a fourth tab only for admins and loads when shown', async 
   assert.equal(member.els.adminPanel.hidden, true);
   assert.equal(member.els.chatPanel.hidden, false);
   assert.deepEqual(member.loaderCalls, []);
+});
+
+test('header holds scope, period and comparison once and period buttons reload the window', async () => {
+  const h = await harness('member', undefined, async () => ({ ok: true, payload: dashboard('live', 3) }));
+  await h.api.loadDashboard();
+  assert.equal(h.els.dashboardSubtitle.textContent, '팀 전체 · 8월 13일–9월 11일 · 직전 30일과 비교');
+  const html = h.els.dashboardBody.innerHTML;
+  assert.doesNotMatch(html, /dashboard-welcome|팀 전체 업무 현황|직전 동일 기간과 비교합니다/);
+  assert.doesNotMatch(html, /PRIORITY QUEUE|TODAY|CUSTOMER HEALTH|EARLY SIGNAL|WORKLOAD/);
+  assert.match(h.els.dashboardSource.title, /Mantis 조회 데이터/);
+
+  const pick = (days) => h.els.dashboardPeriod.handlers.click({
+    target: { closest: () => ({ dataset: { dashboardPeriod: String(days) }, disabled: false }) },
+  });
+  pick(30);
+  assert.equal(h.calls.length, 1);
+  pick(7);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(h.calls.at(-1), /days=7/);
 });

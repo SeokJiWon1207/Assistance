@@ -142,7 +142,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertNotIn('id="teamDashboardBtn"', html)
         self.assertNotIn('id="myWorkBtn"', html)
         self.assertIn('dashboard: "/api/workspace/dashboard"', self.application_javascript())
-        self.assertIn("CUSTOMER HEALTH", dashboard_js)
+        # 섹션 제목은 한국어만 쓰고 영문 대문자 라벨을 위에 따로 달지 않는다.
+        for english_label in ("CUSTOMER HEALTH", "PRIORITY QUEUE", "EARLY SIGNAL", "WORKLOAD", '"TODAY"', "ISSUE DETAIL"):
+            self.assertNotIn(english_label, dashboard_js + html)
+        self.assertIn('<fieldset id="dashboardPeriod" class="dashboard-period">', html)
+        self.assertNotIn('id="dashboardGeneratedAt"', html)
+        self.assertNotIn("dashboard-welcome", dashboard_js)
+        workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
+        self.assertNotRegex(workspace_js, r"<header><div><span>[A-Za-z]")
+        self.assertNotIn("WEEKLY TEAM BRIEF", workspace_js)
         self.assertIn("data-dashboard-question", dashboard_js)
         self.assertIn("showChatView();\n  els.input.value = question", dashboard_js)
         self.assertIn("dashboardState.customer", dashboard_js)
@@ -162,6 +170,8 @@ class FrontendCoreTests(unittest.TestCase):
                 weights = {int(value) for value in re.findall(r"font-weight:\s*([0-9]+)", text)}
                 self.assertLessEqual(sizes, tds_sizes)
                 self.assertLessEqual(weights, tds_weights)
+                # 영문 라벨용 대문자 변환은 쓰지 않는다.
+                self.assertNotIn("text-transform: uppercase", text)
 
     def test_icons_come_from_one_sprite_instead_of_text_glyphs(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
