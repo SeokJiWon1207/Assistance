@@ -1,6 +1,7 @@
 import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, conversationListSections, conversationTimeLabel, deriveConversationTitle, searchConversations, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
+import { icon } from "./icons.js?v=20260911-6";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -427,7 +428,7 @@ function workspaceMetric(label, value, tone = "", detail = "") {
 }
 
 function workspaceEmpty(message) {
-  return `<div class="workspace-empty"><span aria-hidden="true">✓</span><p>${escapeHtml(message)}</p></div>`;
+  return `<div class="workspace-empty"><span aria-hidden="true">${icon("check", 20)}</span><p>${escapeHtml(message)}</p></div>`;
 }
 
 function workspaceStatusLabel(value) {

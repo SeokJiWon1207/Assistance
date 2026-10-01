@@ -1,5 +1,6 @@
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
+import { icon } from "./icons.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
@@ -54,7 +55,7 @@ function riskLabel(level) {
 }
 
 function emptyBlock(message) {
-  return `<div class="workspace-empty"><span aria-hidden="true">✓</span><p>${escapeHtml(message)}</p></div>`;
+  return `<div class="workspace-empty"><span aria-hidden="true">${icon("check", 20)}</span><p>${escapeHtml(message)}</p></div>`;
 }
 
 function sectionHeader(eyebrow, title, meta = "") {
@@ -77,7 +78,7 @@ function renderMetrics(summary) {
   const rate = summary.changeRate;
   const delta = rate == null
     ? '<em class="dashboard-delta">비교 기준 없음</em>'
-    : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">${rate > 0 ? "↑" : rate < 0 ? "↓" : "–"} ${Math.abs(rate)}%</em>`;
+    : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">${rate > 0 ? icon("arrow-up", 14, "is-bold") : rate < 0 ? icon("arrow-down", 14, "is-bold") : "–"}${Math.abs(rate)}%</em>`;
   return `
     <section class="workspace-summary-grid dashboard-metrics" aria-label="핵심 운영 지표">
       ${metricCard("open", "미종료 이슈", summary.open, `전체 보기 · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue", delta)}
@@ -205,16 +206,16 @@ function renderFilterbar(filteredCount = 0) {
   const chips = [];
   if (dashboardState.metric) {
     const label = metricFilterLabels[dashboardState.metric];
-    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="metric" aria-label="${escapeHtml(label)} 필터 해제">${escapeHtml(label)} ×</button>`);
+    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="metric" aria-label="${escapeHtml(label)} 필터 해제">${escapeHtml(label)}${icon("close", 14)}</button>`);
   }
   if (dashboardState.customer) {
-    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(dashboardState.customer)} 필터 해제">고객사: ${escapeHtml(dashboardState.customer)} ×</button>`);
+    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(dashboardState.customer)} 필터 해제">고객사: ${escapeHtml(dashboardState.customer)}${icon("close", 14)}</button>`);
   }
   els.dashboardFilterbar.hidden = false;
   els.dashboardFilterbar.innerHTML = chips.length
     ? `<span class="dashboard-filterbar-label">적용 필터</span>${chips.join("")}
       <button class="dashboard-chip dashboard-chip-clear" type="button" data-dashboard-clear="all">전체 해제</button>
-      <button class="dashboard-filter-jump" type="button" data-dashboard-jump>우선 확인 이슈 ${formatNumber(filteredCount)}건 보기 ↑</button>`
+      <button class="dashboard-filter-jump" type="button" data-dashboard-jump>우선 확인 이슈 ${formatNumber(filteredCount)}건 보기${icon("arrow-up", 14, "is-bold")}</button>`
     : `<span class="dashboard-filterbar-label">적용 필터</span>
       <span class="dashboard-filterbar-hint">없음 · 지표 카드나 고객사를 누르면 '우선 확인 이슈'가 바로 걸러집니다.</span>`;
 }

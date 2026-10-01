@@ -204,7 +204,7 @@ button.workspace-metric:hover,
 button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue) 48%, var(--line)); box-shadow: 0 4px 18px color-mix(in srgb, var(--blue) 10%, transparent); }
 
 .dashboard-metric-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.dashboard-delta { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700; }
+.dashboard-delta { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700; }
 .dashboard-delta.is-up { color: var(--danger); }
 .dashboard-delta.is-down { color: var(--success); }
 
@@ -222,6 +222,13 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 
 .dashboard-filterbar-label { color: var(--muted); font-size: 12px; font-weight: 700; }
 .dashboard-filterbar-hint { color: var(--muted); font-size: 12px; }
+.dashboard-chip,
+.dashboard-filter-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .dashboard-chip {
   min-height: 30px;
   padding: 0 11px;
@@ -443,8 +450,8 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   .dashboard-heading h2 { font-size: 17px; }
   .dashboard-toolbar { flex: 0 1 auto; }
   .dashboard-period { display: none; }
-  .dashboard-header .workspace-refresh-button { width: 36px; overflow: hidden; padding: 0; color: transparent; }
-  .dashboard-header .workspace-refresh-button::before { color: var(--text-soft); content: "↻"; font-size: 17px; }
+  .dashboard-header .workspace-refresh-button { width: 36px; padding: 0; justify-content: center; }
+  .dashboard-header .workspace-refresh-button > span { display: none; }
   .dashboard-filterbar { padding: 7px 12px; }
   .dashboard-filterbar-hint { display: none; }
   .dashboard-filter-jump { margin-left: 0; }

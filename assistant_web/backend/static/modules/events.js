@@ -517,7 +517,8 @@ els.messages.addEventListener("click", (event) => {
     toggle.setAttribute("aria-expanded", String(!expanded));
     panel.hidden = expanded;
     const label = toggle.querySelector("em");
-    if (label) label.textContent = expanded ? "펼치기" : "접기";
+    // 글자만 바꾸고 옆의 펼침 아이콘은 그대로 둔다(회전은 aria-expanded 로 CSS가 처리).
+    if (label?.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.textContent = expanded ? "펼치기" : "접기";
     return;
   }
 

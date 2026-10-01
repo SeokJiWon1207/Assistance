@@ -162,6 +162,27 @@ class FrontendCoreTests(unittest.TestCase):
                 self.assertLessEqual(sizes, tds_sizes)
                 self.assertLessEqual(weights, tds_weights)
 
+    def test_icons_come_from_one_sprite_instead_of_text_glyphs(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        modules = {path.name: path.read_text(encoding="utf-8") for path in (STATIC_DIR / "modules").glob("*.js")}
+        symbols = set(re.findall(r'<symbol id="i-([a-z-]+)" viewBox="0 0 24 24">', html))
+
+        # HTML의 <use>와 JS의 icon("이름")이 가리키는 아이콘은 모두 스프라이트에 있어야 한다.
+        used = set(re.findall(r'href="#i-([a-z-]+)"', html))
+        for source in modules.values():
+            used |= set(re.findall(r'\bicon\("([a-z-]+)"', source))
+        self.assertTrue(used)
+        self.assertLessEqual(used, symbols)
+        # 버튼 안 문자 기호와 20 격자 아이콘은 남기지 않는다.
+        self.assertNotRegex(html, r">[☰＋×↻]</button>")
+        self.assertNotIn('viewBox="0 0 24 24" aria-hidden="true"><path', html)
+        for name, source in modules.items():
+            with self.subTest(module=name):
+                self.assertNotIn('viewBox="0 0 20 20"', source)
+        for path in STATIC_DIR.glob("*.css"):
+            with self.subTest(stylesheet=path.name):
+                self.assertNotRegex(path.read_text(encoding="utf-8"), r'content:\s*"[⌄↻×]"')
+
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
         body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]

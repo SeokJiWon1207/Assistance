@@ -1,3 +1,4 @@
+import { icon } from "./icons.js?v=20260911-6";
 import { state } from "./runtime.js?v=20260911-6";
 import {
   isMarkdownTableRow,
@@ -50,8 +51,8 @@ function statusToneClass(label) {
 }
 
 const CALLOUT_ICONS = {
-  info: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 9v4.2M10 6.4v.2"/></svg>',
-  warning: '<svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.2 17.4 16H2.6z"/><path d="M10 8.4v3.4M10 14.2v.2"/></svg>',
+  info: icon("info"),
+  warning: icon("warning"),
 };
 
 // "참고:"/"데이터 기준:" 같은 안내문을 일반 문단 대신 아이콘 콜아웃으로 그린다.
@@ -668,7 +669,7 @@ function renderSourceList(sources, messageIndex, keyPrefix = "source") {
   toggle.setAttribute("aria-expanded", String(!isLongList));
   toggle.innerHTML = `
     <span>${sourceLabel} <strong>${sources.length}</strong>건</span>
-    <em>${isLongList ? "펼치기" : "접기"}</em>
+    <em>${isLongList ? "펼치기" : "접기"}${icon("chevron-down")}</em>
   `;
 
   const panel = document.createElement("div");

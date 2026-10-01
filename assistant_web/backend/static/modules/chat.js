@@ -2,6 +2,7 @@ import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceT
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js?v=20260911-6";
+import { icon } from "./icons.js?v=20260911-6";
 import {
   configureChatFeedback,
   MESSAGE_ACTION_ICONS,
@@ -368,7 +369,7 @@ function renderSearchConditionChips(message, messageIndex) {
     button.dataset.messageIndex = String(messageIndex);
     button.setAttribute("aria-label", `${condition.label} ${condition.value} 조건을 제거하고 다시 검색`);
     button.title = "이 조건을 제외하고 다시 검색";
-    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong><i aria-hidden="true">×</i>`;
+    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong><i aria-hidden="true">${icon("close", 14)}</i>`;
     list.appendChild(button);
   });
   section.append(label, list);

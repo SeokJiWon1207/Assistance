@@ -40,6 +40,7 @@ async function harness(apiFetch) {
     './runtime.js': runtime,
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
     './events.js': { cancelMessageEdit() {} },
+    './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
   };
   const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace.js'), 'utf8');
   const module = new vm.SourceTextModule(source, { context });

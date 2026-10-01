@@ -1,6 +1,7 @@
 import { state, els, apiFetch } from "./runtime.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { refreshFeedbackSummary } from "./admin.js?v=20260911-6";
+import { icon } from "./icons.js?v=20260911-6";
 
 let renderMessagesCallback = () => {};
 
@@ -9,12 +10,12 @@ function configureChatFeedback({ renderMessages } = {}) {
 }
 
 const MESSAGE_ACTION_ICONS = {
-  copy: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7.5" y="7.5" width="9" height="9" rx="1.8"/><path d="M4.5 12.5v-7a2 2 0 0 1 2-2h7"/></svg>',
-  check: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 10.5 8 14l7.5-8"/></svg>',
-  regenerate: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 10a6.5 6.5 0 0 1 11.2-4.5M16.5 10a6.5 6.5 0 0 1-11.2 4.5"/><path d="M14.5 3v3h-3M5.5 17v-3h3"/></svg>',
-  edit: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4.5 15.5 8 7 16.5H3.5V13z"/></svg>',
-  helpful: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 8.5 9.5 3c1.2.2 2 1.3 1.7 2.5L10.8 8h4.1c1.2 0 2.1 1.1 1.8 2.3l-1.2 5A2.2 2.2 0 0 1 13.4 17H6.5z"/><path d="M3.5 8.5h3v8.5h-3z"/></svg>',
-  improve: '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6.5 11.5 3 5.5c1.2-.2 2-1.3 1.7-2.5l-.4-2.5h4.1c1.2 0 2.1-1.1 1.8-2.3l-1.2-5A2.2 2.2 0 0 0 13.4 3H6.5z"/><path d="M3.5 3h3v8.5h-3z"/></svg>',
+  copy: icon("copy"),
+  check: icon("check"),
+  regenerate: icon("regenerate"),
+  edit: icon("edit"),
+  helpful: icon("thumb-up"),
+  improve: icon("feedback"),
 };
 
 function renderMessageActions(message, messageIndex) {
@@ -27,10 +28,10 @@ function renderMessageActions(message, messageIndex) {
       <span class="message-action-divider" aria-hidden="true"></span>
       <span class="message-feedback-label">도움이 되었나요?</span>
       <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="helpful" data-message-index="${messageIndex}" aria-label="도움됨" aria-pressed="${helpfulSelected}">
-        ${MESSAGE_ACTION_ICONS.helpful}<span>${helpfulSelected ? "도움됨 ✓" : "도움됨"}</span>
+        ${MESSAGE_ACTION_ICONS.helpful}<span>도움됨</span>
       </button>
       <button type="button" class="message-action-btn feedback-action-btn" data-feedback-rating="needs_improvement" data-message-index="${messageIndex}" aria-label="개선 필요" aria-pressed="${improveSelected}">
-        ${MESSAGE_ACTION_ICONS.improve}<span>${improveSelected ? "의견 남김 ✓" : "개선 필요"}</span>
+        ${MESSAGE_ACTION_ICONS.improve}<span>${improveSelected ? "의견 남김" : "개선 필요"}</span>
       </button>
     ` : "";
     actions.innerHTML = `

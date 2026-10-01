@@ -4,16 +4,50 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260930-3" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/charts.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/workspace.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20260930-1" />
+    <link rel="stylesheet" href="/static/workspace.css?v=20261001-1" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/admin_center.css?v=20260930-1" />
   </head>
   <body class="auth-pending">
+    <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
+    <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+      <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+      <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H7a2 2 0 0 0-2 2v8"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16Z"/><path d="m13.5 6.5 4 4"/></symbol>
+      <symbol id="i-regenerate" viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6"/><path d="M18 3v4h-4M6 21v-4h4"/></symbol>
+      <symbol id="i-thumb-up" viewBox="0 0 24 24"><path d="M7 10v10H4V10ZM7 10l4-7c1.6 0 2.6 1.2 2.3 2.8L12.7 9H19a2 2 0 0 1 2 2.3l-1.3 7a2 2 0 0 1-2 1.7H7"/></symbol>
+      <symbol id="i-feedback" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 3Z"/><path d="M12 8v3M12 13.5h.01"/></symbol>
+      <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+      <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19Z"/><path d="M12 10v4M12 17h.01"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 3Z"/><path d="M8 9h8M8 12h5"/></symbol>
+      <symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 3h8v4H8ZM8 12h8M8 16h5"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+      <symbol id="i-template" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></symbol>
+    </svg>
     <section id="authGate" class="auth-gate" aria-live="polite">
       <div class="auth-card">
         <div class="auth-brand">
@@ -55,10 +89,10 @@
         <section class="conversation-section" aria-labelledby="conversationHistoryLabel">
           <div class="conversation-heading">
             <span id="conversationHistoryLabel" class="section-label">이전 대화 <small id="conversationCount" class="conversation-count"></small></span>
-            <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화">＋</button>
+            <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
           <div class="conversation-search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m20 20-4.5-4.5" /></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-search"/></svg>
             <input id="conversationSearch" type="search" placeholder="제목·내용으로 대화 검색" autocomplete="off" aria-label="대화 검색" aria-controls="conversationList" />
           </div>
           <p id="conversationSearchStatus" class="conversation-search-status" aria-live="polite" hidden></p>
@@ -181,37 +215,37 @@
             <strong id="signedInUserName">사용자</strong>
             <small id="signedInUserMeta"></small>
           </span>
-          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg></button>
+          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃"><svg class="ui-icon" aria-hidden="true"><use href="#i-logout"/></svg></button>
         </section>
 
         <div class="sidebar-footer-actions">
-          <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><span aria-hidden="true">↻</span><strong>초기화</strong></button>
+          <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><strong>초기화</strong></button>
         </div>
       </aside>
 
       <section class="main-view-shell">
         <nav class="view-switch" role="tablist" aria-label="화면 전환">
           <button id="viewChatBtn" class="view-switch-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="chatPanel">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 3Z"/><path d="M8 9h8M8 12h5"/></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-chat"/></svg>
             대화
           </button>
           <button id="viewPersonalBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="personalPanel" tabindex="-1">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="17" rx="2"/><path d="M8 3h8v4H8zM8 12h8M8 16h5"/></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-clipboard"/></svg>
             내 업무 <em id="workspaceUnreadBadge" hidden>0</em>
           </button>
           <button id="viewDashboardBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel" tabindex="-1" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-grid"/></svg>
             팀 대시보드
           </button>
           <button id="viewAdminBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="adminPanel" tabindex="-1" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-shield"/></svg>
             관리자 센터 <em id="adminPendingBadge" hidden>0</em>
           </button>
         </nav>
 
         <section id="personalPanel" class="personal-panel" role="tabpanel" aria-labelledby="viewPersonalBtn" hidden>
         <header class="modal-header workspace-modal-header">
-          <button id="personalSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+          <button id="personalSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div>
             <p id="workspaceModalEyebrow">개인 워크스페이스</p>
             <h3 id="workspaceModalTitle">내 업무</h3>
@@ -234,7 +268,7 @@
 
         <section id="dashboardPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="viewDashboardBtn" hidden>
           <header class="dashboard-header">
-            <button id="dashboardSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+            <button id="dashboardSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
             <div class="dashboard-heading">
               <h2>팀 대시보드</h2>
               <p id="dashboardSubtitle">팀 전체 업무량과 고객사 위험 신호를 확인합니다.</p>
@@ -251,7 +285,7 @@
                   <option value="90">최근 90일</option>
                 </select>
               </label>
-              <button id="dashboardRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
+              <button id="dashboardRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
             </div>
           </header>
           <div id="dashboardFilterbar" class="dashboard-filterbar" role="region" aria-label="적용 필터" hidden></div>
@@ -259,7 +293,7 @@
           <aside id="dashboardDetail" class="dashboard-detail" aria-labelledby="dashboardDetailTitle" hidden>
             <header>
               <div><span>ISSUE DETAIL</span><h3 id="dashboardDetailTitle">이슈 상세</h3></div>
-              <button id="dashboardDetailClose" class="modal-close" type="button" aria-label="이슈 상세 닫기">×</button>
+              <button id="dashboardDetailClose" class="modal-close" type="button" aria-label="이슈 상세 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
             </header>
             <div id="dashboardDetailBody" class="dashboard-detail-body"></div>
           </aside>
@@ -267,13 +301,13 @@
 
         <section id="adminPanel" class="admin-panel" role="tabpanel" aria-labelledby="viewAdminBtn" hidden>
           <nav class="admin-nav" aria-label="관리자 메뉴">
-            <button id="adminSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+            <button id="adminSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
             <p>관리자 센터</p>
-            <button type="button" data-admin-section="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/></svg>품질 현황</button>
-            <button type="button" data-admin-section="run"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>검증 실행</button>
-            <button type="button" data-admin-section="feedback"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v10H4V10ZM7 10l4-7c1.6 0 2.6 1.2 2.3 2.8L12.7 9H19a2 2 0 0 1 2 2.3l-1.3 7a2 2 0 0 1-2 1.7H7"/></svg>답변 피드백</button>
-            <button type="button" data-admin-section="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>감사 로그</button>
-            <button type="button" data-admin-section="users"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>사용자 <em id="adminNavPendingBadge" hidden>0</em></button>
+            <button type="button" data-admin-section="overview"><svg class="ui-icon" aria-hidden="true"><use href="#i-chart"/></svg>품질 현황</button>
+            <button type="button" data-admin-section="run"><svg class="ui-icon" aria-hidden="true"><use href="#i-play"/></svg>검증 실행</button>
+            <button type="button" data-admin-section="feedback"><svg class="ui-icon" aria-hidden="true"><use href="#i-thumb-up"/></svg>답변 피드백</button>
+            <button type="button" data-admin-section="logs"><svg class="ui-icon" aria-hidden="true"><use href="#i-list"/></svg>감사 로그</button>
+            <button type="button" data-admin-section="users"><svg class="ui-icon" aria-hidden="true"><use href="#i-users"/></svg>사용자 <em id="adminNavPendingBadge" hidden>0</em></button>
           </nav>
           <div id="adminContent" class="admin-content" tabindex="-1">
             <p class="admin-empty">관리자 정보를 불러오는 중입니다.</p>
@@ -282,7 +316,7 @@
           <aside id="adminDrawer" class="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="adminDrawerTitle" hidden>
             <header>
               <div><h2 id="adminDrawerTitle">사용자</h2><p id="adminDrawerSub"></p></div>
-              <button id="adminDrawerClose" class="admin-icon-button" type="button" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+              <button id="adminDrawerClose" class="admin-icon-button" type="button" aria-label="닫기"><svg class="ui-icon" aria-hidden="true"><use href="#i-close"/></svg></button>
             </header>
             <form id="adminDrawerForm" class="admin-drawer-form" novalidate></form>
           </aside>
@@ -290,7 +324,7 @@
 
         <section id="chatPanel" class="chat-panel" role="tabpanel" aria-labelledby="viewChatBtn">
         <header class="chat-header">
-          <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+          <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div>
             <h2 id="activeConversationTitle">새 대화</h2>
             <p id="statusLine">서비스 상태를 확인하는 중입니다.</p>
@@ -308,16 +342,14 @@
             title="대화 처음으로"
             hidden
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m6 11 6-6 6 6M12 5v14" />
-            </svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-arrow-up"/></svg>
           </button>
           <div id="editNotice" class="edit-notice" hidden>
             <span>이 질문부터 다시 작성합니다.</span>
             <button id="cancelEditBtn" type="button">취소</button>
           </div>
           <button id="templateToggleBtn" class="template-toggle-button" type="button" aria-controls="templatePicker" aria-expanded="false" aria-label="팀 템플릿 열기">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16M10 10v10" /></svg>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-template"/></svg>
             <span class="template-toggle-label">템플릿</span>
           </button>
           <textarea
@@ -349,7 +381,7 @@
           <form id="templateForm" class="template-picker-view" aria-labelledby="templateFormTitle" hidden>
             <header class="template-picker-form-header">
               <button id="templateBackBtn" class="template-picker-icon-button" type="button" aria-label="템플릿 목록으로 돌아가기">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+                <svg class="ui-icon" aria-hidden="true"><use href="#i-chevron-left"/></svg>
               </button>
               <span id="templateFormIcon" class="template-picker-form-icon" aria-hidden="true"></span>
               <div class="template-picker-form-heading">
@@ -357,7 +389,7 @@
                 <p id="templateFormDescription"></p>
               </div>
               <button id="templateCloseBtn" class="template-picker-icon-button" type="button" aria-label="템플릿 닫기">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
+                <svg class="ui-icon" aria-hidden="true"><use href="#i-close"/></svg>
               </button>
             </header>
             <div class="template-picker-form-body">
@@ -387,7 +419,7 @@
             <p>계정</p>
             <h3 id="logoutConfirmTitle">로그아웃하시겠습니까?</h3>
           </div>
-          <button id="logoutConfirmClose" class="modal-close" type="button" aria-label="닫기">×</button>
+          <button id="logoutConfirmClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </header>
         <div class="modal-form">
           <p id="logoutConfirmDescription" class="modal-form-description">현재 계정의 세션을 종료하고 로그인 화면으로 이동합니다.</p>
@@ -407,7 +439,7 @@
             <p>답변 품질 피드백</p>
             <h3 id="feedbackModalTitle">어떤 점을 개선하면 좋을까요?</h3>
           </div>
-          <button id="feedbackModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+          <button id="feedbackModalClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </header>
         <form id="feedbackForm" class="modal-form">
           <p id="feedbackQuestion" class="feedback-question"></p>
@@ -439,7 +471,7 @@
             <p id="chromaModalMeta">ChromaDB 문서</p>
             <h3 id="chromaModalTitle">이슈 상세</h3>
           </div>
-          <button id="chromaModalClose" class="modal-close" type="button" aria-label="닫기">×</button>
+          <button id="chromaModalClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </header>
         <div id="chromaModalContent" class="modal-content"></div>
       </section>

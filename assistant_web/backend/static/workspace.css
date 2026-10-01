@@ -10,6 +10,9 @@
 }
 
 .workspace-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   width: auto;
   min-height: 36px;
   padding: 0 13px;
@@ -487,8 +490,8 @@
 .workspace-empty span {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: var(--blue-soft);
   color: var(--blue);

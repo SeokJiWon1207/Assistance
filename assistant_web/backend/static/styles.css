@@ -92,6 +92,29 @@ body {
   display: none !important;
 }
 
+/* 공통 아이콘(index.html 의 스프라이트). 크기는 width·height 속성이나 놓인 자리의 CSS가 정한다. */
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.ui-icon {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: middle;
+}
+
+/* 숫자 옆 증감 화살표처럼 작은 자리는 선을 조금 굵게 해 글자 무게와 맞춘다. */
+.ui-icon.is-bold {
+  stroke-width: 2.2;
+}
+
 body.modal-open {
   overflow: hidden;
 }
@@ -686,7 +709,7 @@ select.custom-select-native {
   height: 18px;
   fill: none;
   stroke: var(--muted);
-  stroke-width: 2;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
   transition: transform 0.18s ease, stroke 0.18s ease;
@@ -823,7 +846,7 @@ select.custom-select-native {
   opacity: 0;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.2;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1138,10 +1161,8 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   font-size: 12px;
 }
 
-.sidebar-action-button span {
+.sidebar-action-button .ui-icon {
   color: var(--blue);
-  font-size: 16px;
-  line-height: 1;
 }
 
 .sidebar-action-button:hover {
@@ -1384,7 +1405,6 @@ body.theme-dark .chat-header {
   height: 16px;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 14px;
   font-style: normal;
 }
 
@@ -1746,14 +1766,17 @@ body.theme-dark .chat-header {
   font-weight: 700;
 }
 
-.source-list-toggle em::after {
-  content: "⌄";
-  display: inline-block;
-  margin-left: 6px;
+.source-list-toggle em {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.source-list-toggle .ui-icon {
   transition: transform 0.16s ease;
 }
 
-.source-list-toggle[aria-expanded="true"] em::after {
+.source-list-toggle[aria-expanded="true"] .ui-icon {
   transform: rotate(180deg);
 }
 
@@ -1931,8 +1954,6 @@ body.theme-dark .chat-header {
   background: var(--surface-alt);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 22px;
-  line-height: 1;
   transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
@@ -2359,8 +2380,8 @@ body.theme-dark .chat-header {
 }
 
 .starter-card-icon svg {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -3297,8 +3318,8 @@ body.theme-dark .message.user .bubble {
 }
 
 .scroll-to-top-button svg {
-  width: 21px;
-  height: 21px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;

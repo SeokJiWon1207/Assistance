@@ -41,6 +41,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     './runtime.js': { state, els, WORKSPACE_ENDPOINTS: { dashboard: '/dashboard' },
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
+    './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
     './workspace.js': {
       ensureMyWorkspaceFresh: async () => { calls.push('personal'); }, renderWorkspace() {},
       loadTeamWeeklyBrief: async () => {}, renderTeamWeeklyBrief: () => '', markTeamWeeklyBriefRead: async () => {},
@@ -256,7 +257,7 @@ test('priority queue follows the metrics and filters stay above the scrolling bo
   assert.match(html, /data-dashboard-metric="open" aria-pressed="true"/);
 
   h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-metric]', { dashboardMetric: 'overdue' }) });
-  assert.match(h.els.dashboardFilterbar.innerHTML, /일정 지연 ×/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /일정 지연<svg data-icon="close">/);
   assert.match(h.els.dashboardFilterbar.innerHTML, /우선 확인 이슈 1건 보기/);
   assert.match(h.els.dashboardBody.innerHTML, /1 \/ 3건/);
   assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-metric="open" aria-pressed="false"/);
@@ -278,7 +279,7 @@ test('customer rows toggle their filter and the filter bar hides while reloading
     target: clickTarget('[data-dashboard-customer]', { dashboardCustomer: '고객사 A' }),
   });
   pickCustomer();
-  assert.match(h.els.dashboardFilterbar.innerHTML, /고객사: 고객사 A ×/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /고객사: 고객사 A<svg data-icon="close">/);
   assert.match(h.els.dashboardBody.innerHTML, /2 \/ 3건/);
   pickCustomer();
   assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
