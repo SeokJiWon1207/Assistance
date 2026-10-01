@@ -174,5 +174,16 @@ class DashboardWholePopulationTests(unittest.TestCase):
         result = self._build({"role": "manager", "displayName": "팀장"})
         self.assertEqual(result['summary']['highRisk'], 40)
         self.assertEqual(len(result['priorities']), dashboard.DASHBOARD_PRIORITY_LIMIT)
+        self.assertEqual(len(result['openIssues']), 40)
+        self.assertEqual(sum(row['overdue'] for row in result['openIssues']), result['summary']['overdue'])
+        self.assertEqual(sum(row['ageDays'] >= 30 for row in result['openIssues']), result['summary']['aging'])
+        self.assertEqual(sum(row['riskLevel'] == 'high' for row in result['openIssues']), result['summary']['highRisk'])
         self.assertEqual(sum(result['customerHealthSummary'].values()), 40)
         self.assertEqual(len(result['customerHealth']), dashboard.DASHBOARD_CUSTOMER_LIMIT)
+
+    def test_all_open_list_includes_recent_non_priority_issues_once(self):
+        self.issues.append({**self.issues[0], 'id': 999, 'status': 'assigned', 'priority': 'normal',
+                            'created_at': '2026-08-26', 'updated_at': '2026-08-26', 'date_fields': {}})
+        result = self._build({'role': 'member', 'displayName': '석지원'})
+        self.assertEqual([row['id'] for row in result['openIssues']], [101, 999])
+        self.assertEqual(len(result['openIssues']), result['summary']['open'])

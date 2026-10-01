@@ -175,8 +175,8 @@ def load_complete_workspace(*, force_refresh: bool = False, predicate: Callable 
         return None
     if force_refresh:
         start_store_refresh()
-        # 명시적인 새로고침은 저장본을 즉시 반환하지 않고 라이브 조회로 진행한다.
-        return None
+        # 전체 수집은 원자적으로 교체된다. 유효한 전체 저장본을 유지하면서
+        # 갱신 상태를 알리고, 제한된 최근 페이지로 전체 집계를 대체하지 않는다.
     try:
         identity = connection_key()
         rows, saved_meta = _complete_workspace_cached(str(path), *_signature(path), identity)

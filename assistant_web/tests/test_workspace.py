@@ -289,6 +289,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
         self.assertEqual(result["notion"]["status"], "hidden")
         self.assertEqual(result["summary"]["unreadNotifications"], 1)
         self.assertEqual(result["weeklyBrief"]["newIssues"], 1)
+        self.assertEqual([item["id"] for item in result["weeklyBrief"]["highlights"]], [101, 102])
 
     def test_personal_issue_list_prioritizes_overdue_then_aging_work(self):
         today = workspace.date.today()

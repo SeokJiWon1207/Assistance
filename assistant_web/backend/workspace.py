@@ -594,9 +594,10 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             "updatedIssues": len(updated_this_week),
             "openIssues": len(open_issues),
             "overdueIssues": len(overdue),
-            "highlights": [
-                item for item in (overdue[:3] + aging[:3] + updated_this_week[:3])
-            ][:6],
+            "highlights": list({
+                str(item["id"]): item
+                for item in (overdue[:3] + aging[:3] + updated_this_week[:3])
+            }.values())[:6],
         },
     }
 

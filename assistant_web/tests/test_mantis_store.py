@@ -179,7 +179,26 @@ class MantisCompleteStoreTests(unittest.TestCase):
             self.assertIsNotNone(workspace_data.load_complete_workspace())
             self.assertEqual(read.call_count, 2)
 
-    def test_expired_cache_is_rejected_and_forced_refresh_uses_live_rows(self):
+    def test_refresh_retains_complete_generation_until_atomic_replacement(self):
+        from backend.reports import team_brief
+        self.sync([{'id': 9}, {'id': 1, 'summary': '오래된 미종료'}])
+        with (patch.object(workspace_data, 'store_path', return_value=self.path),
+              patch.object(workspace_data, 'connection_key', return_value='connection-a'),
+              patch.object(workspace_data, 'start_store_refresh') as refresh,
+              patch.object(workspace_data, 'refresh_in_progress', return_value=True),
+              patch.object(team_brief, 'fetch_workspace_recent_issues') as partial):
+            rows, meta = team_brief._load_issues(force_refresh=True)
+            self.assertEqual([row['id'] for row in rows], [9, 1])
+            self.assertTrue(meta['search_complete'])
+            self.assertTrue(meta['refreshPending'])
+            refresh.assert_called_once()
+            partial.assert_not_called()
+            self.sync([{'id': 10}, {'id': 9}, {'id': 1}])
+            rows, meta = workspace_data.load_complete_workspace()
+            self.assertEqual([row['id'] for row in rows], [10, 9, 1])
+            self.assertTrue(meta['search_complete'])
+
+    def test_expired_cache_is_rejected_but_refresh_keeps_valid_complete_rows(self):
         from backend.workspace import _my_mantis_issues
         self.sync([{'id': 1, 'handler': {'real_name': '사용자'}}])
         with (patch.object(workspace_data, 'store_path', return_value=self.path),
@@ -195,8 +214,9 @@ class MantisCompleteStoreTests(unittest.TestCase):
                 self.assertEqual([row['id'] for row in rows], [2])
                 self.assertEqual(meta['status'], 'live')
             _, rows, meta = _my_mantis_issues({'mantisUsername':'사용자'}, force_refresh=True)
-            self.assertEqual([row['id'] for row in rows], [2])
-            self.assertEqual(meta['status'], 'live')
+            self.assertEqual([row['id'] for row in rows], [1])
+            self.assertEqual(meta['status'], 'snapshot')
+            self.assertTrue(meta['search_complete'])
             refresh.assert_called_once()
 
     def test_aggregate_cache_is_immutable_and_personal_copy_follows_filter(self):

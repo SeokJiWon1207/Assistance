@@ -266,6 +266,7 @@ def build_operations_dashboard(
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
     priorities = _priorities(scoped_open, base)
+    priority_ids = {str(item["id"]) for item in priorities}
     recent = [issue for issue in issues if _inside(issue, current_start, current_end)]
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
     customer_spikes = _spikes(recent, previous, "project")
@@ -324,6 +325,11 @@ def build_operations_dashboard(
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),
         "priorities": priorities[:DASHBOARD_PRIORITY_LIMIT],
+        # 지표/고객사 필터는 우선순위 상위 일부가 아니라 전체 미종료에 적용한다.
+        "openIssues": priorities + [
+            _priority_content(row, base) for row in scoped_open
+            if str(row["id"]) not in priority_ids
+        ],
         "customerSpikes": customer_spikes,
         "screenSpikes": screen_spikes,
         "customerHealth": health[:DASHBOARD_CUSTOMER_LIMIT],
