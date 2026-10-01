@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from backend.audit import init_audit_db
+from backend.evaluation.latency import latency_summary
 from backend.auth import current_request_user
 from backend.config import APP_DIR, AUDIT_DB_PATH, RUNTIME_DIR
 from backend.reports.evaluation import (
@@ -210,7 +211,9 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
     with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
-            "SELECT id, created_at, question, model_id, mode, score, status, failed_checks_json "
+            "SELECT id, created_at, question, model_id, mode, score, status, failed_checks_json, "
+            "CASE WHEN json_valid(payload) THEN json_object('timings', json_extract(payload, '$.timings')) "
+            "ELSE '{}' END AS payload "
             "FROM validation_logs ORDER BY created_at DESC LIMIT ?",
             (safe_limit,),
         ).fetchall()
@@ -275,6 +278,7 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
         "modelCounts": dict(sorted(model_counts.items(), key=lambda item: item[1], reverse=True)),
         "topFailingChecks": top_failing_checks,
         "recentIssues": recent_issues,
+        "latency": latency_summary(rows),
     }
 
 

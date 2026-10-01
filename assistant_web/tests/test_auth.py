@@ -243,6 +243,8 @@ class AuthApiTests(unittest.TestCase):
             response = self.client.get(
                 "/api/validation/logs", cookies={"ai_session": "valid"}
             )
+            summary = self.client.get("/api/validation/summary", cookies={"ai_session": "valid"})
+            self.assertEqual(summary.status_code, 403)
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["detail"], "관리자 권한이 필요합니다.")
 
