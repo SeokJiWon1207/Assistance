@@ -150,8 +150,9 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (max-width: 560px)", dashboard_css)
 
     def test_stylesheets_use_tds_type_sizes_and_weights(self):
-        # TDS Typography 1~7과 sub Typography 1~13의 크기(11~30px), Light~Bold 굵기만 쓴다.
-        tds_sizes = {11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30}
+        # TDS 단계 중 앱에서 쓰기로 한 9단계와 Light~Bold 굵기만 쓴다.
+        # 12 캡션 · 13 보조 · 14 목록 · 15 버튼 · 16 본문 · 17 카드 제목 · 20 화면 제목 · 22 섹션 제목 · 26 지표 숫자
+        tds_sizes = {12, 13, 14, 15, 16, 17, 20, 22, 26}
         tds_weights = {300, 400, 500, 600, 700}
         for path in sorted(STATIC_DIR.glob("*.css")):
             # @font-face의 굵기 범위는 글꼴 파일이 지원하는 범위라 화면 스타일 검사에서 뺀다.

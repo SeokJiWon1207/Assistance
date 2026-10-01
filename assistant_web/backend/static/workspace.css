@@ -54,7 +54,7 @@
 
 .workspace-tabs em {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
 }
 
@@ -122,7 +122,7 @@
   border-radius: 9px;
   background: var(--blue-soft);
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-refresh-status.is-error {
@@ -195,12 +195,12 @@
   border-radius: 8px;
   background: var(--blue-soft);
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .workspace-connection strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-connection span:not(.workspace-connection-dot) {
@@ -267,7 +267,7 @@
 
 .workspace-section > header span {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -281,7 +281,7 @@
 
 .workspace-section > header em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   white-space: nowrap;
 }
@@ -289,7 +289,7 @@
 .workspace-issue-header p {
   margin: 1px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-visible-count strong {
@@ -404,7 +404,7 @@
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -446,7 +446,7 @@
 .workspace-item-recommendation {
   margin: 7px 0 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -464,7 +464,7 @@
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -511,7 +511,7 @@
 }
 
 .workspace-brief-hero span {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   opacity: 0.82;
 }
@@ -549,7 +549,7 @@
 .workspace-decision > header span,
 .workspace-decision > header em {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -580,9 +580,9 @@
 }
 
 .workspace-decision-actions button:hover { border-color: var(--blue); }
-.workspace-decision-actions strong { font-size: 11px; }
-.workspace-decision-actions span { color: var(--muted); font-size: 11px; line-height: 1.5; }
-.workspace-decision-actions em { color: var(--blue); font-size: 11px; font-style: normal; font-weight: 700; }
+.workspace-decision-actions strong { font-size: 12px; }
+.workspace-decision-actions span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.workspace-decision-actions em { color: var(--blue); font-size: 12px; font-style: normal; font-weight: 700; }
 
 .workspace-primary-action {
   min-height: 46px;
@@ -611,7 +611,7 @@
   text-align: left;
 }
 
-.workspace-brief-banner span { color: var(--blue); font-size: 11px; font-weight: 700; }
+.workspace-brief-banner span { color: var(--blue); font-size: 12px; font-weight: 700; }
 .workspace-brief-banner strong { font-size: 14px; }
 .workspace-brief-banner em { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: var(--blue); font-style: normal; font-weight: 700; }
 
@@ -620,7 +620,7 @@
 .workspace-insight-row:last-child { border-bottom: 0; }
 .workspace-insight-row strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-insight-row span { color: var(--blue); font-size: 12px; font-weight: 700; }
-.workspace-insight-row small { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.workspace-insight-row small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 
 .workspace-notification {
   display: grid;
@@ -649,8 +649,8 @@
 }
 
 .workspace-notification strong { font-size: 12px; }
-.workspace-notification p { margin: 0; color: var(--text-soft); font-size: 11px; }
-.workspace-notification small { color: var(--muted); font-size: 11px; }
+.workspace-notification p { margin: 0; color: var(--text-soft); font-size: 12px; }
+.workspace-notification small { color: var(--muted); font-size: 12px; }
 
 .workspace-table-wrap {
   max-height: 390px;
@@ -661,7 +661,7 @@
   width: 100%;
   border-collapse: collapse;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-table th,
@@ -785,17 +785,17 @@
 }
 .playbook-card h4 { margin: 7px 0 0; color: var(--text); font-size: 17px; }
 .playbook-card header small,
-.playbook-card footer span { color: var(--muted); font-size: 11px; }
+.playbook-card footer span { color: var(--muted); font-size: 12px; }
 .playbook-card section { margin-top: 15px; }
-.playbook-card section strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+.playbook-card section strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
 .playbook-card section p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
 .playbook-card > footer { align-items: center; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
-.playbook-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.playbook-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
 .playbook-status.is-draft { color: var(--warning-strong); background: color-mix(in srgb, var(--warning) 14%, transparent); }
 .playbook-status.is-published { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .playbook-status.is-archived { color: var(--muted); background: var(--surface-alt); }
 .playbook-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.playbook-tags span { padding: 4px 8px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 11px; font-weight: 700; }
+.playbook-tags span { padding: 4px 8px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 12px; font-weight: 700; }
 .playbook-card-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
 .playbook-card-actions button:hover { border-color: var(--blue); color: var(--blue); }
 
@@ -809,8 +809,8 @@
   background: color-mix(in srgb, var(--blue) 4%, var(--surface));
 }
 .playbook-editor header h4 { margin: 3px 0 0; }
-.playbook-editor header span { color: var(--blue); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; }
-.playbook-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 700; }
+.playbook-editor header span { color: var(--blue); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+.playbook-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .playbook-editor textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
 .playbook-editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .playbook-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }

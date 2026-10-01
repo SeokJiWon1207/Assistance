@@ -14,7 +14,7 @@
   --surface-alt: #f2f4f6;
   --text: #191f28;
   --text-soft: #4e5968;
-  --muted: #6f7781;
+  --muted: #6b7684;
   --line: #e5e8eb;
   --line-strong: #d1d6db;
   --blue: #2c74db;
@@ -90,6 +90,16 @@ body {
 [hidden],
 .model-control-hidden {
   display: none !important;
+}
+
+/* 화면에는 숨기고 스크린리더에만 읽히는 글자 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* 공통 아이콘(index.html 의 스프라이트). 크기는 width·height 속성이나 놓인 자리의 CSS가 정한다. */
@@ -206,7 +216,8 @@ body.auth-pending .app-shell {
 .login-form h2 {
   margin: 0;
   color: var(--text);
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 31px;
 }
 
 .login-form p {
@@ -371,9 +382,9 @@ body.theme-dark .sidebar {
 .chat-header h2 {
   margin: 0;
   color: var(--text);
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 29px;
 }
 
 .brand p,
@@ -395,7 +406,6 @@ body.theme-dark .sidebar {
   border-radius: 7px;
   background: var(--surface);
   color: var(--text);
-  font-size: 19px;
   cursor: pointer;
 }
 
@@ -443,7 +453,7 @@ body.theme-dark .sidebar {
   border-radius: 999px;
   background: var(--danger);
   color: white;
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 700;
   text-align: center;
@@ -505,7 +515,7 @@ body.theme-dark .sidebar {
   background: var(--surface);
   color: var(--text-soft);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
   cursor: help;
@@ -1116,7 +1126,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 
 .signed-in-user-copy small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .signed-in-user-action {
@@ -1297,7 +1307,7 @@ body.theme-dark .chat-header {
   width: fit-content;
   margin-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   line-height: 1.5;
 }
@@ -1318,7 +1328,7 @@ body.theme-dark .chat-header {
   background: transparent;
   /* 11px 본문이라 --muted(대비 4.22)로는 AA 4.5 에 못 미친다. */
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -1341,7 +1351,7 @@ body.theme-dark .chat-header {
 
 .message-feedback-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .message-actions .feedback-action-btn[aria-pressed="true"] {
@@ -1360,7 +1370,7 @@ body.theme-dark .chat-header {
   flex: 0 0 auto;
   padding-top: 6px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1383,7 +1393,7 @@ body.theme-dark .chat-header {
   background: var(--blue-soft);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .search-condition-chip span {
@@ -1593,7 +1603,7 @@ body.theme-dark .chat-header {
 .ab-evaluation-variant {
   min-width: 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1936,10 +1946,10 @@ body.theme-dark .chat-header {
 .modal-header h3 {
   margin: 0;
   color: var(--text);
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  line-height: 28px;
+  line-height: 29px;
   word-break: keep-all;
 }
 
@@ -2050,7 +2060,7 @@ body.theme-dark .chat-header {
 .feedback-comment-field small {
   margin-left: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -2090,7 +2100,7 @@ body.theme-dark .chat-header {
 
 .template-preview span {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -2313,7 +2323,8 @@ body.theme-dark .chat-header {
 .empty-state h3 {
   margin: 0 0 10px;
   color: var(--text);
-  font-size: 28px;
+  font-size: 26px;
+  line-height: 35px;
   font-weight: 700;
   word-break: keep-all;
 }
@@ -2397,7 +2408,7 @@ body.theme-dark .chat-header {
 
 .starter-card-copy small {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -2410,7 +2421,7 @@ body.theme-dark .chat-header {
 .starter-card-copy em {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   line-height: 1.5;
   text-overflow: ellipsis;
@@ -2456,7 +2467,7 @@ body.theme-dark .chat-header {
   border-radius: 8px;
   background: var(--surface-alt);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -2647,7 +2658,7 @@ body.theme-dark .chat-header {
 
 .criteria-chip small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -2836,7 +2847,7 @@ body.theme-dark .chat-header {
 .issue-detail-meta dt {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -3460,7 +3471,7 @@ textarea:focus {
 
 .validation-button small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -3503,7 +3514,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 700;
 }
@@ -3551,7 +3562,7 @@ textarea:focus {
 
 .verification-chips small {
   color: var(--blue);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .verification-checks {
@@ -3593,7 +3604,7 @@ textarea:focus {
 
 .verification-dimension > header small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .verification-dimension > header em {
@@ -3602,7 +3613,7 @@ textarea:focus {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 700;
 }
@@ -3691,7 +3702,7 @@ textarea:focus {
   justify-content: space-between;
   gap: 12px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .verification-footer code {
@@ -3732,12 +3743,13 @@ textarea:focus {
 }
 
 .summary-stat-card strong {
-  font-size: 24px;
+  font-size: 26px;
+  line-height: 35px;
   color: var(--text);
 }
 
 .summary-stat-card span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 

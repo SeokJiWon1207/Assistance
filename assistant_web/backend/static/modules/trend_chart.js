@@ -106,7 +106,7 @@ function buildOption(trend, metric, palette) {
       axisTick: { show: false },
       axisLabel: {
         color: palette.muted,
-        fontSize: 11,
+        fontSize: 12,
         // 개월 수가 아니라 실제 폭을 기준으로 솎아야 한다. 좁은 화면에서는
         // 12개월만 돼도 라벨이 서로 붙어 읽을 수 없다.
         interval: "auto",
@@ -117,7 +117,7 @@ function buildOption(trend, metric, palette) {
     },
     yAxis: {
       type: "value",
-      axisLabel: { color: palette.muted, fontSize: 11 },
+      axisLabel: { color: palette.muted, fontSize: 12 },
       splitLine: { lineStyle: { color: palette.line, type: "dashed" } },
     },
     series: trend.series.map((item, index) => ({
@@ -140,7 +140,7 @@ function readPalette() {
     series: SERIES_COLOR_VARIABLES.map((name, index) => cssValue(name, ["#3182f6", "#1cab63", "#f59f00", "#f04452", "#8b5cf6", "#0ea5b7"][index])),
     text: cssValue("--text", "#111827"),
     textSoft: cssValue("--text-soft", "#374151"),
-    muted: cssValue("--muted", "#6b7280"),
+    muted: cssValue("--muted", "#6b7684"),
     line: cssValue("--line", "#e5e7eb"),
     surface: cssValue("--surface", "#ffffff"),
   };
