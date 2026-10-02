@@ -95,6 +95,9 @@ def build_verification_report(
     retrieval_result: Optional[Dict[str, Any]],
     mode: str,
 ) -> Dict[str, Any]:
+    if mode == "deterministic_work_report":
+        from backend.reports.work_queries import verify_work_report
+        return verify_work_report(question, content, sources, retrieval_result or {})
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     query_plan = (retrieval_result or {}).get("query_plan") or (retrieval_result or {}).get("intent_plan") or {}
     if mode == "status_clarification":

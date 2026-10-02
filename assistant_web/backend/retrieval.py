@@ -420,8 +420,10 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
             {
                 "source": stage.get("source"),
                 "status": stage.get("status"),
-                "meta": {key: value for key, value in stage.get("meta", {}).items() if key != "matched_customer_groups"},
-                "reason": stage.get("reason", ""),
+                # 조회 ID 목록/스캔 건수는 답변 근거가 아니다. 특히 빈 결과에서
+                # scanned_count를 일치 건수로 오독하거나 내부 로그를 출력하지 않게 한다.
+                "meta": {key: value for key, value in stage.get("meta", {}).items()
+                         if key in {"operation", "matched_count", "search_complete", "fetchedAt"}},
             }
             for stage in retrieval_result.get("stages", [])
         ],

@@ -193,6 +193,8 @@ def has_personal_mantis_scope_phrase(text: str) -> bool:
 def should_scope_to_authenticated_mantis_user(text: str) -> bool:
     """개인 업무 요청인지 판정해 로그인 사용자의 Mantis 담당 범위를 적용한다."""
     normalized = re.sub(r"\s+", "", str(text or "")).casefold()
+    if re.search(r"(?:내|제)\s*(?:건|것|이슈|업무)(?:은|는)?\s*(?:말고|빼고|제외)", text):
+        return False
     if any(marker in normalized for marker in ("notion", "노션", "노선")):
         return False
     constraints = extract_query_constraints(text)
@@ -211,7 +213,7 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
         # 고객사를 명시한 주간 보고서는 그 고객사 전체 현황이다. 로그인 사용자의
         # 담당 이슈로 다시 좁히면 팀 템플릿의 집계값이 사람마다 달라진다.
         return not bool(constraints.get("customer_key") or constraints.get("customer_exact"))
-    return has_personal_mantis_scope_phrase(text)
+    return has_personal_mantis_scope_phrase(text) or bool(re.search(r"^(?:나|저)(?:는)?\s+.*(?:뭐부터|무엇부터)", text))
 
 
 def should_scope_to_authenticated_notion_user(text: str) -> bool:
@@ -585,6 +587,8 @@ def prepare_chat_pipeline(
     inherited_resolution = None
     inherited_constraints = None
     latest_constraints = extract_query_constraints(latest_user_text)
+    lookup_reply = bool(latest_constraints.get("customer_key") and
+                        re.fullmatch(r"[가-힣A-Za-z0-9]+(?:\s*(?:쪽|이야|요))?[.?!]?", latest_user_text.strip()))
     # 확인 질문 직후의 짧은 상태 선택은 서버에 저장된 해당 턴에만 연결한다.
     status_choice = bool(re.fullmatch(
         r"\s*(?:미종료|전체\s*상태|모든\s*상태|상태\s*무관)(?:로|만|으로)?"
@@ -594,10 +598,11 @@ def prepare_chat_pipeline(
     prior_plan = load_audit_query_plan(
         request.contextAuditId or "", str((user or {}).get("uid") or ""),
         prior_questions[1] if len(prior_questions) > 1 else "",
-    ) if (status_choice or is_follow_up_question(latest_user_text)) else {}
+    ) if (status_choice or lookup_reply or is_follow_up_question(latest_user_text)) else {}
     prior_resolution = prior_plan.get("status_resolution") or {}
+    lookup_continuation = lookup_reply and bool((prior_plan.get("resolved_constraints") or {}).get("work_lookup"))
     if (prior_plan.get("source") == "mantis" and prior_plan.get("resolved_constraints")
-            and (is_follow_up_question(latest_user_text) or (status_choice and prior_resolution.get("needs_clarification")))):
+            and (lookup_continuation or is_follow_up_question(latest_user_text) or (status_choice and prior_resolution.get("needs_clarification")))):
         # 이전 자연어를 다시 추측하지 않고 서버가 확정한 범위를 복원한다.
         prior_text = confirmed_scope_text(prior_plan["resolved_constraints"])
         scope_messages = [request.messages[-1].model_copy(update={"content": prior_text}),
@@ -716,6 +721,18 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
     if user and not context.authenticated_owner and should_scope_to_authenticated_notion_user(context.latest_user_text):
         return {"modelId": request.modelId, "content": "개인 Notion 문서를 조회할 사용자 이름이 등록되어 있지 않습니다. 계정 표시 이름을 확인해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_notion_scope"}}
+    if context.enabled_tools.get("mantis"):
+        from backend.reports.work_queries import build_work_query_report
+        work_report = build_work_query_report(context.latest_user_text, context.query_constraints,
+                                              limit=extract_requested_limit(context.latest_user_text) or clamp_int(request.searchLimit, 1, 20) or 10)
+        if work_report:
+            context.query_constraints = work_report["retrieval"]["constraints"]
+            context.intent_plan = work_report["retrieval"]["query_plan"]
+            context.status_resolution = None
+            if not request.showSources:
+                work_report["sourcesForFollowUps"] = work_report["sources"]
+                work_report["sources"] = []
+            return {"modelId": request.modelId, **work_report}
     with authenticated_owner_scope(context.authenticated_owner):
         source = rule_based_search_intent(context.retrieval_text, context.query_constraints).get("source")
         mantis_scope = source == "mantis" or (source == "general" and bool(
@@ -980,6 +997,11 @@ def retrieve_chat_evidence(
     deterministic = deterministic_retrieval_response(request, context, limit, group_by)
     if deterministic:
         return deterministic
+    grounding = build_model_retrieval_context(context.retrieval_result, limit)
+    if not grounding.get("issues") and not grounding.get("notion_pages"):
+        return {"modelId": request.modelId,
+                "content": "질문 조건에 맞는 원문 근거를 확보하지 못했습니다. 전체가 0건이거나 모두 완료됐다는 뜻은 아닙니다. 고객사·담당자·이슈 번호를 확인해 주세요.",
+                "sources": [], "retrieval": context.retrieval_result, "raw": {"mode": "empty_evidence"}}
     append_retrieval_system_note(context, limit)
     return None
 

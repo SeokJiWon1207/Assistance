@@ -364,6 +364,8 @@ def should_attach_ab_test(request: ChatRequest, retrieval_result: Any, mode: str
     if not request.abTest or retrieval_result is None:
         return False
     return not mode.startswith("notion_write") and mode not in {
+        "deterministic_work_report",
+        "empty_evidence",
         "status_clarification",
         "notion_create",
         "notion_update",
