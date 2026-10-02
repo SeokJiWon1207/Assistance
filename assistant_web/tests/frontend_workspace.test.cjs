@@ -30,6 +30,7 @@ async function harness(apiFetch) {
     workspaceContent,
     workspaceRefreshBtn,
     workspaceDataBadge: { innerHTML: '' },
+    workspaceTabBriefDot: { hidden: true },
     workspaceModalEyebrow: { textContent: '' },
     workspaceModalTitle: { textContent: '' },
     workspaceTabs: { hidden: false, querySelectorAll: () => [] },
@@ -37,7 +38,7 @@ async function harness(apiFetch) {
   const runtime = { state, els, conversationsStorageKeyBase: 'chats', activeConversationStorageKeyBase: 'active',
     maxStoredConversations: 20, conversationSyncTimers: new Map(), apiFetch,
     ...core, scopedStorageKey: (base, uid) => `${base}:${uid}`,
-    createConversationRecord: () => ({ id: 'new', messages: [] }), WORKSPACE_ENDPOINTS: { personal: '/personal' } };
+    createConversationRecord: () => ({ id: 'new', messages: [] }), WORKSPACE_ENDPOINTS: { personal: '/personal', teamBrief: '/team-brief', teamBriefRead: '/team-brief/read', teamBriefRefresh: '/team-brief/refresh' } };
   const modules = {
     './runtime.js': runtime,
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
@@ -283,4 +284,33 @@ test('personal source error hides unsupported zero counts', async () => {
   await h.api.loadMyWorkspace();
   assert.match(h.els.workspaceContent.innerHTML,/저장 데이터 만료/);
   assert.doesNotMatch(h.els.workspaceContent.innerHTML,/workspace-summary-grid/);
+});
+
+test('weekly report keeps my report and team brief in one tab and clears the new-brief dot when opened', async () => {
+  const calls = [];
+  const brief = { title: '이번 주 팀 브리핑', viewed: false, summary: { newIssues: 3 }, priorities: [], customerSpikes: [], screenSpikes: [] };
+  const h = await harness(async (url, options = {}) => {
+    calls.push(`${options.method || 'GET'} ${url}`);
+    if (url.startsWith('/personal')) return { ok: true, json: async () => ({ user: { mantisUsername: 'c' }, summary: {}, weeklyBrief: {}, mantis: { status: 'live', search_complete: true, issues: [] } }) };
+    if (url === '/team-brief') return { ok: true, json: async () => ({ ...brief }) };
+    if (url === '/team-brief/read') return { ok: true, json: async () => ({ read: true }) };
+    return { ok: false, json: async () => ({}) };
+  });
+  await h.api.loadMyWorkspace();
+  h.state.workspaceTab = 'brief';
+  h.api.renderWorkspace();
+  assert.match(h.els.workspaceContent.innerHTML, /data-brief-kind="mine" aria-pressed="true"/);
+
+  // 새 브리핑을 미리 확인하면 탭에 점이 붙지만 읽음으로 저장하지는 않는다.
+  h.api.prefetchTeamBrief();
+  await new Promise(setImmediate);
+  assert.equal(h.els.workspaceTabBriefDot.hidden, false);
+  assert.ok(!calls.includes('POST /team-brief/read'));
+
+  await h.api.showTeamBrief();
+  assert.match(h.els.workspaceContent.innerHTML, /data-brief-kind="team" aria-pressed="true"/);
+  assert.match(h.els.workspaceContent.innerHTML, /이번 주 팀 브리핑/);
+  assert.ok(calls.includes('POST /team-brief/read'));
+  assert.equal(h.els.workspaceTabBriefDot.hidden, true);
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-tab-dot/);
 });

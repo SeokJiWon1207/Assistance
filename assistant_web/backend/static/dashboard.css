@@ -25,9 +25,22 @@
 .personal-panel .workspace-modal-header { gap: 12px; }
 .personal-panel .workspace-modal-header > div:first-of-type { flex: 1; }
 .view-switch-tab em { font-size: 12px; font-style: normal; color: var(--danger); }
-.team-brief-section { min-width: 0; }
-.team-brief-section > summary { cursor: pointer; padding: 16px 0; font-weight: 700; }
-.team-brief-content { display: grid; gap: 18px; }
+/* 대시보드 맨 아래: 팀 브리핑은 내 업무 › 주간 보고에서 보도록 안내만 둔다. */
+.dashboard-brief-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 21px;
+}
+.dashboard-brief-link b { color: var(--text); font-weight: 600; }
+.dashboard-brief-link .secondary-button { width: auto; min-height: 36px; padding: 0 12px; flex-shrink: 0; font-size: 13px; font-weight: 600; cursor: pointer; }
 
 .view-switch {
   display: flex;

@@ -3,7 +3,7 @@ import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { closeMobileSidebar, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
-import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
+import { ensureMyWorkspaceFresh, showTeamBrief, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
@@ -342,11 +342,7 @@ function renderDashboard() {
     ${renderDecision(data.decisionSummary, data.meta.periodDays)}
     <div class="dashboard-grid">${renderTodos(data.todos || [])}${renderCustomerHealth(data.customerHealth || [], data.customerHealthSummary || {})}${renderSpikes(data.customerSpikes || [], data.screenSpikes || [])}</div>
     ${renderMembers(data.members || [])}
-    <details class="team-brief-section"><summary>팀 주간 브리핑</summary><div class="team-brief-content"></div></details>`;
-  const brief = els.dashboardBody.querySelector(".team-brief-section");
-  brief.addEventListener("toggle", () => {
-    if (brief.open) updateTeamBrief();
-  });
+    <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>`;
 }
 
 async function loadDashboard(force = false, revalidate = false, background = false) {
@@ -469,19 +465,6 @@ function showPersonalView(options) {
   setActiveView("personal", options);
 }
 
-async function updateTeamBrief(refresh = false) {
-  const container = els.dashboardBody.querySelector(".team-brief-content");
-  if (!container || !canViewTeamDashboard()) return;
-  container.innerHTML = '<p class="workspace-loading">팀 브리핑을 불러오는 중입니다.</p>';
-  try {
-    await loadTeamWeeklyBrief(refresh);
-    container.innerHTML = renderTeamWeeklyBrief();
-    await markTeamWeeklyBriefRead();
-  } catch (error) {
-    container.innerHTML = `<p class="workspace-error">${escapeHtml(error.message)}</p>`;
-  }
-}
-
 function showDashboardView(options) {
   setActiveView("dashboard", options);
 }
@@ -548,8 +531,11 @@ function refocusDashboard(selector) {
 }
 
 function handleDashboardAction(target) {
-  const refreshBrief = target.closest("[data-refresh-team-brief]");
-  if (refreshBrief) return updateTeamBrief(true);
+  // 주간 브리핑은 내 업무 › 주간 보고 한 곳에서만 보여 준다.
+  if (target.closest("[data-open-team-brief]")) {
+    showPersonalView();
+    return showTeamBrief();
+  }
   const briefQuestion = target.closest("[data-workspace-question]");
   if (briefQuestion) return askFromDashboard(decodeURIComponent(briefQuestion.dataset.workspaceQuestion));
   const retry = target.closest("[data-dashboard-retry]");

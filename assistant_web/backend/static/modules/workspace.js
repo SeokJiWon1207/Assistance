@@ -597,6 +597,66 @@ function renderTeamWeeklyBrief() {
     ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 데이터로 다시 만들기</button>' : ""}`;
 }
 
+// 주간 보고 탭: 내 보고와 팀 브리핑을 한 곳에서 고른다. 팀 브리핑은 처음 열 때 불러오고 읽음으로 저장한다.
+let teamBriefPromise = null;
+
+function teamBriefUnread() {
+  return Boolean(state.teamWeeklyBrief && !state.teamWeeklyBrief.viewed);
+}
+
+function renderWeeklyReport(data) {
+  const kind = state.workspaceBriefKind === "team" ? "team" : "mine";
+  const unread = teamBriefUnread();
+  const switcher = `
+    <div class="workspace-brief-switch" role="group" aria-label="보고 종류">
+      <button type="button" data-brief-kind="mine" aria-pressed="${kind === "mine"}">내 보고</button>
+      <button type="button" data-brief-kind="team" aria-pressed="${kind === "team"}">팀 브리핑${unread ? '<i class="workspace-tab-dot" aria-label="새 팀 브리핑"></i>' : ""}</button>
+    </div>`;
+  if (kind === "mine") return `${switcher}${renderWeeklyBrief(data)}`;
+  if (state.teamBriefError && !state.teamWeeklyBrief) {
+    return `${switcher}<div class="workspace-error" role="alert"><strong>팀 브리핑을 불러오지 못했습니다.</strong><p>${escapeHtml(state.teamBriefError)}</p><button type="button" class="workspace-item-action" data-brief-kind="team">다시 시도</button></div>`;
+  }
+  return `${switcher}${renderTeamWeeklyBrief()}`;
+}
+
+async function loadTeamBriefOnce(refresh = false) {
+  if (teamBriefPromise && !refresh) return teamBriefPromise;
+  state.teamBriefError = "";
+  teamBriefPromise = loadTeamWeeklyBrief(refresh)
+    .catch((error) => { state.teamBriefError = error.message; })
+    .finally(() => { teamBriefPromise = null; });
+  return teamBriefPromise;
+}
+
+// 탭의 빨간 점을 위해 팀 브리핑이 새로 나왔는지만 미리 확인한다(열지 않으면 읽음 처리하지 않음).
+function prefetchTeamBrief() {
+  if (state.teamWeeklyBrief || !state.currentUser?.uid) return;
+  loadTeamBriefOnce().then(() => updateWorkspaceUnread());
+}
+
+async function showTeamBrief({ refresh = false } = {}) {
+  state.workspaceTab = "brief";
+  state.workspaceBriefKind = "team";
+  renderWorkspace();
+  if (refresh || !state.teamWeeklyBrief) {
+    await loadTeamBriefOnce(refresh);
+    renderWorkspace();
+  }
+  if (!state.teamWeeklyBrief) return;
+  try {
+    await markTeamWeeklyBriefRead();
+  } catch {
+    // 읽음 저장이 실패해도 브리핑은 계속 보여 준다. 다음에 열 때 다시 저장한다.
+  }
+  renderWorkspace();
+}
+
+function showMyBrief() {
+  state.workspaceTab = "brief";
+  state.workspaceBriefKind = "mine";
+  renderWorkspace();
+}
+
 function renderNotifications(data) {
   const notifications = data.notifications || [];
   return `
@@ -772,6 +832,7 @@ function updateWorkspaceUnread() {
     els.workspaceUnreadBadge.hidden = unread < 1;
   }
   if (els.workspaceTabUnread) els.workspaceTabUnread.textContent = unread ? String(unread) : "";
+  if (els.workspaceTabBriefDot) els.workspaceTabBriefDot.hidden = !teamBriefUnread();
 }
 
 let workspaceLoadPromise = null;
@@ -866,7 +927,7 @@ function renderWorkspace() {
   }
   const renderers = {
     overview: () => renderPersonalOverview(state.myWorkspace),
-    brief: () => renderWeeklyBrief(state.myWorkspace),
+    brief: () => renderWeeklyReport(state.myWorkspace),
     playbooks: renderPlaybooks,
     notifications: () => renderNotifications(state.myWorkspace),
     favorites: renderFavoriteConversations,
@@ -995,6 +1056,10 @@ export {
   issueWorkspaceRow,
   renderPersonalOverview,
   renderWeeklyBrief,
+  renderWeeklyReport,
+  prefetchTeamBrief,
+  showMyBrief,
+  showTeamBrief,
   briefSpikeRows,
   renderTeamWeeklyBrief,
   renderNotifications,

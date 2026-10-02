@@ -1,6 +1,6 @@
 import "./events.js?v=20260911-6";
 import { state, els, defaultOptions, canUseAdminTools } from "./runtime.js?v=20260911-6";
-import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=20260911-6";
+import { loadConversations, loadMyWorkspace, prefetchTeamBrief, showToast } from "./workspace.js?v=20260911-6";
 import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, renderChatDataBadge } from "./chat.js?v=20260911-6";
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
@@ -55,7 +55,13 @@ async function bootstrapApplication(authState = {}) {
   initDashboard();
   // 승인 대기 배지는 관리자 센터를 열기 전에도 보여야 하므로 미리 불러 둔다.
   if (adminToolsVisible) preloadAdminBadges();
-  if (state.currentUser?.uid) workspaceReady.finally(() => loadDashboard());
+  if (state.currentUser?.uid) {
+    workspaceReady.finally(() => {
+      loadDashboard();
+      // 새 팀 브리핑이 있으면 '주간 보고' 탭에 점으로 알린다.
+      prefetchTeamBrief();
+    });
+  }
   globalThis.setInterval(() => checkAppVersion().catch(() => {}), 60_000);
 }
 

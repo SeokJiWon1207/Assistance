@@ -890,3 +890,52 @@
     display: none;
   }
 }
+
+/* 주간 보고: 내 보고 / 팀 브리핑 전환과 새 팀 브리핑 점 */
+.workspace-brief-switch {
+  display: inline-flex;
+  justify-self: start;
+  align-self: start;
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+}
+
+.workspace-brief-switch button {
+  position: relative;
+  height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 500;
+}
+
+.workspace-brief-switch button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(25, 31, 40, 0.08);
+}
+
+.workspace-brief-switch button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.workspace-tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  vertical-align: top;
+}

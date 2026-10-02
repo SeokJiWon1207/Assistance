@@ -56,6 +56,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     './workspace.js': {
       ensureMyWorkspaceFresh: async () => { calls.push('personal'); }, renderWorkspace() {},
       loadTeamWeeklyBrief: async () => {}, renderTeamWeeklyBrief: () => '', markTeamWeeklyBriefRead: async () => {},
+      showTeamBrief: async () => { calls.push('team-brief'); },
       workspaceStatusLabel: (value) => ({developed: '개발완료', confirmed: '확인된 이슈'}[value] || value || '상태 미상'),
     },
   };
@@ -426,4 +427,16 @@ test('dashboard rows keep table semantics and expose real buttons', async () => 
   h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-row-issue]', { dashboardRowIssue: '1' }) });
   assert.equal(h.els.dashboardDetail.hidden, false);
   assert.match(h.els.dashboardDetailTitle.textContent, /#1 이슈 상세/);
+});
+
+test('dashboard points to the single weekly report instead of repeating the team brief', async () => {
+  const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.doesNotMatch(html, /team-brief-section|<details/);
+  assert.match(html, /data-open-team-brief/);
+  await h.els.dashboardBody.handlers.click({ target: clickTarget('[data-open-team-brief]', {}) });
+  assert.equal(h.els.personalPanel.hidden, false);
+  assert.equal(h.els.dashboardPanel.hidden, true);
+  assert.ok(h.calls.includes('team-brief'));
 });

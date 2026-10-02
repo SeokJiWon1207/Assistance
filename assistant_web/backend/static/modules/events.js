@@ -1,5 +1,5 @@
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
-import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
 import { closeMobileSidebar, isMobileSidebarOpen, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
@@ -283,6 +283,11 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
 });
 function selectWorkspaceTab(name) {
   state.workspaceTab = name;
+  // 주간 보고에서 팀 브리핑을 보던 중이면 다시 열 때도 불러오고 읽음으로 저장한다.
+  if (name === "brief" && state.workspaceBriefKind === "team") {
+    showTeamBrief();
+    return;
+  }
   renderWorkspace();
   if (state.workspaceTab === "playbooks" && !state.playbooks) {
     loadPlaybooks().catch((error) => showToast(error.message, "warning"));
@@ -344,6 +349,16 @@ els.workspaceContent?.addEventListener("click", async (event) => {
       showToast(error.message, "warning");
       statusButton.disabled = false;
     }
+    return;
+  }
+  const briefKind = event.target.closest("[data-brief-kind]");
+  if (briefKind) {
+    if (briefKind.dataset.briefKind === "team") showTeamBrief();
+    else showMyBrief();
+    return;
+  }
+  if (event.target.closest("[data-refresh-team-brief]")) {
+    showTeamBrief({ refresh: true });
     return;
   }
   const questionButton = event.target.closest("[data-workspace-question]");

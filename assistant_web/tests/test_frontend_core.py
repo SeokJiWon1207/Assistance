@@ -374,11 +374,20 @@ class FrontendCoreTests(unittest.TestCase):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         app_js = self.application_javascript()
 
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
+        workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
+
+        # 주간 브리핑은 내 업무 › 주간 보고 한 곳에서 '내 보고 / 팀 브리핑'으로 고른다.
         self.assertNotIn('data-workspace-tab="team-brief"', html)
-        self.assertIn('class="team-brief-section"', app_js)
+        self.assertIn('data-workspace-tab="brief">주간 보고', html)
+        self.assertIn('data-brief-kind="team"', workspace_js)
         self.assertIn('teamBrief: "/api/workspace/team-brief"', app_js)
         self.assertIn("data-refresh-team-brief", app_js)
-        self.assertIn("markTeamWeeklyBriefRead", app_js)
+        self.assertIn("await markTeamWeeklyBriefRead()", workspace_js)
+        # 대시보드는 같은 내용을 다시 보여 주지 않고 주간 보고로 안내만 한다.
+        self.assertNotIn("team-brief-section", dashboard_js)
+        self.assertNotIn("renderTeamWeeklyBrief", dashboard_js)
+        self.assertIn("data-open-team-brief", dashboard_js)
 
     def test_personal_workspace_keeps_summary_visible_and_scrolls_issue_list(self):
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
