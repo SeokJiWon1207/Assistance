@@ -75,6 +75,32 @@
     return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
   }
 
+  // 대화 안의 날짜 구분선. 같은 날 메시지는 같은 key를 갖고, 이름은 오늘·어제·"9월 29일 월요일"
+  // (올해가 아니면 연도 포함) 순으로 정한다. 시각은 구분선이 아니라 메시지 옆에 둔다.
+  function messageDayKey(timestamp) {
+    const date = new Date(timestamp || "");
+    if (Number.isNaN(date.getTime())) return "";
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  }
+
+  function messageDayLabel(timestamp, now = new Date()) {
+    const date = new Date(timestamp || "");
+    if (Number.isNaN(date.getTime())) return "";
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    if (day === today) return "오늘";
+    if (day === today - DAY_MS) return "어제";
+    const weekday = new Intl.DateTimeFormat("ko-KR", { weekday: "long" }).format(date);
+    const year = date.getFullYear() === now.getFullYear() ? "" : `${date.getFullYear()}년 `;
+    return `${year}${date.getMonth() + 1}월 ${date.getDate()}일 ${weekday}`;
+  }
+
+  function messageClockLabel(timestamp) {
+    const date = new Date(timestamp || "");
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
+  }
+
   function byFavoriteThenRecent(a, b) {
     return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite))
       || conversationTimestamp(b) - conversationTimestamp(a);
@@ -254,6 +280,9 @@
     conversationContentChanged,
     conversationTimeLabel,
     conversationListSections,
+    messageDayKey,
+    messageDayLabel,
+    messageClockLabel,
     searchConversations,
     buildChatMessages,
     buildTeamTemplateQuestion,

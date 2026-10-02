@@ -16,6 +16,9 @@ const {
   parseSseBuffer,
   shouldSubmitPromptOnKeydown,
   canUseAdminTools,
+  messageClockLabel,
+  messageDayKey,
+  messageDayLabel,
 } = require("../backend/static/frontend_core.js");
 
 const configuredTemplates = JSON.parse(
@@ -145,6 +148,19 @@ test("conversationTimeLabel shows time today, then relative day or date", () => 
   assert.equal(conversationTimeLabel({ updatedAt: daysAgo(5) }, now), "9/25");
   assert.equal(conversationTimeLabel({ updatedAt: new Date(2025, 11, 3).toISOString() }, now), "2025.12.3");
   assert.equal(conversationTimeLabel({}, now), "");
+});
+
+test("message date divider labels today, yesterday, weekday dates and other years", () => {
+  assert.equal(messageDayLabel(daysAgo(0, 9), now), "오늘");
+  assert.equal(messageDayLabel(daysAgo(1, 23), now), "어제");
+  assert.equal(messageDayLabel(new Date(2026, 8, 28, 15, 12).toISOString(), now), "9월 28일 월요일");
+  assert.equal(messageDayLabel(new Date(2025, 11, 3, 9).toISOString(), now), "2025년 12월 3일 수요일");
+  assert.equal(messageDayLabel("", now), "");
+  // 같은 날이면 시각이 달라도 같은 구분선 key를 갖는다.
+  assert.equal(messageDayKey(daysAgo(0, 0)), messageDayKey(daysAgo(0, 23)));
+  assert.notEqual(messageDayKey(daysAgo(0, 0)), messageDayKey(daysAgo(1, 23)));
+  assert.match(messageClockLabel(new Date(2026, 8, 29, 15, 12).toISOString()), /^오후 3:12$/);
+  assert.equal(messageClockLabel("not a date"), "");
 });
 
 test("parseSseBuffer preserves fragmented frames and parses CRLF frames", () => {

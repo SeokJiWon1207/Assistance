@@ -1,4 +1,4 @@
-import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools } from "./runtime.js?v=20260911-6";
+import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { formatBadgeDate, formatBadgeTime, renderDataBadge } from "./data_badge.js?v=20260911-6";
@@ -169,27 +169,35 @@ function formatQuestionAskedAt(value) {
   }).format(date);
 }
 
-function renderQuestionTimestamp(message, messageIndex) {
-  const previousUserMessage = message.role === "assistant"
-    ? state.messages.slice(0, messageIndex).reverse().find((item) => item.role === "user")
-    : null;
-  const timestamp = message.role === "user"
-    ? message.createdAt
-    : message.questionAskedAt || previousUserMessage?.createdAt;
-  const label = formatQuestionAskedAt(timestamp);
+// 날짜가 바뀌는 자리에만 넣는 구분선. 질문마다 날짜를 반복하지 않는다.
+function renderDateDivider(timestamp) {
+  const label = messageDayLabel(timestamp);
   if (!label) return null;
+  const divider = document.createElement("div");
+  divider.className = "message-date-divider";
+  divider.setAttribute("role", "separator");
+  divider.setAttribute("aria-label", label);
+  divider.innerHTML = `<span>${escapeHtml(label)}</span>`;
+  return divider;
+}
 
+// 질문한 시각은 질문의 동작 줄 끝에 짧게 둔다. 답변은 같은 시각이라 따로 달지 않는다.
+function renderMessageTime(timestamp) {
+  const label = messageClockLabel(timestamp);
+  if (!label) return null;
   const time = document.createElement("time");
-  time.className = "message-question-time";
+  time.className = "message-time";
   time.dateTime = timestamp;
-  time.textContent = `질문한 날짜 · ${label}`;
-  time.setAttribute("aria-label", `질문한 날짜 ${label}`);
+  time.title = formatQuestionAskedAt(timestamp);
+  time.textContent = label;
+  time.setAttribute("aria-label", `질문한 시각 ${formatQuestionAskedAt(timestamp)}`);
   return time;
 }
 
 function renderMessages() {
   els.messages.innerHTML = "";
   state.sourceMap.clear();
+  let lastDayKey = "";
 
   if (state.messages.length === 0) {
     const empty = document.createElement("div");
@@ -217,6 +225,13 @@ function renderMessages() {
   }
 
   state.messages.forEach((message, messageIndex) => {
+    // 질문 시각을 기준으로 날짜가 바뀌는 자리에만 구분선을 넣는다.
+    const dayKey = message.role === "user" ? messageDayKey(message.createdAt) : "";
+    if (dayKey && dayKey !== lastDayKey) {
+      const divider = renderDateDivider(message.createdAt);
+      if (divider) els.messages.appendChild(divider);
+      lastDayKey = dayKey;
+    }
     const row = document.createElement("article");
     row.className = `message ${message.role}${message.loading || message.streaming ? " loading" : ""}`;
     if (message.role === "assistant" && message.abTest?.enabled) row.classList.add("ab-layout");
@@ -259,9 +274,10 @@ function renderMessages() {
       const userContent = document.createElement("div");
       userContent.className = "message-content user-message-content";
       userContent.appendChild(bubble);
-      const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
-      if (questionTimestamp) userContent.appendChild(questionTimestamp);
-      userContent.appendChild(renderMessageActions(message, messageIndex));
+      const actions = renderMessageActions(message, messageIndex);
+      const questionTime = renderMessageTime(message.createdAt);
+      if (questionTime) actions.appendChild(questionTime);
+      userContent.appendChild(actions);
       row.append(userContent, avatar);
     } else {
       const content = document.createElement("div");
@@ -273,13 +289,7 @@ function renderMessages() {
         content.appendChild(renderAbComparison(message, bubble, messageIndex));
       } else {
         content.appendChild(bubble);
-        const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
-        if (questionTimestamp) content.appendChild(questionTimestamp);
         appendAssistantExtras(content, message, messageIndex);
-      }
-      if (message.abTest?.enabled && abComparisonEnabled()) {
-        const questionTimestamp = renderQuestionTimestamp(message, messageIndex);
-        if (questionTimestamp) content.appendChild(questionTimestamp);
       }
       if (message.streaming && message.progress) {
         const progress = document.createElement("div");
@@ -740,7 +750,8 @@ export {
   abComparisonEnabled,
   sourceToolsPayload,
   formatQuestionAskedAt,
-  renderQuestionTimestamp,
+  renderDateDivider,
+  renderMessageTime,
   renderMessages,
   updateComposerShadow,
   MESSAGE_ACTION_ICONS,

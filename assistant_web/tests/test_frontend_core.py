@@ -209,6 +209,19 @@ class FrontendCoreTests(unittest.TestCase):
                 self.assertNotIn(internal, html)
                 self.assertNotIn(internal, modules)
 
+    def test_messages_show_date_dividers_instead_of_repeated_dates(self):
+        chat_js = (STATIC_DIR / "modules" / "chat.js").read_text(encoding="utf-8")
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        # 질문마다 붙던 '질문한 날짜' 줄 대신 날짜가 바뀌는 자리에만 구분선을 둔다.
+        self.assertNotIn("질문한 날짜 · ", chat_js)
+        self.assertNotIn("renderQuestionTimestamp", chat_js)
+        self.assertIn("if (dayKey && dayKey !== lastDayKey)", chat_js)
+        self.assertIn('divider.setAttribute("role", "separator")', chat_js)
+        # 시각은 동작 줄 끝에 두고, 터치 화면에서는 항상 보인다.
+        self.assertIn("@media (hover: none)", styles)
+        self.assertIn(".message:focus-within .message-time", styles)
+
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
         body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]

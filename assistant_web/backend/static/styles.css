@@ -1469,19 +1469,47 @@ body.theme-dark .chat-header {
   justify-content: flex-end;
 }
 
-.message-question-time {
-  display: block;
-  width: fit-content;
-  margin-top: 6px;
+/* 질문한 시각: 동작 줄 끝에 두고 마우스를 올리거나 키보드로 닿을 때만 보인다. */
+.message-time {
+  margin-left: 4px;
   color: var(--muted);
   font-size: 12px;
-  font-style: normal;
-  line-height: 1.5;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.user-message-content .message-question-time {
-  margin-left: auto;
-  text-align: right;
+.message:hover .message-time,
+.message:focus-within .message-time {
+  opacity: 1;
+}
+
+/* 마우스가 없는 터치 화면에서는 항상 보인다. */
+@media (hover: none) {
+  .message-time {
+    opacity: 1;
+  }
+}
+
+.message-date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.message-date-divider::before,
+.message-date-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
 }
 
 .message-actions button {
