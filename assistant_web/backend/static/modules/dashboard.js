@@ -125,13 +125,13 @@ function renderDecision(decision, periodDays) {
 }
 
 function renderTodo(issue) {
-  const classes = ["workspace-item", "dashboard-clickable"];
+  const classes = ["workspace-item", "dashboard-clickable", "dashboard-card-link"];
   if (issue.overdue) classes.push("is-overdue");
   else if (Number(issue.ageDays || 0) >= 30) classes.push("is-aging");
   return `
-    <article class="${classes.join(" ")}" role="button" tabindex="0" data-dashboard-issue="${escapeHtml(issue.id)}">
+    <article class="${classes.join(" ")}">
       <div class="workspace-item-main">
-        <div class="workspace-item-title"><span>#${escapeHtml(issue.id)}</span><strong>${escapeHtml(issue.title)}</strong></div>
+        <button type="button" class="workspace-item-title dashboard-card-button" data-dashboard-issue="${escapeHtml(issue.id)}"><span>#${escapeHtml(issue.id)}</span><strong>${escapeHtml(issue.title)}</strong><span class="sr-only"> 상세 보기</span></button>
         <div class="workspace-item-meta">
           <span class="workspace-meta-project">${escapeHtml(issue.project)}</span>
           <span>${escapeHtml(issue.handler || "담당자 미지정")}</span>
@@ -155,14 +155,14 @@ function renderHealthRow(item) {
   const reason = (item.reasons || []).join(" · ") || "특별한 위험 신호 없음";
   const selected = dashboardState.customer === item.customer;
   return `
-    <article class="health-row dashboard-clickable${selected ? " is-selected" : ""}" role="button" tabindex="0" aria-pressed="${selected}" data-dashboard-customer="${escapeHtml(item.customer)}">
+    <button type="button" class="health-row dashboard-clickable${selected ? " is-selected" : ""}" aria-pressed="${selected}" data-dashboard-customer="${escapeHtml(item.customer)}">
       <span class="health-status is-${escapeHtml(item.level)}" aria-hidden="true"></span>
-      <div class="health-main">
-        <div class="health-title"><strong>${escapeHtml(item.customer)}</strong><span class="health-label is-${escapeHtml(item.level)}">${escapeHtml(item.label)}</span></div>
-        <p title="${escapeHtml(reason)}">${escapeHtml(reason)}</p>
-      </div>
-      <div class="health-metrics"><strong>미종료 ${formatNumber(item.openCount)}</strong><span>지연 ${formatNumber(item.overdueCount)} · 장기 ${formatNumber(item.agingCount)}</span></div>
-    </article>`;
+      <span class="health-main">
+        <span class="health-title"><strong>${escapeHtml(item.customer)}</strong><span class="health-label is-${escapeHtml(item.level)}">${escapeHtml(item.label)}</span></span>
+        <span class="health-reason" title="${escapeHtml(reason)}">${escapeHtml(reason)}</span>
+      </span>
+      <span class="health-metrics"><strong>미종료 ${formatNumber(item.openCount)}</strong><span>지연 ${formatNumber(item.overdueCount)} · 장기 ${formatNumber(item.agingCount)}</span></span>
+    </button>`;
 }
 
 function renderCustomerHealth(items, summary) {
@@ -179,12 +179,13 @@ function renderSpikeRows(items, type) {
   return items.map((item) => {
     const ratio = item.ratio == null ? "이전 0건" : `${item.ratio}배`;
     const selected = type === "customer" && dashboardState.customer === item.name;
-    const attribute = type === "customer" ? `data-dashboard-customer="${escapeHtml(item.name)}" role="button" tabindex="0" aria-pressed="${selected}"` : "";
-    return `<article class="dashboard-spike-row ${type === "customer" ? "dashboard-clickable" : ""}${selected ? " is-selected" : ""}" ${attribute}>
+    const tag = type === "customer" ? "button" : "article";
+    const attribute = type === "customer" ? `type="button" data-dashboard-customer="${escapeHtml(item.name)}" aria-pressed="${selected}"` : "";
+    return `<${tag} class="dashboard-spike-row ${type === "customer" ? "dashboard-clickable" : ""}${selected ? " is-selected" : ""}" ${attribute}>
       <strong>${escapeHtml(type === "screen" ? `화면 ${item.name}` : item.name)}</strong>
       <em>${formatNumber(item.count)}건</em>
       <small>직전 ${formatNumber(item.previousCount)}건 · ${escapeHtml(ratio)}</small>
-    </article>`;
+    </${tag}>`;
   }).join("");
 }
 
@@ -246,9 +247,9 @@ function hideFilterbar() {
 function renderPriorities(priorities, filtered) {
   const filtering = Boolean(dashboardState.metric || dashboardState.customer);
   const rows = filtered.map((issue) => `
-    <tr class="dashboard-clickable" role="button" tabindex="0" data-dashboard-issue="${escapeHtml(issue.id)}">
+    <tr class="dashboard-clickable" data-dashboard-row-issue="${escapeHtml(issue.id)}">
       <td><span class="dashboard-risk-badge is-${escapeHtml(issue.riskLevel)}">${riskLabel(issue.riskLevel)}</span></td>
-      <td><strong class="dashboard-issue-title">#${escapeHtml(issue.id)} ${escapeHtml(issue.title)}</strong><small>${escapeHtml((issue.riskReasons || []).join(" · "))}</small></td>
+      <td><button type="button" class="dashboard-issue-button" data-dashboard-issue="${escapeHtml(issue.id)}"><strong class="dashboard-issue-title">#${escapeHtml(issue.id)} ${escapeHtml(issue.title)}</strong></button><small>${escapeHtml((issue.riskReasons || []).join(" · "))}</small></td>
       <td>${escapeHtml(issue.project || "-")}</td><td>${escapeHtml(issue.handler || "미지정")}</td>
       <td>${issue.ageDays == null ? "-" : `${formatNumber(issue.ageDays)}일`}</td><td>${escapeHtml(workspaceStatusLabel(issue.status))}${issue.overdue ? ' · <span class="danger-text">지연</span>' : ""}</td>
     </tr>`).join("");
@@ -586,6 +587,9 @@ function handleDashboardAction(target) {
   }
   const issue = target.closest("[data-dashboard-issue]");
   if (issue) return openIssueDetail(issue.dataset.dashboardIssue);
+  // 표에서는 마우스로 행 어디를 눌러도 이슈 칸의 버튼을 누른 것과 같게 연다.
+  const row = target.closest("[data-dashboard-row-issue]");
+  if (row) return openIssueDetail(row.dataset.dashboardRowIssue);
   const question = target.closest("[data-dashboard-question]");
   if (question) return askFromDashboard(question.dataset.dashboardQuestion);
 }
@@ -620,12 +624,6 @@ function initDashboard() {
   els.dashboardRefreshBtn.addEventListener("click", () => loadDashboard(true));
   els.dashboardBody.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardFilterbar?.addEventListener("click", (event) => handleDashboardAction(event.target));
-  els.dashboardBody.addEventListener("keydown", (event) => {
-    if (!["Enter", " "].includes(event.key)) return;
-    if (!event.target.closest("[data-dashboard-issue], [data-dashboard-customer]")) return;
-    event.preventDefault();
-    handleDashboardAction(event.target);
-  });
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);
   const panelMenuToggles = [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle, els.adminSidebarMenuToggle];

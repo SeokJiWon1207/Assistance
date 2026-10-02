@@ -400,3 +400,26 @@ test('header holds scope, period and comparison once and period buttons reload t
   await new Promise((resolve) => setImmediate(resolve));
   assert.match(h.calls.at(-1), /days=7/);
 });
+
+test('dashboard rows keep table semantics and expose real buttons', async () => {
+  const payload = filterableDashboard();
+  payload.customerHealth = [{ customer: '고객사 A', level: 'high', label: '위험', reasons: ['지연'], openCount: 2, overdueCount: 1, agingCount: 1 }];
+  payload.customerSpikes = [{ name: '고객사 B', count: 4, previousCount: 1, ratio: 4 }];
+  payload.todos = [{ id: 7, title: '오늘 볼 이슈', project: '고객사 A', riskLevel: 'high', recommendedAction: '확인' }];
+  const h = await harness('member', undefined, async () => ({ ok: true, payload }));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  // 표 행·카드에 버튼 역할을 덧씌우지 않고, 누를 곳은 실제 <button>으로 둔다.
+  assert.doesNotMatch(html, /role="button"|tabindex="0"/);
+  assert.match(html, /<tr class="dashboard-clickable" data-dashboard-row-issue="1">/);
+  assert.match(html, /<button type="button" class="dashboard-issue-button" data-dashboard-issue="1">/);
+  assert.match(html, /<button type="button" class="workspace-item-title dashboard-card-button" data-dashboard-issue="7">/);
+  assert.match(html, /<button type="button" class="health-row dashboard-clickable" aria-pressed="false" data-dashboard-customer="고객사 A">/);
+  assert.match(html, /<button class="dashboard-spike-row dashboard-clickable" type="button" data-dashboard-customer="고객사 B" aria-pressed="false">/);
+  assert.equal(h.els.dashboardBody.handlers.keydown, undefined);
+
+  // 마우스로 행의 다른 칸을 눌러도 같은 이슈 상세가 열린다.
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-row-issue]', { dashboardRowIssue: '1' }) });
+  assert.equal(h.els.dashboardDetail.hidden, false);
+  assert.match(h.els.dashboardDetailTitle.textContent, /#1 이슈 상세/);
+});

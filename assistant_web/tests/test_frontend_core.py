@@ -222,6 +222,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (hover: none)", styles)
         self.assertIn(".message:focus-within .message-time", styles)
 
+    def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
+        dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+
+        self.assertNotIn('role="button"', dashboard_js)
+        self.assertNotIn('els.dashboardBody.addEventListener("keydown"', dashboard_js)
+        self.assertIn('target.closest("[data-dashboard-row-issue]")', dashboard_js)
+        self.assertIn(".dashboard-card-button::after", dashboard_css)
+
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
         body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]

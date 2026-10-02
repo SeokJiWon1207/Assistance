@@ -71,6 +71,7 @@
 
 .view-switch-tab:focus-visible,
 .dashboard-clickable:focus-visible,
+.dashboard-issue-button:focus-visible,
 .dashboard-chip:focus-visible,
 .dashboard-filter-jump:focus-visible,
 .dashboard-priority-section:focus-visible {
@@ -268,6 +269,36 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 
 .dashboard-section-list { display: grid; }
 .dashboard-clickable { cursor: pointer; }
+
+/* 행·카드 안의 실제 버튼. 버튼 기본 모양을 지우고 놓인 자리의 글자 모양을 따른다. */
+button.health-row,
+button.dashboard-spike-row,
+.dashboard-issue-button,
+.dashboard-card-button {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+button.health-row,
+button.dashboard-spike-row { border-bottom: 1px solid var(--line); }
+button.health-row:last-child,
+button.dashboard-spike-row:last-child { border-bottom: 0; }
+
+.dashboard-issue-button { display: block; max-width: 100%; padding: 0; border-radius: 4px; }
+.dashboard-issue-button:hover .dashboard-issue-title { color: var(--blue); }
+
+/* 오늘 확인할 업무: 제목 버튼이 카드 전체를 누를 수 있는 영역으로 덮는다. */
+.dashboard-card-link { position: relative; }
+.dashboard-card-button { padding: 0; }
+.dashboard-card-button::after { content: ""; position: absolute; inset: 0; }
+.dashboard-card-button:focus-visible { outline: none; }
+.dashboard-card-link:has(.dashboard-card-button:focus-visible) { outline: 2px solid var(--blue); outline-offset: -2px; }
 .dashboard-clickable:hover { background: color-mix(in srgb, var(--blue) 4%, var(--surface)); }
 .dashboard-item-action { display: flex; align-items: center; gap: 7px; }
 .dashboard-risk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
@@ -293,7 +324,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .health-label { padding: 3px 6px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 12px; font-weight: 700; }
 .health-label.is-attention { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
 .health-label.is-high { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
-.health-main p { overflow: hidden; margin: 0; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.health-reason { display: block; overflow: hidden; margin: 0; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .health-metrics { display: grid; gap: 3px; color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
 .health-metrics strong { color: var(--text); font-size: 12px; }
 
