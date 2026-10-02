@@ -2,7 +2,7 @@ import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=202609
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
-import { closeMobileSidebar, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
+import { closeAccountMenu, closeMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, showTeamBrief, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
@@ -441,15 +441,19 @@ function setActiveView(view, { remember = true, load = true } = {}) {
   if (!["chat", "personal", "dashboard", "admin"].includes(view)) view = "chat";
   els.viewDashboardBtn.hidden = !canViewTeamDashboard();
   if (els.viewAdminBtn) els.viewAdminBtn.hidden = !canViewAdminCenter();
+  // 주 메뉴는 탭이 아니라 화면 이동이다. 지금 화면만 aria-current로 표시하고 Tab 순서는 그대로 둔다.
   for (const [name, button, panel] of mainViews()) {
     const selected = name === view;
     panel.hidden = !selected;
     button.classList.toggle("is-active", selected);
-    button.setAttribute("aria-selected", String(selected));
-    button.tabIndex = selected ? 0 : -1;
+    if (selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   }
+  // 대화 목록은 대화 화면에서만 보인다(.app-shell[data-view]로 레이아웃 열을 바꾼다).
+  if (els.appShell) els.appShell.dataset.view = view;
   if (remember) localStorage.setItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`, view);
   closeMobileSidebar({ restoreFocus: false });
+  closeAccountMenu();
   if (view === "dashboard" && load) ensureDashboardFresh();
   if (load) mainViewLoaders.get(view)?.();
   if (view === "personal" && load) {
@@ -585,16 +589,6 @@ function initDashboard() {
   els.viewPersonalBtn.addEventListener("click", () => showPersonalView());
   els.viewChatBtn.addEventListener("click", () => showChatView());
   els.viewAdminBtn?.addEventListener("click", () => showAdminView());
-  mainViews().forEach(([, button]) => button.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const visible = mainViews().filter(([, tab]) => !tab.hidden);
-    const index = visible.findIndex(([, tab]) => tab === button);
-    const next = event.key === "Home" ? 0 : event.key === "End" ? visible.length - 1
-      : (index + (event.key === "ArrowLeft" ? -1 : 1) + visible.length) % visible.length;
-    setActiveView(visible[next][0]);
-    visible[next][1].focus();
-  }));
   els.dashboardPeriod.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-dashboard-period]");
     if (!button || button.disabled) return;
@@ -610,8 +604,6 @@ function initDashboard() {
   els.dashboardFilterbar?.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);
-  const panelMenuToggles = [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle, els.adminSidebarMenuToggle];
-  panelMenuToggles.forEach((button) => button?.addEventListener("click", () => toggleMobileSidebar(button)));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.dashboardDetail.hidden) closeIssueDetail();
   });

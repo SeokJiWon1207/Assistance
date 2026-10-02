@@ -77,8 +77,7 @@
   font-weight: 600;
 }
 
-.admin-nav em,
-.view-switch-tab #adminPendingBadge {
+.admin-nav em {
   display: inline-grid;
   place-items: center;
   min-width: 20px;
@@ -92,13 +91,6 @@
   line-height: 1;
   font-style: normal;
   font-weight: 700;
-}
-
-.view-switch-tab #adminPendingBadge {
-  min-width: 18px;
-  height: 18px;
-  margin-left: 2px;
-  font-size: 12px;
 }
 
 .admin-content {
@@ -1134,7 +1126,3 @@ button.admin-metric:hover { border-color: color-mix(in srgb, var(--blue) 35%, va
   .admin-content { padding: 18px 16px 30px; }
 }
 
-@media (max-width: 560px) {
-  .view-switch-tab { position: relative; }
-  .view-switch-tab #adminPendingBadge { position: absolute; top: 2px; right: 6px; }
-}

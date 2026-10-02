@@ -2,7 +2,7 @@ import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?
 import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
-import { closeMobileSidebar, isMobileSidebarOpen, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
+import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSidebarOpen, toggleAccountMenu, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { initTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
 initTemplatePicker();
@@ -138,9 +138,19 @@ document.addEventListener("click", (event) => {
   if (!isMobileSidebarOpen()) return;
   // 목록 펼치기는 클릭 도중 DOM을 교체한다. 원래 전파 경로로 판단해야
   // 이미 분리된 버튼을 사이드바 바깥 클릭으로 오인하지 않는다.
-  if (event.composedPath().some((node) => node === els.sidebar ||
-      [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle, els.adminSidebarMenuToggle].includes(node))) return;
+  if (event.composedPath().some((node) => node === els.sidebar || node === els.sidebarMenuToggle)) return;
   closeMobileSidebar();
+});
+
+// 내 계정 메뉴(다크 모드 · 로그아웃). 바깥을 누르면 닫되, 로그아웃 확인 창이 떠 있는 동안에는
+// 메뉴를 그대로 두어 취소했을 때 포커스가 로그아웃 버튼으로 돌아오게 한다.
+els.accountMenuBtn?.addEventListener("click", toggleAccountMenu);
+document.addEventListener("click", (event) => {
+  if (!isAccountMenuOpen() || document.body.classList.contains("modal-open")) return;
+  // 확인 창의 취소 버튼은 클릭 도중 창을 닫으므로 전파 경로로 창 안의 클릭인지 판단한다.
+  if (event.composedPath().some((node) => node === els.accountMenu || node === els.accountMenuBtn ||
+      node?.classList?.contains("modal-backdrop"))) return;
+  closeAccountMenu();
 });
 els.cancelEditBtn.addEventListener("click", () => {
   cancelMessageEdit();
@@ -567,6 +577,8 @@ document.addEventListener("keydown", (event) => {
     closeFeedbackModal();
   } else if (event.key === "Escape" && !els.chromaModal.hidden) {
     closeChromaModal();
+  } else if (event.key === "Escape" && isAccountMenuOpen() && !document.body.classList.contains("modal-open")) {
+    closeAccountMenu({ restoreFocus: true });
   } else if (event.key === "Escape" && document.body.classList.contains("sidebar-open")) {
     // 모달이 모두 닫혀 있을 때만 좁은 화면의 사이드바를 닫는다.
     closeMobileSidebar();

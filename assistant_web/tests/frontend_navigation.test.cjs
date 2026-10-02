@@ -6,12 +6,14 @@ const vm = require('node:vm');
 
 async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const calls = [];
+  const accountMenuCloses = [];
   const storage = new Map(stored ? [[`team-ai-assistant-main-view-v1:user-${role}`, stored]] : []);
   let focused;
   const element = (name) => ({
     hidden: true, disabled: false, tabIndex: -1, innerHTML: '', textContent: '', attributes: {}, handlers: {},
     classList: { toggle() {}, remove() {} },
     setAttribute(key, value) { this.attributes[key] = value; },
+    removeAttribute(key) { delete this.attributes[key]; },
     addEventListener(type, fn) { this.handlers[type] = fn; },
     querySelector() { return { textContent: '', addEventListener() {}, focus() {}, scrollIntoView() {} }; },
     focus() { focused = name; },
@@ -22,6 +24,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     'dashboardDetail', 'dashboardDetailClose', 'dashboardDetailTitle', 'dashboardDetailBody', 'workspaceContent', 'dashboardSource', 'dashboardSubtitle',
     ...(adminCenter ? ['viewAdminBtn', 'adminPanel'] : []),
   ].map((name) => [name, element(name)]));
+  els.appShell = { dataset: { view: 'chat' } };
   const htmlWrites = [];
   const badges = [];
   Object.defineProperty(els.dashboardBody, 'innerHTML', {
@@ -45,7 +48,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
     './sidebar.js': {
       closeMobileSidebar: () => { context.document.body.sidebarOpen = false; },
-      toggleMobileSidebar: () => {},
+      closeAccountMenu: () => { accountMenuCloses.push(true); },
     },
     './data_badge.js': {
       dataBadgeState: ({ source, complete = true, refreshing = false, loading = false } = {}) => (loading ? 'loading' : source === 'error' ? 'error' : refreshing ? 'refreshing' : source === 'snapshot' ? 'snapshot' : complete === false ? 'partial' : 'fresh'),
@@ -71,7 +74,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const loaderCalls = [];
   module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { loaderCalls, badges, api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
+  return { loaderCalls, badges, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -155,8 +158,8 @@ test('manager can switch among three panels without losing personal tab state', 
   assert.equal(h.els.personalPanel.hidden, true);
   h.api.showPersonalView();
   assert.equal(h.state.workspaceTab, 'notifications');
-  assert.equal(h.els.viewPersonalBtn.attributes['aria-selected'], 'true');
-  assert.equal(h.els.viewDashboardBtn.tabIndex, -1);
+  assert.equal(h.els.viewPersonalBtn.attributes['aria-current'], 'page');
+  assert.equal(h.els.viewDashboardBtn.attributes['aria-current'], undefined);
 });
 
 test('member can open and load the team dashboard', async () => {
@@ -261,17 +264,21 @@ test('dashboard joins failed prefetch without retrying or leaving a spinner', as
   assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
 });
 
-test('keyboard navigation follows visible tab order and moves focus', async () => {
-  for (const role of ['admin', 'member']) {
-    const h = await harness(role);
-    const key = (button, value) => h.els[button].handlers.keydown({ key: value, preventDefault() {} });
-    key('viewChatBtn', 'ArrowRight');
-    assert.equal(h.focus(), 'viewPersonalBtn');
-    key('viewPersonalBtn', 'End');
-    assert.equal(h.focus(), 'viewDashboardBtn');
-    key(h.focus(), 'Home');
-    assert.equal(h.focus(), 'viewChatBtn');
+test('main menu marks the current view, keeps tab order and shows the chat list only on chat', async () => {
+  const h = await harness('member');
+  assert.equal(h.els.appShell.dataset.view, 'chat');
+  assert.equal(h.els.viewChatBtn.attributes['aria-current'], 'page');
+  h.api.showDashboardView({ load: false });
+  assert.equal(h.els.appShell.dataset.view, 'dashboard');
+  assert.equal(h.els.viewDashboardBtn.attributes['aria-current'], 'page');
+  assert.equal(h.els.viewChatBtn.attributes['aria-current'], undefined);
+  // 탭 목록이 아니라 화면 이동 메뉴라서 방향키 처리와 roving tabindex를 두지 않는다.
+  for (const name of ['viewChatBtn', 'viewPersonalBtn', 'viewDashboardBtn']) {
+    assert.equal(h.els[name].handlers.keydown, undefined);
+    assert.equal(h.els[name].attributes['aria-selected'], undefined);
   }
+  // 화면을 옮기면 열려 있던 내 계정 메뉴도 닫는다.
+  assert.ok(h.accountMenuCloses.length > 0);
 });
 
 test('personal view restores from account-scoped storage and requests missing data', async () => {
@@ -366,18 +373,17 @@ test('expired snapshot and live error never display zero dashboard metrics', asy
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-metrics/);
 });
 
-test('admin center is a fourth tab only for admins and loads when shown', async () => {
+test('admin center is a fourth menu item only for admins and loads when shown', async () => {
   const admin = await harness('admin', 'admin', null, { adminCenter: true });
   assert.equal(admin.els.viewAdminBtn.hidden, false);
   assert.equal(admin.els.adminPanel.hidden, false);
   assert.equal(admin.els.chatPanel.hidden, true);
   assert.deepEqual(admin.loaderCalls, ['admin']);
-  const key = (button, value) => admin.els[button].handlers.keydown({ key: value, preventDefault() {} });
-  key('viewChatBtn', 'End');
-  assert.equal(admin.focus(), 'viewAdminBtn');
+  assert.equal(admin.els.appShell.dataset.view, 'admin');
   admin.api.showChatView();
   assert.equal(admin.els.adminPanel.hidden, true);
-  assert.equal(admin.els.viewAdminBtn.attributes['aria-selected'], 'false');
+  assert.equal(admin.els.viewAdminBtn.attributes['aria-current'], undefined);
+  assert.equal(admin.els.appShell.dataset.view, 'chat');
 
   // 관리자가 아닌 계정에 남아 있던 저장값은 대화 화면으로 돌린다.
   const member = await harness('member', 'admin', null, { adminCenter: true });

@@ -14,10 +14,9 @@ async function loadSidebar() {
   });
   const els = {
     sidebarMenuToggle: button('chatMenu'),
-    personalSidebarMenuToggle: button('personalMenu', false),
-    dashboardSidebarMenuToggle: button('dashboardMenu', false),
-    adminSidebarMenuToggle: null,
     sidebarCloseBtn: button('closeBtn'),
+    accountMenuBtn: button('accountBtn'),
+    accountMenu: { hidden: true },
   };
   const document = { body: { classList: {
     add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
@@ -31,13 +30,11 @@ async function loadSidebar() {
   return { api: module.namespace, els, classes, focused: () => focused };
 }
 
-test('opening the drawer marks every menu button and moves focus to the close button', async () => {
+test('opening the drawer marks the chat menu button and moves focus to the close button', async () => {
   const h = await loadSidebar();
   h.api.openMobileSidebar(h.els.sidebarMenuToggle);
   assert.equal(h.api.isMobileSidebarOpen(), true);
-  for (const name of ['sidebarMenuToggle', 'personalSidebarMenuToggle', 'dashboardSidebarMenuToggle']) {
-    assert.equal(h.els[name].attributes['aria-expanded'], 'true');
-  }
+  assert.equal(h.els.sidebarMenuToggle.attributes['aria-expanded'], 'true');
   assert.equal(h.focused(), 'closeBtn');
 });
 
@@ -57,8 +54,26 @@ test('closing for navigation or when already closed does not steal focus', async
   h.api.openMobileSidebar(h.els.sidebarMenuToggle);
   h.api.closeMobileSidebar({ restoreFocus: false });
   assert.equal(h.focused(), 'closeBtn');
-  // 숨겨진 화면의 메뉴 버튼으로는 포커스를 돌려주지 않는다.
-  h.api.openMobileSidebar(h.els.personalSidebarMenuToggle);
+  // 화면에서 사라진 메뉴 버튼으로는 포커스를 돌려주지 않는다.
+  h.els.sidebarMenuToggle.offsetParent = null;
+  h.api.openMobileSidebar(h.els.sidebarMenuToggle);
   h.api.closeMobileSidebar();
   assert.equal(h.focused(), 'closeBtn');
+});
+
+test('account menu toggles with aria-expanded and Esc-style close returns focus to its button', async () => {
+  const h = await loadSidebar();
+  h.api.toggleAccountMenu();
+  assert.equal(h.api.isAccountMenuOpen(), true);
+  assert.equal(h.els.accountMenuBtn.attributes['aria-expanded'], 'true');
+  h.api.toggleAccountMenu();
+  assert.equal(h.els.accountMenu.hidden, true);
+  assert.equal(h.focused(), '');
+  h.api.openAccountMenu();
+  h.api.closeAccountMenu({ restoreFocus: true });
+  assert.equal(h.els.accountMenuBtn.attributes['aria-expanded'], 'false');
+  assert.equal(h.focused(), 'accountBtn');
+  // 이미 닫혀 있으면 포커스를 옮기지 않는다.
+  h.api.closeAccountMenu({ restoreFocus: true });
+  assert.equal(h.api.isAccountMenuOpen(), false);
 });

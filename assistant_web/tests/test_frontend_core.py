@@ -137,7 +137,7 @@ class FrontendCoreTests(unittest.TestCase):
             self.assertIn(f'id="{element_id}"', html)
         self.assertLess(html.index('id="viewChatBtn"'), html.index('id="viewPersonalBtn"'))
         self.assertLess(html.index('id="viewPersonalBtn"'), html.index('id="viewDashboardBtn"'))
-        self.assertIn('id="personalPanel" class="personal-panel" role="tabpanel"', html)
+        self.assertIn('<section id="personalPanel" class="personal-panel" aria-labelledby="viewPersonalBtn"', html)
         self.assertNotIn('id="workspaceModal"', html)
         self.assertNotIn('id="teamDashboardBtn"', html)
         self.assertNotIn('id="myWorkBtn"', html)
@@ -238,7 +238,7 @@ class FrontendCoreTests(unittest.TestCase):
 
         # 버튼 역할만 붙인 요소를 두지 않고, 로고와 메뉴 닫기는 실제 버튼이다.
         self.assertNotIn('role="button"', html)
-        self.assertIn('<button id="brandHome" class="brand-home" type="button"', html)
+        self.assertIn('<button id="brandHome" class="rail-brand" type="button"', html)
         self.assertIn('id="sidebarCloseBtn"', html)
         self.assertNotIn('els.brandHome.addEventListener("keydown"', events_js)
         # 좁은 화면 메뉴는 위에서 내려오는 82vh 오버레이가 아니라 왼쪽 전체 높이 드로어다.
@@ -294,6 +294,30 @@ class FrontendCoreTests(unittest.TestCase):
         # 승인 대기 사용자는 편집 패널을 열지 않고 목록에서 바로 승인할 수 있다.
         self.assertIn("patchUser(uid, { approved: true })", users_js)
         self.assertIn('apiFetch("/api/auth/users/invite"', users_js)
+
+    def test_main_menu_is_one_rail_and_chat_list_only_shows_on_chat(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+        responsive = (STATIC_DIR / "responsive.css").read_text(encoding="utf-8")
+        dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
+
+        # 상단 탭 줄과 화면마다 따로 있던 메뉴 버튼 대신 주 메뉴 하나로 화면을 옮긴다.
+        self.assertNotIn("view-switch", html)
+        self.assertNotIn('role="tabpanel" aria-labelledby="view', html)
+        for removed_id in ("personalSidebarMenuToggle", "dashboardSidebarMenuToggle", "adminSidebarMenuToggle"):
+            self.assertNotIn(f'id="{removed_id}"', html)
+        self.assertEqual(html.count('class="sidebar-menu-toggle'), 1)
+        rail = html[html.index('<nav class="app-rail" aria-label="주 메뉴">') : html.index("</nav>", html.index('class="app-rail"'))]
+        for element_id in ("brandHome", "viewChatBtn", "viewPersonalBtn", "viewDashboardBtn", "viewAdminBtn", "accountMenuBtn", "signedInUser", "logoutBtn", "darkModeToggle"):
+            self.assertIn(f'id="{element_id}"', rail)
+        self.assertIn('aria-current="page"', rail)
+        self.assertNotIn('role="tab"', rail)
+        # 대화 목록은 대화 화면에서만 보이고, 좁은 화면에서는 주 메뉴가 아래 탭바가 된다.
+        self.assertIn('<main class="app-shell" data-view="chat">', html)
+        self.assertIn('.app-shell:not([data-view="chat"]) .sidebar', styles)
+        self.assertIn("els.appShell.dataset.view = view", dashboard_js)
+        self.assertIn("border-top: 1px solid var(--line)", responsive)
+        self.assertIn("--rail-h", responsive)
 
     def test_admin_tools_live_in_one_admin_center_view(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

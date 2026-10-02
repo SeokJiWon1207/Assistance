@@ -122,7 +122,11 @@
     document.querySelector("#logoutConfirmClose")?.addEventListener("click", close);
     modal?.addEventListener("click", (event) => { if (event.target === modal) close(); });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && modal && !modal.hidden) close();
+      if (event.key === "Escape" && modal && !modal.hidden) {
+        // 확인 창만 닫고, 뒤에 열린 내 계정 메뉴까지 같은 Esc로 닫히지 않게 한다.
+        event.stopImmediatePropagation();
+        close();
+      }
     });
     confirmButton?.addEventListener("click", async () => {
       confirmButton.disabled = true;

@@ -1,6 +1,74 @@
 @media (max-width: 860px) {
-  .app-shell {
-    grid-template-columns: 1fr;
+  /* 주 메뉴는 아래 탭바. 입력창에 글을 쓰는 동안에는 탭바를 내려 대화와 키보드에 자리를 준다. */
+  :root {
+    --rail-h: calc(60px + env(safe-area-inset-bottom));
+  }
+
+  body:has(#promptInput:focus) {
+    --rail-h: 0px;
+  }
+
+  body:has(#promptInput:focus) .app-rail {
+    display: none;
+  }
+
+  .app-shell,
+  .app-shell:not([data-view="chat"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* dashboard.css가 뒤에 읽히므로 한 단계 더 구체적으로 고른다. */
+  .app-shell .main-view-shell {
+    height: calc(100vh - var(--rail-h));
+    height: calc(100dvh - var(--rail-h));
+  }
+
+  .app-rail {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 45;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 2px;
+    height: var(--rail-h);
+    padding: 4px 6px env(safe-area-inset-bottom);
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .rail-brand {
+    display: none;
+  }
+
+  /* 화면 버튼과 내 계정 버튼이 같은 너비로 한 줄에 놓이게 묶음을 푼다. */
+  .rail-items {
+    display: contents;
+  }
+
+  .rail-item {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    padding: 4px 2px;
+  }
+
+  .rail-account {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .account-menu {
+    position: fixed;
+    right: 8px;
+    bottom: calc(var(--rail-h) + 8px);
+    left: auto;
+    width: min(300px, calc(100vw - 16px));
+  }
+
+  .toast-stack {
+    bottom: calc(var(--rail-h) + 16px);
   }
 
   .sidebar {
@@ -58,11 +126,6 @@
     transform: translateX(0);
     visibility: visible;
     transition: transform 0.22s ease, visibility 0s;
-  }
-
-  .sidebar .brand h1 {
-    font-size: 17px;
-    line-height: 25.5px;
   }
 
   .sidebar-close.icon-command {
@@ -161,9 +224,6 @@
   }
 
   .scroll-to-top-button {
-    position: fixed;
-    top: auto;
-    bottom: 24px;
     right: 20px;
   }
 

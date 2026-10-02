@@ -474,8 +474,9 @@ button {
 }
 
 .app-shell {
+  --rail-w: 76px;
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr);
+  grid-template-columns: var(--rail-w) 284px minmax(0, 1fr);
   min-height: 100vh;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(245, 247, 250, 0) 240px),
@@ -488,11 +489,159 @@ body.theme-dark .app-shell {
     var(--bg);
 }
 
+/* 대화 목록은 대화 화면에서만 둔다. 다른 화면은 주 메뉴와 본문 두 열이다(dashboard.js가 data-view를 바꾼다). */
+.app-shell:not([data-view="chat"]) {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+}
+
+.app-shell:not([data-view="chat"]) .sidebar {
+  display: none;
+}
+
+/* 주 메뉴: 로고 · 화면 이동 · 내 계정. 좁은 화면에서는 아래 탭바가 된다(responsive.css). */
+.app-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  height: 100vh;
+  height: 100dvh;
+  padding: 16px 8px 14px;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.rail-brand {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.rail-brand img {
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+.rail-brand:hover {
+  border-color: var(--line-strong);
+}
+
+.rail-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 2px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.rail-item .ui-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.rail-item:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.rail-item.is-active {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.rail-brand:focus-visible,
+.rail-item:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 읽지 않은 알림 · 승인 대기 수는 아이콘 오른쪽 위에 붙인다. */
+.rail-item em {
+  position: absolute;
+  top: 3px;
+  left: calc(50% + 4px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--on-danger);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.rail-account {
+  position: relative;
+  width: 100%;
+  margin-top: auto;
+}
+
+.rail-account-button .signed-in-user-avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.rail-account-button[aria-expanded="true"] {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.account-menu {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 16px);
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 268px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 24px 20px 18px;
+  padding: 20px 20px 18px;
   background: rgba(255, 255, 255, 0.86);
   border-right: 1px solid var(--line);
   max-height: 100vh;
@@ -503,51 +652,25 @@ body.theme-dark .sidebar {
   background: rgba(27, 31, 39, 0.9);
 }
 
-.brand {
+.sidebar-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  border-radius: 10px;
-  padding: 4px 6px;
-  margin-left: -6px;
-  margin-right: -6px;
-  transition: background-color 0.15s ease;
-  user-select: none;
+  gap: 8px;
+  min-height: 36px;
 }
 
-.brand:hover {
-  background-color: rgba(0, 0, 0, 0.05);
+.sidebar-head h2 {
+  margin: 0 auto 0 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 25.5px;
 }
 
-/* 로고 영역 전체를 덮는 실제 버튼. 제목(h1)은 버튼 밖에 두어 문서 구조를 지킨다. */
-.brand {
-  position: relative;
-}
-
-.brand-home {
-  position: absolute;
-  inset: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.brand-home:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-}
-
-/* 좁은 화면 드로어에서만 보이는 닫기 버튼(로고 버튼 위에 놓인다).
+/* 좁은 화면 드로어에서만 보이는 닫기 버튼.
    .icon-command의 display보다 우선하도록 두 클래스로 고른다. */
 .sidebar-close.icon-command {
   display: none;
-  position: relative;
-  margin-left: auto;
 }
 
 /* 넓은 화면의 전송 버튼은 글자만 쓴다. 아이콘은 좁은 화면의 원형 버튼에서 쓴다. */
@@ -573,7 +696,6 @@ body.theme-dark .sidebar {
   display: block;
 }
 
-.brand h1,
 .chat-header h2 {
   margin: 0;
   color: var(--text);
@@ -582,7 +704,6 @@ body.theme-dark .sidebar {
   line-height: 29px;
 }
 
-.brand p,
 .chat-header p,
 .model-meta {
   margin: 4px 0 0;
@@ -1273,20 +1394,14 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   border-top: 1px solid var(--line);
 }
 
+/* 내 계정 메뉴의 이름 · 역할 · 로그아웃 줄 */
 .signed-in-user {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  margin-top: auto;
-  padding: 12px 0 2px;
-  border-top: 1px solid var(--line);
-}
-
-.signed-in-user + .sidebar-footer-actions {
-  margin-top: 0;
-  border-top: 0;
-  padding-top: 6px;
+  padding: 2px 2px 12px;
+  border-bottom: 1px solid var(--line);
 }
 
 .signed-in-user-avatar {
@@ -1316,7 +1431,8 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 
 .signed-in-user-copy strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .signed-in-user-copy small {
@@ -1324,32 +1440,32 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   font-size: 12px;
 }
 
-.signed-in-user-action {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
+.account-menu-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.signed-in-user-action svg {
+.account-menu-action .ui-icon {
   width: 16px;
   height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
-.signed-in-user-action:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+.account-menu-action:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-alt);
+  color: var(--text);
 }
 
 .sidebar-action-button {
@@ -3987,7 +4103,7 @@ textarea:focus {
   .logout-confirm-button,
   .modal-close,
   .sidebar-action-button,
-  .signed-in-user-action,
+  .account-menu-action,
   .icon-command
 ):focus-visible {
   outline: none;

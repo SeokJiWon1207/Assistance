@@ -1,7 +1,7 @@
 /* 주요 화면 전환과 팀 대시보드 */
 .main-view-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
   height: 100vh;
   height: 100dvh;
@@ -24,7 +24,6 @@
 
 .personal-panel .workspace-modal-header { gap: 12px; }
 .personal-panel .workspace-modal-header > div:first-of-type { flex: 1; }
-.view-switch-tab em { font-size: 12px; font-style: normal; color: var(--danger); }
 /* 대시보드 맨 아래: 팀 브리핑은 내 업무 › 주간 보고에서 보도록 안내만 둔다. */
 .dashboard-brief-link {
   display: flex;
@@ -42,47 +41,6 @@
 .dashboard-brief-link b { color: var(--text); font-weight: 600; }
 .dashboard-brief-link .secondary-button { width: auto; min-height: 36px; padding: 0 12px; flex-shrink: 0; font-size: 13px; font-weight: 600; cursor: pointer; }
 
-.view-switch {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 48px;
-  padding: 7px 22px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-
-.view-switch-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.view-switch-tab svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.view-switch-tab.is-active {
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.view-switch-tab:focus-visible,
 .dashboard-clickable:focus-visible,
 .dashboard-issue-button:focus-visible,
 .dashboard-chip:focus-visible,
@@ -443,9 +401,8 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
 }
 
 @media (max-width: 860px) {
-  .main-view-shell { height: 100vh; height: 100dvh; }
+  /* 높이는 아래 탭바를 뺀 값으로 responsive.css에서 정한다. */
   .main-view-shell > .chat-panel { min-height: 0; }
-  .view-switch { padding: 7px 14px; }
   .dashboard-header { min-height: auto; padding: 14px 16px; }
   .dashboard-heading { min-width: 0; }
   .dashboard-toolbar { gap: 7px; }
@@ -458,10 +415,6 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
 }
 
 @media (max-width: 560px) {
-  .view-switch { justify-content: center; }
-  .view-switch-tab { flex: 1; justify-content: center; padding-inline: 6px; white-space: nowrap; }
-  /* 탭이 네 개(관리자)일 때도 한 줄에 들어가도록 좁은 화면에서는 아이콘을 뺀다. */
-  .view-switch-tab svg { display: none; }
   .dashboard-header { gap: 10px; flex-wrap: wrap; }
   .dashboard-heading { margin-right: auto; }
   .dashboard-heading h2 { font-size: 17px; }

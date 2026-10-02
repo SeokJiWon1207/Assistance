@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20261002-4" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261002-6" />
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
-    <link rel="stylesheet" href="/static/responsive.css?v=20261002-3" />
+    <link rel="stylesheet" href="/static/responsive.css?v=20261002-5" />
     <link rel="stylesheet" href="/static/workspace.css?v=20261002-1" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20261002-3" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261002-5" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20261002-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/admin_center.css?v=20261002-1" />
+    <link rel="stylesheet" href="/static/admin_center.css?v=20261002-2" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -75,24 +75,63 @@
         </form>
       </div>
     </section>
-    <main class="app-shell">
-      <aside class="sidebar">
-        <div class="brand">
-          <button id="brandHome" class="brand-home" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작"></button>
-          <div class="brand-mark">
-            <img src="/static/assets/company-logo.png" alt="회사 로고" />
-          </div>
-          <div>
-            <h1>컨텐츠서비스 AI 비서</h1>
-            <p>Team workspace</p>
-          </div>
-          <button id="sidebarCloseBtn" class="sidebar-close icon-command" type="button" aria-label="메뉴 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+    <main class="app-shell" data-view="chat">
+      <h1 class="sr-only">컨텐츠서비스 AI 비서</h1>
+      <!-- 주 메뉴: 넓은 화면에서는 왼쪽 레일, 좁은 화면에서는 아래 탭바. 대화 목록(.sidebar)은 대화 화면에서만 보인다. -->
+      <nav class="app-rail" aria-label="주 메뉴">
+        <button id="brandHome" class="rail-brand" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작"><img src="/static/assets/company-logo.png" alt="" /></button>
+        <div class="rail-items">
+          <button id="viewChatBtn" class="rail-item is-active" type="button" aria-current="page">
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-chat"/></svg>
+            <span>대화</span>
+          </button>
+          <button id="viewPersonalBtn" class="rail-item" type="button">
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-clipboard"/></svg>
+            <span>내 업무</span> <em id="workspaceUnreadBadge" hidden>0</em>
+          </button>
+          <button id="viewDashboardBtn" class="rail-item" type="button" hidden>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-grid"/></svg>
+            <span>대시보드</span>
+          </button>
+          <button id="viewAdminBtn" class="rail-item" type="button" hidden>
+            <svg class="ui-icon" aria-hidden="true"><use href="#i-shield"/></svg>
+            <span>관리자</span> <em id="adminPendingBadge" hidden>0</em>
+          </button>
+        </div>
+        <div class="rail-account">
+          <button id="accountMenuBtn" class="rail-item rail-account-button" type="button" aria-expanded="false" aria-controls="accountMenu" title="내 계정">
+            <span id="signedInUserAvatar" class="signed-in-user-avatar" aria-hidden="true">U</span>
+            <span>내 계정</span>
+          </button>
+          <section id="accountMenu" class="account-menu" aria-label="내 계정" hidden>
+            <div id="signedInUser" class="signed-in-user" hidden>
+              <span class="signed-in-user-copy">
+                <strong id="signedInUserName">사용자</strong>
+                <small id="signedInUserMeta"></small>
+              </span>
+              <button id="logoutBtn" class="account-menu-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#i-logout"/></svg>로그아웃</button>
+            </div>
+            <button id="darkModeToggle" class="theme-toggle" type="button" role="switch" aria-pressed="false">
+              <span class="theme-toggle-copy">
+                <strong>다크 모드</strong>
+                <small id="themeModeLabel">Light</small>
+              </span>
+              <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
+            </button>
+          </section>
+        </div>
+      </nav>
+
+      <aside class="sidebar" aria-labelledby="sidebarTitle">
+        <div class="sidebar-head">
+          <h2 id="sidebarTitle">대화</h2>
+          <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          <button id="sidebarCloseBtn" class="sidebar-close icon-command" type="button" aria-label="대화 목록 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </div>
 
         <section class="conversation-section" aria-labelledby="conversationHistoryLabel">
           <div class="conversation-heading">
             <span id="conversationHistoryLabel" class="section-label">이전 대화 <small id="conversationCount" class="conversation-count"></small></span>
-            <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
           <div class="conversation-search">
             <svg class="ui-icon" aria-hidden="true"><use href="#i-search"/></svg>
@@ -123,16 +162,9 @@
         </section>
 
         <details class="sidebar-advanced">
-          <summary>화면 설정</summary>
+          <summary>답변 표시</summary>
           <div class="sidebar-advanced-body">
             <div class="advanced-section">
-              <button id="darkModeToggle" class="theme-toggle" type="button" role="switch" aria-pressed="false">
-                <span class="theme-toggle-copy">
-                  <strong>다크 모드</strong>
-                  <small id="themeModeLabel">Light</small>
-                </span>
-                <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
-              </button>
               <button id="showSources" class="theme-toggle" type="button" role="switch" aria-pressed="true">
                 <span class="theme-toggle-copy"><strong>관련 이슈 표시</strong><small id="sourceDisplayLabel">On</small></span>
                 <span class="theme-toggle-track" aria-hidden="true"><span class="theme-toggle-thumb"></span></span>
@@ -212,43 +244,14 @@
           </div>
         </details>
 
-        <section id="signedInUser" class="signed-in-user" hidden aria-label="로그인 사용자">
-          <span id="signedInUserAvatar" class="signed-in-user-avatar" aria-hidden="true">U</span>
-          <span class="signed-in-user-copy">
-            <strong id="signedInUserName">사용자</strong>
-            <small id="signedInUserMeta"></small>
-          </span>
-          <button id="logoutBtn" class="signed-in-user-action" type="button" title="로그아웃" aria-label="로그아웃"><svg class="ui-icon" aria-hidden="true"><use href="#i-logout"/></svg></button>
-        </section>
-
         <div class="sidebar-footer-actions">
           <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><strong>초기화</strong></button>
         </div>
       </aside>
 
       <section class="main-view-shell">
-        <nav class="view-switch" role="tablist" aria-label="화면 전환">
-          <button id="viewChatBtn" class="view-switch-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="chatPanel">
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-chat"/></svg>
-            대화
-          </button>
-          <button id="viewPersonalBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="personalPanel" tabindex="-1">
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-clipboard"/></svg>
-            내 업무 <em id="workspaceUnreadBadge" hidden>0</em>
-          </button>
-          <button id="viewDashboardBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="dashboardPanel" tabindex="-1" hidden>
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-grid"/></svg>
-            팀 대시보드
-          </button>
-          <button id="viewAdminBtn" class="view-switch-tab" type="button" role="tab" aria-selected="false" aria-controls="adminPanel" tabindex="-1" hidden>
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-shield"/></svg>
-            관리자 센터 <em id="adminPendingBadge" hidden>0</em>
-          </button>
-        </nav>
-
-        <section id="personalPanel" class="personal-panel" role="tabpanel" aria-labelledby="viewPersonalBtn" hidden>
+        <section id="personalPanel" class="personal-panel" aria-labelledby="viewPersonalBtn" hidden>
         <header class="modal-header workspace-modal-header">
-          <button id="personalSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div>
             <p id="workspaceModalEyebrow">개인 워크스페이스</p>
             <h3 id="workspaceModalTitle">내 업무</h3>
@@ -270,9 +273,8 @@
         </div>
         </section>
 
-        <section id="dashboardPanel" class="dashboard-panel" role="tabpanel" aria-labelledby="viewDashboardBtn" hidden>
+        <section id="dashboardPanel" class="dashboard-panel" aria-labelledby="viewDashboardBtn" hidden>
           <header class="dashboard-header">
-            <button id="dashboardSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
             <div class="dashboard-heading">
               <h2>팀 대시보드</h2>
               <p id="dashboardSubtitle">운영 데이터를 조회하고 있습니다.</p>
@@ -300,9 +302,8 @@
           </aside>
         </section>
 
-        <section id="adminPanel" class="admin-panel" role="tabpanel" aria-labelledby="viewAdminBtn" hidden>
+        <section id="adminPanel" class="admin-panel" aria-labelledby="viewAdminBtn" hidden>
           <nav class="admin-nav" aria-label="관리자 메뉴">
-            <button id="adminSidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
             <p>관리자 센터</p>
             <button type="button" data-admin-section="overview"><svg class="ui-icon" aria-hidden="true"><use href="#i-chart"/></svg>품질 현황</button>
             <button type="button" data-admin-section="run"><svg class="ui-icon" aria-hidden="true"><use href="#i-play"/></svg>검증 실행</button>
@@ -323,9 +324,9 @@
           </aside>
         </section>
 
-        <section id="chatPanel" class="chat-panel" role="tabpanel" aria-labelledby="viewChatBtn">
+        <section id="chatPanel" class="chat-panel" aria-labelledby="viewChatBtn">
         <header class="chat-header">
-          <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
+          <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="대화 목록 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div>
             <h2 id="activeConversationTitle">새 대화</h2>
             <p id="statusLine" hidden></p>
@@ -483,7 +484,7 @@
 
     <script src="/static/frontend_core.js?v=20261002-1"></script>
     <script src="/static/custom_select.js?v=20260918-1"></script>
-    <script src="/static/auth.js?v=20260811-1"></script>
+    <script src="/static/auth.js?v=20261002-1"></script>
     <script type="module" src="/static/app.js?v=20260911-6"></script>
   </body>
 </html>
