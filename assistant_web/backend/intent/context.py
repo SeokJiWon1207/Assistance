@@ -57,6 +57,10 @@ def get_recent_user_texts(messages: List[ChatMessage], limit: int = 5) -> List[s
 
 def is_follow_up_question(text: str) -> bool:
     normalized = normalize_for_match(text)
+    if re.fullmatch(r"\s*(?:모바일|MTS|HTS|아이폰|iOS|PC)(?:이야|야|요|쪽|만)?[?.!]?\s*", text, re.I):
+        return True
+    if re.search(r"^(?:그럼|그러면)\b|만\s*(?:보면|보자|볼까)[?.!]*$", text.strip()):
+        return True
     if any(normalize_for_match(marker) in normalized for marker in FOLLOW_UP_STRONG_MARKERS):
         return True
     # "고객사는 그대로 두고 상태만 confirmed로 바꿔줘"처럼 직전 조건의

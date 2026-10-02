@@ -229,7 +229,7 @@ def merge_query_plan_constraints(
             re.IGNORECASE,
         ):
             continue
-        if field == "customer" and merged.get("customer_key"):
+        if (field == "customer" and merged.get("customer_key")) or (field == "platform" and merged.get("platform_key")):
             # The rule parser already expanded the customer's exact project and
             # aliases. A model-produced shorthand such as ``138Meritz`` must
             # not become an additional exact clause against

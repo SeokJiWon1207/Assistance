@@ -186,6 +186,7 @@ def get_customer_alias_groups() -> List[List[str]]:
 
 
 def extract_status_constraints(text: str) -> List[str]:
+    text = re.sub(r"개발\s*(?:끝났|끝난|끝낸|끝냈)(?:는데|지만|건|거)?", "개발완료 ", text)
     status_text = re.sub(
         r"확인\s*(?:해\s*(?:줘|주세요|줄래(?:요)?)|부탁(?:해|드려)?|할\s*수\s*있)",
         " ", remove_date_field_phrases(text),
@@ -252,6 +253,7 @@ def extract_issue_ids(text: str) -> List[int]:
         r"(?:이슈\s*ID|id)\s*:?\s*#?\s*(\d{3,})",
         r"^\s*0*(\d{3,7})\s*(?:번\s*)?(?:이슈\s*)?(?:알려\s*줘|알려주세요|보여\s*줘|보여주세요|조회(?:해\s*줘|해주세요)?)\s*[?.!]?\s*$",
         r"\b0*(\d{5,7})\b",
+        r"(?<![\w])0*(\d{5,7})(?=과|와|은|는|을|를)",
         r"\b(30\d{3}|29\d{3}|28\d{3}|27\d{3}|26\d{3})\b",
     ):
         for match in re.finditer(pattern, text, re.IGNORECASE):
@@ -380,8 +382,17 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
         text,
     )
     handlers, reporters = load_known_people()
-    known_people = sorted(set(handlers) | set(reporters), key=len, reverse=True)
+    from backend.team_scope import TEAM_MEMBERS
+    known_people = sorted(set(handlers) | set(reporters) | set(TEAM_MEMBERS), key=len, reverse=True)
     pairs: List[tuple[str, str]] = []
+    # 존칭이 붙은 이름은 명부 전체에서 유일할 때만 성을 보완한다.
+    for match in re.finditer(r"(?<![가-힣])([가-힣]{2,4})\s*님", person_text):
+        short = match.group(1)
+        candidates = [name for name in known_people if name == short or name[1:] == short]
+        if len(candidates) == 1:
+            pairs.append((candidates[0], "known"))
+        elif len(candidates) > 1:
+            pairs.extend((name, "ambiguous_alias") for name in candidates)
     for person in known_people:
         if person and is_valid_handler_name(person) and text_contains_person_name(person_text, person):
             pairs.append((person, roster_person_origin(person)))
@@ -429,7 +440,10 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
                 continue
             pairs.append((name, "inferred"))
 
-    return build_people(pairs, infer_person_role(person_text))
+    role = infer_person_role(person_text)
+    if role == "any" and re.search(r"님.*(?:뭐\s*하고|건|업무)", person_text):
+        role = "handler"
+    return build_people(pairs, role)
 
 
 def is_simple_greeting(text: str) -> bool:

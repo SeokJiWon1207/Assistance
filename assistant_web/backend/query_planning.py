@@ -514,6 +514,9 @@ def build_query_plan(
             # Mantis 상태는 규칙이 확정한다. 개발완료에 모델의 resolved를
             # 겹쳐 붙여 교집합이 0건이 되는 경우도 차단한다.
             continue
+        if clause["field"] == "platform" and constraints.get("platform_key"):
+            # 별칭을 이미 정규화했으므로 MTS AND '모바일' 같은 중복 조건을 금지한다.
+            continue
         if _clause_contradicts_filters(clause, filters):
             # 규칙이 이미 조건으로 잡은 값을 모델이 다시 제외하면(예: 플랫폼=MTS인데
             # 플랫폼 제외=MTS) 결과가 항상 0건이 된다. 사용자가 직접 말한 조건이

@@ -16,7 +16,7 @@ if not TEAM_MEMBERS or "" in _member_keys or len(_member_keys) != len(TEAM_MEMBE
 
 
 _TEAM_PHRASE = re.compile(
-    r"(?<![가-힣A-Za-z0-9])(?:우리\s*팀|저희\s*팀|내\s+팀|"
+    r"(?<![가-힣A-Za-z0-9])(?:우리\s*팀|저희\s*팀|내\s+팀|(?:우리|저희)(?=\s+(?:아직|못|안|남|해야|할\s*일))|"
     r"(?:(?:우리|저희)\s*)?(?:컨텐츠\s*서비스\s*팀|콘텐츠\s*서비스\s*팀|CS\s*팀))"
     r"(?:원)?(?:의|에서|에|만|은|는)?",
     re.IGNORECASE,

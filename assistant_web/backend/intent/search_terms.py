@@ -118,6 +118,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "저번주", "지난주", "이번주", "전주", "금주", "저번", "주",
         "내", "나", "저", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
         "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",
+        "쪽", "쪽에", "쪽은", "보면", "있어", "있나", "있을까", "있나요", "그럼", "그러면",
     }
     personal_control_terms = {"장기"} if personal_scope_text else set()
     terms = [
