@@ -686,7 +686,7 @@ function renderSourceList(sources, messageIndex, keyPrefix = "source") {
     button.className = "related-issue-item";
     button.type = "button";
     button.dataset.sourceKey = key;
-    const typeLabel = source.type === "notion" ? "Notion" : source.type === "chroma" ? "ChromaDB" : "Mantis";
+    const typeLabel = source.type === "notion" ? "Notion" : source.type === "chroma" ? "과거 이슈" : "Mantis";
     const primaryId = source.type === "notion" ? (source.database_label || "Notion") : `#${source.issue_id || "-"}`;
     const secondary = source.type === "notion"
       ? [source.status, source.owner].filter(Boolean).join(" · ") || "Notion DB"

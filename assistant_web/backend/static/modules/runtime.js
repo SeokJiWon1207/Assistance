@@ -73,6 +73,8 @@ export const els = {
   modelSelect: document.querySelector("#modelSelect"),
   modelMeta: document.querySelector("#modelMeta"),
   statusLine: document.querySelector("#statusLine"),
+  chatDataBadge: document.querySelector("#chatDataBadge"),
+  workspaceDataBadge: document.querySelector("#workspaceDataBadge"),
   darkModeToggle: document.querySelector("#darkModeToggle"),
   themeModeLabel: document.querySelector("#themeModeLabel"),
   messages: document.querySelector("#messages"),

@@ -1,13 +1,11 @@
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
+import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
-const sourceLabels = { live: "Mantis 조회 데이터", snapshot: "저장 데이터", error: "연결 오류" };
-// 머리의 데이터 배지에는 짧은 이름을 쓰고, 긴 설명은 title로 보여 준다.
-const sourceShortLabels = { live: "실시간", snapshot: "저장 데이터", error: "연결 오류" };
 const metricFilterLabels = { overdue: "일정 지연", aging: "장기 미종료", highRisk: "고위험" };
 
 const dashboardState = {
@@ -40,15 +38,6 @@ function formatNumber(value) {
   return Number(value || 0).toLocaleString("ko-KR");
 }
 
-// 오늘이면 "오후 2:02", 아니면 "9/29 오후 2:02"
-function formatBadgeTime(value) {
-  const date = new Date(value);
-  if (!value || Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const sameDay = date.toDateString() === now.toDateString();
-  const time = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
-  return sameDay ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
-}
 
 // 2026-09-01 ~ 2026-09-30 → "9월 1일–30일", 달이 바뀌면 "7월 3일–9월 30일"
 function formatPeriodRange(from, to) {
@@ -270,19 +259,26 @@ function renderPriorities(priorities, filtered) {
     </section>`;
 }
 
-// 데이터 출처와 조회 시각을 배지 하나로 묶는다. 자세한 기준은 마우스를 올리면 보인다.
-function updateSourceMeta(meta) {
-  const source = meta?.source || "error";
+// 데이터 출처·범위·조회 시각을 공통 '데이터 기준' 배지 하나로 보여 준다.
+function updateSourceMeta(meta, { loading = false, liveFailed = false } = {}) {
+  const source = liveFailed ? "snapshot" : meta?.source || "error";
+  const state = dataBadgeState({
+    source,
+    complete: meta?.search_complete !== false,
+    refreshing: Boolean(meta?.refreshPending),
+    loading,
+  });
   const time = formatBadgeTime(meta?.fetchedAt);
-  els.dashboardSource.className = `dashboard-source is-${source}`;
-  els.dashboardSource.querySelector("em").textContent = [
-    sourceShortLabels[source] || "데이터 상태",
-    meta?.search_complete === false ? "일부 범위" : "",
-    meta?.refreshPending ? "갱신 중" : "",
-    time,
-  ].filter(Boolean).join(" · ");
-  const fetchedLabel = meta?.fetchedAt ? `${formatDateTime(meta.fetchedAt)} 조회 기준` : "조회 기준 시각 미확인";
-  els.dashboardSource.title = [sourceLabels[source], meta?.scopeLabel, fetchedLabel, meta?.sourceReason].filter(Boolean).join(" · ");
+  const fetchedLabel = meta?.fetchedAt ? `${formatDateTime(meta.fetchedAt)} 조회` : "조회 시각 미확인";
+  const details = mantisBadgeDetails(state, { time, reason: meta?.sourceReason });
+  renderDataBadge(els.dashboardSource, {
+    state,
+    time: ["fresh", "partial", "snapshot"].includes(state) ? time : "",
+    detailTime: loading ? "" : fetchedLabel,
+    sources: [details.source, ...(meta?.scopeLabel ? [{ name: "범위", tone: "muted", text: meta.scopeLabel }] : [])],
+    note: details.note,
+    onRetry: details.retry ? () => loadDashboard(true) : null,
+  });
 }
 
 function syncPeriodButtons() {
@@ -304,9 +300,7 @@ function renderDashboard() {
   els.dashboardRefreshBtn.setAttribute("aria-busy", String(loading));
   els.dashboardPeriod.disabled = loading;
   if (loading) {
-    els.dashboardSource.className = "dashboard-source is-loading";
-    els.dashboardSource.querySelector("em").textContent = "최신 데이터 확인 중";
-    els.dashboardSource.title = "";
+    updateSourceMeta(dashboardState.data?.meta, { loading: true });
     els.dashboardSubtitle.textContent = "운영 데이터를 조회하고 있습니다.";
     hideFilterbar();
     els.dashboardBody.innerHTML = '<div class="dashboard-state" role="status"><span class="dashboard-spinner" aria-hidden="true"></span><strong>운영 데이터를 불러오고 있습니다.</strong><p>고객사 건강도와 위험 신호를 같은 기준으로 계산합니다.</p></div>';
@@ -320,19 +314,16 @@ function renderDashboard() {
   }
   const data = dashboardState.data;
   if (!data) return;
-  updateSourceMeta(data.meta);
+  updateSourceMeta(data.meta, { liveFailed: Boolean(dashboardState.error) });
   if (data.meta?.source === "error") {
     hideFilterbar();
     els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>업무 데이터를 확인하지 못했습니다.</strong><p>${escapeHtml(data.meta.sourceReason || "잠시 후 다시 조회해 주세요.")}</p></div>`;
     return;
   }
-  if (dashboardState.error) {
-    els.dashboardSource.className = "dashboard-source is-error";
-    els.dashboardSource.querySelector("em").textContent = "실시간 연결 오류 · 저장 데이터 표시 중";
-  }
   const complete = data.meta.search_complete === true;
   // 범위 · 기간 · 비교 기준을 제목 아래 한 줄에 모은다. 본문에서 같은 말을 반복하지 않는다.
-  const scopeLabel = complete ? (data.meta.scope === "team" ? "팀 전체" : "내 담당 업무") : "일부 조회 범위 · 전체 미확정";
+  // '일부만 확인'은 데이터 기준 배지와 본문 안내 한 줄이 알려 주므로 제목 아래에서는 반복하지 않는다.
+  const scopeLabel = data.meta.scope === "team" ? "팀 전체" : "내 담당 업무";
   const periodDays = data.meta.periodDays || dashboardState.period;
   els.dashboardSubtitle.textContent = `${scopeLabel} · ${formatPeriodRange(data.meta.periodFrom, data.meta.periodTo)} · 직전 ${periodDays}일과 비교`;
   const priorities = data.openIssues || data.priorities || [];

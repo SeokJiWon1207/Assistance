@@ -4,14 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20261001-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261002-1" />
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/workspace.css?v=20261001-2" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20261001-3" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261002-1" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/admin_center.css?v=20261001-1" />
+    <link rel="stylesheet" href="/static/admin_center.css?v=20261002-1" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -251,6 +251,7 @@
             <h3 id="workspaceModalTitle">내 업무</h3>
           </div>
           <div class="workspace-header-actions">
+            <span id="workspaceDataBadge" class="data-badge-slot"></span>
             <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
           </div>
         </header>
@@ -274,7 +275,7 @@
               <p id="dashboardSubtitle">운영 데이터를 조회하고 있습니다.</p>
             </div>
             <div class="dashboard-toolbar">
-              <span id="dashboardSource" class="dashboard-source"><span class="dashboard-source-dot" aria-hidden="true"></span><em>확인 중</em></span>
+              <span id="dashboardSource" class="data-badge-slot"></span>
               <fieldset id="dashboardPeriod" class="dashboard-period">
                 <legend class="sr-only">비교 기간</legend>
                 <button type="button" data-dashboard-period="7" aria-pressed="false">7일</button>
@@ -324,8 +325,9 @@
           <button id="sidebarMenuToggle" class="sidebar-menu-toggle icon-command" type="button" aria-label="메뉴 열기" aria-expanded="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-menu"/></svg></button>
           <div>
             <h2 id="activeConversationTitle">새 대화</h2>
-            <p id="statusLine">서비스 상태를 확인하는 중입니다.</p>
+            <p id="statusLine" hidden></p>
           </div>
+          <span id="chatDataBadge" class="data-badge-slot"></span>
         </header>
 
         <div id="messages" class="messages" aria-live="polite"></div>
@@ -465,7 +467,7 @@
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="chromaModalTitle">
         <header class="modal-header">
           <div>
-            <p id="chromaModalMeta">ChromaDB 문서</p>
+            <p id="chromaModalMeta">과거 이슈 원문</p>
             <h3 id="chromaModalTitle">이슈 상세</h3>
           </div>
           <button id="chromaModalClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>

@@ -112,27 +112,6 @@
   gap: 10px;
 }
 
-.dashboard-source {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 28px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: var(--surface-alt);
-  color: var(--text-soft);
-  white-space: nowrap;
-}
-
-.dashboard-source em { font-size: 13px; line-height: 19.5px; font-style: normal; font-weight: 600; }
-.dashboard-source.is-live { background: color-mix(in srgb, var(--success) 10%, transparent); color: var(--success); }
-.dashboard-source.is-snapshot { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning-strong); }
-.dashboard-source.is-error { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
-.dashboard-source-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
-.dashboard-source.is-live .dashboard-source-dot { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 15%, transparent); }
-.dashboard-source.is-snapshot .dashboard-source-dot { background: var(--warning); }
-.dashboard-source.is-error .dashboard-source-dot { background: var(--danger); }
-.dashboard-source.is-loading .dashboard-source-dot { background: var(--blue); animation: dashboard-pulse 1s ease-in-out infinite; }
 .dashboard-new-change { margin: 0; color: var(--muted); font-size: 12px; }
 
 /* 비교 기간: 드롭다운 대신 단추 묶음. fieldset이라 불러오는 동안 한 번에 비활성화된다. */
@@ -386,7 +365,6 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-state.is-error strong { color: var(--danger); }
 .dashboard-spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: dashboard-spin .75s linear infinite; }
 @keyframes dashboard-spin { to { transform: rotate(360deg); } }
-@keyframes dashboard-pulse { 50% { opacity: .35; } }
 
 .dashboard-refresh-status {
   position: sticky;
@@ -451,7 +429,8 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
     grid-template-areas: "source source" "period refresh";
     gap: 8px;
   }
-  .dashboard-toolbar .dashboard-source { grid-area: source; justify-self: start; }
+  .dashboard-toolbar .data-badge-slot { grid-area: source; justify-self: start; }
+  .dashboard-toolbar .data-badge-pop { right: auto; left: 0; }
   .dashboard-toolbar .dashboard-period { grid-area: period; justify-self: start; }
   .dashboard-toolbar .workspace-refresh-button { grid-area: refresh; }
   .dashboard-header .workspace-refresh-button { display: inline-flex; width: 36px; padding: 0; justify-content: center; }

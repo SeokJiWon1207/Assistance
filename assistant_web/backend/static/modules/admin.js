@@ -5,6 +5,7 @@ import { escapeHtml } from "./chat.js?v=20260911-6";
 import { TEAM_TEMPLATES } from "./template_picker.js?v=20260911-6";
 import { setMainViewLoader } from "./dashboard.js?v=20260911-6";
 import { showToast } from "./workspace.js?v=20260911-6";
+import { formatBadgeDate, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import {
   initAdminUsers,
   loadAdminUsers,
@@ -171,14 +172,21 @@ async function refreshEvaluationHistory() {
 
 // ---- 품질 현황 ----------------------------------------------------------
 
-function freshnessBadge() {
+// 정확도 검사가 쓰는 Mantis 저장본의 기준일을 공통 '데이터 기준' 배지로 보여 준다.
+function renderFreshnessBadge() {
+  const slot = els.adminContent.querySelector("[data-admin-freshness]");
   const freshness = state.dataFreshness;
-  if (!freshness) return "";
-  const tone = { fresh: "is-pass", warning: "is-wait", stale: "is-fail" }[freshness.status] || "is-grey";
-  const age = freshness.ageDays === null || freshness.ageDays === undefined
-    ? "기준일 미확인"
-    : freshness.ageDays === 0 ? "오늘 기준" : `${freshness.ageDays}일 지연`;
-  return `<span class="admin-pill admin-freshness ${tone}" title="${escapeHtml(freshness.asOf || "")}">Mantis 데이터 ${escapeHtml(freshness.label || "확인 필요")} · ${escapeHtml(age)}</span>`;
+  if (!slot || !freshness) return;
+  const known = Number.isFinite(freshness.ageDays);
+  const age = !known ? "기준일 미확인" : freshness.ageDays === 0 ? "오늘 기준" : `${freshness.ageDays}일 지연`;
+  const fresh = freshness.status === "fresh";
+  renderDataBadge(slot, {
+    state: fresh ? "fresh" : "warning",
+    time: age,
+    detailTime: formatBadgeDate(freshness.asOf) ? `${formatBadgeDate(freshness.asOf)} 기준` : "",
+    sources: [{ name: "Mantis", tone: fresh ? "ok" : "warn", text: `저장본 ${freshness.label || "확인 필요"} · ${age}` }],
+    note: fresh ? "" : "정확도 검사가 오래된 저장본으로 채점될 수 있어요.",
+  });
 }
 
 function accuracySummary() {
@@ -256,7 +264,7 @@ function renderOverview() {
   const attention = attentionItems();
   const failures = (analytics.failureCounts || []).slice(0, 5).map((item) => [item.category, item.count]);
   els.adminContent.innerHTML = `
-    ${sectionHeader("품질 현황", "검증 실행 결과, 답변 피드백, 자동 채점을 한 화면에서 봅니다.", freshnessBadge())}
+    ${sectionHeader("품질 현황", "검증 실행 결과, 답변 피드백, 자동 채점을 한 화면에서 봅니다.", '<span class="data-badge-slot" data-admin-freshness></span>')}
     <div class="admin-metrics">${metrics.join("")}</div>
     <div class="admin-columns">
       <section class="admin-card admin-list-card" aria-labelledby="adminAttentionTitle">
@@ -272,7 +280,7 @@ function renderOverview() {
         <div class="admin-card-head"><h2 id="adminFailureTitle">반복 실패 유형</h2><span>최근 정확도 검사 기준</span></div>
         ${failures.length ? barList(failures, "is-danger") : `<p class="admin-empty">최근 정확도 검사에서 반복된 실패가 없어요.</p>`}
       </section>
-    </div>`;
+    </div>`;  renderFreshnessBadge();
 }
 
 // ---- 검증 실행 ----------------------------------------------------------

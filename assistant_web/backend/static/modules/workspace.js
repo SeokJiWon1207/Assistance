@@ -2,6 +2,7 @@ import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBa
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
+import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -485,32 +486,28 @@ function renderPersonalOverview(data) {
   }
   const summary = data.summary || {};
   const issues = data.mantis?.issues || [];
-  const sourceLabel = data.mantis?.status === "snapshot" ? "저장 데이터" : "Mantis 데이터";
-  const coverageLabel = data.mantis?.search_complete === true ? "수집 범위 전체" : "일부 범위 · 전체 건수 미확정";
-  const fetchedAtLabel = data.mantis?.fetchedAt ? new Date(data.mantis.fetchedAt).toLocaleString("ko-KR") : "미확인";
   const totalOpen = Number(summary.open || 0);
-  const visibleCountLabel = issues.length === totalOpen
-    ? `${issues.length}건 모두 표시`
-    : `${issues.length} / ${totalOpen}건 표시`;
   const isConnected = Boolean(data.user?.mantisUsername);
+  const complete = data.mantis?.search_complete === true;
+  // 출처·범위·조회 시각은 머리의 '데이터 기준' 배지가 보여 준다. 본문에는 확인이 필요할 때만 한 줄을 둔다.
+  const notice = !isConnected
+    ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span></div>`
+    : !complete
+      ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>`
+      : "";
   return `<div class="workspace-overview">
     <section class="workspace-summary-grid is-three">
-      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", data.mantis?.search_complete === true ? "조회 기준 시각의 전체 업무" : "확인한 범위의 업무")}
+      ${workspaceMetric("미종료", summary.open, summary.open ? "is-blue" : "", "내 담당 업무")}
       ${workspaceMetric("일정 지연", summary.overdue, summary.overdue ? "is-danger" : "", summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중")}
       ${workspaceMetric("30일 이상", summary.aging, summary.aging ? "is-warning" : "", summary.aging ? "우선 확인이 필요한 장기 업무" : "장기 업무 없음")}
     </section>
-    <div class="workspace-connection ${(["unlinked", "error"].includes(data.mantis?.status) || data.mantis?.search_complete !== true) ? "is-warning" : ""}">
-      <span class="workspace-connection-dot" aria-hidden="true"></span>
-      ${isConnected
-        ? `<strong>${escapeHtml(sourceLabel)} · ${escapeHtml(coverageLabel)}</strong><span>조회 기준 ${escapeHtml(fetchedAtLabel)}${data.mantis?.refreshPending ? " · 갱신 중" : ""}</span><span>담당자 ${escapeHtml(data.user.mantisUsername)}</span><span>${escapeHtml(visibleCountLabel)}</span>`
-        : "<strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span>"}
-    </div>
+    ${notice}
     <section class="workspace-section workspace-section-single">
       <header class="workspace-issue-header">
-        <div><span>Mantis</span><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
+        <div><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
         <em class="workspace-visible-count"><strong>${issues.length}</strong>${issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
       </header>
-      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty(data.mantis?.search_complete === true ? "조회 기준 시각에 담당한 미종료 이슈가 없습니다." : "확인한 범위에 미종료 이슈가 없습니다. 전체 결과는 미확정입니다.")}</div>
+      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.")}</div>
     </section>
   </div>`;
 }
@@ -582,7 +579,7 @@ function renderTeamWeeklyBrief() {
       ${decisionSignals ? `<ul>${decisionSignals}</ul>` : ""}
       ${decisionActions ? `<div class="workspace-decision-actions">${decisionActions}</div>` : ""}
     </section>` : ""}
-    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">기준본 · ${brief.source?.status === "live" ? "Mantis 조회 데이터로 생성" : "로컬 스냅샷으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
+    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">${brief.source?.status === "live" ? "최신 데이터로 생성" : "저장본으로 생성"} · 일정 지연 ${summary.overdue || 0}건 · 담당자 미지정 ${summary.unassigned || 0}건</p>
     <div class="workspace-columns">
       <section class="workspace-section">
         <header><div><h4>급증 고객사</h4></div></header>
@@ -597,7 +594,7 @@ function renderTeamWeeklyBrief() {
       <header><div><h4>이번 주 우선 확인</h4></div><em>${priorities.length}건 표시</em></header>
       <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty("우선 확인할 이슈가 없습니다.")}</div>
     </section>
-    ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 정보로 기준본 재생성</button>' : ""}`;
+    ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 데이터로 다시 만들기</button>' : ""}`;
 }
 
 function renderNotifications(data) {
@@ -795,9 +792,52 @@ function updateWorkspaceLoadingControl() {
   els.workspaceRefreshBtn.setAttribute("aria-busy", String(loading));
 }
 
+// 내 업무 머리의 '데이터 기준' 배지. 담당자명이 없으면 조회 자체를 할 수 없어 '확인 필요'로 둔다.
+function updateWorkspaceDataBadge(loading) {
+  if (!els.workspaceDataBadge) return;
+  const data = state.myWorkspace;
+  const mantis = data?.mantis;
+  if (!mantis) {
+    if (loading) renderDataBadge(els.workspaceDataBadge, { state: "loading" });
+    else if (workspaceLoadingError) {
+      renderDataBadge(els.workspaceDataBadge, {
+        state: "error",
+        sources: [{ name: "Mantis", tone: "error", text: workspaceLoadingError }],
+        onRetry: () => loadMyWorkspace(true).catch(() => {}),
+      });
+    } else els.workspaceDataBadge.innerHTML = "";
+    return;
+  }
+  const owner = data.user?.mantisUsername;
+  if (mantis.status === "unlinked" || !owner) {
+    renderDataBadge(els.workspaceDataBadge, {
+      state: "warning",
+      sources: [{ name: "Mantis", tone: "warn", text: "담당자명이 연결되지 않아 조회하지 못했어요" }],
+      note: "관리자에게 Mantis 담당자명 등록을 요청해 주세요.",
+    });
+    return;
+  }
+  const badgeState = dataBadgeState({
+    source: mantis.status === "live" ? "live" : mantis.status,
+    complete: mantis.search_complete === true,
+    refreshing: loading || Boolean(mantis.refreshPending),
+  });
+  const time = formatBadgeTime(mantis.fetchedAt);
+  const details = mantisBadgeDetails(badgeState, { time, reason: mantis.reason });
+  renderDataBadge(els.workspaceDataBadge, {
+    state: badgeState,
+    time: ["fresh", "partial", "snapshot"].includes(badgeState) ? time : "",
+    detailTime: mantis.fetchedAt ? `${new Date(mantis.fetchedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })} 조회` : "",
+    sources: [details.source, { name: "담당자", tone: "muted", text: owner }],
+    note: details.note,
+    onRetry: details.retry ? () => loadMyWorkspace(true).catch(() => {}) : null,
+  });
+}
+
 function renderWorkspace() {
   if (!els.workspaceContent) return;
   const loading = workspaceLoading || Boolean(workspaceFreshPromise);
+  updateWorkspaceDataBadge(loading);
   els.workspaceContent.setAttribute("aria-busy", String(loading));
   const isPersonalOverview = state.workspaceTab === "overview";
   els.workspaceContent.classList.toggle("is-overview", isPersonalOverview);

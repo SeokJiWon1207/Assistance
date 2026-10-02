@@ -1,7 +1,7 @@
 import "./events.js?v=20260911-6";
 import { state, els, defaultOptions, canUseAdminTools } from "./runtime.js?v=20260911-6";
 import { loadConversations, loadMyWorkspace, showToast } from "./workspace.js?v=20260911-6";
-import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus } from "./chat.js?v=20260911-6";
+import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, renderChatDataBadge } from "./chat.js?v=20260911-6";
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
 import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
@@ -40,13 +40,12 @@ async function bootstrapApplication(authState = {}) {
   const workspaceReady = state.currentUser?.uid
     ? loadMyWorkspace().catch(() => {})
     : Promise.resolve();
-  loadDataStatus().catch(() => {
-    els.statusLine.textContent = "데이터 상태를 확인하지 못했습니다.";
-    els.statusLine.className = "status-warning";
-  }).finally(() => {
+  renderChatDataBadge({ loading: true });
+  loadDataStatus().catch(() => renderChatDataBadge({ failed: true })).finally(() => {
     loadModels().catch((error) => {
       els.statusLine.textContent = error.message;
       els.statusLine.className = "status-danger";
+      els.statusLine.hidden = false;
     });
   });
   loadTheme();

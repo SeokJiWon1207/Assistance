@@ -1,6 +1,7 @@
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
+import { formatBadgeDate, formatBadgeTime, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import {
@@ -74,6 +75,7 @@ function updateModelMeta() {
     els.modelMeta.textContent = "";
     els.statusLine.textContent = "사용 가능한 모델이 없습니다.";
     els.statusLine.className = "status-danger";
+    els.statusLine.hidden = false;
     return;
   }
 
@@ -82,6 +84,8 @@ function updateModelMeta() {
   const modelControl = els.modelSelect.closest(".control-group");
   modelControl?.setAttribute("hidden", "");
   modelControl?.classList.add("model-control-hidden");
+  // 상태 줄은 모델에 문제가 있을 때만 보인다. 데이터 상태는 머리의 배지가 맡는다.
+  els.statusLine.hidden = model.status === "active";
   if (model.status !== "active") {
     els.statusLine.textContent = statusLabel(model.status);
     els.statusLine.className = model.status === "missing_key" ? "status-warning" : "status-danger";
@@ -650,11 +654,45 @@ async function loadModels() {
   renderModels();
 }
 
-function formatFreshnessDate(value) {
-  if (!value) return "기준일 확인 필요";
-  const [year, month, day] = String(value).split("-");
-  if (!year || !month || !day) return String(value);
-  return `${Number(month)}월 ${Number(day)}일 기준`;
+// 대화 머리의 '데이터 기준' 배지. Mantis는 질문마다 직접 조회하므로 Notion 연결과
+// 과거 이슈 검색 색인의 갱신일만 확인 대상으로 본다.
+function renderChatDataBadge({ freshness = null, notion = null, failed = false, loading = false } = {}) {
+  if (loading) {
+    renderDataBadge(els.chatDataBadge, { state: "loading" });
+    return;
+  }
+  if (failed) {
+    renderDataBadge(els.chatDataBadge, {
+      state: "error",
+      sources: [
+        { name: "Mantis", tone: "muted", text: "질문할 때 직접 조회" },
+        { name: "Notion", tone: "muted", text: "확인 못 함" },
+        { name: "검색 색인", tone: "muted", text: "확인 못 함" },
+      ],
+      note: "데이터 상태를 확인하지 못했어요. 질문은 계속할 수 있어요.",
+      onRetry: () => loadDataStatus().catch(() => renderChatDataBadge({ failed: true })),
+    });
+    return;
+  }
+  const notionOk = Boolean(notion?.configured);
+  const indexStale = freshness?.status === "stale";
+  const indexDate = formatBadgeDate(freshness?.asOf);
+  const ageText = freshness?.ageDays === 0 ? "오늘" : Number.isFinite(freshness?.ageDays) ? `${freshness.ageDays}일 전` : "";
+  const warning = !notionOk || indexStale || !freshness;
+  renderDataBadge(els.chatDataBadge, {
+    state: warning ? "warning" : "fresh",
+    detailTime: freshness?.updatedAt ? `색인 ${formatBadgeTime(freshness.updatedAt)} 갱신` : "",
+    sources: [
+      { name: "Mantis", tone: "ok", text: "질문할 때마다 직접 조회" },
+      { name: "Notion", tone: notionOk ? "ok" : "warn", text: notionOk ? "연결됨" : "설정 필요" },
+      {
+        name: "검색 색인",
+        tone: !freshness ? "muted" : indexStale ? "warn" : "ok",
+        text: indexDate ? [`${indexDate} 갱신`, ageText].filter(Boolean).join(" · ") : "갱신일 미확인",
+      },
+    ],
+    note: indexStale ? "과거 이슈 검색 결과가 최근 이슈를 놓칠 수 있어요." : !notionOk ? "Notion 문서는 답변에 쓰이지 않아요." : "",
+  });
 }
 
 async function loadDataStatus() {
@@ -668,20 +706,13 @@ async function loadDataStatus() {
       return response.json();
     }),
   ]);
-
-  const freshness = freshnessResult.status === "fulfilled" ? freshnessResult.value?.mantis : null;
-  const notion = notionResult.status === "fulfilled" ? notionResult.value : null;
-  const model = selectedModel();
-  if (model && model.status !== "active") return;
-  const freshnessLabel = formatFreshnessDate(freshness?.asOf);
-  const notionLabel = notion?.configured ? "Notion 연결됨" : "Notion 설정 필요";
-  els.statusLine.textContent = ["Mantis 실시간", notionLabel, `Vector DB ${freshnessLabel}`].join(" · ");
-  els.statusLine.className = freshness?.status === "stale" || !notion?.configured
-    ? "status-warning data-status-line"
-    : "status-active data-status-line";
-  els.statusLine.title = freshness?.updatedAt
-    ? `Vector DB 마지막 갱신: ${formatQuestionAskedAt(freshness.updatedAt)}`
-    : "";
+  if (freshnessResult.status === "rejected" && notionResult.status === "rejected") {
+    throw new Error("데이터 상태를 확인하지 못했습니다.");
+  }
+  renderChatDataBadge({
+    freshness: freshnessResult.status === "fulfilled" ? freshnessResult.value?.mantis : null,
+    notion: notionResult.status === "fulfilled" ? notionResult.value : null,
+  });
 }
 
 configureChatController({
@@ -771,7 +802,7 @@ export {
   stopValues,
   generationPayload,
   loadModels,
-  formatFreshnessDate,
+  renderChatDataBadge,
   loadDataStatus,
   sendChat,
   requestAssistant,

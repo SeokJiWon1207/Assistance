@@ -162,13 +162,6 @@
 .admin-pill.is-wait { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning-strong); }
 .admin-pill.is-grey { background: var(--surface-alt); color: var(--text-soft); }
 
-.admin-freshness {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 19.5px;
-}
-
 .admin-muted { color: var(--muted); }
 .admin-num { text-align: right; font-variant-numeric: tabular-nums; }
 .admin-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

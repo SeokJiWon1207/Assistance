@@ -23,6 +23,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     ...(adminCenter ? ['viewAdminBtn', 'adminPanel'] : []),
   ].map((name) => [name, element(name)]));
   const htmlWrites = [];
+  const badges = [];
   Object.defineProperty(els.dashboardBody, 'innerHTML', {
     get: () => htmlWrites.at(-1) || '',
     set: (html) => htmlWrites.push(html),
@@ -42,6 +43,12 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './data_badge.js': {
+      dataBadgeState: ({ source, complete = true, refreshing = false, loading = false } = {}) => (loading ? 'loading' : source === 'error' ? 'error' : refreshing ? 'refreshing' : source === 'snapshot' ? 'snapshot' : complete === false ? 'partial' : 'fresh'),
+      formatBadgeTime: (value) => (value ? '오후 2:02' : ''),
+      mantisBadgeDetails: (state) => ({ source: { name: 'Mantis', tone: 'ok', text: state }, note: '', retry: ['partial', 'snapshot', 'error'].includes(state) }),
+      renderDataBadge: (slot, options) => { if (slot) { slot.badge = options; badges.push(options); } },
+    },
     './workspace.js': {
       ensureMyWorkspaceFresh: async () => { calls.push('personal'); }, renderWorkspace() {},
       loadTeamWeeklyBrief: async () => {}, renderTeamWeeklyBrief: () => '', markTeamWeeklyBriefRead: async () => {},
@@ -59,7 +66,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const loaderCalls = [];
   module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { loaderCalls, api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
+  return { loaderCalls, badges, api: module.namespace, els, state, storage, calls, htmlWrites, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -280,7 +287,8 @@ test('dashboard does not renew freshness when receiving an old server cache', as
   await h.api.loadDashboard();
   await h.api.ensureDashboardFresh();
   assert.equal(h.calls.length, 2);
-  assert.match(h.els.dashboardSource.title, /조회 기준/);
+  assert.match(h.els.dashboardSource.badge.detailTime, /조회$/);
+  assert.equal(h.els.dashboardSource.badge.state, 'fresh');
 });
 
 
@@ -381,7 +389,7 @@ test('header holds scope, period and comparison once and period buttons reload t
   const html = h.els.dashboardBody.innerHTML;
   assert.doesNotMatch(html, /dashboard-welcome|팀 전체 업무 현황|직전 동일 기간과 비교합니다/);
   assert.doesNotMatch(html, /PRIORITY QUEUE|TODAY|CUSTOMER HEALTH|EARLY SIGNAL|WORKLOAD/);
-  assert.match(h.els.dashboardSource.title, /Mantis 조회 데이터/);
+  assert.equal(h.els.dashboardSource.badge.sources[0].name, 'Mantis');
 
   const pick = (days) => h.els.dashboardPeriod.handlers.click({
     target: { closest: () => ({ dataset: { dashboardPeriod: String(days) }, disabled: false }) },

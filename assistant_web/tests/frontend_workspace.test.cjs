@@ -20,6 +20,7 @@ async function harness(apiFetch) {
   });
   const workspaceContent = { innerHTML: '', attributes: {}, classList: { toggle() {} }, setAttribute(key, value) { this.attributes[key] = value; } };
   const htmlWrites = [];
+  const badges = [];
   Object.defineProperty(workspaceContent, 'innerHTML', {
     get: () => htmlWrites.at(-1) || '',
     set: (html) => htmlWrites.push(html),
@@ -28,6 +29,7 @@ async function harness(apiFetch) {
   const els = {
     workspaceContent,
     workspaceRefreshBtn,
+    workspaceDataBadge: { innerHTML: '' },
     workspaceModalEyebrow: { textContent: '' },
     workspaceModalTitle: { textContent: '' },
     workspaceTabs: { hidden: false, querySelectorAll: () => [] },
@@ -41,6 +43,12 @@ async function harness(apiFetch) {
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
     './events.js': { cancelMessageEdit() {} },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './data_badge.js': {
+      dataBadgeState: ({ source, complete = true, refreshing = false, loading = false } = {}) => (loading ? 'loading' : source === 'error' ? 'error' : refreshing ? 'refreshing' : source === 'snapshot' ? 'snapshot' : complete === false ? 'partial' : 'fresh'),
+      formatBadgeTime: (value) => (value ? '오후 2:02' : ''),
+      mantisBadgeDetails: (state) => ({ source: { name: 'Mantis', tone: 'ok', text: state }, note: '', retry: ['partial', 'snapshot', 'error'].includes(state) }),
+      renderDataBadge: (slot, options) => { if (slot) { slot.badge = options; badges.push(options); } },
+    },
   };
   const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace.js'), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
@@ -51,7 +59,7 @@ async function harness(apiFetch) {
     }, { context });
   });
   await module.evaluate();
-  return { state, storage, timers, els, htmlWrites, api: module.namespace };
+  return { state, storage, timers, els, htmlWrites, badges, api: module.namespace };
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -231,8 +239,9 @@ test('personal workspace does not treat old cached data as freshly fetched', asy
   await h.api.loadMyWorkspace();
   await h.api.ensureMyWorkspaceFresh();
   assert.equal(calls, 2);
-  assert.match(h.els.workspaceContent.innerHTML, /전체 결과는 미확정/);
-  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /실시간/);
+  assert.match(h.els.workspaceContent.innerHTML, /일부 이슈만 확인했어요/);
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /실시간|전체 건수 미확정|조회 기준/);
+  assert.equal(h.els.workspaceDataBadge.badge.state, 'partial');
 });
 
 test('personal sync completion refreshes data without hiding the visible list', async () => {
@@ -243,14 +252,14 @@ test('personal sync completion refreshes data without hiding the visible list', 
       mantis: { status: 'snapshot', fetchedAt: new Date().toISOString(), search_complete: true, refreshPending: calls === 1, issues: [] } }) };
   });
   await h.api.loadMyWorkspace(true);
-  assert.match(h.els.workspaceContent.innerHTML, /갱신 중/);
+  assert.equal(h.els.workspaceDataBadge.badge.state, 'refreshing');
   const timer = [...h.timers.values()].find((entry) => entry.ms === 10000);
   assert.ok(timer);
   const before = h.htmlWrites.length;
   timer.fn();
   await new Promise(setImmediate);
   assert.equal(calls, 2);
-  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /갱신 중/);
+  assert.equal(h.els.workspaceDataBadge.badge.state, 'snapshot');
   assert.ok(h.htmlWrites.slice(before).every((html) => !html.includes('workspace-spinner')));
 });
 

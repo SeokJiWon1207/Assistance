@@ -194,6 +194,21 @@ class FrontendCoreTests(unittest.TestCase):
             with self.subTest(stylesheet=path.name):
                 self.assertNotRegex(path.read_text(encoding="utf-8"), r'content:\s*"[⌄↻×]"')
 
+    def test_data_status_uses_one_badge_and_user_facing_names(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        modules = "\n".join(path.read_text(encoding="utf-8") for path in (STATIC_DIR / "modules").glob("*.js"))
+
+        # 대화·내 업무·대시보드 머리에 같은 '데이터 기준' 배지 자리를 두고, 상태 줄은 모델 문제에만 쓴다.
+        for slot_id in ("chatDataBadge", "workspaceDataBadge", "dashboardSource"):
+            self.assertIn(f'id="{slot_id}" class="data-badge-slot"', html)
+        self.assertIn('<p id="statusLine" hidden></p>', html)
+        self.assertIn("data-admin-freshness", modules)
+        # 내부 저장소 이름과 제각각이던 상태 문구는 화면에 내보내지 않는다.
+        for internal in ("Vector DB", "ChromaDB", "로컬 스냅샷", "전체 건수 미확정", "Mantis 조회 데이터"):
+            with self.subTest(term=internal):
+                self.assertNotIn(internal, html)
+                self.assertNotIn(internal, modules)
+
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
         body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]
@@ -332,7 +347,9 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('class="workspace-overview"', workspace_js)
         self.assertIn('role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0"', workspace_js)
         self.assertIn('classList.toggle("is-overview", isPersonalOverview)', workspace_js)
-        self.assertIn("`${issues.length} / ${totalOpen}건 표시`", workspace_js)
+        # 표시 건수는 목록 머리 한 곳에서만 보여 준다.
+        self.assertIn("` / ${totalOpen}건 표시`", workspace_js)
+        self.assertEqual(workspace_js.count("totalOpen}건 표시"), 1)
         self.assertIn(".personal-panel {", dashboard_css)
         self.assertIn("grid-template-rows: auto auto minmax(0, 1fr)", dashboard_css)
         self.assertIn(".workspace-content.is-overview", workspace_css)

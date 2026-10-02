@@ -208,8 +208,8 @@ async function openSourceDetail(source) {
   openChromaModal({
     issueId: source.issue_id,
     title: "불러오는 중입니다",
-    content: "ChromaDB 원문을 불러오는 중입니다...",
-    meta: `ChromaDB 문서 · #${source.issue_id}`,
+    content: "과거 이슈 원문을 불러오는 중입니다...",
+    meta: `과거 이슈 원문 · #${source.issue_id}`,
   });
 
   try {
@@ -221,14 +221,14 @@ async function openSourceDetail(source) {
       issueId: source.issue_id,
       title: titleMatch ? titleMatch[1].trim() : "이슈 상세",
       content: data.content,
-      meta: `ChromaDB 문서 · #${source.issue_id}`,
+      meta: `과거 이슈 원문 · #${source.issue_id}`,
     });
   } catch (error) {
     openChromaModal({
       issueId: source.issue_id,
       title: "문서 조회 오류",
       content: `오류: ${error.message}`,
-      meta: `ChromaDB 문서 · #${source.issue_id}`,
+      meta: `과거 이슈 원문 · #${source.issue_id}`,
     });
   }
 }
