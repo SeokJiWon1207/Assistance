@@ -4,12 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20261002-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261002-4" />
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
-    <link rel="stylesheet" href="/static/responsive.css?v=20261001-1" />
+    <link rel="stylesheet" href="/static/responsive.css?v=20261002-3" />
     <link rel="stylesheet" href="/static/workspace.css?v=20261001-2" />
     <link rel="stylesheet" href="/static/dashboard.css?v=20261002-2" />
-    <link rel="stylesheet" href="/static/template_picker.css?v=20260930-1" />
+    <link rel="stylesheet" href="/static/template_picker.css?v=20261002-1" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
     <link rel="stylesheet" href="/static/admin_center.css?v=20261002-1" />
   </head>
@@ -46,6 +46,7 @@
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7Z"/></symbol>
       <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
       <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
       <symbol id="i-template" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></symbol>
     </svg>
     <section id="authGate" class="auth-gate" aria-live="polite">
@@ -76,7 +77,8 @@
     </section>
     <main class="app-shell">
       <aside class="sidebar">
-        <div class="brand" id="brandHome" role="button" tabindex="0" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작">
+        <div class="brand">
+          <button id="brandHome" class="brand-home" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작"></button>
           <div class="brand-mark">
             <img src="/static/assets/company-logo.png" alt="회사 로고" />
           </div>
@@ -84,6 +86,7 @@
             <h1>컨텐츠서비스 AI 비서</h1>
             <p>Team workspace</p>
           </div>
+          <button id="sidebarCloseBtn" class="sidebar-close icon-command" type="button" aria-label="메뉴 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </div>
 
         <section class="conversation-section" aria-labelledby="conversationHistoryLabel">
@@ -357,7 +360,9 @@
             aria-autocomplete="list"
             placeholder="이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다."
           ></textarea>
-          <button id="sendBtn" class="send-button" type="submit" aria-label="전송">
+          <button id="sendBtn" class="send-button is-empty" type="submit" aria-label="전송">
+            <svg class="ui-icon send-icon" width="18" height="18" aria-hidden="true"><use href="#i-arrow-up"/></svg>
+            <svg class="ui-icon stop-icon" width="14" height="14" aria-hidden="true"><use href="#i-stop"/></svg>
             <span>전송</span>
           </button>
         </form>

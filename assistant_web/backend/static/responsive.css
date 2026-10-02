@@ -4,12 +4,10 @@
   }
 
   .sidebar {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 14px;
     padding: 20px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
   }
 
   .control-group {
@@ -32,27 +30,43 @@
     display: grid;
   }
 
-  /* 좁은 화면에서는 사이드바를 상단 고정 오버레이로 접어둔다. 메뉴 버튼으로
-     열고, 배경을 눌러 닫는다. */
+  /* 좁은 화면에서는 사이드바를 왼쪽에서 화면 높이 전체로 나오는 드로어로 접어둔다.
+     메뉴 버튼으로 열고, 닫기 버튼·배경·Esc로 닫는다(sidebar.js). */
   .sidebar {
     position: fixed;
-    inset: 0 12vw auto 0;
+    inset: 0 auto 0 0;
     z-index: 60;
-    max-height: 82vh;
+    width: min(300px, 86vw);
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
     overflow-y: auto;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
     box-shadow: var(--shadow);
-    transform: translateY(-8px);
-    opacity: 0;
+    transform: translateX(-100%);
     visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+    /* 닫힐 때는 밀려 들어간 뒤에 숨기고, 열릴 때는 바로 보이게 해 닫기 버튼에 포커스를 줄 수 있게 한다. */
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+
+  body.theme-dark .sidebar {
+    background: var(--surface);
   }
 
   body.sidebar-open .sidebar {
-    transform: translateY(0);
-    opacity: 1;
+    transform: translateX(0);
     visibility: visible;
-    pointer-events: auto;
+    transition: transform 0.22s ease, visibility 0s;
+  }
+
+  .sidebar .brand h1 {
+    font-size: 17px;
+    line-height: 25.5px;
+  }
+
+  .sidebar-close.icon-command {
+    display: grid;
   }
 
   body.sidebar-open::before {
@@ -99,6 +113,51 @@
   .composer {
     grid-template-columns: 1fr;
     padding: 14px 20px 20px;
+  }
+
+  /* 전송은 입력창 안 오른쪽의 원형 버튼. 입력창 아래 한 줄을 대화에 돌려준다. */
+  .composer textarea {
+    padding-right: 52px;
+  }
+
+  .composer .send-button {
+    position: absolute;
+    right: 28px;
+    bottom: 29px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 999px;
+    box-shadow: none;
+  }
+
+  .composer .send-button > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .composer .send-button .send-icon {
+    display: block;
+  }
+
+  .composer .send-button.stop-mode .send-icon {
+    display: none;
+  }
+
+  .composer .send-button.stop-mode .stop-icon {
+    display: block;
+  }
+
+  .composer .send-button.is-empty:not(.stop-mode):not(:disabled) {
+    background: color-mix(in srgb, var(--blue) 35%, var(--surface));
   }
 
   .scroll-to-top-button {
@@ -159,5 +218,12 @@
   .message-feedback-label,
   .message-action-divider {
     display: none;
+  }
+}
+
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+  .sidebar,
+  body.sidebar-open .sidebar {
+    transition: none;
   }
 }

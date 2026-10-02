@@ -2,6 +2,7 @@ import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=202609
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
+import { closeMobileSidebar, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, loadTeamWeeklyBrief, renderTeamWeeklyBrief, markTeamWeeklyBriefRead, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
@@ -452,10 +453,7 @@ function setActiveView(view, { remember = true, load = true } = {}) {
     button.tabIndex = selected ? 0 : -1;
   }
   if (remember) localStorage.setItem(`${dashboardViewStorageKey}:${state.currentUser?.uid || "guest"}`, view);
-  document.body.classList.remove("sidebar-open");
-  for (const button of [els.sidebarMenuToggle, els.personalSidebarMenuToggle, els.dashboardSidebarMenuToggle, els.adminSidebarMenuToggle]) {
-    button?.setAttribute("aria-expanded", "false");
-  }
+  closeMobileSidebar({ restoreFocus: false });
   if (view === "dashboard" && load) ensureDashboardFresh();
   if (load) mainViewLoaders.get(view)?.();
   if (view === "personal" && load) {
@@ -627,10 +625,7 @@ function initDashboard() {
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);
   const panelMenuToggles = [els.dashboardSidebarMenuToggle, els.personalSidebarMenuToggle, els.adminSidebarMenuToggle];
-  panelMenuToggles.forEach((button) => button?.addEventListener("click", () => {
-    const open = document.body.classList.toggle("sidebar-open");
-    for (const toggle of [els.sidebarMenuToggle, ...panelMenuToggles]) toggle?.setAttribute("aria-expanded", String(open));
-  }));
+  panelMenuToggles.forEach((button) => button?.addEventListener("click", () => toggleMobileSidebar(button)));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.dashboardDetail.hidden) closeIssueDetail();
   });

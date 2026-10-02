@@ -476,10 +476,6 @@ body.theme-dark .template-missing-hint.is-missing {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .composer .send-button {
-    grid-column: 1 / -1;
-  }
-
   .template-picker {
     right: 20px;
     left: 20px;

@@ -231,6 +231,26 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('target.closest("[data-dashboard-row-issue]")', dashboard_js)
         self.assertIn(".dashboard-card-button::after", dashboard_css)
 
+    def test_mobile_menu_is_a_left_drawer_and_send_sits_inside_the_composer(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        responsive = (STATIC_DIR / "responsive.css").read_text(encoding="utf-8")
+        events_js = (STATIC_DIR / "modules" / "events.js").read_text(encoding="utf-8")
+
+        # 버튼 역할만 붙인 요소를 두지 않고, 로고와 메뉴 닫기는 실제 버튼이다.
+        self.assertNotIn('role="button"', html)
+        self.assertIn('<button id="brandHome" class="brand-home" type="button"', html)
+        self.assertIn('id="sidebarCloseBtn"', html)
+        self.assertNotIn('els.brandHome.addEventListener("keydown"', events_js)
+        # 좁은 화면 메뉴는 위에서 내려오는 82vh 오버레이가 아니라 왼쪽 전체 높이 드로어다.
+        self.assertNotIn("max-height: 82vh", responsive)
+        self.assertIn("transform: translateX(-100%)", responsive)
+        # 전송은 입력창 안 원형 버튼으로, 입력창 아래 한 줄을 차지하지 않는다.
+        self.assertIn('class="ui-icon send-icon"', html)
+        self.assertIn('class="ui-icon stop-icon"', html)
+        self.assertIn("border-radius: 999px", responsive)
+        template_css = (STATIC_DIR / "template_picker.css").read_text(encoding="utf-8")
+        self.assertNotIn(".composer .send-button {\n    grid-column: 1 / -1;", template_css)
+
     def test_dashboard_sections_keep_content_height_in_scroll_grid(self):
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
         body_rule = dashboard_css[dashboard_css.index(".dashboard-body {") :]

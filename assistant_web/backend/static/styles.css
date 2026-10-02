@@ -522,9 +522,37 @@ body.theme-dark .sidebar {
   background-color: rgba(0, 0, 0, 0.05);
 }
 
-.brand:focus-visible {
-  outline: 2px solid var(--accent, #2563eb);
+/* 로고 영역 전체를 덮는 실제 버튼. 제목(h1)은 버튼 밖에 두어 문서 구조를 지킨다. */
+.brand {
+  position: relative;
+}
+
+.brand-home {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.brand-home:focus-visible {
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
+}
+
+/* 좁은 화면 드로어에서만 보이는 닫기 버튼(로고 버튼 위에 놓인다).
+   .icon-command의 display보다 우선하도록 두 클래스로 고른다. */
+.sidebar-close.icon-command {
+  display: none;
+  position: relative;
+  margin-left: auto;
+}
+
+/* 넓은 화면의 전송 버튼은 글자만 쓴다. 아이콘은 좁은 화면의 원형 버튼에서 쓴다. */
+.send-button .ui-icon {
+  display: none;
 }
 
 .brand-mark {

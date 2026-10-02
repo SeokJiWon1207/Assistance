@@ -590,6 +590,8 @@ function setBusy(busy) {
 function autoResizeInput() {
   els.input.style.height = "auto";
   els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
+  // 비어 있으면 전송 버튼을 흐리게 보여 줄 뿐 막지는 않는다(빈 전송은 submit에서 무시).
+  els.sendBtn?.classList.toggle("is-empty", !els.input.value.trim());
 }
 
 function resetOptions() {

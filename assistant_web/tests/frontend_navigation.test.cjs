@@ -43,6 +43,10 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './sidebar.js': {
+      closeMobileSidebar: () => { context.document.body.sidebarOpen = false; },
+      toggleMobileSidebar: () => {},
+    },
     './data_badge.js': {
       dataBadgeState: ({ source, complete = true, refreshing = false, loading = false } = {}) => (loading ? 'loading' : source === 'error' ? 'error' : refreshing ? 'refreshing' : source === 'snapshot' ? 'snapshot' : complete === false ? 'partial' : 'fresh'),
       formatBadgeTime: (value) => (value ? '오후 2:02' : ''),
@@ -128,7 +132,7 @@ test('detached sidebar controls use their original event path instead of closing
   const sidebar = {}, menu = {};
   vm.runInNewContext(source.slice(start, end), {
     document: {body: {classList: {contains: () => true}}, addEventListener: (_, fn) => {handler = fn;}},
-    els: {sidebar, sidebarMenuToggle: menu}, closeMobileSidebar: () => {closed++;},
+    els: {sidebar, sidebarMenuToggle: menu}, closeMobileSidebar: () => {closed++;}, isMobileSidebarOpen: () => true,
   });
   handler({composedPath: () => [{}, sidebar, {}]});
   handler({composedPath: () => [menu, {}]});

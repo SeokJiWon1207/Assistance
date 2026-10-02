@@ -107,6 +107,7 @@ export const els = {
   adminGenerationSettings: document.querySelector("#adminGenerationSettings"),
   newChatBtn: document.querySelector("#newChatBtn"),
   brandHome: document.querySelector("#brandHome"),
+  sidebarCloseBtn: document.querySelector("#sidebarCloseBtn"),
   sidebar: document.querySelector(".sidebar"),
   sidebarMenuToggle: document.querySelector("#sidebarMenuToggle"),
   conversationCount: document.querySelector("#conversationCount"),

@@ -2,6 +2,7 @@ import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?
 import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
+import { closeMobileSidebar, isMobileSidebarOpen, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { initTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
 initTemplatePicker();
@@ -119,28 +120,11 @@ if (els.brandHome) {
     els.input.focus();
   };
   els.brandHome.addEventListener("click", goHome);
-  els.brandHome.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      goHome();
-    }
-  });
 }
 
-// 좁은 화면에서는 사이드바를 오버레이로 접어두고 헤더의 메뉴 버튼으로 연다.
-// 넓은 화면에서는 항상 펼쳐져 있으므로 이 상태는 CSS 미디어쿼리 조건 안에서만
-// 시각적으로 의미를 갖는다.
-function closeMobileSidebar() {
-  document.body.classList.remove("sidebar-open");
-  els.sidebarMenuToggle?.setAttribute("aria-expanded", "false");
-  els.personalSidebarMenuToggle?.setAttribute("aria-expanded", "false");
-  els.dashboardSidebarMenuToggle?.setAttribute("aria-expanded", "false");
-}
-
-els.sidebarMenuToggle?.addEventListener("click", () => {
-  const isOpen = document.body.classList.toggle("sidebar-open");
-  els.sidebarMenuToggle.setAttribute("aria-expanded", String(isOpen));
-});
+// 좁은 화면에서는 사이드바를 왼쪽 드로어로 접어두고 헤더의 메뉴 버튼으로 연다(sidebar.js).
+els.sidebarMenuToggle?.addEventListener("click", () => toggleMobileSidebar(els.sidebarMenuToggle));
+els.sidebarCloseBtn?.addEventListener("click", () => closeMobileSidebar());
 
 els.sidebar?.addEventListener("click", (event) => {
   if (event.target.closest("[data-conversation-id]") || event.target.closest("#newChatBtn")) {
@@ -151,7 +135,7 @@ els.sidebar?.addEventListener("click", (event) => {
 // 어두운 배경을 탭하면 닫히도록 한다. 배경은 body::before 가상 요소라 리스너를
 // 직접 붙일 수 없어, 문서 클릭이 사이드바 바깥인지로 판단한다.
 document.addEventListener("click", (event) => {
-  if (!document.body.classList.contains("sidebar-open")) return;
+  if (!isMobileSidebarOpen()) return;
   // 목록 펼치기는 클릭 도중 DOM을 교체한다. 원래 전파 경로로 판단해야
   // 이미 분리된 버튼을 사이드바 바깥 클릭으로 오인하지 않는다.
   if (event.composedPath().some((node) => node === els.sidebar ||
