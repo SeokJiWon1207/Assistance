@@ -985,11 +985,11 @@ class UnknownCustomerTests(unittest.TestCase):
 
 
 class NotionStatusTypoTests(unittest.TestCase):
-    def test_payment_typo_is_corrected_to_approval_status(self):
-        # 결재(승인)와 결제(지불)는 발음이 같아 자주 섞인다.
+    def test_payment_spelling_is_preserved_without_database_schema(self):
+        # 실제 DB 옵션에도 결제요청/결제완료가 있으므로 임의로 교정하지 않는다.
         constraints = extract_notion_constraints("노션에서 결제요청 상태 찾아줘")
-        self.assertEqual(constraints["status"], "결재요청")
-        self.assertEqual(constraints["status_typo"], ("결제요청", "결재요청"))
+        self.assertEqual(constraints["status"], "결제요청")
+        self.assertIsNone(constraints["status_typo"])
 
     def test_correct_spelling_reports_no_correction(self):
         constraints = extract_notion_constraints("노션에서 결재요청 상태 찾아줘")

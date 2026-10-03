@@ -374,13 +374,15 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
     exact_title = extract_quoted_value(text) or ""
     constraint_text = remove_quoted_value(text) if exact_title else text
     # 인용된 제목은 사용자가 지정한 정확한 문자열이므로 건드리지 않는다.
-    constraint_text, status_typo = correct_notion_status_typo(constraint_text)
+    # DB 옵션은 고유한 값이다. '결제완료'가 실제 옵션인 DB도 있으므로
+    # 스키마를 보지 않은 상태에서 '결재완료'로 고쳐 쓰지 않는다.
+    status_typo = None
     status = ""
     excluded_statuses: List[str] = []
     # 기존 상태명은 다양한 활용형(완료건수/완료처리된/시작전이었던)을
     # 계속 인식한다. 합성어와 모호한 '대기'에만 엄격한 뒤 경계를 둔다.
     remaining_status_text = constraint_text
-    for candidate in sorted(NOTION_STATUS_QUERY_TERMS, key=len, reverse=True):
+    for candidate in sorted(NOTION_STATUS_QUERY_TERMS | NOTION_STATUS_TYPOS.keys(), key=len, reverse=True):
         spelling = r"\s*".join(re.escape(char) for char in candidate)
         boundary = (
             rf"(?=(?:{_STATUS_SPOKEN_SUFFIX}|상태|인|으로|로|만|은|는|이|가|을|를|된)?{_STATUS_WORD_END})"
@@ -469,6 +471,7 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
         "owner": owner,
         "unassigned_owner": unassigned_owner,
         "status_typo": status_typo,
+        "native_status_constraint": bool(status or excluded_statuses),
         "group_by": group_by,
     }
     temporal_field = notion_temporal_field(constraint_text)
@@ -500,6 +503,13 @@ def merge_common_notion_constraints(
             )
         ),
     }
+    if notion_constraints.get("native_status_constraint"):
+        # Notion 원문 상태를 Mantis의 open/closed로 재해석한 공통 조건과
+        # 교집합하면 실제 DB 옵션과 모순되어 정상 문서도 모두 사라진다.
+        merged["common_filter_clauses"] = [
+            clause for clause in merged["common_filter_clauses"] if clause["field"] != "status"
+        ]
+        merged["excluded_statuses"] = list(notion_constraints.get("excluded_statuses") or [])
     for clause in merged["common_filter_clauses"]:
         values = values_for_clause(clause.get("value"))
         if clause["field"] == "customer" and clause["operator"] in {"equals", "in"}:

@@ -161,6 +161,11 @@ def notion_user_name_hints(properties: Dict[str, Dict[str, Any]]) -> Dict[str, s
 
 
 def notion_status(properties: Dict[str, Dict[str, Any]]) -> str:
+    # 현재 상태가 비어 있어도 구상태로 대체해 완료/미완료를 꾸며내지 않는다.
+    for keyword in ("상태", "status", "진행"):
+        for name, prop in properties.items():
+            if normalize_for_match(name) == keyword and prop.get("type") in {"status", "select"}:
+                return notion_property_to_text(prop) or "상태 미상"
     explicit = notion_prop_by_keywords(properties, ["상태", "status", "진행"])
     if explicit:
         return explicit
