@@ -311,7 +311,8 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_platform_keys"])
             seen_platform = True
         if not seen_status and prior_constraints.get("statuses"):
-            inherited.extend(STATUS_ALIASES.get(status, [status])[0] for status in prior_constraints["statuses"])
+            # '확인/해결/검토'만 쓰면 일반 동사로 재해석되어 확정 상태가 사라진다.
+            inherited.extend(f"상태 {STATUS_ALIASES.get(status, [status])[0]}" for status in prior_constraints["statuses"])
             seen_status = True
         if not seen_status and prior_constraints.get("excluded_statuses"):
             excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_statuses"])

@@ -84,16 +84,48 @@ class StatusSemanticTests(unittest.TestCase):
                                                "needs_clarification": case["clarify"]})
                 self.assertEqual(result["status_intent"], case["intent"])
                 self.assertEqual(result["needs_clarification"], case["clarify"])
-                self.assertEqual(result["model_id"], "fixed-planner")
-                self.assertEqual(post.call_args.args[0]["id"], "fixed-planner")
+                neutral = semantic.is_structured_status_neutral_query(q, extract_query_constraints(q))
+                if neutral:
+                    post.assert_not_called()
+                else:
+                    self.assertEqual(result["model_id"], "fixed-planner")
+                    self.assertEqual(post.call_args.args[0]["id"], "fixed-planner")
                 with patch.object(semantic, "post_model_chat", side_effect=requests.Timeout):
                     failed = semantic.resolve_status_intent(q, extract_query_constraints(q))
-                self.assertTrue(failed["needs_clarification"])
+                self.assertEqual(failed["needs_clarification"], not neutral)
                 self.assertIsNone(failed["status_intent"])
+
+    def test_structured_lookups_do_not_depend_on_status_model_availability(self):
+        for q in (
+            "동부증권 최근 이슈 3개 보여줘",
+            "하나금융 HTS 최근 이슈 2개만 최신순으로 보여줘",
+            "유안타증권 이슈에서 HTS는 빼고 최근 3개만 보여줘",
+            "담당자 cs이슈의 최근 이슈 2개 보여줘",
+            "화면번호 6110 관련 이슈 3개 보여줘",
+            "최신 800건 기준으로 2025년 7월에 교보증권에서 들어온 이슈는 몇 개야?",
+        ):
+            with self.subTest(question=q), patch.object(semantic, "post_model_chat", side_effect=requests.Timeout) as post:
+                constraints = extract_query_constraints(q)
+                result = semantic.resolve_status_intent(q, constraints)
+                self.assertFalse(result["needs_clarification"])
+                self.assertEqual(result["reason"], "structured_status_neutral")
+                post.assert_not_called()
+                self.assertTrue(chat.can_skip_general_planner(q, constraints, {"source": "mantis"}))
+
+    def test_unknown_modifiers_cannot_disappear_into_neutral_fast_path(self):
+        for q in (
+            "NH 최근 아직 손봐야 할 이슈 3개 보여줘",
+            "NH 최근 이슈 3개 보여줘 단 마무리 못 한 것만",
+            "NH MTS 남은 공수 알려줘", "NH 이슈 없어지지 않은 것만 보여줘",
+            "NH 최근 이슈 3개 보여줘 상태는 신경 쓰이는 것만",
+            "NH 최근 이슈 3개 보여줘 가 나 다 라 수습해야 할 것",
+        ):
+            with self.subTest(question=q):
+                self.assertFalse(semantic.is_structured_status_neutral_query(q, extract_query_constraints(q)))
 
     def test_bad_evidence_raw_status_and_nonwork_objects_are_rejected(self):
         for q, intent, evidence in (("NH 남은 기간", "open", "남은"), ("NH 남은 공수", "open", "남은 공수"),
-                                    ("NH 이슈", "open", "없는 문구"), ("NH 마무리 못 한 것", "resolved", "마무리 못 한 것")):
+                                    ("NH 살펴볼 이슈", "open", "없는 문구"), ("NH 마무리 못 한 것", "resolved", "마무리 못 한 것")):
             result, _ = self.resolve(q, {"status_intent": intent, "evidence": evidence, "needs_clarification": False})
             self.assertTrue(result["needs_clarification"], result)
 

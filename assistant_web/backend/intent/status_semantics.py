@@ -20,6 +20,35 @@ ENTITY_EVIDENCE = {value.casefold() for mapping in (CUSTOMER_ALIASES, PLATFORM_A
                    for key, values in mapping.items() for value in [key, *values]}
 
 
+def is_structured_status_neutral_query(question: str, constraints: Dict[str, Any]) -> bool:
+    """전체 문장이 확정된 대상·기간·목록/건수 요청으로만 구성될 때만 생략한다.
+
+    검색어 추출기는 불용어와 네 번째 이후 단어를 버리므로 이 판단에 쓰지 않는다.
+    모르는 수식어가 하나라도 남으면 의미 플래너와 기존 장애 보호 정책을 유지한다.
+    """
+    values = [*(constraints.get("customer_aliases") or []),
+              *(constraints.get("platform_aliases") or []),
+              *(constraints.get("excluded_platform_aliases") or []),
+              *(constraints.get("people", {}).get("names") or []),
+              *(constraints.get("screen_numbers") or [])]
+    if not values or not re.search(r"이슈|목록|리스트", question):
+        return False
+    text = question
+    for value in sorted(set(values), key=len, reverse=True):
+        text = re.sub(r"(?<![가-힣A-Za-z0-9_])" + re.escape(value)
+                      + r"(?:에서|에서는|은|는|의|만|에)?(?=\s|$|[,.?!])", " ", text, flags=re.I)
+    if constraints.get("created_at"):
+        text = re.sub(r"\d{1,4}\s*[년월일](?:에|에는)?", " ", text)
+    tokens = re.findall(r"[^\s,.?!]+", text)
+    vocabulary = re.compile(
+        r"(?:최근|최신|최신순으로|최신순|기준으로|총|전체|모든|몇|몇개야|몇건이야|"
+        r"개야|건이야|건인지|개인지|개|건|담당자|담당|화면번호|관련|들어온|등록된|접수된|"
+        r"보여줘|보여주세요|알려줘|알려주세요|빼고|제외하고|"
+        r"(?:이슈|목록|리스트)(?:에서|는|를|만)?|\d+\s*(?:건|개)(?:만)?)"
+    )
+    return bool(tokens) and all(vocabulary.fullmatch(token) for token in tokens)
+
+
 @contextmanager
 def status_resolution_scope(resolution: Dict[str, Any]) -> Iterator[None]:
     token = STATUS_RESOLUTION.set(resolution)
@@ -67,6 +96,8 @@ def resolve_status_intent(question: str, constraints: Dict[str, Any]) -> Dict[st
         return {**base, "reason": "explicit_status", "statuses": list(constraints.get("statuses") or [])}
     if ALL_STATUSES.search(question) or constraints.get("issue_ids"):
         return {**base, "reason": "explicit_scope"}
+    if is_structured_status_neutral_query(question, constraints):
+        return {**base, "reason": "structured_status_neutral"}
     fallback = {**base, "origin": "unavailable", "needs_clarification": True, "reason": "planner_unavailable"}
     try:
         settings = json.loads((CONFIG_DIR / "status_planner.json").read_text(encoding="utf-8"))

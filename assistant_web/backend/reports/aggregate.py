@@ -613,7 +613,7 @@ def build_mantis_count_report(
     if merged_live and merged_from_store:
         scope = f"Mantis 전체 저장본 중 최신 {snapshot_limit}건 기준" if explicit_snapshot else f"Mantis 전체 저장본 {snapshot['scanned_count']}건 기준"
     elif merged_live and explicit_snapshot:
-        scope = f"Mantis 실시간 최신 {snapshot_limit}건 기준"
+        scope = f"Mantis 실시간 최신 {snapshot_limit}건 기준(API 응답 순서)"
     elif merged_live:
         scope = "Mantis 스냅샷 + 실시간 병합 기준"
     elif explicit_snapshot:

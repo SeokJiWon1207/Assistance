@@ -549,7 +549,9 @@ def collect_mantis_live_ids_in_range(
     없어 월/연 단위 카운트가 0으로 새는 문제가 있다. 날짜 조건이 있는 집계에서는 이
     함수로 라이브 결과를 병합해 정확도를 보완한다. 실패 이유와 완료 여부를 함께
     반환해 호출부가 오래된 스냅샷 값을 현재의 확정값처럼 표시하지 않게 한다."""
-    stored = read_complete_store()
+    # 명시적인 최신 N건 창은 API 응답 순서를 기준으로 한다. 전체 저장본은
+    # ID 내림차순이므로 이를 잘라 쓰면 최근 수정된 과거 이슈가 사라진다.
+    stored = read_complete_store() if scan_limit is None else None
     if stored is not None:
         selected = stored[:scan_limit] if scan_limit else stored
         return {"status": "ok", "error_kind": "", "reason": "", "complete": True,

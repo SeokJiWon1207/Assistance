@@ -756,6 +756,9 @@ def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: 
     """의미가 이미 확정된 단순 조회만 일반 플래너를 생략한다."""
     if rule_plan.get("source") not in {"mantis", "general"}:
         return False
+    from backend.intent.status_semantics import is_structured_status_neutral_query
+    if is_structured_status_neutral_query(text, constraints):
+        return True
     if re.search(r"비슷|유사|원인|분석|비교|추이|예측|관련|방법|해결책", text):
         return False
     from backend.query_planning import infer_operation
