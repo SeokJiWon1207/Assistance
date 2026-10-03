@@ -522,6 +522,10 @@ data, then runs four follow-up scenarios against the base answers' real conversa
 history and audit context. It compares answer IDs, titles, counts, and referenced
 entities with an independently fetched Mantis/Notion snapshot.
 
+정확도 실행기는 채점 대상인 본 답변만 검증하므로 A/B 비교 생성은 끕니다(`abTest=false`).
+본 답변의 실제 모델·검색 호출은 유지되며, 웹페이지의 A/B 설정에는 영향을 주지 않습니다.
+따라서 이전 A/B 포함 실행 시간과 지연을 직접 비교해서는 안 됩니다.
+
 ```bash
 cd assistant_web
 .venv/bin/python scripts/accuracy/dynamic_accuracy_check.py --questions 10 --follow-up-scenarios 4
@@ -591,6 +595,7 @@ cron에 등록하지 않는다 - 시스템 스케줄 변경은 사용자가 직�
 - 일반 Notion 키워드 검색은 응답 시간을 위해 DB별 최근 수정 항목 3페이지(최대 300건)와 제목 검색 결과를 확인한다. 이 범위를 넘으면 답변에 검색 범위를 표시하고 전체 결과나 전체 건수로 단정하지 않는다. 상태·담당자·집계 조건은 최대 30페이지를 조회한다.
 - 페이지 제한 도달과 통신·조회 오류를 구분해 기록한다. 제한된 검색의 완전성 경고와 정확도 점검 실패는 의도된 판정이다. 기대한 항목이 포함됐다는 이유만으로 전체 검색 성공으로 집계하지 않는다.
 - Notion 원문 속성에서 확인한 조건 불일치는 실패다. Mantis 원문 텍스트 비교로 추정한 불일치는 경고이며, 설명에도 ‘가능성’을 명시한다.
+- Notion 상태 옵션은 원문을 보존한다. 실제 옵션인 `결제완료(팀장)`를 `결재완료(팀장)`로 임의 교정하거나 Mantis의 `closed` 조건과 합치지 않는다. 기본 상태 표시는 `구상태`보다 정확히 이름이 일치하는 `상태` 속성을 우선한다.
 - 라우팅·필터 회귀 사례는 `tests/fixtures/routing_cases.jsonl`에 기록한다. 런타임 SQLite 파일은 커밋 대상이 아니다.
 
 ### 선택한 Notion DB의 하위 문서 검색

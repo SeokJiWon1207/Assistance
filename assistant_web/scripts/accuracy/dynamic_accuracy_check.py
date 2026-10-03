@@ -990,6 +990,7 @@ def reconcile_mutable_mantis_oracle(
         or result.get("filter_precision_passed") is False
         or result.get("filter_recall_passed") is False
         or result.get("incomplete_search")
+        or any(label != "답변 내용" for label in result.get("failed_checks", []))
     ):
         return result
 
@@ -1024,6 +1025,7 @@ def reconcile_mutable_mantis_oracle(
         "passed": True,
         "outcome": "passed",
         "answer_passed": True,
+        "failed_checks": [label for label in result.get("failed_checks", []) if label != "답변 내용"],
         "original_expected": case.expected,
         "expected": refreshed_expected,
         "oracle_reconciled": True,
@@ -1047,6 +1049,9 @@ def run_case(case: AccuracyCase, model_id: str) -> Dict[str, Any]:
             maxTokens=900,
             searchLimit=5,
             showSources=True,
+            # 채점 대상은 본 답변이다. 미채점 비교안을 생성하면 모델 장애 시
+            # 매 건 60초씩 더 대기하고 본 답변의 지연 측정도 왜곡된다.
+            abTest=False,
             stream=False,
             tools=tools,
         ))
@@ -1122,6 +1127,7 @@ def run_follow_up_scenario(
             maxTokens=900,
             searchLimit=5,
             showSources=True,
+            abTest=False,
             stream=False,
             tools=tools,
         ))
@@ -1419,6 +1425,7 @@ def main() -> int:
     )
     run_status = "incomplete" if incomplete else "failed" if totals["failed"] else "passed"
     report = {
+        "ab_test": False,
         "run_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "seed": args.seed,
         "model_id": model_id,

@@ -6,10 +6,23 @@ from scripts.accuracy.dynamic_accuracy_check import (
     dependency_reason_from_stage,
     grade,
     reconcile_mutable_mantis_oracle,
+    run_case,
+    run_follow_up_scenario,
+    FollowUpScenario,
 )
 
 
 class DynamicAccuracyDependencyTests(unittest.TestCase):
+    @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat", return_value={"content": "없습니다", "sources": []})
+    def test_accuracy_requests_do_not_generate_ungraded_ab_comparisons(self, execute):
+        case = AccuracyCase("empty", "notion", "빈 결과", "노션 '없는 문서'", "titles", [])
+        run_case(case, "test-model")
+        self.assertFalse(execute.call_args.args[0].abTest)
+        scenario = FollowUpScenario("follow", "notion", "후속", "empty", "그 문서 찾아줘", "titles", [])
+        run_follow_up_scenario(scenario, case, {"passed": True, "audit_id": "synthetic", "answer": "없습니다"}, "test-model")
+        self.assertEqual(execute.call_count, 2)
+        self.assertFalse(execute.call_args.args[0].abTest)
+
     def test_nested_retrieval_timeout_is_dependency_error(self):
         case = AccuracyCase(
             "mantis-handler",
@@ -122,14 +135,19 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             ],
             "retrieval": {"constraints": {"people": {"names": ["정희진"], "role": "handler"}}},
         }
-        original = {"passed": False, "outcome": "assertion_failed", "answer_passed": False}
+        original = {"passed": False, "outcome": "assertion_failed", "answer_passed": False,
+                    "failed_checks": ["답변 내용"]}
 
         result = reconcile_mutable_mantis_oracle(case, response, original)
 
         self.assertTrue(result["passed"])
         self.assertTrue(result["oracle_reconciled"])
+        self.assertEqual(result["failed_checks"], [])
         self.assertEqual(result["expected"], [31469, 31468])
         complete_oracle.assert_called_once_with(case.question, fetch_snapshot.return_value, 2)
+        # 기대값 변경은 원문/실행 오류까지 성공으로 바꿀 근거가 아니다.
+        unsafe = {**original, "failed_checks": ["답변 내용", "원문 속성"]}
+        self.assertEqual(reconcile_mutable_mantis_oracle(case, response, unsafe), unsafe)
 
     @patch("scripts.accuracy.dynamic_accuracy_check.complete_mutable_mantis_ids")
     @patch("scripts.accuracy.dynamic_accuracy_check.fetch_mantis_snapshot", return_value=[])
