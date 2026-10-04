@@ -1073,7 +1073,8 @@ select.custom-select-native {
 
 .custom-select-search {
   position: sticky;
-  top: 0;
+  /* 메뉴 안쪽 여백(6px)까지 덮어, 스크롤한 항목이 검색창 위 틈으로 비치지 않게 한다. */
+  top: -6px;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -1082,6 +1083,16 @@ select.custom-select-native {
   padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: 8px;
+  background: var(--surface);
+}
+
+.custom-select-search::before {
+  content: "";
+  position: absolute;
+  right: -6px;
+  bottom: 100%;
+  left: -6px;
+  height: 6px;
   background: var(--surface);
 }
 

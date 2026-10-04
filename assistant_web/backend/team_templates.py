@@ -2,10 +2,13 @@
 
 import json
 import re
+from collections import Counter
+from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
+from backend.common import text_matches_customer_aliases
 from backend.config import CONFIG_DIR, CUSTOMER_ALIASES
 
 
@@ -17,6 +20,8 @@ ALLOWED_FIELD_TYPES = {"text", "select", "customer", "number", "month"}
 ALLOWED_NORMALIZERS = {"issue-id", "month-korean"}
 ALLOWED_DYNAMIC_VALUES = {"current-month"}
 ALLOWED_ICONS = {"today", "customer", "profile", "spike", "aging", "similar", "effort", "report"}
+# 고객사 선택 목록은 이 기간 안에 등록된 이슈가 많은 순으로 위에 올린다.
+RECENT_CUSTOMER_DAYS = 90
 CUSTOMER_DISPLAY_OVERRIDES = {
     "한투": "한국투자증권",
     "SK증권": "SK증권",
@@ -71,6 +76,60 @@ def customer_template_search_terms() -> Dict[str, str]:
         values = [display_name, canonical, *aliases]
         search_terms[display_name] = " ".join(dict.fromkeys(value.strip() for value in values if value.strip()))
     return search_terms
+
+
+@lru_cache(maxsize=256)
+def customer_display_for_project(project_name: str) -> Optional[str]:
+    """Mantis 프로젝트 이름(예: 147MiraeAsset(미래에셋증권))을 선택 목록의 대표 이름으로 바꾼다."""
+    for canonical, aliases in CUSTOMER_ALIASES.items():
+        if text_matches_customer_aliases(project_name, [canonical, *aliases]):
+            return _customer_display_name(canonical, aliases)
+    return None
+
+
+def recent_customer_issue_counts(
+    issues: Iterable[Mapping[str, Any]],
+    *,
+    today: date,
+    days: int = RECENT_CUSTOMER_DAYS,
+) -> Dict[str, int]:
+    """최근 days일 안에 등록된 이슈 수를 고객사 대표 이름별로 센다."""
+    since = (today - timedelta(days=days)).isoformat()
+    by_project: Counter = Counter()
+    for issue in issues:
+        created = str(issue.get("created_at") or "")[:10]
+        if created < since:
+            continue
+        project = issue.get("project") or {}
+        by_project[str(project.get("name") or "") if isinstance(project, Mapping) else str(project)] += 1
+    counts: Counter = Counter()
+    for project_name, count in by_project.items():
+        display_name = customer_display_for_project(project_name) if project_name else None
+        if display_name:
+            counts[display_name] += count
+    return dict(counts)
+
+
+def order_customer_options(payload: Dict[str, Any], counts: Mapping[str, int]) -> Dict[str, Any]:
+    """고객사 선택 목록을 최근 이슈가 많은 순으로 바꾼 사본을 돌려준다.
+
+    이슈 수가 같으면(집계가 없을 때 포함) 설정 파일 순서를 유지한다. 캐시된 원본은 바꾸지 않는다.
+    """
+    if not counts:
+        return payload
+    templates = []
+    for template in payload["templates"]:
+        fields = []
+        for field in template["fields"]:
+            if field.get("type") == "customer":
+                position = {name: index for index, name in enumerate(field["options"])}
+                field = {
+                    **field,
+                    "options": sorted(field["options"], key=lambda name: (-counts.get(name, 0), position[name])),
+                }
+            fields.append(field)
+        templates.append({**template, "fields": fields})
+    return {**payload, "templates": templates}
 
 
 class TeamTemplateConfigError(ValueError):

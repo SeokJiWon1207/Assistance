@@ -14,6 +14,7 @@ from backend.api import operations as operations_api
 from backend.api import playbooks as playbooks_api
 from backend.api import quality as quality_api
 from backend.api import search as search_api
+from backend.api import templates as templates_api
 from backend.api import workspace as workspace_api
 from backend import audit as audit_module
 from backend.main import app
@@ -139,6 +140,36 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertTrue(customer_fields)
         self.assertTrue(all(field["type"] == "customer" for field in customer_fields))
         self.assertTrue(all(len(field["options"]) == 33 for field in customer_fields))
+
+    def test_team_templates_endpoint_lists_customers_with_recent_issues_first(self):
+        class Batch(list):
+            meta = {"fetchedAt": "2026-10-04T09:00:00+00:00"}
+
+        from datetime import date, timedelta
+
+        recent = (date.today() - timedelta(days=3)).isoformat()
+        old = (date.today() - timedelta(days=200)).isoformat()
+        rows = Batch([
+            {"project": {"name": "146케이프증권(CAPE증권)"}, "created_at": recent},
+            {"project": {"name": "146케이프증권(CAPE증권)"}, "created_at": recent},
+            {"project": {"name": "120NH(NH증권)"}, "created_at": recent},
+            {"project": {"name": "112KBStar(KB증권)"}, "created_at": old},
+        ])
+        templates_api._counts_cache.update({"key": None, "counts": {}})
+        try:
+            with patch.object(templates_api, "read_complete_store", return_value=rows):
+                payload = self.client.get("/api/templates").json()
+        finally:
+            templates_api._counts_cache.update({"key": None, "counts": {}})
+
+        options = next(
+            field["options"]
+            for template in payload["templates"]
+            for field in template["fields"]
+            if field["type"] == "customer"
+        )
+        self.assertEqual(options[:3], ["케이프증권", "NH투자증권", "KB증권"])
+        self.assertEqual(len(options), 33)
 
     @patch.object(workspace_api, "get_weekly_team_brief")
     @patch.object(workspace_api, "current_request_user")
