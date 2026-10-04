@@ -1,8 +1,10 @@
 """Notion HTTP 조회와 TTL 캐시를 담당한다."""
 
+import logging
 import os
 import time
 from functools import lru_cache
+from threading import Event, Lock, Thread
 from typing import Any, Dict, List
 
 import requests
@@ -17,6 +19,7 @@ from backend.config import (
 )
 
 
+LOGGER = logging.getLogger(__name__)
 _schema_seeds: Dict[tuple[str, str], tuple[float, Dict[str, Any]]] = {}
 
 
@@ -224,43 +227,42 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
     return "\n".join(text for text in texts if text).strip()
 
 
-def _notion_cache_bucket() -> int:
+def _notion_cache_ttl() -> int:
     try:
-        ttl_seconds = max(30, min(int(os.getenv("NOTION_CACHE_TTL_SECONDS", "600")), 3600))
+        return max(30, min(int(os.getenv("NOTION_CACHE_TTL_SECONDS", "600")), 3600))
     except ValueError:
-        ttl_seconds = 600
-    return int(time.monotonic() // ttl_seconds)
+        return 600
 
 
-@lru_cache(maxsize=64)
-def _fetch_notion_database_title_cached(database_id: str, _bucket: int, token: str = "") -> str:
+def _notion_cache_bucket() -> int:
+    return int(time.monotonic() // _notion_cache_ttl())
+
+
+def _notion_schema_max_stale() -> int:
+    # 스키마는 속성 추가·이름 변경 때만 바뀐다. 이 시간 안에서는 만료된 값을 즉시
+    # 쓰고 백그라운드에서 다시 받아, 사용자 요청이 DB 수만큼의 조회를 기다리지 않는다.
     try:
-        notion_request_slot()
-        response = requests.get(
-            f"{NOTION_API_BASE}/databases/{database_id}",
-            headers=get_notion_headers(),
-            timeout=15,
-        )
-    except requests.RequestException:
-        return database_id[-8:] if database_id else "Notion DB"
-
-    if response.status_code != 200:
-        return database_id[-8:] if database_id else "Notion DB"
-
-    data = response.json()
-    title = notion_rich_text_to_plain(data.get("title", []))
-    return title or (database_id[-8:] if database_id else "Notion DB")
+        return max(0, min(int(os.getenv("NOTION_SCHEMA_MAX_STALE_SECONDS", "86400")), 604800))
+    except ValueError:
+        return 86400
 
 
-def fetch_notion_database_title(database_id: str) -> str:
-    cached = _seed_schema(database_id)
-    if cached:
-        return notion_rich_text_to_plain(cached.get("title", [])) or database_id[-8:]
-    return _fetch_notion_database_title_cached(database_id, _notion_cache_bucket(), get_notion_headers().get("Authorization", ""))
+_DATABASE_FAILURE_TTL_SECONDS = 30
+_database_cache_lock = Lock()
+# (database_id, token) -> (받은 시각, DB 객체). 제목과 스키마가 같은 응답을 공유한다.
+_database_cache: Dict[tuple[str, str], tuple[float, Dict[str, Any]]] = {}
+_database_failures: Dict[tuple[str, str], tuple[float, Exception]] = {}
+_database_refreshing: set[tuple[str, str]] = set()
 
 
-@lru_cache(maxsize=64)
-def _fetch_notion_database_schema_cached(database_id: str, _bucket: int, token: str = "") -> Dict[str, Any]:
+def clear_notion_database_cache() -> None:
+    with _database_cache_lock:
+        _database_cache.clear()
+        _database_failures.clear()
+        _database_refreshing.clear()
+
+
+def _request_notion_database(database_id: str) -> Dict[str, Any]:
     notion_request_slot()
     response = requests.get(
         f"{NOTION_API_BASE}/databases/{database_id}",
@@ -272,11 +274,112 @@ def _fetch_notion_database_schema_cached(database_id: str, _bucket: int, token: 
             status_code=502,
             detail=f"Notion DB 정보를 불러오지 못했습니다: {response.status_code} {response.text[:300]}",
         )
-    return response.json()
+    return dict(response.json())
+
+
+def _load_notion_database(key: tuple[str, str]) -> Dict[str, Any]:
+    try:
+        data = _request_notion_database(key[0])
+    except (HTTPException, requests.RequestException, ValueError) as exc:
+        # 장애 중에는 같은 DB를 제목·스키마 조회마다 다시 기다리지 않도록 잠시 기억한다.
+        with _database_cache_lock:
+            _database_failures[key] = (time.monotonic() + _DATABASE_FAILURE_TTL_SECONDS, exc)
+        raise
+    with _database_cache_lock:
+        _database_failures.pop(key, None)
+        _database_cache[key] = (time.monotonic(), data)
+        while len(_database_cache) > 256:
+            _database_cache.pop(next(iter(_database_cache)))
+    return data
+
+
+def _refresh_notion_database_in_background(key: tuple[str, str]) -> None:
+    with _database_cache_lock:
+        if key in _database_refreshing:
+            return
+        failure = _database_failures.get(key)
+        if failure and failure[0] > time.monotonic():
+            return
+        _database_refreshing.add(key)
+
+    def refresh() -> None:
+        try:
+            _load_notion_database(key)
+        except (HTTPException, requests.RequestException, ValueError) as exc:
+            # 갱신 실패 시 만료 한도까지 기존 값을 계속 사용한다.
+            LOGGER.warning("Notion DB 정보 갱신 실패: %s", type(exc).__name__)
+        finally:
+            with _database_cache_lock:
+                _database_refreshing.discard(key)
+
+    Thread(target=refresh, name="notion-database-refresh", daemon=True).start()
 
 
 def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
-    return _seed_schema(database_id) or _fetch_notion_database_schema_cached(database_id, _notion_cache_bucket(), get_notion_headers().get("Authorization", ""))
+    seeded = _seed_schema(database_id)
+    if seeded:
+        return seeded
+    # 설정의 하이픈 ID와 범위 조회의 정규화 ID가 같은 캐시를 쓰게 한다.
+    key = (database_id.replace("-", "").lower(), get_notion_headers().get("Authorization", ""))
+    now = time.monotonic()
+    with _database_cache_lock:
+        cached = _database_cache.get(key)
+        failure = _database_failures.get(key)
+    if cached:
+        age = now - cached[0]
+        if age < _notion_cache_ttl():
+            return cached[1]
+        if age < _notion_schema_max_stale():
+            _refresh_notion_database_in_background(key)
+            return cached[1]
+    if failure and failure[0] > now:
+        raise failure[1]
+    return _load_notion_database(key)
+
+
+def fetch_notion_database_title(database_id: str) -> str:
+    fallback = database_id[-8:] if database_id else "Notion DB"
+    try:
+        data = fetch_notion_database_schema(database_id)
+    except (HTTPException, requests.RequestException, ValueError):
+        return fallback
+    return notion_rich_text_to_plain(data.get("title", [])) or fallback
+
+
+def warm_notion_database_cache() -> int:
+    """검색 대상 DB의 메타데이터를 사용자 요청 전에 채운다."""
+    from backend.notion.read_scope import resolve_notion_read_scope
+
+    settings = get_notion_settings()
+    database_ids = list(settings.get("database_ids") or [])
+    if not settings.get("token") or not database_ids:
+        return 0
+    read_scope, _complete = resolve_notion_read_scope(database_ids, settings["token"])
+    warmed = 0
+    for database_id in dict.fromkeys([*read_scope, *(root for root in read_scope.values() if root)]):
+        try:
+            fetch_notion_database_schema(database_id)
+        except (HTTPException, requests.RequestException, ValueError):
+            continue
+        warmed += 1
+    return warmed
+
+
+def start_notion_cache_warmer(interval_seconds: int = 21600) -> Event:
+    """시작 직후와 이후 주기적으로 캐시를 채워 첫 검색과 장시간 유휴 뒤 검색을 보호한다."""
+    stop = Event()
+
+    def run() -> None:
+        while not stop.is_set():
+            try:
+                warmed = warm_notion_database_cache()
+                LOGGER.info("Notion DB 정보 %d건을 미리 불러왔습니다.", warmed)
+            except Exception as exc:
+                LOGGER.warning("Notion DB 정보 사전 로딩 실패: %s", type(exc).__name__)
+            stop.wait(interval_seconds)
+
+    Thread(target=run, name="notion-cache-warmer", daemon=True).start()
+    return stop
 
 
 @lru_cache(maxsize=8)

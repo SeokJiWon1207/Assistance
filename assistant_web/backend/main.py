@@ -43,14 +43,18 @@ async def lifespan(_application: FastAPI):
     # 연결이 설정된 환경에서는 사용자 요청과 분리해 원본을 주기적으로 갱신한다.
     configured = bool(os.getenv("MANTIS_API_URL", "").strip() and os.getenv("MANTIS_API_TOKEN", "").strip())
     enabled = os.getenv("MANTIS_COMPLETE_SYNC_ENABLED", "true" if configured else "false")
-    stop = None
+    stops = []
     if enabled.lower() == "true":
         from backend.sources.mantis_store import start_store_scheduler
-        stop = start_store_scheduler()
+        stops.append(start_store_scheduler())
+    # 첫 Notion 검색이 DB마다 메타데이터 조회를 기다리지 않도록 미리 채운다.
+    if os.getenv("NOTION_CACHE_WARM_ENABLED", "true").strip().lower() == "true":
+        from backend.notion.client import start_notion_cache_warmer
+        stops.append(start_notion_cache_warmer())
     try:
         yield
     finally:
-        if stop is not None:
+        for stop in stops:
             stop.set()
 
 

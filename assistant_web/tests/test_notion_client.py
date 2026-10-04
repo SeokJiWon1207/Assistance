@@ -13,10 +13,15 @@ class NotionClientTests(unittest.TestCase):
     def setUp(self):
         client.fetch_notion_relation_title.cache_clear()
         client.fetch_notion_user_name.cache_clear()
-        client._fetch_notion_database_title_cached.cache_clear()
-        client._fetch_notion_database_schema_cached.cache_clear()
+        client.clear_notion_database_cache()
+        client._schema_seeds.clear()
         client._fetch_notion_users_cached.cache_clear()
         client._page_content_cached.cache_clear()
+
+    def run(self, result=None):
+        # 시계를 고정하는 테스트가 전역 요청 간격 제한에서 대기하지 않게 한다.
+        with patch.object(client, "notion_request_slot"):
+            return super().run(result)
 
     def tearDown(self):
         self.setUp()
@@ -82,9 +87,8 @@ class NotionClientTests(unittest.TestCase):
     def test_database_title_uses_ttl_cache_and_fallback_label(self):
         success = Mock(status_code=200)
         success.json.return_value = {"title": [{"plain_text": "업무 DB"}]}
-        failure = Mock(status_code=503)
+        failure = Mock(status_code=503, text="unavailable")
         with (
-            patch.object(client, "_notion_cache_bucket", return_value=10),
             patch.object(client.requests, "get", side_effect=[success, failure]) as get,
             patch.object(client, "notion_rich_text_to_plain", return_value="업무 DB"),
         ):
@@ -99,15 +103,142 @@ class NotionClientTests(unittest.TestCase):
         success.json.return_value = {"properties": {"상태": {"type": "status"}}}
         failure = Mock(status_code=429, text="rate limited")
         with patch.object(client.requests, "get", side_effect=[success, failure]) as get:
-            first = client._fetch_notion_database_schema_cached("db-ok", 1)
-            second = client._fetch_notion_database_schema_cached("db-ok", 1)
+            first = client.fetch_notion_database_schema("db-ok")
+            second = client.fetch_notion_database_schema("db-ok")
             with self.assertRaises(HTTPException) as raised:
-                client._fetch_notion_database_schema_cached("db-fail", 1)
+                client.fetch_notion_database_schema("db-fail")
 
         self.assertEqual(first, second)
         self.assertEqual(get.call_count, 2)
         self.assertEqual(raised.exception.status_code, 502)
         self.assertIn("429", raised.exception.detail)
+
+    def test_title_and_schema_share_one_database_request(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {"title": [], "properties": {"상태": {"type": "status"}}}
+        with (
+            patch.object(client.requests, "get", return_value=response) as get,
+            patch.object(client, "notion_rich_text_to_plain", return_value="업무 DB"),
+        ):
+            self.assertEqual(client.fetch_notion_database_title("aaaa-bbbb"), "업무 DB")
+            self.assertIn("상태", client.fetch_notion_database_schema("aaaabbbb")["properties"])
+
+        get.assert_called_once()
+
+    def test_expired_schema_is_served_while_refreshing_in_background(self):
+        old = Mock(status_code=200)
+        old.json.return_value = {"properties": {"이전": {}}}
+        new = Mock(status_code=200)
+        new.json.return_value = {"properties": {"새 속성": {}}}
+        clock = [100.0]
+        started = []
+        with (
+            patch.dict(os.environ, {"NOTION_CACHE_TTL_SECONDS": "600", "NOTION_SCHEMA_MAX_STALE_SECONDS": "86400"}),
+            patch.object(client.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(client.requests, "get", side_effect=[old, new]) as get,
+            patch.object(client, "Thread") as thread,
+        ):
+            thread.side_effect = lambda target, **_kwargs: started.append(target) or Mock()
+            self.assertIn("이전", client.fetch_notion_database_schema("db")["properties"])
+            clock[0] += 601
+            # 만료된 값을 즉시 돌려주고 갱신은 한 번만 예약한다.
+            self.assertIn("이전", client.fetch_notion_database_schema("db")["properties"])
+            self.assertIn("이전", client.fetch_notion_database_schema("db")["properties"])
+            self.assertEqual(len(started), 1)
+            self.assertEqual(get.call_count, 1)
+            started[0]()
+            self.assertIn("새 속성", client.fetch_notion_database_schema("db")["properties"])
+
+        self.assertEqual(get.call_count, 2)
+
+    def test_schema_older_than_stale_limit_is_fetched_synchronously(self):
+        old = Mock(status_code=200)
+        old.json.return_value = {"properties": {"이전": {}}}
+        new = Mock(status_code=200)
+        new.json.return_value = {"properties": {"새 속성": {}}}
+        clock = [100.0]
+        with (
+            patch.dict(os.environ, {"NOTION_CACHE_TTL_SECONDS": "600", "NOTION_SCHEMA_MAX_STALE_SECONDS": "3600"}),
+            patch.object(client.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(client.requests, "get", side_effect=[old, new]),
+            patch.object(client, "Thread") as thread,
+        ):
+            client.fetch_notion_database_schema("db")
+            clock[0] += 3601
+            self.assertIn("새 속성", client.fetch_notion_database_schema("db")["properties"])
+        thread.assert_not_called()
+
+    def test_stale_cache_refresh_failure_obeys_backoff_and_then_recovers(self):
+        old = {"properties": {"이전": {}}}
+        new = {"properties": {"새 속성": {}}}
+        clock = [100.0]
+        started = []
+        with (
+            patch.dict(os.environ, {"NOTION_CACHE_TTL_SECONDS": "600", "NOTION_SCHEMA_MAX_STALE_SECONDS": "86400"}),
+            patch.object(client.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(client, "_request_notion_database", side_effect=[old, requests.Timeout("장애"), new]) as fetch,
+            patch.object(client, "Thread") as thread,
+            patch.object(client, "LOGGER"),
+        ):
+            thread.side_effect = lambda target, **_kwargs: started.append(target) or Mock()
+            self.assertEqual(client.fetch_notion_database_schema("db"), old)
+            clock[0] += 601
+            self.assertEqual(client.fetch_notion_database_schema("db"), old)
+            started.pop(0)()
+            for seconds in (0, 1, 28):
+                clock[0] += seconds
+                self.assertEqual(client.fetch_notion_database_schema("db"), old)
+                client.fetch_notion_database_title("db")
+                self.assertEqual(started, [])
+                self.assertEqual(fetch.call_count, 2)
+            clock[0] += 1
+            self.assertEqual(client.fetch_notion_database_schema("db"), old)
+            self.assertEqual(len(started), 1)
+            started.pop(0)()
+            self.assertEqual(client.fetch_notion_database_schema("db"), new)
+            self.assertEqual(fetch.call_count, 3)
+
+    def test_recent_failure_is_not_retried_for_each_lookup(self):
+        clock = [100.0]
+        success = Mock(status_code=200)
+        success.json.return_value = {"properties": {}}
+        with (
+            patch.object(client.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(client.requests, "get", side_effect=[requests.Timeout("slow"), success]) as get,
+        ):
+            self.assertEqual(client.fetch_notion_database_title("database-12345678"), "12345678")
+            with self.assertRaises(requests.Timeout):
+                client.fetch_notion_database_schema("database-12345678")
+            self.assertEqual(get.call_count, 1)
+            clock[0] += 31
+            self.assertEqual(client.fetch_notion_database_schema("database-12345678"), {"properties": {}})
+
+        self.assertEqual(get.call_count, 2)
+
+    def test_warm_cache_loads_every_database_in_read_scope_once(self):
+        with (
+            patch.object(client, "get_notion_settings", return_value={"token": "secret", "database_ids": ["root-1"]}),
+            patch(
+                "backend.notion.read_scope.resolve_notion_read_scope",
+                return_value=({"root1": "", "child1": "root1"}, True),
+            ),
+            patch.object(
+                client,
+                "fetch_notion_database_schema",
+                side_effect=[{}, HTTPException(status_code=502, detail="fail")],
+            ) as fetch,
+        ):
+            self.assertEqual(client.warm_notion_database_cache(), 1)
+
+        self.assertEqual([item.args[0] for item in fetch.call_args_list], ["root1", "child1"])
+
+    def test_warm_cache_skips_unconfigured_notion(self):
+        with (
+            patch.object(client, "get_notion_settings", return_value={"token": "", "database_ids": []}),
+            patch.object(client, "fetch_notion_database_schema") as fetch,
+        ):
+            self.assertEqual(client.warm_notion_database_cache(), 0)
+        fetch.assert_not_called()
 
     def test_user_list_follows_pagination_and_caches_the_result(self):
         first = Mock(status_code=200)
