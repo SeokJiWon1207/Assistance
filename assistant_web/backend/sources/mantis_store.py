@@ -30,6 +30,8 @@ MAX_AGE_SECONDS = 3600
 _request_store: ContextVar[dict | None] = ContextVar("mantis_request_store", default=None)
 _generation_lock = Lock()
 _generation_cache: dict[tuple, tuple] = {}
+_refresh_lock = Lock()
+_refresh_thread: Thread | None = None
 
 
 def _generation_key(path: Path) -> tuple:
@@ -276,15 +278,19 @@ def refresh_in_progress() -> bool:
 
 
 def start_store_refresh() -> Thread:
+    """동일 프로세스의 여러 검색 요청은 하나의 갱신 작업을 공유한다."""
+    global _refresh_thread
     def refresh() -> None:
         try:
             sync_complete_store()
         except Exception as exc:
             # API 응답/인증값을 로그에 남기지 않는다.
             LOGGER.warning("Mantis 전체 동기화 실패: %s", type(exc).__name__)
-    thread = Thread(target=refresh, name="mantis-store-refresh", daemon=True)
-    thread.start()
-    return thread
+    with _refresh_lock:
+        if _refresh_thread is None or not _refresh_thread.is_alive():
+            _refresh_thread = Thread(target=refresh, name="mantis-store-refresh", daemon=True)
+            _refresh_thread.start()
+        return _refresh_thread
 
 
 def start_store_scheduler() -> Event:

@@ -930,7 +930,12 @@ class TopCustomersTests(unittest.TestCase):
 
     def test_report_states_the_basis_it_used(self):
         # 기준이 빠진 질문에 임의 기준으로 조용히 답하면 안 된다.
-        report = answers.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")
+        from backend.sources.mantis_collection import IssueBatch
+        rows = IssueBatch([{'id': 1, 'project': {'name': '테스트 고객사'},
+                            'status': {'name': 'assigned'}}],
+                          {'search_complete': True, 'fetchedAt': '2026-10-04T00:00:00+00:00'})
+        with patch('backend.sources.mantis_store.read_complete_store', return_value=rows):
+            report = answers.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")
         self.assertIsNotNone(report)
         self.assertIn("미종료", report["content"])
         self.assertIn("고객사별 건수", report["content"])

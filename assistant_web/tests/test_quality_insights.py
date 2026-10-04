@@ -809,7 +809,8 @@ class AccuracyInsightTests(unittest.TestCase):
 
     def test_freshness_marks_old_snapshot_stale(self):
         old_date = (date.today() - timedelta(days=7)).isoformat()
-        with patch("backend.sources.mantis.get_mantis_snapshot_freshness", return_value=old_date):
+        with (patch("backend.sources.mantis.get_mantis_snapshot_freshness", return_value=old_date),
+              patch("backend.sources.mantis.read_store_metadata", return_value=None)):
             status = mantis.get_mantis_snapshot_freshness_status()
         self.assertEqual(status["ageDays"], 7)
         self.assertEqual(status["status"], "stale")

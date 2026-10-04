@@ -9,10 +9,49 @@ from scripts.accuracy.dynamic_accuracy_check import (
     run_case,
     run_follow_up_scenario,
     FollowUpScenario,
+    prepare_mantis_store,
 )
 
 
 class DynamicAccuracyDependencyTests(unittest.TestCase):
+    @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store")
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata")
+    def test_stale_search_store_is_refreshed_before_accuracy_queries(self, metadata, sync):
+        fresh = {"count": 31000, "search_complete": True}
+        metadata.side_effect = [None, fresh]
+        self.assertEqual(prepare_mantis_store(), fresh)
+        sync.assert_called_once_with()
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store")
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata", return_value={"search_complete": True})
+    def test_fresh_store_does_not_need_another_full_sync(self, metadata, sync):
+        self.assertEqual(prepare_mantis_store(), metadata.return_value)
+        sync.assert_not_called()
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store", return_value={"status": "running"})
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata", return_value=None)
+    @patch("scripts.accuracy.dynamic_accuracy_check.refresh_in_progress", return_value=False)
+    def test_unfinished_refresh_is_not_reported_as_ready(self, _running, _metadata, _sync):
+        with self.assertRaisesRegex(RuntimeError, "완료되지"):
+            prepare_mantis_store()
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store", return_value={"status": "running"})
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata")
+    @patch("scripts.accuracy.dynamic_accuracy_check.refresh_in_progress", side_effect=[True, False])
+    @patch("scripts.accuracy.dynamic_accuracy_check.time.sleep")
+    def test_preparation_waits_for_an_existing_server_refresh(self, sleep, _running, metadata, sync):
+        fresh = {"search_complete": True, "count": 31000}
+        metadata.side_effect = [None, None, fresh]
+        self.assertEqual(prepare_mantis_store(), fresh)
+        sync.assert_called_once()
+        sleep.assert_called_once_with(1)
+
+    @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store", side_effect=TimeoutError)
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata", return_value=None)
+    def test_refresh_failure_remains_an_execution_prerequisite_error(self, _metadata, _sync):
+        with self.assertRaises(TimeoutError):
+            prepare_mantis_store()
+
     @patch("scripts.accuracy.dynamic_accuracy_check.execute_chat", return_value={"content": "없습니다", "sources": []})
     def test_accuracy_requests_do_not_generate_ungraded_ab_comparisons(self, execute):
         case = AccuracyCase("empty", "notion", "빈 결과", "노션 '없는 문서'", "titles", [])

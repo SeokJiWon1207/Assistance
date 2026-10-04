@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from threading import Event
 from unittest.mock import patch
 from datetime import datetime
 import requests
@@ -83,6 +84,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         from backend.reports.aggregate import build_mantis_count_report
         self.sync([{'id': 77, 'handler': {'real_name': '석지원'}, 'status': {'name': 'assigned'}, 'created_at': '2026-09-10'}])
         with patch.object(mantis_store, 'MAX_AGE_SECONDS', -1), \
+             patch.object(mantis_store, 'start_store_refresh'), \
              patch('backend.tools.mantis_snapshot._scan_chroma_documents') as legacy:
             response = build_mantis_count_report('우리 팀 미종료 이슈 몇 건이야', {'operation': 'count', 'source': 'mantis'})
         legacy.assert_not_called()
@@ -97,6 +99,46 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.assertIn('총 1건', dated['content'])
         self.assertIn('전체 저장본', dated['content'])
         self.assertNotIn('실시간 병합', dated['content'])
+
+    def test_expired_regular_search_requests_refresh_without_using_older_index(self):
+        from backend.tools import mantis_snapshot
+        self.sync([{'id': 77, 'summary': '옛 제목'}])
+        with (patch.object(mantis_store, 'MAX_AGE_SECONDS', -1),
+              patch.object(mantis_store, 'start_store_refresh') as refresh,
+              patch.object(mantis_snapshot, '_scan_chroma_documents') as legacy):
+            stage = mantis.execute_mantis_snapshot_search(2, {'customer_key': 'HMC증권'})
+        refresh.assert_called_once()
+        legacy.assert_not_called()
+        self.assertEqual(stage['status'], 'error')
+        self.assertEqual(stage['issues_list'], [])
+        self.assertIn('갱신', stage['reason'])
+
+        self.sync([{'id': 78, 'summary': '새 제목'}])
+        with patch.object(mantis_store, 'start_store_refresh') as refresh:
+            stage = mantis.execute_mantis_snapshot_search(2, {})
+        refresh.assert_not_called()
+        self.assertTrue(stage['meta']['search_complete'])
+        self.assertEqual([row['id'] for row in stage['issues_list']], [78])
+
+    def test_concurrent_refresh_requests_share_one_worker_and_can_retry(self):
+        entered, release = Event(), Event()
+        def sync():
+            entered.set()
+            release.wait(5)
+        with (patch.object(mantis_store, '_refresh_thread', None),
+              patch.object(mantis_store, 'sync_complete_store', side_effect=sync) as collect):
+            first = mantis_store.start_store_refresh()
+            try:
+                self.assertTrue(entered.wait(2))
+                self.assertIs(mantis_store.start_store_refresh(), first)
+                collect.assert_called_once()
+            finally:
+                release.set()
+                first.join(5)
+            second = mantis_store.start_store_refresh()
+            second.join(5)
+            self.assertIsNot(first, second)
+            self.assertEqual(collect.call_count, 2)
 
     def test_structured_search_uses_same_new_generation(self):
         from backend.config import CHROMA_DB_PATH

@@ -41,6 +41,7 @@ from backend.llm import get_model_registry
 from backend.schemas import ChatMessage, ChatRequest
 from backend.services.chat_service import chat_service
 from backend.sources import mantis
+from backend.sources.mantis_store import read_store_metadata, refresh_in_progress, sync_complete_store
 from backend.understanding import extract_query_constraints
 
 
@@ -1302,6 +1303,25 @@ def emit_progress(enabled: bool, event: Dict[str, Any]) -> None:
         print(f"PROGRESS {json.dumps(event, ensure_ascii=False)}", flush=True)
 
 
+def prepare_mantis_store() -> Dict[str, Any]:
+    """서버 수명주기 없이 실행하는 점검에도 최신 전체 검색 원본을 준비한다."""
+    metadata = read_store_metadata()
+    if metadata is None:
+        deadline = time.monotonic() + 900
+        result = sync_complete_store()
+        # 서버 스케줄러가 이미 수집 중이면 같은 갱신의 완료를 기다린다.
+        if result.get("status") == "running":
+            while refresh_in_progress() and time.monotonic() < deadline:
+                metadata = read_store_metadata()
+                if metadata is not None:
+                    return metadata
+                time.sleep(1)
+        metadata = read_store_metadata()
+    if metadata is None:
+        raise RuntimeError("Mantis 전체 저장본 갱신이 완료되지 않았습니다.")
+    return metadata
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questions", type=int, default=10, choices=range(1, 11))
@@ -1316,6 +1336,12 @@ def main() -> int:
     # Page blocks add many requests and are not needed for title/metadata checks.
     os.environ["NOTION_FETCH_PAGE_BLOCKS"] = "false"
     errors: List[str] = []
+    store_metadata: Dict[str, Any] = {}
+    emit_progress(args.progress, {"type": "status", "message": "Mantis 전체 검색 원본의 최신 상태를 확인하고 있습니다"})
+    try:
+        store_metadata = prepare_mantis_store()
+    except Exception as exc:
+        errors.append(f"Mantis complete store preparation failed: {type(exc).__name__}")
     emit_progress(args.progress, {"type": "status", "message": "Mantis·Notion 실시간 스냅샷을 수집하고 있습니다"})
     try:
         mantis_issues = fetch_mantis_snapshot(progress=args.progress)
@@ -1437,6 +1463,7 @@ def main() -> int:
             1 for result in follow_up_results if result.get("outcome") != "blocked_by_prerequisite"
         ),
         "snapshots": {"mantis": len(mantis_issues), "notion": len(notion_pages)},
+        "mantis_store": store_metadata,
         "summary": {
             **totals,
             "status": run_status,
