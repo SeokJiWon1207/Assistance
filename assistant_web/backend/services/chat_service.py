@@ -36,6 +36,7 @@ from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status
 from backend.common import clamp_int
 from backend.llm import (
     build_generation_options,
+    consume_model_response,
     extract_model_content,
     get_model_api_key,
     get_model_registry,
@@ -470,7 +471,29 @@ def generate_model_response(
             detail=(response.text[:1000] + unsupported_hint),
         )
 
-    if request.stream and is_ollama_model(final_model):
+    with consume_model_response(response):
+        data = _read_model_response(response, final_model, request.stream)
+
+    final_sources = build_sources(retrieval_result, max_sources=active_limit)
+    content = sanitize_customer_notice_answer(
+        messages[-1].get("content", "") if messages else "",
+        extract_model_content(data),
+    )
+    return {
+        "modelId": final_model["id"],
+        "content": content or "응답 본문을 찾지 못했습니다.",
+        "sources": final_sources if request.showSources else [],
+        "sourcesForFollowUps": final_sources,
+        "retrieval": retrieval_result,
+        "raw": data,
+        "usedFallbackModel": final_model["id"] if final_model["id"] != model["id"] else None,
+    }
+
+
+def _read_model_response(
+    response: requests.Response, model: Dict[str, Any], stream: bool,
+) -> Dict[str, Any]:
+    if stream and is_ollama_model(model):
         streamed_content = ""
         ollama_stream_chunks: List[Dict[str, Any]] = []
         for raw_line in response.iter_lines(decode_unicode=True):
@@ -495,7 +518,7 @@ def generate_model_response(
             "streamChunks": len(ollama_stream_chunks),
             "provider": "ollama",
         }
-    elif request.stream and "text/event-stream" in response.headers.get("content-type", "").lower():
+    elif stream and "text/event-stream" in response.headers.get("content-type", "").lower():
         streamed_content = ""
         sse_stream_chunks: List[Dict[str, Any]] = []
         for raw_line in response.iter_lines(decode_unicode=True):
@@ -522,20 +545,7 @@ def generate_model_response(
     else:
         data = response.json()
 
-    final_sources = build_sources(retrieval_result, max_sources=active_limit)
-    content = sanitize_customer_notice_answer(
-        messages[-1].get("content", "") if messages else "",
-        extract_model_content(data),
-    )
-    return {
-        "modelId": final_model["id"],
-        "content": content or "응답 본문을 찾지 못했습니다.",
-        "sources": final_sources if request.showSources else [],
-        "sourcesForFollowUps": final_sources,
-        "retrieval": retrieval_result,
-        "raw": data,
-        "usedFallbackModel": final_model["id"] if final_model["id"] != model["id"] else None,
-    }
+    return data
 
 
 @dataclass

@@ -8,9 +8,14 @@ models.json 기반 모델 목록 로딩, OpenAI 호환/Ollama 네이티브 엔�
 
 import json
 import logging
+import math
 import os
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date
-from typing import Any, Dict, List, Optional
+from threading import Lock
+from typing import Any, Dict, Iterator, List, Optional
 
 import requests
 from fastapi import HTTPException
@@ -126,6 +131,132 @@ def extract_model_content(data: Dict[str, Any]) -> str:
     return str(content or "")
 
 
+class ModelCircuitOpenError(requests.ConnectionError):
+    """연속 장애로 차단된 모델 엔드포인트 호출을 네트워크 대기 없이 실패시킨다."""
+
+
+# 게이트웨이가 모델 서버에 닿지 못했다는 응답만 장애로 본다.
+_MODEL_UNAVAILABLE_STATUSES = {502, 503, 504}
+_model_circuit_lock = Lock()
+
+
+@dataclass
+class _ModelCircuitState:
+    failures: int = 0
+    open_until: float = 0.0
+    probe_in_flight: bool = False
+    generation: int = 0
+
+
+_model_circuits: Dict[str, _ModelCircuitState] = {}
+_ModelCircuitCall = tuple[str, _ModelCircuitState, int]
+
+
+def _model_circuit_setting(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        return clamp_int(os.getenv(name, str(default)), minimum, maximum) or default
+    except ValueError:
+        return default
+
+
+def _model_circuit_threshold() -> int:
+    return _model_circuit_setting("MODEL_CIRCUIT_FAILURE_THRESHOLD", 2, 1, 10)
+
+
+def _model_circuit_cooldown() -> int:
+    return _model_circuit_setting("MODEL_CIRCUIT_COOLDOWN_SECONDS", 60, 5, 600)
+
+
+def _model_circuit_key(model: Dict[str, Any]) -> str:
+    if is_ollama_model(model):
+        return str(model.get("nativeEndpoint", "http://127.0.0.1:11434/api/chat"))
+    return str(model.get("endpoint", ""))
+
+
+def _enter_model_circuit(key: str) -> _ModelCircuitCall:
+    now = time.monotonic()
+    with _model_circuit_lock:
+        state = _model_circuits.setdefault(key, _ModelCircuitState())
+        if state.failures < _model_circuit_threshold():
+            return key, state, state.generation
+        if state.probe_in_flight:
+            raise ModelCircuitOpenError("모델 엔드포인트의 복구 확인 요청이 진행 중입니다.")
+        if now < state.open_until:
+            raise ModelCircuitOpenError(
+                f"모델 엔드포인트가 연속 장애로 {math.ceil(state.open_until - now)}초간 차단되었습니다."
+            )
+        # 반개방: 이 호출 하나만 회복 확인용으로 보내고 그동안 다른 호출은 계속 차단한다.
+        state.probe_in_flight = True
+        state.generation += 1
+        return key, state, state.generation
+
+
+def _record_model_result(call: _ModelCircuitCall, available: Optional[bool]) -> None:
+    key, state, generation = call
+    with _model_circuit_lock:
+        # 차단 전에 시작한 느린 요청이 새 차단이나 복구 확인 상태를 덮어쓰지 않는다.
+        if _model_circuits.get(key) is not state or state.generation != generation:
+            return
+        was_probe = state.probe_in_flight
+        state.probe_in_flight = False
+        if available:
+            if state.failures >= _model_circuit_threshold():
+                LOGGER.info("모델 엔드포인트 차단을 해제합니다.")
+            state.failures = 0
+            state.open_until = 0.0
+            if was_probe:
+                state.generation += 1
+            return
+        # 파싱 오류·취소는 장애 횟수에 넣지 않되 복구 확인 잠금은 반드시 해제한다.
+        if available is False:
+            state.failures += 1
+        if state.failures >= _model_circuit_threshold():
+            if state.failures == _model_circuit_threshold() and available is False:
+                LOGGER.warning("모델 엔드포인트가 연속 %d회 응답하지 않아 호출을 차단합니다.", state.failures)
+            state.open_until = time.monotonic() + _model_circuit_cooldown()
+            state.generation += 1
+
+
+def model_circuit_status_for(model: Dict[str, Any]) -> Dict[str, Any]:
+    """엔드포인트 주소를 노출하지 않고 모델의 차단 상태를 돌려준다."""
+    with _model_circuit_lock:
+        state = _model_circuits.get(_model_circuit_key(model), _ModelCircuitState())
+        failures, open_until = state.failures, state.open_until
+    is_open = failures >= _model_circuit_threshold()
+    return {
+        "id": model["id"],
+        "circuit": "open" if is_open else "closed",
+        "consecutiveFailures": failures,
+        "retryAfterSeconds": max(0, math.ceil(open_until - time.monotonic())) if is_open else 0,
+    }
+
+
+def model_circuit_status() -> List[Dict[str, Any]]:
+    return [model_circuit_status_for(model) for model in get_model_registry()]
+
+
+def reset_model_circuits() -> None:
+    with _model_circuit_lock:
+        _model_circuits.clear()
+
+
+@contextmanager
+def consume_model_response(response: requests.Response) -> Iterator[None]:
+    """스트리밍 응답은 헤더가 아니라 본문 소비가 끝날 때 서킷 결과를 확정한다."""
+    call = vars(response).pop("_model_circuit_call", None)
+    available: Optional[bool] = None
+    try:
+        yield
+        available = True
+    except (requests.Timeout, requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
+        available = False
+        raise
+    finally:
+        if call is not None:
+            _record_model_result(call, available)
+            response.close()
+
+
 def post_model_chat(
     model: Dict[str, Any],
     api_key: str,
@@ -133,6 +264,37 @@ def post_model_chat(
     timeout: int,
     stream: bool = False,
     think: Optional[bool] = None,
+) -> requests.Response:
+    """Call a model endpoint, failing fast while its circuit is open.
+
+    응답 없는 엔드포인트를 매 요청마다 타임아웃까지 기다리지 않도록 연속 장애 시
+    일정 시간 호출을 차단한다. 차단 예외는 ``requests.ConnectionError`` 이므로
+    호출부의 기존 규칙 기반·대체 모델 폴백이 그대로 적용된다.
+    """
+    call = _enter_model_circuit(_model_circuit_key(model))
+    try:
+        response = _send_model_chat(model, api_key, payload, timeout, stream, think)
+    except (requests.Timeout, requests.ConnectionError):
+        _record_model_result(call, available=False)
+        raise
+    except BaseException:
+        _record_model_result(call, available=None)
+        raise
+    if stream and response.status_code < 400:
+        # 본문을 읽는 호출부는 consume_model_response 안에서 처리해야 한다.
+        vars(response)["_model_circuit_call"] = call
+    else:
+        _record_model_result(call, available=response.status_code not in _MODEL_UNAVAILABLE_STATUSES)
+    return response
+
+
+def _send_model_chat(
+    model: Dict[str, Any],
+    api_key: str,
+    payload: Dict[str, Any],
+    timeout: int,
+    stream: bool,
+    think: Optional[bool],
 ) -> requests.Response:
     """Call an OpenAI-compatible model or Ollama's native chat endpoint."""
     headers = {

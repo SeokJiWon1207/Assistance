@@ -444,7 +444,7 @@ def plan_search_intent_with_model(
             model,
             api_key,
             payload,
-            timeout=max(5, min(int(os.getenv("INTENT_PLANNER_TIMEOUT_SECONDS", "25")), 45)),
+            timeout=max(5, min(int(os.getenv("INTENT_PLANNER_TIMEOUT_SECONDS", "8")), 45)),
             think=False,
         )
         if response.status_code >= 400:
