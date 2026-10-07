@@ -4,7 +4,9 @@ import random
 import unittest
 from datetime import date
 
+from backend.intent.search_terms import resolve_result_limit
 from backend.team_templates import load_team_templates
+from backend.understanding import build_keyword_terms, extract_query_constraints
 from scripts.accuracy.template_quality_check import (
     TemplateCase,
     aging_issue_ids,
@@ -66,9 +68,14 @@ class TemplateQuestionTests(unittest.TestCase):
     def test_particles_follow_the_value_chosen_for_every_option(self):
         templates = {item["id"]: item for item in load_team_templates()["templates"]}
         analysis = {"customer": "KB증권", "period": "지난달", "platform": "전체", "status": "전체"}
-        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "표"}).endswith("이슈를 표로 보여줘"))
-        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "목록"}).endswith("이슈를 목록으로 보여줘"))
-        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "요약"}).endswith("이슈를 요약으로 보여줘"))
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "표"}).endswith("이슈를 표로 모두 보여줘"))
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "목록"}).endswith("이슈를 목록으로 모두 보여줘"))
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "요약"}).endswith("이슈를 요약으로 모두 보여줘"))
+        # 분석 템플릿은 표시 개수 기본값(5건)에 잘리지 않고 조건에 맞는 이슈를 모두 보여 준다.
+        for fmt in ("표", "목록", "요약"):
+            question = fill_question(templates["customer-analysis"], {**analysis, "format": fmt})
+            self.assertEqual(resolve_result_limit(question, 5), 200, question)
+            self.assertEqual(build_keyword_terms(question, extract_query_constraints(question)), [], question)
         similar = templates["similar-issues"]
         self.assertTrue(fill_question(similar, {"issueId": "#30225"}).startswith("#30225와 비슷한"))
         self.assertTrue(fill_question(similar, {"issueId": "#30220"}).startswith("#30220과 비슷한"))

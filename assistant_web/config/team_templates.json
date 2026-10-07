@@ -19,7 +19,7 @@
       "title": "고객사별 이슈 분석",
       "description": "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
       "icon": "customer",
-      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}(으)로 보여줘",
+      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}(으)로 모두 보여줘",
       "fields": [
         { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "period", "label": "기간", "type": "select", "value": "이번 달", "options": ["이번 주", "이번 달", "지난달", "올해"] },

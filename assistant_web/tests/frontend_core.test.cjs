@@ -214,7 +214,7 @@ test("buildTeamTemplateQuestion creates every configured shared template questio
       status: "미종료",
       format: "표",
     }),
-    "이번 달 유진증권 MTS 미종료 이슈를 표로 보여줘",
+    "이번 달 유진증권 MTS 미종료 이슈를 표로 모두 보여줘",
   );
   assert.equal(
     buildTeamTemplateQuestion(template("aging-issues"), { days: "30", platform: "전체" }),
@@ -259,7 +259,7 @@ test("template particles follow the final sound of the chosen value", () => {
   const analysis = { period: "지난달", customer: "KB증권", platform: "전체", status: "전체" };
   assert.equal(
     buildTeamTemplateQuestion(template("customer-analysis"), { ...analysis, format: "목록" }),
-    "지난달 KB증권 이슈를 목록으로 보여줘",
+    "지난달 KB증권 이슈를 목록으로 모두 보여줘",
   );
   assert.equal(
     buildTeamTemplateQuestion(template("similar-issues"), { issueId: "#30220" }),

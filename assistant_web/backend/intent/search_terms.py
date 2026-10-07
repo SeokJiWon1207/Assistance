@@ -90,7 +90,12 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         text = remove_team_scope_phrase(text)
     if TRIAGE_REQUEST_PATTERN.search(text) and (symptom := extract_quoted_value(text)):
         text = symptom
-    text = re.sub(r"(?<![가-힣])(?:표|목록|리스트|요약)(?:로|으로)\s*(?=보여|정리|만들|작성|알려)", " ", text)
+    # '표로 (다/모두) 보여줘' 같은 결과 형식 표현은 검색어가 아니다. 사이에 낀 '다·모두·전부'까지 함께 뺀다.
+    text = re.sub(
+        r"(?<![가-힣])(?:표|테이블|목록|리스트|요약)(?:로|으로)\s*(?:(?:다|모두|전부|전체|한번에|한눈에)\s*)?(?=보여|정리|만들|작성|알려)",
+        " ",
+        text,
+    )
     text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
     personal_scope_text = bool(
