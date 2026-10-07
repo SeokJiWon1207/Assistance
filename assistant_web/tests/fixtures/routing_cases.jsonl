@@ -109,3 +109,6 @@
 {"q": "노션에서 한화 서버 자동주문 장애에 관한 건 알려줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "한화"}
 {"q": "노션에서 상태가 시작전인 '케이프증권 2026.09 정기점검' 항목을 정확히 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": [], "customer_key": "케이프증권", "notion_constraints": {"exact_title": "케이프증권 2026.09 정기점검", "status": "시작전"}}
 {"q": "노션에서 이번 달에 만든 문서 보여줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": []}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"#31572 이슈를 다음 담당자에게 인수인계할 수 있도록 현재 상태, 확인한 내용, 시도한 조치, 막힌 점, 다음 행동과 주의사항을 정리해줘","statuses":[]}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"#31399 이슈를 바탕으로 발생 영향, 타임라인, 직접 원인과 근본 원인, 대응 과정, 잘된 점, 개선점, 재발 방지 과제를 포함해 사후 분석서 형식으로 작성해줘","statuses":[]}
+{"source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"q":"높음 우선순위로 전체 고객사에서 발생한 '차트 미표시' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘","statuses":[]}

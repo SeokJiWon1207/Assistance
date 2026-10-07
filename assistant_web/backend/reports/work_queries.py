@@ -22,6 +22,16 @@ from backend.reports.issue_relevance import (
 )
 
 
+# 이슈를 근거로 문서를 써 달라는 요청. 질문 속 '담당자'·'원인'은 문서에 담을 항목 이름이라
+# 담당자·원인 조회로 답하면 요청한 인수인계·사후 분석·안내문이 만들어지지 않는다.
+ISSUE_DOCUMENT_REQUEST = re.compile(
+    r"인수\s*인계|사후\s*분석|분석서|안내\s*(?:문|메일)|점검\s*공지|회의\s*(?:안건|공유문)|보고서|"
+    r"작성해|초안|5줄\s*요약"
+)
+# 유사 이슈의 원인·해결을 비교해 달라는 요청은 유사 해결 리포트(reports/similar.py)가 맡는다.
+SIMILAR_RESOLUTION_REQUEST = re.compile(r"원인|해결|조치|비교")
+
+
 def work_operation(question: str, constraints: dict) -> str | None:
     """작업 종류만 선택한다. 이름/상태/날짜 값은 공통 조건 해석기를 사용한다."""
     if re.search(r"노션|notion|노선", question, re.I):
@@ -51,8 +61,10 @@ def work_operation(question: str, constraints: dict) -> str | None:
     if re.search(r"담당자.*(?:안\s*정|미정|미지정)", question):
         return "unassigned"
     if constraints.get("issue_ids"):
+        if ISSUE_DOCUMENT_REQUEST.search(question):
+            return None
         if re.search(r"비슷|유사|예전에도", question):
-            return "similar"
+            return None if SIMILAR_RESOLUTION_REQUEST.search(question) else "similar"
         if re.search(r"왜|원인|사유", question):
             return "cause"
         if re.search(r"누구|담당자", question):

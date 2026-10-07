@@ -38,6 +38,26 @@ class IssueRelevanceTests(unittest.TestCase):
         self.assertEqual(work_operation("0021371", {"issue_ids": [21371]}), "detail")
         self.assertIsNone(work_operation("21371 소요 공수 합계", {"issue_ids": [21371]}))
 
+    def test_document_requests_about_an_issue_are_written_not_looked_up(self):
+        # 템플릿 질문 속 '담당자'·'원인'은 문서 항목 이름이다. 담당자·원인 조회로 답하면
+        # 인수인계·사후 분석·고객 안내문이 만들어지지 않는다.
+        documents = (
+            "#31572 이슈를 다음 담당자에게 인수인계할 수 있도록 현재 상태, 확인한 내용, 시도한 조치, 막힌 점, 다음 행동과 주의사항을 정리해줘",
+            "#31399 이슈를 바탕으로 발생 영향, 타임라인, 직접 원인과 근본 원인, 대응 과정, 잘된 점, 개선점, 재발 방지 과제를 포함해 사후 분석서 형식으로 작성해줘",
+            "#31399 이슈를 바탕으로 내부 식별자와 불확실한 원인 추정을 제외하고, 현재 확인된 사실, 고객 영향, 진행 상황과 다음 안내 시점을 담아 정중한 말투의 점검 공지 형식으로 작성해줘",
+            "#31399 이슈를 바탕으로 발생 영향, 타임라인, 직접 원인과 근본 원인을 포함해 5줄 요약 형식으로 작성해줘",
+            # 원인·해결 비교는 유사 해결 리포트가 사례별 조치까지 정리한다.
+            "#31399와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+        )
+        for q in documents:
+            with self.subTest(q=q):
+                self.assertIsNone(work_operation(q, extract_query_constraints(q)))
+        # 짧은 조회 질문은 그대로 업무 조회가 답한다.
+        for q, operation in (("21371 왜 아직 남아 있어?", "cause"), ("21371 담당자가 누구야?", "owner"),
+                             ("21371과 비슷한 과거 이슈", "similar"), ("21371 이거 지금 어디까지 됐어?", "detail")):
+            with self.subTest(q=q):
+                self.assertEqual(work_operation(q, extract_query_constraints(q)), operation)
+
     def test_report_does_not_replace_relevance_order_with_recency(self):
         rows = [row(21371, "VWAP 거래량 누락 오류", "2020-10-22"),
                 row(2, "VWAP 거래량 누락 오류", "2019-01-01"),
