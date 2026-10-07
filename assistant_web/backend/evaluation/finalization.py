@@ -17,6 +17,7 @@ from backend.evaluation.comparison import (
     generate_candidate_model_answer,
     should_attach_ab_test,
 )
+from backend.evaluation.data_scope import build_answer_data_scope
 from backend.evaluation.delivery import BLOCKED_ANSWER, decide_delivery
 from backend.execution import checkpoint
 from backend.evaluation.verification import (
@@ -77,6 +78,7 @@ def finalize_chat_response(
         mode,
     )
     checkpoint()
+    verification["dataScope"] = build_answer_data_scope(retrieval_result)
     delivery = decide_delivery(verification)
     verification["delivery"] = "allowed" if delivery.allowed else "blocked"
     blocked_answer = None

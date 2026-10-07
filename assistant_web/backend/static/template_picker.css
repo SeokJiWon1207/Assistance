@@ -356,6 +356,13 @@ body.theme-dark .template-picker {
   font-size: 13px;
 }
 
+.template-picker .template-field .template-options-hint {
+  grid-column: 2;
+  margin: -6px 0 0;
+  color: var(--text-soft);
+  font-weight: 400;
+}
+
 .template-picker .template-field .required-mark {
   font-size: 12px;
 }
@@ -447,10 +454,10 @@ body.theme-dark .template-missing-hint.is-missing {
 .template-picker-form-actions .secondary-button,
 .template-picker-form-actions .run-evaluation-button {
   width: auto;
-  min-height: 38px;
+  min-height: var(--button-height);
   margin-top: 0;
   padding: 0 14px;
-  font-size: 14px;
+  font-size: var(--button-font-size);
 }
 
 .template-picker-form-actions button:disabled {
@@ -501,6 +508,11 @@ body.theme-dark .template-missing-hint.is-missing {
   .template-picker .template-field {
     grid-template-columns: 1fr;
     gap: 7px;
+  }
+
+  .template-picker .template-field .template-options-hint {
+    grid-column: 1;
+    margin-top: 0;
   }
 
   .template-picker-footer span:first-child {

@@ -73,6 +73,8 @@ class TeamTemplateConfigTests(unittest.TestCase):
             {"project": {"name": "120NH(NH증권)"}, "created_at": "2026-09-30T10:00:00+09:00"},
             {"project": {"name": "120NH(NH증권)"}, "created_at": "2026-07-06T10:00:00+09:00"},
             {"project": {"name": "120NH(NH증권)"}, "created_at": "2026-07-05T10:00:00+09:00"},
+            {"project": {"name": "120NH(NH증권)"}, "created_at": "2027-01-01"},
+            {"project": {"name": "120NH(NH증권)"}, "created_at": "잘못된 날짜"},
             {"project": {"name": "117Hantu_Project"}, "created_at": "2026-10-01"},
             {"project": {"name": "900DRFN(공용)"}, "created_at": "2026-10-01"},
             {"project": {}, "created_at": "2026-10-01"},
@@ -99,6 +101,15 @@ class TeamTemplateConfigTests(unittest.TestCase):
             original,
         )
         self.assertIs(order_customer_options(payload, {}), payload)
+
+    def test_customer_statistics_distinguish_zero_counts_from_unavailable_data(self):
+        payload = load_team_templates()
+        for available in (True, False):
+            result = order_customer_options(payload, {}, statistics={"available": available, "asOf": "2026-10-06T00:00:00Z"})
+            field = next(field for template in result["templates"] for field in template["fields"] if field["type"] == "customer")
+            self.assertEqual(field["optionDetails"].get("시그널메이커"), "0건" if available else None)
+            self.assertIn("최근 90일" if available else "집계 미확인", field["optionsHint"])
+            self.assertNotIn("optionsHint", next(field for template in payload["templates"] for field in template["fields"] if field["type"] == "customer"))
 
     def test_undefined_question_placeholder_is_rejected(self):
         payload = {

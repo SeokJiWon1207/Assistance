@@ -1,5 +1,8 @@
+import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { els, apiFetch } from "./runtime.js?v=20260911-6";
 import { formatNotionDetail } from "./notion.js?v=20260911-6";
+
+let detailRequestId = 0;
 
 function openChromaModal({ issueId, title, content, meta }) {
   els.chromaModalMeta.textContent = meta || `이슈 상세 · #${issueId}`;
@@ -7,8 +10,7 @@ function openChromaModal({ issueId, title, content, meta }) {
   els.chromaModalContent.replaceChildren(renderDetailContent(content || "내용이 없습니다.", title || ""));
   els.chromaModalContent.scrollTop = 0;
   els.chromaModal.hidden = false;
-  document.body.classList.add("modal-open");
-  els.chromaModalClose.focus();
+  openDialogFocus(els.chromaModal, { initialFocus: els.chromaModalClose, onClose: closeChromaModal, fallback: () => els.input });
 }
 
 function parseDetailSections(text) {
@@ -130,8 +132,9 @@ function renderDetailContent(text, headerTitle) {
 }
 
 function closeChromaModal() {
+  detailRequestId += 1;
   els.chromaModal.hidden = true;
-  document.body.classList.remove("modal-open");
+  closeDialogFocus(els.chromaModal);
 }
 
 function formatMantisDetail(source) {
@@ -184,6 +187,7 @@ function displayIssueStatus(status) {
 
 async function openSourceDetail(source) {
   if (!source) return;
+  const requestId = ++detailRequestId;
 
   if (source.type === "notion") {
     openChromaModal({
@@ -215,6 +219,7 @@ async function openSourceDetail(source) {
   try {
     const response = await apiFetch(`/api/chroma/documents/${encodeURIComponent(source.issue_id)}`);
     const data = await response.json().catch(() => ({}));
+    if (requestId !== detailRequestId || els.chromaModal.hidden) return;
     if (!response.ok) throw new Error(data.detail || "문서를 불러오지 못했습니다.");
     const titleMatch = data.content.match(/\[제목\]\s*([\s\S]*?)(\n\n|\[고객사 본문 요청 내용\])/);
     openChromaModal({
@@ -224,6 +229,7 @@ async function openSourceDetail(source) {
       meta: `과거 이슈 원문 · #${source.issue_id}`,
     });
   } catch (error) {
+    if (requestId !== detailRequestId || els.chromaModal.hidden) return;
     openChromaModal({
       issueId: source.issue_id,
       title: "문서 조회 오류",

@@ -482,39 +482,39 @@ button.admin-metric:hover { border-color: color-mix(in srgb, var(--blue) 35%, va
   justify-content: center;
   gap: 6px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   font: inherit;
-  font-weight: 600;
+  font-weight: var(--button-weight);
   white-space: nowrap;
 }
 
 .admin-primary {
-  height: 40px;
+  min-height: var(--button-height);
   padding: 0 16px;
   border: 0;
   background: var(--blue);
   color: var(--on-accent);
-  font-size: 15px;
-  line-height: 22.5px;
+  font-size: var(--button-font-size);
+  line-height: 1.5;
 }
 
 .admin-primary:hover:not(:disabled) { background: var(--blue-pressed); }
 .admin-primary svg { width: 16px; height: 16px; }
 
 .admin-secondary {
-  height: 36px;
+  min-height: var(--button-height-compact);
   padding: 0 12px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
-  font-size: 13px;
-  line-height: 19.5px;
+  font-size: var(--button-font-size-compact);
+  line-height: 1.5;
 }
 
 .admin-secondary:hover:not(:disabled) { background: var(--surface-alt); }
 .admin-secondary.is-accent { border-color: var(--blue); color: var(--blue); }
-.admin-drawer-foot .admin-secondary { height: 40px; font-size: 15px; }
+.admin-drawer-foot .admin-secondary { min-height: var(--button-height); font-size: var(--button-font-size); }
 
 .admin-icon-button {
   display: grid;
@@ -747,7 +747,7 @@ button.admin-metric:hover { border-color: color-mix(in srgb, var(--blue) 35%, va
   gap: 6px;
 }
 
-.admin-user-login .admin-secondary { height: 32px; }
+.admin-user-login .admin-secondary { min-height: var(--button-height-compact); }
 
 .admin-search {
   position: relative;

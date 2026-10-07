@@ -98,7 +98,7 @@ def recent_customer_issue_counts(
     by_project: Counter = Counter()
     for issue in issues:
         created = str(issue.get("created_at") or "")[:10]
-        if created < since:
+        if not since <= created <= today.isoformat():
             continue
         project = issue.get("project") or {}
         by_project[str(project.get("name") or "") if isinstance(project, Mapping) else str(project)] += 1
@@ -110,12 +110,14 @@ def recent_customer_issue_counts(
     return dict(counts)
 
 
-def order_customer_options(payload: Dict[str, Any], counts: Mapping[str, int]) -> Dict[str, Any]:
+def order_customer_options(
+    payload: Dict[str, Any], counts: Mapping[str, int], *, statistics: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """고객사 선택 목록을 최근 이슈가 많은 순으로 바꾼 사본을 돌려준다.
 
     이슈 수가 같으면(집계가 없을 때 포함) 설정 파일 순서를 유지한다. 캐시된 원본은 바꾸지 않는다.
     """
-    if not counts:
+    if not counts and statistics is None:
         return payload
     templates = []
     for template in payload["templates"]:
@@ -127,6 +129,14 @@ def order_customer_options(payload: Dict[str, Any], counts: Mapping[str, int]) -
                     **field,
                     "options": sorted(field["options"], key=lambda name: (-counts.get(name, 0), position[name])),
                 }
+                if statistics is not None:
+                    available = statistics.get("available") is True
+                    field["optionsHint"] = (
+                        f"최근 {RECENT_CUSTOMER_DAYS}일 등록 이슈 많은 순 · 0건 고객사도 포함"
+                        if available else "이슈 집계 미확인 · 기본 고객사 순"
+                    )
+                    field["optionDetails"] = {name: f"{counts.get(name, 0)}건" for name in field["options"]} if available else {}
+                    field["optionsAsOf"] = str(statistics.get("asOf") or "")
             fields.append(field)
         templates.append({**template, "fields": fields})
     return {**payload, "templates": templates}

@@ -1,3 +1,4 @@
+import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
@@ -54,15 +55,7 @@ function formatPeriodRange(from, to) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat("ko-KR", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatUiDateTime(value);
 }
 
 function riskLabel(level) {
@@ -75,7 +68,8 @@ function priorityLabel(value) {
 }
 
 function emptyBlock(message) {
-  return `<div class="workspace-empty"><span aria-hidden="true">${icon("check", 20)}</span><p>${escapeHtml(message)}</p></div>`;
+  const complete = dashboardState.data?.meta?.search_complete === true;
+  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(complete ? message : `확인한 범위 기준 · ${message}`)}</p></div>`;
 }
 
 function sectionHeader(title, meta = "") {
@@ -176,7 +170,7 @@ function renderCustomerHealth(items, summary) {
 }
 
 function renderSpikeRows(items, type) {
-  if (!items.length) return '<div class="workspace-empty"><p>급증 신호 없음</p></div>';
+  if (!items.length) return `<div class="workspace-empty"><p>${dashboardState.data?.meta?.search_complete === true ? "급증 신호 없음" : "확인한 범위의 급증 신호 없음"}</p></div>`;
   return items.map((item) => {
     const ratio = item.ratio == null ? "이전 0건" : `${item.ratio}배`;
     const selected = type === "customer" && dashboardState.customer === item.name;
@@ -310,7 +304,7 @@ function renderDashboard() {
   }
   if (dashboardState.error && !dashboardState.data) {
     hideFilterbar();
-    els.dashboardBody.innerHTML = `<div class="dashboard-state is-error"><strong>대시보드를 불러오지 못했습니다.</strong><p>${escapeHtml(dashboardState.error)}</p><button class="dashboard-ai-button is-secondary" type="button" data-dashboard-retry>다시 시도</button></div>`;
+    els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>대시보드를 불러오지 못했습니다.</strong><p>${escapeHtml(dashboardState.error)}</p><button class="dashboard-ai-button is-secondary" type="button" data-dashboard-retry>다시 조회</button></div>`;
     updateSourceMeta({ source: "error" });
     return;
   }
@@ -319,7 +313,7 @@ function renderDashboard() {
   updateSourceMeta(data.meta, { liveFailed: Boolean(dashboardState.error) });
   if (data.meta?.source === "error") {
     hideFilterbar();
-    els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>업무 데이터를 확인하지 못했습니다.</strong><p>${escapeHtml(data.meta.sourceReason || "잠시 후 다시 조회해 주세요.")}</p></div>`;
+    els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>업무 데이터를 확인하지 못했습니다.</strong><p>${escapeHtml(data.meta.sourceReason || "잠시 후 다시 조회해 주세요.")}</p><button class="dashboard-ai-button is-secondary" type="button" data-dashboard-retry>다시 조회</button></div>`;
     return;
   }
   const complete = data.meta.search_complete === true;
@@ -336,7 +330,7 @@ function renderDashboard() {
     ${dashboardState.error
         ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시합니다.</strong></div>`
         : ""}
-    ${!complete ? '<div class="dashboard-refresh-status is-error" role="status">전체 데이터를 확보하지 못했습니다. 아래 수치는 조회된 일부 이슈 기준이며 팀 전체 건수가 아닙니다.</div>' : ""}
+    ${!complete ? '<div class="dashboard-refresh-status is-warning" role="status"><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>' : ""}
     ${renderMetrics(data.summary, complete)}
     ${renderPriorities(priorities, filtered)}
     ${renderDecision(data.decisionSummary, data.meta.periodDays)}

@@ -23,6 +23,8 @@ async function loadPicker() {
     { context },
   );
   await module.link((specifier) => {
+    if (specifier.startsWith('./ui_format.js')) return new vm.SourceTextModule(
+      fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
     const values = dependencies[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);

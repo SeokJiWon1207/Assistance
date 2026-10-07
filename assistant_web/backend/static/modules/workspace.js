@@ -2,6 +2,7 @@ import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBa
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
+import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 
 function userScopedStorageKey(base) {
@@ -428,8 +429,12 @@ function workspaceMetric(label, value, tone = "", detail = "") {
   return `<article class="workspace-metric ${tone}"><strong>${escapeHtml(String(value ?? 0))}</strong><span>${escapeHtml(label)}</span>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</article>`;
 }
 
-function workspaceEmpty(message) {
-  return `<div class="workspace-empty"><span aria-hidden="true">${icon("check", 20)}</span><p>${escapeHtml(message)}</p></div>`;
+function workspaceEmpty(message, complete = true) {
+  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(message)}</p></div>`;
+}
+
+function workspaceFailure(message) {
+  return `<div class="workspace-error" role="alert"><span aria-hidden="true">${icon("warning", 24)}</span><strong>업무 정보를 불러오지 못했어요.</strong><p>${escapeHtml(message)}</p><button type="button" class="workspace-item-action" data-workspace-retry>다시 조회</button></div>`;
 }
 
 function workspaceStatusLabel(value) {
@@ -482,7 +487,7 @@ function issueWorkspaceRow(issue) {
 
 function renderPersonalOverview(data) {
   if (data.mantis?.status === "error") {
-    return workspaceEmpty(data.mantis.reason || "업무 데이터를 확인하지 못했습니다. 잠시 후 다시 조회해 주세요.");
+    return workspaceFailure(data.mantis.reason || "잠시 후 다시 조회해 주세요.");
   }
   const summary = data.summary || {};
   const issues = data.mantis?.issues || [];
@@ -507,7 +512,7 @@ function renderPersonalOverview(data) {
         <div><h4>내 담당 미종료 이슈</h4><p>장기 업무와 완료 예정일을 기준으로 먼저 확인할 항목을 정렬했습니다.</p></div>
         <em class="workspace-visible-count"><strong>${issues.length}</strong>${issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
       </header>
-      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.")}</div>
+      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? issues.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.", complete)}</div>
     </section>
   </div>`;
 }
@@ -888,7 +893,7 @@ function updateWorkspaceDataBadge(loading) {
   renderDataBadge(els.workspaceDataBadge, {
     state: badgeState,
     time: ["fresh", "partial", "snapshot"].includes(badgeState) ? time : "",
-    detailTime: mantis.fetchedAt ? `${new Date(mantis.fetchedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })} 조회` : "",
+    detailTime: mantis.fetchedAt ? `${formatUiDateTime(mantis.fetchedAt)} 조회` : "",
     sources: [details.source, { name: "담당자", tone: "muted", text: owner }],
     note: details.note,
     onRetry: details.retry ? () => loadMyWorkspace(true).catch(() => {}) : null,
@@ -921,7 +926,7 @@ function renderWorkspace() {
   }
   if (!state.myWorkspace) {
     els.workspaceContent.innerHTML = workspaceLoadingError
-      ? `<div class="workspace-error" role="alert"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(workspaceLoadingError)}</p></div>`
+      ? workspaceFailure(workspaceLoadingError)
       : '<div class="workspace-loading" role="status">업무 정보를 불러오는 중입니다.</div>';
     return;
   }

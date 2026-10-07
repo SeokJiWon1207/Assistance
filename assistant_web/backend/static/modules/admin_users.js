@@ -1,4 +1,5 @@
 // 관리자 센터 › 사용자: 목록·검색·필터, 오른쪽 패널에서 편집과 초대.
+import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { state, els, apiFetch } from "./runtime.js?v=20260911-6";
 import { escapeHtml } from "./chat.js?v=20260911-6";
 import { showToast } from "./workspace.js?v=20260911-6";
@@ -131,7 +132,11 @@ function openDrawer(title, subtitle, body, trigger) {
   els.adminDrawerForm.innerHTML = body;
   els.adminDrawer.hidden = false;
   els.adminDrawerBackdrop.hidden = false;
-  els.adminDrawerForm.querySelector("input:not([disabled]):not([type=radio])")?.focus();
+  openDialogFocus(els.adminDrawer, {
+    opener: drawerTrigger, onClose: closeDrawer,
+    initialFocus: els.adminDrawerForm.querySelector("input:not([disabled]):not([type=radio]):not([type=hidden])"),
+    fallback: () => els.adminContent.querySelector("[data-admin-invite]") || els.viewAdminBtn,
+  });
 }
 
 function closeDrawer() {
@@ -140,7 +145,7 @@ function closeDrawer() {
   els.adminDrawerBackdrop.hidden = true;
   els.adminDrawerForm.innerHTML = "";
   drawerOriginal = null;
-  if (drawerTrigger?.isConnected) drawerTrigger.focus();
+  closeDialogFocus(els.adminDrawer);
   drawerTrigger = null;
 }
 
@@ -344,22 +349,6 @@ function handleUsersClick(event) {
   }
 }
 
-function trapDrawerFocus(event) {
-  if (event.key !== "Tab" || els.adminDrawer.hidden) return;
-  const focusable = [...els.adminDrawer.querySelectorAll("button:not([disabled]), input:not([disabled]):not([type=hidden])")]
-    .filter((element) => element.offsetParent !== null || element === document.activeElement);
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable.at(-1);
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
 function initAdminUsers({ onChange } = {}) {
   if (!els.adminDrawer) return;
   notifyChange = onChange || notifyChange;
@@ -388,13 +377,6 @@ function initAdminUsers({ onChange } = {}) {
   });
   els.adminDrawerClose.addEventListener("click", closeDrawer);
   els.adminDrawerBackdrop.addEventListener("click", closeDrawer);
-  els.adminDrawer.addEventListener("keydown", trapDrawerFocus);
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !els.adminDrawer.hidden) {
-      event.stopPropagation();
-      closeDrawer();
-    }
-  }, true);
 }
 
 export {

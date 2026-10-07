@@ -103,11 +103,14 @@
     const confirmButton = document.querySelector("#logoutConfirmBtn");
     const cancelButton = document.querySelector("#logoutCancelBtn");
     const error = document.querySelector("#logoutConfirmError");
+    let focusManager;
+    const focusReady = import("./modules/dialog_focus.js?v=20260911-6").then((module) => { focusManager = module; });
     const close = () => {
       modal.hidden = true;
       document.body.classList.remove("modal-open");
       error.hidden = true;
       error.textContent = "";
+      focusManager?.closeDialogFocus(modal);
       logoutButton?.focus();
     };
     const open = () => {
@@ -116,6 +119,9 @@
       error.hidden = true;
       error.textContent = "";
       cancelButton?.focus();
+      focusReady.then(() => {
+        if (!modal.hidden) focusManager.openDialogFocus(modal, { opener: logoutButton, initialFocus: cancelButton, onClose: close });
+      });
     };
     logoutButton?.addEventListener("click", open);
     cancelButton?.addEventListener("click", close);

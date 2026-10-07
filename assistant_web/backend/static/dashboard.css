@@ -217,15 +217,15 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 34px;
+  min-height: var(--button-height-compact);
   padding: 0 11px;
   border: 0;
   border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--button-font-size-compact);
+  font-weight: var(--button-weight);
   white-space: nowrap;
 }
 .dashboard-ai-button:hover { background: var(--blue-pressed); }
@@ -386,6 +386,13 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
 }
 
 .dashboard-refresh-status .dashboard-spinner { width: 16px; height: 16px; border-width: 2px; }
+.dashboard-refresh-status.is-warning {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  border-color: color-mix(in srgb, var(--warning) 25%, var(--line));
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  color: var(--warning-strong);
+}
 .dashboard-refresh-status.is-error { border-color: color-mix(in srgb, var(--danger) 22%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--danger); }
 
 :is(.dashboard-ai-button, .dashboard-chip, button.workspace-metric):focus-visible {

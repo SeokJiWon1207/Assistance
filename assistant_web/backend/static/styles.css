@@ -27,6 +27,11 @@
   --purple: #7655d6;
   --shadow: 0 12px 32px rgba(25, 31, 40, 0.08);
   --control-radius: 9px;
+  --button-height: 40px;
+  --button-height-compact: 36px;
+  --button-font-size: 14px;
+  --button-font-size-compact: 13px;
+  --button-weight: 600;
   --focus-ring: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent);
   /* 강조색으로 채운 요소 위의 글자색 */
   --on-accent: #ffffff;
@@ -1178,6 +1183,7 @@ select.custom-select-native {
 }
 
 .custom-select-option svg {
+  flex-shrink: 0;
   width: 18px;
   height: 18px;
   opacity: 0;
@@ -1195,6 +1201,35 @@ select.custom-select-native {
 .custom-select-option:disabled {
   cursor: not-allowed;
   opacity: 0.38;
+}
+
+.custom-select-option-meta {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.template-options-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+.template-options-hint span {
+  display: block;
+  font-size: 12px;
+}
+
+.custom-select-hint {
+  margin: 0;
+  padding: 4px 10px 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .template-field .custom-select-trigger {
@@ -1381,7 +1416,9 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 
 .secondary-button {
   margin-top: auto;
-  font-weight: 700;
+  min-height: var(--button-height);
+  font-size: var(--button-font-size);
+  font-weight: var(--button-weight);
   cursor: pointer;
 }
 
@@ -1716,6 +1753,32 @@ body.theme-dark .chat-header {
   margin-bottom: 10px;
 }
 
+.answer-data-scope {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.answer-data-scope-row.is-warning {
+  color: var(--warning-strong);
+}
+
+.answer-data-scope.is-warning {
+  border-left-color: var(--warning-strong);
+}
+
+.answer-data-scope-row small {
+  display: block;
+  font-size: inherit;
+}
+
 .search-condition-label {
   flex: 0 0 auto;
   padding-top: 6px;
@@ -1746,6 +1809,14 @@ body.theme-dark .chat-header {
   font-size: 12px;
 }
 
+.search-condition-chip.is-readonly {
+  border-color: var(--line);
+  background: var(--surface-alt);
+  cursor: default;
+}
+
+.search-condition-chip.is-readonly strong { color: var(--text-soft); }
+
 .search-condition-chip span {
   color: var(--muted);
 }
@@ -1768,11 +1839,11 @@ body.theme-dark .chat-header {
   font-style: normal;
 }
 
-.search-condition-chip:hover {
+.search-condition-chip:not(.is-readonly):hover {
   border-color: var(--blue);
 }
 
-.search-condition-chip:hover i {
+.search-condition-chip:not(.is-readonly):hover i {
   background: rgba(49, 130, 246, 0.12);
   color: var(--blue);
 }
@@ -4057,15 +4128,15 @@ textarea:focus {
 }
 
 .run-evaluation-button {
-  min-height: 40px;
+  min-height: var(--button-height);
   padding: 0 14px;
   border: 0;
   border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--button-font-size);
+  font-weight: var(--button-weight);
 }
 
 .run-evaluation-button:disabled {
@@ -4130,4 +4201,3 @@ textarea:focus {
   font-size: 13px;
   color: var(--text-soft);
 }
-

@@ -14,11 +14,11 @@
   align-items: center;
   gap: 6px;
   width: auto;
-  min-height: 36px;
+  min-height: var(--button-height-compact);
   padding: 0 13px;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--button-font-size-compact);
+  font-weight: var(--button-weight);
 }
 
 .workspace-tabs {
@@ -103,6 +103,9 @@
   color: var(--muted);
   text-align: center;
 }
+
+.workspace-error > span { color: var(--danger); }
+.workspace-empty.is-warning > span { color: var(--warning-strong); }
 
 .workspace-error strong {
   color: var(--danger);
@@ -224,7 +227,7 @@
 
 .workspace-connection.is-warning {
   background: color-mix(in srgb, var(--warning) 13%, transparent);
-  color: var(--warning);
+  color: var(--warning-strong);
 }
 
 .workspace-connection.is-warning .workspace-connection-dot {
@@ -455,15 +458,15 @@
 
 .workspace-item-action,
 .workspace-notification button {
-  min-height: 30px;
+  min-height: var(--button-height-compact);
   padding: 0 9px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--button-font-size-compact);
+  font-weight: var(--button-weight);
   white-space: nowrap;
 }
 
@@ -582,13 +585,14 @@
 .workspace-decision-actions em { color: var(--blue); font-size: 12px; font-style: normal; font-weight: 700; }
 
 .workspace-primary-action {
-  min-height: 46px;
+  min-height: var(--button-height);
   border: 0;
   border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
-  font-weight: 700;
+  font-size: var(--button-font-size);
+  font-weight: var(--button-weight);
 }
 
 .workspace-primary-action:hover {

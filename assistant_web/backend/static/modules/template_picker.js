@@ -1,3 +1,4 @@
+import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, describeTeamTemplateQuestion, scopedStorageKey } from "./runtime.js?v=20260911-6";
 import { escapeHtml } from "./chat_rendering.js?v=20260911-6";
 
@@ -329,9 +330,9 @@ function renderTemplateFields(template) {
       const emptyOption = field.type === "customer"
         ? `<option value="" ${field.required ? "disabled" : ""} ${currentValue ? "" : "selected"}>${escapeHtml(emptyLabel)}</option>`
         : "";
-      control = `<select id="${inputId}" name="${escapeHtml(field.name)}" ${field.type === "customer" ? 'data-searchable="true"' : ""} ${required}>
+      control = `<select id="${inputId}" name="${escapeHtml(field.name)}" data-options-hint="${escapeHtml(field.optionsHint || "")}" ${field.type === "customer" ? 'data-searchable="true"' : ""} ${required}>
           ${emptyOption}
-          ${field.options.map((option) => `<option value="${escapeHtml(option)}" data-search-terms="${escapeHtml(field.optionSearchTerms?.[option] || option)}" ${option === currentValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+          ${field.options.map((option) => `<option value="${escapeHtml(option)}" data-detail="${escapeHtml(field.optionDetails?.[option] || "")}" data-search-terms="${escapeHtml(field.optionSearchTerms?.[option] || option)}" ${option === currentValue ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}
         </select>`;
     } else {
       control = `<input id="${inputId}" name="${escapeHtml(field.name)}" type="${field.type}" value="${escapeHtml(field.value || dynamicValue)}" placeholder="${escapeHtml(field.placeholder || "")}" ${field.min ? `min="${field.min}"` : ""} ${field.max ? `max="${field.max}"` : ""} ${required} />`;
@@ -340,6 +341,7 @@ function renderTemplateFields(template) {
       <label class="template-field" for="${inputId}">
         <span>${escapeHtml(field.label)} ${requiredLabel}</span>
         ${control}
+        ${field.optionsHint ? `<small class="template-options-hint">${escapeHtml(field.optionsHint)}${field.optionsAsOf ? `<span>집계 저장본: ${escapeHtml(formatUiDateTime(field.optionsAsOf))}</span>` : ""}</small>` : ""}
       </label>
     `;
   }).join("");

@@ -1,5 +1,6 @@
 // 화면 머리의 '데이터 기준' 배지. 대화·내 업무·대시보드·관리자 센터가 같은 상태 이름과
 // 같은 모양을 쓰도록 배지와 펼침 창을 여기서만 그린다.
+import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 
 const STATE_META = {
@@ -30,10 +31,7 @@ function escapeHtml(value) {
 // 오늘이면 "오후 2:02", 아니면 "9/29 오후 2:02"
 function formatBadgeTime(value) {
   const date = new Date(value);
-  if (!value || Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  const time = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
-  return date.toDateString() === now.toDateString() ? time : `${date.getMonth() + 1}/${date.getDate()} ${time}`;
+  return !value || Number.isNaN(date.getTime()) ? "" : formatUiDateTime(value, { compact: true });
 }
 
 // "2026-10-01" → "10월 1일"

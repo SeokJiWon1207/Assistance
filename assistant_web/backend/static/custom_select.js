@@ -140,6 +140,13 @@
       const itemLabel = document.createElement("span");
       itemLabel.textContent = option.textContent;
       item.appendChild(itemLabel);
+      if (option.dataset.detail) {
+        const detail = document.createElement("span");
+        detail.className = "custom-select-option-meta";
+        detail.textContent = option.dataset.detail;
+        item.appendChild(detail);
+        item.setAttribute("aria-label", `${option.textContent}, ${option.dataset.detail}`);
+      }
       item.insertAdjacentHTML("beforeend", '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 10 3 3 7-7" /></svg>');
       item.addEventListener("pointerdown", (event) => event.stopPropagation());
       item.addEventListener("click", (event) => {
@@ -220,6 +227,12 @@
       searchInput.setAttribute("aria-label", `${selectLabel(select)} 검색`);
       search.appendChild(searchInput);
       menu.appendChild(search);
+    }
+    if (select.dataset.optionsHint) {
+      const hint = document.createElement("p");
+      hint.className = "custom-select-hint";
+      hint.textContent = select.dataset.optionsHint;
+      menu.appendChild(hint);
     }
     emptyMessage = document.createElement("p");
     emptyMessage.className = "custom-select-empty";

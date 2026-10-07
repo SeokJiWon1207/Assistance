@@ -1,3 +1,4 @@
+import { answerSearchPresentation } from "./search_conditions.js?v=20260911-6";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
@@ -56,6 +57,7 @@ import {
   truncateChartLabel,
 } from "./charts.js?v=20260911-6";
 import { renderEffortTrendChart } from "./trend_chart.js?v=20260911-6";
+import { renderAnswerScope } from "./answer_scope.js?v=20261006-1";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -113,7 +115,7 @@ function applyTheme(theme) {
   document.body.classList.toggle("theme-dark", dark);
   els.darkModeToggle.setAttribute("aria-pressed", String(dark));
   els.darkModeToggle.setAttribute("aria-label", dark ? "라이트 모드로 변경" : "다크 모드로 변경");
-  els.themeModeLabel.textContent = dark ? "Dark" : "Light";
+  els.themeModeLabel.textContent = dark ? "켜짐" : "꺼짐";
 }
 
 function loadTheme() {
@@ -135,7 +137,7 @@ function saveTheme(dark) {
 function setShowSources(enabled) {
   els.showSources.setAttribute("aria-pressed", String(enabled));
   els.showSources.setAttribute("aria-label", enabled ? "관련 이슈 숨기기" : "관련 이슈 표시하기");
-  els.sourceDisplayLabel.textContent = enabled ? "On" : "Off";
+  els.sourceDisplayLabel.textContent = enabled ? "켜짐" : "꺼짐";
 }
 
 function showSourcesEnabled() {
@@ -145,7 +147,7 @@ function showSourcesEnabled() {
 function setAbComparison(enabled) {
   els.abTestToggle.setAttribute("aria-pressed", String(enabled));
   els.abTestToggle.setAttribute("aria-label", enabled ? "A/B 비교 끄기" : "A/B 비교 켜기");
-  els.abTestLabel.textContent = enabled ? "On · A와 B 비교" : "Off · A 답변만";
+  els.abTestLabel.textContent = enabled ? "켜짐 · 답변 비교" : "꺼짐 · 현재 답변만";
 }
 
 function abComparisonEnabled() {
@@ -239,12 +241,13 @@ function renderMessages() {
     const avatar = document.createElement("div");
     avatar.className = "avatar";
     if (message.role === "user") {
-      avatar.textContent = "YOU";
+      avatar.textContent = "나";
     } else {
       avatar.classList.add("assistant-avatar");
       avatar.innerHTML = `<img src="/static/assets/company-logo.png" alt="회사 로고" />`;
     }
 
+    const presentation = message.role === "assistant" ? answerSearchPresentation(message) : null;
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     if (message.loading && !message.content) {
@@ -260,7 +263,7 @@ function renderMessages() {
         bubble.appendChild(renderIssueListSkeleton());
       }
     } else if (message.role === "assistant") {
-      const assistantContent = renderAssistantContent(message.content, message.sources || [], messageIndex);
+      const assistantContent = renderAssistantContent(presentation.content, message.sources || [], messageIndex);
       bubble.appendChild(assistantContent);
       if (assistantContent.querySelector(".issue-table-wrap")) {
         row.classList.add("has-issue-table");
@@ -283,8 +286,10 @@ function renderMessages() {
       const content = document.createElement("div");
       content.className = "message-content";
       if (row.classList.contains("has-issue-table")) content.classList.add("wide-message-content");
-      const conditionBar = renderSearchConditionChips(message, messageIndex);
+      const conditionBar = renderSearchConditionChips(presentation.conditions, messageIndex);
       if (conditionBar) content.appendChild(conditionBar);
+      const dataScope = renderAnswerScope(message.verification?.dataScope);
+      if (dataScope) content.appendChild(dataScope);
       if (message.abTest?.enabled && abComparisonEnabled()) {
         content.appendChild(renderAbComparison(message, bubble, messageIndex));
       } else {
@@ -365,8 +370,7 @@ function conditionId(condition = {}) {
   }[condition.label] || "date";
 }
 
-function renderSearchConditionChips(message, messageIndex) {
-  const conditions = message.verification?.constraints || [];
+function renderSearchConditionChips(conditions, messageIndex) {
   if (!conditions.length) return null;
   const section = document.createElement("section");
   section.className = "search-condition-bar";
@@ -376,14 +380,18 @@ function renderSearchConditionChips(message, messageIndex) {
   const list = document.createElement("div");
   list.className = "search-condition-list";
   conditions.forEach((condition) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "search-condition-chip";
-    button.dataset.removeCondition = encodeURIComponent(JSON.stringify(condition));
-    button.dataset.messageIndex = String(messageIndex);
-    button.setAttribute("aria-label", `${condition.label} ${condition.value} 조건을 제거하고 다시 검색`);
-    button.title = "이 조건을 제외하고 다시 검색";
-    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong><i aria-hidden="true">${icon("close", 14)}</i>`;
+    const editable = Boolean(condition.removeCondition);
+    const button = document.createElement(editable ? "button" : "span");
+    button.className = `search-condition-chip${editable ? "" : " is-readonly"}`;
+    button.title = `${condition.label}: ${condition.value}`;
+    if (editable) {
+      button.type = "button";
+      button.dataset.removeCondition = encodeURIComponent(JSON.stringify(condition.removeCondition));
+      button.dataset.messageIndex = String(messageIndex);
+      button.setAttribute("aria-label", `${condition.label} ${condition.value} 조건을 제거하고 다시 검색`);
+      button.title += " · 이 조건을 제외하고 다시 검색";
+    }
+    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong>${editable ? `<i aria-hidden="true">${icon("close", 14)}</i>` : ""}`;
     list.appendChild(button);
   });
   section.append(label, list);

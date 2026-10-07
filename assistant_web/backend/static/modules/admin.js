@@ -1,5 +1,6 @@
 // 관리자 센터: 품질 현황 · 검증 실행 · 답변 피드백 · 감사 로그 화면과 검증 실행 흐름.
 // 사용자 관리는 admin_users.js 가 맡고, 이 모듈은 섹션 전환과 품질 데이터만 다룬다.
+import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, ADMIN_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { escapeHtml } from "./chat.js?v=20260911-6";
 import { TEAM_TEMPLATES } from "./template_picker.js?v=20260911-6";
@@ -71,15 +72,9 @@ function formatEvalDuration(ms) {
   return `${(ms / 1000).toFixed(1)}초`;
 }
 
-// 2026-09-30T15:12:04 → 오늘 15:12 / 9/29 15:12
+// 검증 시각도 다른 화면과 같은 로컬 시간대·분 단위로 표시한다.
 function formatRunTime(value) {
-  const text = String(value || "");
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (!match) return text;
-  const [, year, month, day, hour, minute] = match;
-  const now = new Date();
-  const sameDay = Number(year) === now.getFullYear() && Number(month) === now.getMonth() + 1 && Number(day) === now.getDate();
-  return `${sameDay ? "오늘" : `${Number(month)}/${Number(day)}`} ${hour}:${minute}`;
+  return formatUiDateTime(value, { compact: true });
 }
 
 function accuracyValueLabel(value) {

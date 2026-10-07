@@ -328,6 +328,18 @@ els.workspaceTabs?.addEventListener("keydown", (event) => {
   tabs[next].focus();
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
+  const retry = event.target.closest("[data-workspace-retry]");
+  if (retry) {
+    retry.disabled = true;
+    try {
+      await loadMyWorkspace(true);
+    } catch (error) {
+      showToast(error.message || "업무 정보를 다시 조회하지 못했어요.", "error");
+    } finally {
+      retry.disabled = false;
+    }
+    return;
+  }
   const newPlaybookButton = event.target.closest("[data-new-playbook]");
   if (newPlaybookButton) {
     state.playbookEditor = { title: "", symptom: "", cause: "", resolution: "", verification: "", tags: [], sourceIssueIds: [] };

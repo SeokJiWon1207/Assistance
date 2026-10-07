@@ -54,6 +54,8 @@ async function harness(apiFetch) {
   const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace.js'), 'utf8');
   const module = new vm.SourceTextModule(source, { context });
   await module.link((specifier) => {
+    if (specifier.startsWith('./ui_format.js')) return new vm.SourceTextModule(
+      fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
     const exports = modules[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
@@ -283,6 +285,9 @@ test('personal source error hides unsupported zero counts', async () => {
     mantis:{status:'error',reason:'저장 데이터 만료 및 실시간 조회 실패',issues:[]}})}));
   await h.api.loadMyWorkspace();
   assert.match(h.els.workspaceContent.innerHTML,/저장 데이터 만료/);
+  assert.match(h.els.workspaceContent.innerHTML,/workspace-error.*role="alert"/);
+  assert.match(h.els.workspaceContent.innerHTML,/data-workspace-retry/);
+  assert.doesNotMatch(h.els.workspaceContent.innerHTML,/workspace-empty/);
   assert.doesNotMatch(h.els.workspaceContent.innerHTML,/workspace-summary-grid/);
 });
 

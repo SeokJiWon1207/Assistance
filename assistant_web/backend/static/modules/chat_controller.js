@@ -120,7 +120,12 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
         state.chatCanAbort = true;
         setBusy(true);
       }
-      if (streamEvent.type === "status") {
+      if (streamEvent.type === "reset") {
+        assistant.content = "";
+        assistant.loading = true;
+        assistant.streaming = false;
+        assistant.progress = "응답 연결을 다시 확인하고 있습니다";
+      } else if (streamEvent.type === "status") {
         assistant.progress = streamEvent.message;
         assistant.stage = streamEvent.stage;
       } else if (streamEvent.type === "delta") {

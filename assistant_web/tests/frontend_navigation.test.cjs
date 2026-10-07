@@ -65,6 +65,8 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   };
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard.js'), 'utf8'), { context });
   await module.link((specifier) => {
+    if (specifier.startsWith('./ui_format.js')) return new vm.SourceTextModule(
+      fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
     const values = dependencies[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(values), function () {
       for (const [key, value] of Object.entries(values)) this.setExport(key, value);
@@ -122,7 +124,10 @@ test('new issue change is separated from open count and partial totals are expli
   const h = await harness('member', undefined, async () => ({ok: true, payload}));
   await h.api.loadDashboard();
   const html = h.els.dashboardBody.innerHTML;
-  assert.match(html, /일부 이슈 기준이며 팀 전체 건수가 아닙니다/);
+  assert.match(html, /dashboard-refresh-status is-warning/);
+  assert.match(html, /실제보다 적을 수 있어요/);
+  assert.match(html, /workspace-empty is-warning/);
+  assert.match(html, /확인한 범위 기준/);
   assert.match(html, /확인된 미종료/);
   assert.match(html, /신규 증가 12.8%/);
   assert.ok(html.indexOf('dashboard-new-change') > html.indexOf('data-dashboard-metric="highRisk"'));

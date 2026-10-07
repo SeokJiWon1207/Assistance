@@ -10,9 +10,13 @@ async function loadBadge() {
     fs.readFileSync(path.join(__dirname, '../backend/static/modules/data_badge.js'), 'utf8'),
     { context },
   );
-  await module.link(() => new vm.SyntheticModule(['icon'], function () {
-    this.setExport('icon', (name) => `<svg data-icon="${name}"></svg>`);
-  }, { context }));
+  await module.link((specifier) => {
+    if (specifier.startsWith('./ui_format.js')) return new vm.SourceTextModule(
+      fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
+    return new vm.SyntheticModule(['icon'], function () {
+      this.setExport('icon', (name) => `<svg data-icon="${name}"></svg>`);
+    }, { context });
+  });
   await module.evaluate();
   return module.namespace;
 }

@@ -1,3 +1,4 @@
+import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { state, els, apiFetch } from "./runtime.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { refreshFeedbackSummary } from "./admin.js?v=20260911-6";
@@ -69,15 +70,17 @@ function openFeedbackModal(messageIndex) {
     if (selectedReason) selectedReason.checked = true;
   }
   els.feedbackModal.hidden = false;
-  document.body.classList.add("modal-open");
-  els.feedbackForm.querySelector('[name="feedbackReason"]')?.focus();
+  openDialogFocus(els.feedbackModal, {
+    initialFocus: els.feedbackForm.querySelector('[name="feedbackReason"]'), onClose: closeFeedbackModal,
+    fallback: () => els.messages.querySelector(`[data-feedback-rating="needs_improvement"][data-message-index="${messageIndex}"]`) || els.input,
+  });
 }
 
 function closeFeedbackModal() {
   if (!els.feedbackModal) return;
   els.feedbackModal.hidden = true;
   state.feedbackMessageIndex = null;
-  document.body.classList.remove("modal-open");
+  closeDialogFocus(els.feedbackModal);
 }
 
 async function saveMessageFeedback(messageIndex, rating, reason = "", comment = "") {
