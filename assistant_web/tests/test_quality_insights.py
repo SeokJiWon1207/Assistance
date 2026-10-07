@@ -70,7 +70,7 @@ class DataFreshnessNoteTests(unittest.TestCase):
                 }
             ]
         }
-        self.assertIn("2026-05-07", retrieval.build_snapshot_note(result))
+        self.assertIn("5월 7일에 수집한 로컬 스냅샷", retrieval.build_snapshot_note(result))
 
 
 class AccuracyDataParsingTests(unittest.TestCase):

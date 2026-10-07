@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.display import korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
@@ -187,7 +188,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     comparison = f"{delta:+d}건 ({rate:+.1f}%)" if rate is not None else f"{delta:+d}건 (전월 0건)"
     lines = [
         f"{start.year}년 {start.month}월 {customer} 월간 고객사 리포트",
-        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
+        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
         "",
         "요약",
         f"- 등록 이슈: **{len(current)}건** · 전월{' 동기' if effective_end < end else ''} {len(previous)}건 대비 **{comparison}**",
@@ -217,7 +218,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     lines.extend(["", "주요 이슈"])
     if ranked:
         lines.extend(
-            f"- #{issue['id']} {issue['summary']} — {issue['status']} · 공수 {issue['effort_total']:.2f}"
+            f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · 공수 {issue['effort_total']:.2f}"
             for issue in ranked[:MONTHLY_CUSTOMER_TOP_N]
         )
     else:

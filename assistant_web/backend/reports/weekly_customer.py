@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.display import korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
@@ -181,8 +182,8 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
     comparison = f"{delta:+d}건 ({rate:+.1f}%)" if rate is not None else f"{delta:+d}건 (직전 기간 0건)"
 
     lines = [
-        f"{start.isoformat()}~{effective_end.isoformat()} {customer} 주간 보고서",
-        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
+        f"{korean_day_range(start.isoformat(), effective_end.isoformat())} {customer} 주간 보고서",
+        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
         "",
         "요약",
         f"- 신규 등록: **{len(current)}건** · 직전 {span}일 {len(previous)}건 대비 **{comparison}**",
@@ -199,7 +200,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
         lines.insert(lines.index("신규 이슈"), f"- 상태 미확인: **{unknown_count}건** (미종료·해결·종료 집계에서 제외)")
     if current_with_effort:
         lines.extend(
-            f"- #{issue['id']} {issue['summary']} — {issue['status']} · {issue['handler']}"
+            f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · {issue['handler']}"
             for issue in sorted(current_with_effort, key=lambda row: int(row.get("id") or 0), reverse=True)[:WEEKLY_REPORT_TOP_N]
         )
     else:
@@ -208,7 +209,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
     lines.extend(["", "미종료 이슈"])
     if open_rows:
         lines.extend(
-            f"- #{issue['id']} {issue['summary']} — {issue['status']} · {issue['handler']}"
+            f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · {issue['handler']}"
             for issue in sorted(open_rows, key=lambda row: int(row.get("id") or 0), reverse=True)[:WEEKLY_REPORT_TOP_N]
         )
     else:

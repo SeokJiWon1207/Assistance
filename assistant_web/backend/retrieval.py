@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.display import korean_day, korean_time
 from backend.common import (
     compact_text,
     display_mantis_status_label,
@@ -742,7 +743,7 @@ def build_snapshot_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
                               or stage.get("source") == "mantis_snapshot")), None)
     if stored_stage:
         fetched_at = str(stored_stage["meta"]["fetchedAt"])
-        return f"데이터 기준: Mantis 저장 원본 {fetched_at} 조회분입니다. 이후 변경은 다음 동기화에 반영됩니다."
+        return f"데이터 기준: {korean_time(fetched_at)}에 저장한 Mantis 원본입니다. 이후 변경은 다음 동기화에 반영됩니다."
     snapshot_stage = next(
         (
             stage
@@ -768,7 +769,7 @@ def build_snapshot_note(retrieval_result: Dict[str, Any]) -> Optional[str]:
     # 멈춘 것처럼 오해되므로 스냅샷 경고를 표시하지 않는다.
     if live_succeeded:
         return None
-    return f"데이터 기준: 로컬 스냅샷 {as_of} 수집분입니다. 이후 등록된 이슈는 포함되지 않았을 수 있어요."
+    return f"데이터 기준: {korean_day(as_of)}에 수집한 로컬 스냅샷입니다. 이후 등록된 이슈는 포함되지 않았을 수 있어요."
 
 
 def similar_base_issue_ids_from_retrieval(retrieval_result: Dict[str, Any]) -> List[int]:

@@ -14,6 +14,7 @@ latest_issue(notes/history 포함)를 채워주므로, 여기서는 추가 조�
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.display import customer_name, status_name
 from backend.common import compact_text, normalize_for_match
 from backend.sources.chroma import execute_chroma_search
 from backend.template_questions import attach_korean_particles
@@ -66,7 +67,7 @@ def _wants_resolution(text: str) -> bool:
 
 def _summarize_resolution(detail: Dict[str, Any]) -> str:
     """정규화된 이슈에서 '그때 어떻게 처리했는지' 한두 줄 요약을 만든다."""
-    status = str(detail.get("status") or "상태 미상")
+    status = status_name(detail.get("status"))
 
     # 상태 변경 이력 중 마지막으로 상태가 바뀐 사건을 조치 시점으로 본다.
     resolved_event = None
@@ -346,7 +347,7 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
         example_rows.append(detail)
         lines.extend([
             f"{index}. **#{detail.get('id')} {detail.get('summary', '제목 없음')}** "
-            f"({detail.get('project', '미상')})",
+            f"({customer_name(detail.get('project'))})",
             f"   - 그때 처리: {_summarize_resolution(detail)}",
         ])
 

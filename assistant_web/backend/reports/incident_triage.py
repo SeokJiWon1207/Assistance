@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.display import customer_name, status_name
 from backend.common import compact_text, extract_quoted_value
 from backend.intent.constants import TRIAGE_REQUEST_PATTERN
 from backend.sources.chroma import execute_chroma_search
@@ -91,7 +92,7 @@ def build_incident_triage_report(text: str, *, search_similar: bool = True) -> O
         for issue in examples:
             lines.append(
                 f"- #{issue.get('id')} {compact_text(str(issue.get('summary') or ''), 100)} "
-                f"({issue.get('project') or '고객사 미상'} · {issue.get('status') or '상태 미상'})"
+                f"({customer_name(issue.get('project'))} · {status_name(issue.get('status'))})"
             )
     elif result.get("status") != "ok":
         lines.append(f"- {result.get('reason') or '유사 사례 검색을 완료하지 못했습니다.'}")

@@ -17,7 +17,7 @@ from backend.sources.mantis_store import read_complete_store
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 from backend.common import display_mantis_status_label
 from backend.intent.search_terms import wants_all_results
-from backend.team_templates import customer_display_for_project
+from backend.display import customer_name as _customer, korean_day as _day, korean_day_range as _day_range
 from backend.reports.issue_relevance import (
     IOS, CRASH, crash_issue, incident_kind, recurrence_candidates,
     rank_similar, narrowing_question,
@@ -111,27 +111,6 @@ def _due(row: dict) -> str:
     fields = row.get("date_fields") or {}
     return next((str(fields[k])[:10] for k in ("고객사전달 목표일", "개발완료 목표일", "QC 완료 목표일", "완료예정일", "수정예정일", "처리예정일", "마감일", "배포예정일")
                  if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(fields.get(k) or "")[:10])), "")
-
-
-def _customer(project: str) -> str:
-    """Mantis 프로젝트 이름(112KBStar(KB증권))을 화면에서 쓰는 고객사 이름(KB증권)으로 보여 준다."""
-    return customer_display_for_project(str(project or "")) or str(project or "미상")
-
-
-def _day(value: str, today: date) -> str:
-    """'2026-10-07' → '10월 7일'. 올해가 아니면 연도를 붙인다."""
-    try:
-        parsed = date.fromisoformat(str(value)[:10])
-    except ValueError:
-        return str(value)
-    return f"{parsed.month}월 {parsed.day}일" if parsed.year == today.year else f"{parsed.year}년 {parsed.month}월 {parsed.day}일"
-
-
-def _day_range(start: str, end: str, today: date) -> str:
-    first, last = _day(start, today), _day(end, today)
-    if first[:first.find("월") + 1] == last[:last.find("월") + 1] and "년" not in first + last:
-        return f"{first}~{last.split(' ', 1)[1]}"
-    return f"{first}~{last}"
 
 
 def _line(row: dict) -> str:

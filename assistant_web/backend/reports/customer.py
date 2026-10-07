@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from backend.display import korean_day, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.sources.mantis import (
@@ -81,7 +82,7 @@ def _scope_label(constraints: Dict[str, Any]) -> str:
     date_from = created_at.get("from")
     date_to = created_at.get("to")
     if date_from and date_to:
-        return f"{date_from}~{date_to}"
+        return korean_day_range(date_from, date_to)
     return "조회된 최근 이슈"
 
 
@@ -227,7 +228,7 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
     recent = sorted(issues, key=lambda issue: (str(issue.get("created_at") or ""), int(issue.get("id") or 0)), reverse=True)
     lines.extend(["", "최근 주요 이슈"])
     lines.extend(
-        f"- #{issue['id']} {issue['summary']} — {issue['status']} · {issue['handler']} · {issue['created_at']}"
+        f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · {issue['handler']} · {korean_day(issue['created_at'])}"
         for issue in recent[:CUSTOMER_PROFILE_TOP_N]
     )
     lines.extend(["", "권장 확인 항목"])

@@ -11,6 +11,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from backend.display import customer_name
 from backend.common import compact_text, normalize_for_match
 from backend.config import STATUS_ALIASES, STATUS_MATCH_ALIASES
 from backend.intent.entities import extract_issue_ids
@@ -357,7 +358,8 @@ def build_issue_subject_phrase(
     """결정형 답변 도입부에 쓸 자연스러운 주어 구를 만든다. (예: '신한투자증권 HTS')"""
     parts: List[str] = []
     if constraints.get("customer_key"):
-        parts.append((issues[0].get("project") if issues else "") or constraints["customer_key"])
+        project = issues[0].get("project") if issues else ""
+        parts.append(customer_name(project) if project else constraints["customer_key"])
     if constraints.get("platform_key"):
         parts.append(constraints["platform_key"].upper())
     names = constraints.get("people", {}).get("names")
@@ -609,7 +611,7 @@ def format_deterministic_issue_answer(
                 [
                     f"**#{issue['id']} {issue['summary']}**",
                     "",
-                    f"- 프로젝트: {issue['project']}",
+                    f"- 프로젝트: {customer_name(issue['project'])}",
                     f"- 상태: {display_status_label(issue['status'])}",
                     f"- 담당자: {issue['handler']}",
                     f"- 등록일: {issue['created_at'] or '미상'}",
@@ -638,7 +640,7 @@ def format_deterministic_issue_answer(
         lines.extend(["고객사별 건수" if customer_counts_complete else "고객사를 확인한 항목의 건수", "",
                       "| 고객사 | 이슈 수 |", "|---|---:|"])
         for label, count in sorted(customer_group_counts.items(), key=lambda item: (-item[1], item[0])):
-            lines.append(f"| {label.replace('|', r'\|')} | {count}건 |")
+            lines.append(f"| {customer_name(label).replace('|', r'\|')} | {count}건 |")
         lines.extend(["", "고객사별 대표 이슈", ""])
     if wants_table_output(query_text):
         # 표를 요청했는데 결정형 답변이 늘 목록만 내보내던 문제. 모델을 거치지
@@ -652,7 +654,7 @@ def format_deterministic_issue_answer(
         for issue in issues:
             title = str(issue["summary"]).replace("|", "\\|")
             lines.append(
-                f"| {issue['id']} | {issue['project']} | {title} | "
+                f"| {issue['id']} | {customer_name(issue['project'])} | {title} | "
                 f"{display_status_label(issue['status'])} | {issue['handler']} | "
                 f"{issue['created_at'] or '미상'} |"
             )
@@ -672,10 +674,11 @@ def format_deterministic_issue_answer(
                 label = _issue_group_value(issue, group_by)
                 if label != current_group:
                     current_group = label
-                    lines.extend(["", f"**{label} · {group_counts[label]}건**", ""])
+                    heading = customer_name(label) if group_by == "customer" else label
+                    lines.extend(["", f"**{heading} · {group_counts[label]}건**", ""])
             lines.append(
                 f"{index}. **ID**: {issue['id']} | "
-                f"**프로젝트**: {issue['project']} | "
+                f"**프로젝트**: {customer_name(issue['project'])} | "
                 f"**제목**: {issue['summary']} | "
                 f"**상태**: {display_status_label(issue['status'])} | "
                 f"**담당자**: {issue['handler']} | "
@@ -699,7 +702,7 @@ def format_deterministic_issue_answer(
     elif group_by == "platform":
         lines.extend(["", f"매체별 이슈를 합해 총 {len(issues)}건을 확인했습니다."])
     elif found_count and found_count > len(issues):
-        lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건까지 표시했습니다. 더 보려면 표시 개수를 늘리거나 기간을 좁혀 다시 요청해 주세요."])
+        lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건을 표시했습니다. 나머지도 보려면 질문 끝에 '모두 보여줘'를 붙여 주세요."])
     elif requested_limit and found_count and found_count < requested_limit:
         lines.extend(["", f"요청한 {requested_limit}건 중 현재 조회 가능한 결과는 {len(issues)}건입니다."])
     if status_note:

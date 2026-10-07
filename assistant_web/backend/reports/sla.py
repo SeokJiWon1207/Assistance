@@ -17,6 +17,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.query_planning import extract_group_by, build_query_plan
+from backend.display import customer_name, korean_day, korean_time
 from backend.mantis_status import mantis_status_bucket
 from backend.reports.effort import parse_effort_field_value
 from backend.sources.mantis import (
@@ -361,7 +362,7 @@ def _build_duration_report(
     for row in rows[:5]:
         lines.append(
             f"- #{row['id']} {row['summary']} — {row['handling_days']}일 "
-            f"({row['project']} · {row['created_at']}→{row['updated_at']})"
+            f"({customer_name(row['project'])} · {korean_day(row['created_at'])}→{korean_day(row['updated_at'])})"
         )
     lines.extend([
         "",
@@ -395,12 +396,12 @@ def _build_aging_report(
     scope = f"전체 조회 후 조건에 맞는 {len(issues)}건 중 미종료 이슈 {len(rows)}건"
     lines = [
         f"장기 미종료(적체) 분석 — {threshold_days}일 이상 경과",
-        f"기준: {scope} (기준일 {today.isoformat()})",
+        f"기준: {scope} (기준일 {korean_day(today.isoformat())})",
         "",
         f"- {threshold_days}일 이상 경과한 미종료 이슈: **{len(over_threshold)}건**",
     ]
     if (coverage or {}).get("fetchedAt"):
-        lines.insert(2, f"저장본 수집 시각: {(coverage or {})['fetchedAt']}")
+        lines.insert(2, f"저장본 수집 시각: {korean_time((coverage or {})['fetchedAt'])}")
     if rows:
         ages = [row["age_days"] for row in rows]
         lines.append(f"- 미종료 이슈 평균 경과일: **{sum(ages) / len(ages):.1f}일** (최장 {max(ages)}일)")
@@ -423,13 +424,15 @@ def _build_aging_report(
         for row in over_threshold[:display_limit]:
             lines.append(
                 f"- #{row['id']} {row['summary']} — {row['age_days']}일 경과 "
-                f"({row['project']} · 등록 {row['created_at']})"
+                f"({customer_name(row['project'])} · 등록 {korean_day(row['created_at'])})"
             )
     else:
         lines.extend(["", f"{threshold_days}일 이상 경과한 미종료 이슈가 없습니다."])
     created_at = constraints.get("created_at") or {}
-    if created_at:
-        lines.extend(["", f"등록일 조건: {created_at.get('from') or '시작 제한 없음'} ~ {created_at.get('to') or '종료 제한 없음'}"])
+    if created_at.get("from") or created_at.get("to"):
+        start = korean_day(created_at["from"]) if created_at.get("from") else ""
+        end = korean_day(created_at["to"]) if created_at.get("to") else ""
+        lines.extend(["", f"등록일 조건: {f'{start}~{end}' if start and end else f'{end} 이전 등록' if end else f'{start} 이후 등록'}"])
     result = _finalize(text, constraints, lines, over_threshold[:display_limit], "aging")
     result["retrieval"]["stages"][0]["meta"].update({
         **(coverage or {}), "found_count": len(over_threshold), "coverage": "complete",

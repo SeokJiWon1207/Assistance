@@ -8,6 +8,8 @@ from backend.sources.mantis_store import with_store_scope
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.config import STATUS_ALIASES
+from backend.display import customer_name, korean_day_range, status_name
 from backend.common import (
     display_mantis_status_label,
     normalize_chroma_issue_document,
@@ -776,7 +778,7 @@ def format_issue_list_criteria(
         )
     if constraints.get("customer_key"):
         project = issues[0].get("project") if issues else ""
-        customer = project or constraints["customer_key"]
+        customer = customer_name(project) if project else constraints["customer_key"]
         criteria.append(f"고객사={customer}")
     if constraints.get("platform_key"):
         criteria.append(f"플랫폼={constraints['platform_key'].upper()}")
@@ -793,9 +795,9 @@ def format_issue_list_criteria(
     elif constraints.get("unassigned_people"):
         criteria.append("담당자=미지정")
     if constraints.get("statuses"):
-        criteria.append(f"상태={', '.join(constraints['statuses'])}")
+        criteria.append(f"상태={', '.join(STATUS_ALIASES.get(s, [status_name(s)])[0] for s in constraints['statuses'])}")
     if constraints.get("excluded_statuses"):
-        criteria.append(f"상태 제외={', '.join(constraints['excluded_statuses'])}")
+        criteria.append(f"상태 제외={', '.join(STATUS_ALIASES.get(s, [status_name(s)])[0] for s in constraints['excluded_statuses'])}")
     if constraints.get("screen_numbers"):
         criteria.append(f"화면번호={', '.join(constraints['screen_numbers'])}")
     if constraints.get("issue_ids"):
@@ -804,7 +806,7 @@ def format_issue_list_criteria(
         criteria.append(f"{field_name}={field_value}")
     created_at = constraints.get("created_at") or {}
     if created_at.get("from") and created_at.get("to"):
-        criteria.append(f"등록일={created_at['from']}~{created_at['to']}")
+        criteria.append(f"등록일={korean_day_range(created_at['from'], created_at['to'])}")
     for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
         if clause["field"] in {"title", "keyword"}:
             criteria.append(filter_clause_label(clause))
