@@ -4,6 +4,8 @@ from contextvars import ContextVar
 from functools import wraps
 from time import perf_counter
 
+from backend.execution import checkpoint
+
 TIMINGS: ContextVar[dict | None] = ContextVar("chat_timings", default=None)
 
 
@@ -13,7 +15,10 @@ def measured(stage):
         def run(*args, **kwargs):
             started = perf_counter()
             try:
-                return fn(*args, **kwargs)
+                checkpoint()
+                result = fn(*args, **kwargs)
+                checkpoint()
+                return result
             finally:
                 timings = TIMINGS.get()
                 if timings is not None:

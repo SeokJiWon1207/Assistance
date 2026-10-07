@@ -153,7 +153,7 @@ class FollowUpClarificationTests(unittest.TestCase):
                     response = chat.plan_chat_query(
                         ChatRequest(modelId="fixture-model", messages=[ChatMessage(role="user", content=question)]),
                         context, None,
-                    )
+                    ).response
                 report.assert_not_called()
                 status.assert_not_called()
                 self.assertEqual(response["raw"]["mode"], "search_terms_clarification")

@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 from threading import Event, Thread
 
 import requests
+from fastapi import HTTPException
 
 from backend import llm
 from backend.intent import constraints
@@ -212,8 +213,9 @@ class ModelCircuitTests(unittest.TestCase):
                     response.iter_lines.side_effect = error("본문 읽기 실패")
                     with patch.object(llm.requests, "post", return_value=response) as post:
                         for _ in range(2):
-                            with self.assertRaises(error):
+                            with self.assertRaises(HTTPException) as raised:
                                 self.generate_stream(model)
+                            self.assertEqual(raised.exception.status_code, 502)
                         with self.assertRaises(llm.ModelCircuitOpenError):
                             llm.post_model_chat(model, "key", {}, timeout=8, stream=True)
                     self.assertEqual(post.call_count, 2)
@@ -253,8 +255,9 @@ class ModelCircuitTests(unittest.TestCase):
 
         response.iter_lines.side_effect = lines
         with patch.object(llm.requests, "post", return_value=response):
-            with self.assertRaises(requests.ConnectionError):
+            with self.assertRaises(HTTPException) as raised:
                 self.generate_stream(MODEL)
+            self.assertEqual(raised.exception.status_code, 502)
         self.assertEqual(llm.model_circuit_status_for(MODEL)["retryAfterSeconds"], 60)
         self.assertEqual(llm.model_circuit_status_for(MODEL)["consecutiveFailures"], 3)
         response.close.assert_called_once()

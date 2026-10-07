@@ -266,7 +266,7 @@ class MantisCollectionTests(unittest.TestCase):
         with (
             patch.object(mantis, "get_mantis_headers", return_value={}),
             patch.object(mantis.requests, "get", side_effect=[requests.Timeout(), Mock(status_code=429), response]) as get,
-            patch.object(mantis.time, "sleep") as sleep,
+            patch.object(mantis, "interruptible_sleep") as sleep,
         ):
             self.assertEqual(mantis.fetch_mantis_recent_issues(1), [{"id": 10}])
             self.assertEqual(get.call_count, 3)

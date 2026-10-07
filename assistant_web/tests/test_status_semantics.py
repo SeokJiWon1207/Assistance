@@ -162,7 +162,7 @@ class StatusSemanticTests(unittest.TestCase):
                 for i, status in enumerate(("assigned", "resolved", "closed", "new"), 1)]
         with patch.object(chat, "resolve_status_intent", return_value=resolution), \
              patch.object(sla, "read_complete_store", return_value=IssueBatch(rows, {"search_complete": True})):
-            response = chat.plan_chat_query(ChatRequest(modelId="chosen-answer-model", messages=[ChatMessage(role="user", content=q)]), context, None)
+            response = chat.plan_chat_query(ChatRequest(modelId="chosen-answer-model", messages=[ChatMessage(role="user", content=q)]), context, None).response
         self.assertEqual({s["issue_id"] for s in response["sources"]}, {1, 4})
         response = chat.attach_status_resolution(response, context)
         self.assertIn("근거: ‘마무리 못 한 이슈’", response["content"])
@@ -176,7 +176,7 @@ class StatusSemanticTests(unittest.TestCase):
             context = chat.ChatPipelineContext(q, {}, "", [], q, {"mantis": True}, [], extract_query_constraints(q), 5)
             with patch.object(chat, "resolve_status_intent", return_value={"needs_clarification": True, "reason": reason}), \
                  patch.object(chat, "build_deterministic_report") as report:
-                response = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None)
+                response = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None).response
             report.assert_not_called()
             self.assertEqual(response["raw"]["mode"], "status_clarification")
             self.assertIn("집계하지 않았습니다", response["content"])

@@ -50,6 +50,71 @@ class EvaluationFinalizationTests(unittest.TestCase):
             if hasattr(CHAT_STREAM_CONTEXT, attribute):
                 delattr(CHAT_STREAM_CONTEXT, attribute)
 
+    def test_unsupported_answer_is_blocked_before_any_content_event(self):
+        original = "확인한 이슈는 #99999 입니다."
+        response = {
+            "modelId": "primary-model", "content": original,
+            "sources": [{"type": "mantis", "issue_id": 12345, "title": "실제 원문"}],
+            "retrieval": {"query": "이슈 보여줘", "constraints": {},
+                          "query_plan": {"source": "mantis", "operation": "search"}, "stages": []},
+            "raw": {"mode": "model"},
+        }
+        emitted = []
+        CHAT_STREAM_CONTEXT.emitter = emitted.append
+        followups, baseline = Mock(), Mock()
+
+        def verify(*args):
+            self.assertFalse(any(event["type"] == "delta" for event in emitted))
+            return finalization.build_verification_report(*args)
+
+        dependencies = {"build_verification_report": verify, "generate_follow_up_questions": followups,
+                        "generate_basic_grounded_baseline": baseline}
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "audit.sqlite3"
+            with patch.object(finalization, "AUDIT_DB_PATH", database_path), \
+                    patch.object(finalization, "init_audit_db", side_effect=lambda: create_validation_log_table(database_path)), \
+                    patch.object(finalization, "_compat_dependency", side_effect=lambda name, default: dependencies.get(name, default)):
+                result = finalization.finalize_chat_response(chat_request(abTest=True), "이슈 보여줘", response)
+            with closing(sqlite3.connect(database_path)) as connection:
+                payload = json.loads(connection.execute("SELECT payload FROM validation_logs").fetchone()[0])
+        self.assertEqual(result["raw"]["mode"], "verification_blocked")
+        self.assertIn("issue_ids", result["raw"]["blockedChecks"])
+        self.assertEqual(result["verification"]["delivery"], "blocked")
+        self.assertEqual(result["sources"], [])
+        self.assertIsNone(result["retrieval"])
+        self.assertEqual(result["followUps"], [])
+        self.assertIsNone(payload["queryPlan"])
+        self.assertEqual(payload["blockedAnswer"], original)
+        self.assertNotIn("99999", json.dumps(result, ensure_ascii=False).split('"verification"')[0])
+        delivered = "".join(event["content"] for event in emitted if event["type"] == "delta")
+        self.assertEqual(delivered, result["content"])
+        self.assertNotIn("99999", delivered)
+        followups.assert_not_called()
+        baseline.assert_not_called()
+
+    def test_delivery_blocks_definite_calculation_and_scope_errors_only(self):
+        from backend.evaluation.delivery import decide_delivery
+        for check_id in ("count_result", "count_filters", "effort_recalculation", "work_scope", "constraints"):
+            with self.subTest(check=check_id):
+                decision = decide_delivery({"checks": [{"id": check_id, "status": "fail"}]})
+                self.assertFalse(decision.allowed)
+                self.assertEqual(decision.blocked_checks, (check_id,))
+        decision = decide_delivery({"checks": [
+            {"id": "constraints", "status": "warning"},
+            {"id": "model_content_review", "status": "review"},
+            {"id": "operation_intent", "status": "fail"},
+        ]})
+        self.assertTrue(decision.allowed)
+
+    def test_write_confirmations_keep_user_supplied_issue_references(self):
+        from backend.evaluation.delivery import decide_delivery
+        for mode in ("notion_write_pending", "notion_create", "notion_update"):
+            with self.subTest(mode=mode):
+                report = finalization.build_verification_report(
+                    "노션 항목 작성", "제목: #99999 대응 메모", [], None, mode,
+                )
+                self.assertTrue(decide_delivery(report).allowed)
+
     def test_finalization_uses_hidden_evidence_and_persists_audit_payload(self):
         evidence = [{"type": "mantis", "issue_id": 31408, "title": "근거 이슈"}]
         retrieval = {

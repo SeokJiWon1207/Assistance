@@ -22,6 +22,7 @@ from fastapi import HTTPException
 
 from backend.common import clamp_float, clamp_int, parse_date
 from backend.config import CONFIG_DIR
+from backend.execution import RequestStopped, bounded_timeout, checkpoint
 from backend.schemas import ChatRequest
 
 
@@ -121,14 +122,16 @@ def get_model_api_key(model: Dict[str, Any]) -> str:
 
 
 def extract_model_content(data: Dict[str, Any]) -> str:
-    content = (
-        data.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-    )
-    if not content:
-        content = data.get("message", {}).get("content", "")
-    return str(content or "")
+    if not isinstance(data, dict):
+        return ""
+    choices = data.get("choices")
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    message = choice.get("message") if isinstance(choice, dict) else None
+    content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content:
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+    return content if isinstance(content, str) else ""
 
 
 class ModelCircuitOpenError(requests.ConnectionError):
@@ -247,14 +250,16 @@ def consume_model_response(response: requests.Response) -> Iterator[None]:
     available: Optional[bool] = None
     try:
         yield
+        checkpoint()
         available = True
     except (requests.Timeout, requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
+        checkpoint()
         available = False
         raise
     finally:
         if call is not None:
             _record_model_result(call, available)
-            response.close()
+        response.close()
 
 
 def post_model_chat(
@@ -271,10 +276,21 @@ def post_model_chat(
     일정 시간 호출을 차단한다. 차단 예외는 ``requests.ConnectionError`` 이므로
     호출부의 기존 규칙 기반·대체 모델 폴백이 그대로 적용된다.
     """
+    checkpoint()
     call = _enter_model_circuit(_model_circuit_key(model))
     try:
         response = _send_model_chat(model, api_key, payload, timeout, stream, think)
+        try:
+            checkpoint()
+        except RequestStopped:
+            response.close()
+            raise
     except (requests.Timeout, requests.ConnectionError):
+        try:
+            checkpoint()
+        except RequestStopped:
+            _record_model_result(call, available=None)
+            raise
         _record_model_result(call, available=False)
         raise
     except BaseException:
@@ -312,7 +328,7 @@ def _send_model_chat(
             model["endpoint"],
             headers=headers,
             json=remote_payload,
-            timeout=timeout,
+            timeout=bounded_timeout(timeout),
             stream=stream,
         )
 
@@ -346,7 +362,7 @@ def _send_model_chat(
         model.get("nativeEndpoint", "http://127.0.0.1:11434/api/chat"),
         headers=headers,
         json=native_payload,
-        timeout=timeout,
+        timeout=bounded_timeout(timeout),
         stream=stream,
     )
 

@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from fastapi import HTTPException
 
+from backend.execution import bounded_timeout, interruptible_sleep, execution_slot
+
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -593,11 +595,11 @@ def notion_request_slot() -> None:
         interval = 0.36
     if interval <= 0:
         return
-    with _notion_request_lock:
+    with execution_slot(_notion_request_lock):
         now = time.monotonic()
         wait_seconds = max(0.0, _notion_next_request_at - now)
         if wait_seconds:
-            time.sleep(wait_seconds)
+            interruptible_sleep(wait_seconds)
             now = time.monotonic()
         _notion_next_request_at = max(now, _notion_next_request_at) + interval
 
@@ -630,16 +632,16 @@ def notion_post_json(url: str, payload: Dict[str, Any], timeout: int = 45, retri
                 url,
                 headers=get_notion_headers(),
                 json=payload,
-                timeout=timeout,
+                timeout=bounded_timeout(timeout),
             )
             if (response.status_code == 429 or response.status_code >= 500) and attempt < retries:
-                time.sleep(_notion_retry_delay(response, attempt))
+                interruptible_sleep(_notion_retry_delay(response, attempt))
                 continue
             return response
         except requests.RequestException as exc:
             last_error = exc
             if attempt < retries:
-                time.sleep(min(0.5 * (2**attempt) + random.uniform(0.0, 0.15), 4.0))
+                interruptible_sleep(min(0.5 * (2**attempt) + random.uniform(0.0, 0.15), 4.0))
     if last_error:
         raise last_error
     raise requests.RequestException("Notion request failed")

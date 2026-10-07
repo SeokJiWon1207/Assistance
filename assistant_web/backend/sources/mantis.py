@@ -11,7 +11,6 @@ import json
 import os
 import re
 import sqlite3
-import time
 from contextlib import closing
 from datetime import date, datetime
 from functools import lru_cache
@@ -21,6 +20,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.execution import bounded_timeout, interruptible_sleep, execution_slot
 from backend.common import (
     format_mantis_custom_date,
     normalize_chroma_issue_document,
@@ -222,22 +222,22 @@ def fetch_mantis_issues(
     safe_attempts = max(1, min(int(attempts), 3))
     for attempt in range(1, safe_attempts + 1):
         try:
-            with _mantis_request_slots:
+            with execution_slot(_mantis_request_slots):
                 response = requests.get(
                     settings["url"],
                     headers=get_mantis_headers(),
                     params=params,
-                    timeout=max(3, min(int(timeout), 60)),
+                    timeout=bounded_timeout(max(3, min(int(timeout), 60))),
                 )
         except (requests.ConnectionError, requests.Timeout):
             if attempt == safe_attempts:
                 raise
-            time.sleep(2 ** (attempt - 1))
+            interruptible_sleep(2 ** (attempt - 1))
             continue
 
         retryable_status = response.status_code == 429 or response.status_code >= 500
         if retryable_status and attempt < safe_attempts:
-            time.sleep(2 ** (attempt - 1))
+            interruptible_sleep(2 ** (attempt - 1))
             continue
         if response.status_code != 200:
             raise HTTPException(
@@ -259,17 +259,17 @@ def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
             response = requests.get(
                 issue_url,
                 headers=get_mantis_headers(),
-                timeout=20,
+                timeout=bounded_timeout(20),
             )
         except (requests.ConnectionError, requests.Timeout):
             if attempt == 3:
                 raise
-            time.sleep(2 ** (attempt - 1))
+            interruptible_sleep(2 ** (attempt - 1))
             continue
 
         retryable_status = response.status_code == 429 or response.status_code >= 500
         if retryable_status and attempt < 3:
-            time.sleep(2 ** (attempt - 1))
+            interruptible_sleep(2 ** (attempt - 1))
             continue
         if retryable_status:
             raise HTTPException(

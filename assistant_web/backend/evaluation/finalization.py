@@ -17,6 +17,8 @@ from backend.evaluation.comparison import (
     generate_candidate_model_answer,
     should_attach_ab_test,
 )
+from backend.evaluation.delivery import BLOCKED_ANSWER, decide_delivery
+from backend.execution import checkpoint
 from backend.evaluation.verification import (
     build_verification_report,
     generate_basic_grounded_baseline,
@@ -39,6 +41,7 @@ def finalize_chat_response(
     response: Dict[str, Any],
     user_uid: str = "",
 ) -> Dict[str, Any]:
+    checkpoint()
     finalization_started = perf_counter()
     generate_followups = _compat_dependency(
         "generate_follow_up_questions", generate_follow_up_questions
@@ -65,22 +68,7 @@ def finalize_chat_response(
         evidence_sources = sources
     retrieval_result = response.get("retrieval")
     mode = (response.get("raw") or {}).get("mode", "model")
-    if getattr(CHAT_STREAM_CONTEXT, "emitter", None) and not getattr(
-        CHAT_STREAM_CONTEXT,
-        "content_streamed",
-        False,
-    ):
-        content = str(response.get("content", ""))
-        for start in range(0, len(content), 120):
-            emit_chat_event("delta", content=content[start : start + 120])
-        CHAT_STREAM_CONTEXT.content_streamed = True
     emit_chat_status("근거와 답변을 검증하고 있습니다", "verification")
-    followups = response.get("followUps") or generate_followups(
-        question,
-        evidence_sources,
-        retrieval_result,
-        mode,
-    )
     verification = build_verification(
         question,
         response.get("content", ""),
@@ -88,7 +76,27 @@ def finalize_chat_response(
         retrieval_result,
         mode,
     )
-    if should_attach(request, retrieval_result, mode):
+    checkpoint()
+    delivery = decide_delivery(verification)
+    verification["delivery"] = "allowed" if delivery.allowed else "blocked"
+    blocked_answer = None
+    followups: list[str]
+    if not delivery.allowed:
+        blocked_answer = response.get("content", "")
+        response["content"] = BLOCKED_ANSWER
+        response["sources"] = sources = []
+        response["retrieval"] = None
+        response.pop("abTest", None)
+        response["raw"] = {"mode": "verification_blocked", "originalMode": mode,
+                           "blockedChecks": list(delivery.blocked_checks)}
+        mode = "verification_blocked"
+        followups = []
+    else:
+        followups = response.get("followUps") or generate_followups(
+            question, evidence_sources, retrieval_result, mode,
+        )
+    if delivery.allowed and should_attach(request, retrieval_result, mode):
+        checkpoint()
         candidate_model_id = str(
             request.abModelId or os.getenv("AB_COMPARISON_MODEL_ID", "")
         ).strip()
@@ -162,7 +170,8 @@ def finalize_chat_response(
             "responseFormat": request.responseFormat,
         },
         "sources": sources,
-        "queryPlan": (retrieval_result or {}).get("query_plan") if retrieval_result else None,
+        # 차단된 실행의 조건은 다음 질문에 상속하지 않는다.
+        "queryPlan": (retrieval_result or {}).get("query_plan") if delivery.allowed else None,
         "filterAudit": (retrieval_result or {}).get("filter_audit") if retrieval_result else None,
         "retrievalStages": [
             {
@@ -177,6 +186,9 @@ def finalize_chat_response(
         "verification": verification,
         "abTest": response.get("abTest"),
     }
+    if blocked_answer is not None:
+        payload["blockedAnswer"] = blocked_answer
+    checkpoint()
     init_audit_db()
     with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
         connection.execute(
@@ -212,6 +224,12 @@ def finalize_chat_response(
     response["verification"] = verification
     response["auditId"] = log_id
     response["followUps"] = followups
+    checkpoint()
+    if getattr(CHAT_STREAM_CONTEXT, "emitter", None):
+        content = str(response.get("content", ""))
+        for start in range(0, len(content), 120):
+            emit_chat_event("delta", content=content[start : start + 120])
+        CHAT_STREAM_CONTEXT.content_streamed = True
     return response
 
 

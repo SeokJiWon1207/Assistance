@@ -7,8 +7,7 @@ import json
 import os
 import re
 from time import perf_counter
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 from fastapi import HTTPException
@@ -31,6 +30,7 @@ from backend.intent.status_semantics import (
     resolve_status_intent, status_resolution_scope,
 )
 from backend.team_scope import has_mantis_team_scope
+from backend.execution import checkpoint, request_execution
 from backend.admission import CHAT_ADMISSION
 from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status, load_audit_query_plan
 from backend.common import clamp_int
@@ -76,6 +76,8 @@ from backend.retrieval import (
     collect_retrieved_issues,
     run_retrieval_pipeline,
 )
+from backend.services.contracts import ChatPipelineContext, DeterministicReportResult, StageResult
+from backend.services.report_dispatcher import ReportRequest, dispatch_reports
 from backend.schemas import ChatRequest
 from backend.sources.mantis import build_sources_from_issue_rows
 from backend.sources.notion import (
@@ -265,14 +267,6 @@ def apply_authenticated_notion_scope(
     return f"{text} 담당자: {notion_username}".strip()
 
 
-@dataclass
-class DeterministicReportResult:
-    """LLM 계획 전에 실행하는 결정형 리포트의 판정 결과."""
-
-    response: Optional[Dict[str, Any]] = None
-    pending_effort_report: Optional[Dict[str, Any]] = None
-
-
 def build_deterministic_report(
     latest_user_text: str,
     retrieval_text: str,
@@ -295,77 +289,25 @@ def _build_deterministic_report(
     messages: List[Any],
     user: Optional[Dict[str, Any]],
 ) -> DeterministicReportResult:
-    """우선순위가 있는 결정형 리포트 중 첫 번째 일치 결과를 반환한다."""
-    if not latest_user_text:
-        return DeterministicReportResult()
-
-    report_text = retrieval_text or latest_user_text
-    report_source = rule_based_search_intent(report_text, extract_query_constraints(report_text))
-    # Notion 검색 제목의 '공수'나 '주간보고'가 Mantis 집계로 선점되지 않게 한다.
-    notion_target = report_source.get("source") == "notion"
-    if enabled_tools.get("mantis") and not notion_target:
-        # 순서 계약: 아래 빌더는 첫 번째 일치 결과가 곧 최종 응답이므로 위치가 동작이다.
-        # 1) 잘못된 고객사를 먼저 차단해 조건 없는 전체 조회로 넓어지는 것을 막는다.
-        # 2) 기준 이슈가 명시된 유사 해결 검색은 일반 집계보다 구체적이라 먼저 처리한다.
-        # 3) 월간·주간 리포트와 고객사 프로필처럼 여러 지표를 묶는 요청은 단일 SLA보다 앞선다.
-        # 4) 피벗은 두 축 집계, 급증은 시점 비교이므로 단순 상위 고객사보다 앞선다.
-        # 5) 공수 추이·순위는 이슈 건수 집계가 일치하지 않은 뒤에 평가한다.
-        report_builders = [
-            (
-                "unknown_customer_guard",
-                lambda: build_unknown_customer_report(retrieval_text or latest_user_text),
-            ),
-        ]
-        if enabled_tools.get("vectorDb"):
-            report_builders.append(
-                ("similar_resolution", lambda: build_similar_resolution_report(retrieval_text or latest_user_text))
-            )
-        report_builders.append((
-            "incident_triage",
-            lambda: build_incident_triage_report(
-                retrieval_text or latest_user_text, search_similar=bool(enabled_tools.get("vectorDb")),
-            ),
-        ))
-        report_builders.extend(
-            [
-                ("monthly_customer", lambda: build_monthly_customer_report(retrieval_text or latest_user_text)),
-                ("weekly_report", lambda: build_weekly_report(retrieval_text or latest_user_text)),
-                ("customer_profile", lambda: build_customer_profile_report(retrieval_text or latest_user_text)),
-                ("sla", lambda: build_sla_report(retrieval_text or latest_user_text)),
-                ("pivot", lambda: build_mantis_pivot_report(retrieval_text or latest_user_text)),
-                ("spike", lambda: build_mantis_spike_report(retrieval_text or latest_user_text)),
-                ("top_customers", lambda: build_top_customers_report(retrieval_text or latest_user_text)),
-                ("effort_trend", lambda: build_effort_trend_report(retrieval_text or latest_user_text)),
-                ("effort_ranking", lambda: build_effort_ranking_report(retrieval_text or latest_user_text)),
-            ]
-        )
-        for _report_name, build_report in report_builders:
-            report = build_report()
-            if report:
-                return DeterministicReportResult(response=report)
-
-        effort_report = build_effort_report(retrieval_text or latest_user_text)
-        if effort_report:
-            if effort_report.pop("needsPerson", False):
-                pending_effort_report = effort_report
-            else:
-                return DeterministicReportResult(response=effort_report)
-        else:
-            pending_effort_report = None
-    else:
-        pending_effort_report = None
-
-    if enabled_tools.get("notion"):
-        notion_write_result = run_notion_write_command(
-            latest_user_text,
-            messages,
-            allow_write=bool(user and user.get("role") in {"manager", "admin"}),
-            user_uid=str((user or {}).get("uid") or ""),
-        )
-        if notion_write_result:
-            return DeterministicReportResult(response=notion_write_result)
-
-    return DeterministicReportResult(pending_effort_report=pending_effort_report)
+    return dispatch_reports(
+        ReportRequest(latest_user_text, retrieval_text, enabled_tools, messages, user),
+        {
+            "unknown_customer_guard": build_unknown_customer_report,
+            "similar_resolution": build_similar_resolution_report,
+            "incident_triage": build_incident_triage_report,
+            "monthly_customer": build_monthly_customer_report,
+            "weekly_report": build_weekly_report,
+            "customer_profile": build_customer_profile_report,
+            "sla": build_sla_report,
+            "pivot": build_mantis_pivot_report,
+            "spike": build_mantis_spike_report,
+            "top_customers": build_top_customers_report,
+            "effort_trend": build_effort_trend_report,
+            "effort_ranking": build_effort_ranking_report,
+        },
+        effort_builder=build_effort_report,
+        notion_writer=run_notion_write_command,
+    )
 
 
 def generate_model_response(
@@ -383,14 +325,22 @@ def generate_model_response(
         if other["id"] != model["id"] and other.get("status") == "active"
     ]
 
-    response = None
+    data = None
     final_model = model
-    timeout_exc: Optional[requests.Timeout] = None
-    request_exc: Optional[requests.RequestException] = None
+    last_error: Optional[Exception] = None
+    model_timeout = clamp_int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"), 30, 300) or 180
+    stream_read_timeout = min(
+        model_timeout,
+        clamp_int(os.getenv("MODEL_STREAM_READ_TIMEOUT_SECONDS", "60"), 10, 300) or 60,
+    )
+    first_content_timeout = min(
+        model_timeout,
+        clamp_int(os.getenv("MODEL_FIRST_CONTENT_TIMEOUT_SECONDS", "60"), 10, 300) or 60,
+    )
     emit_chat_status("답변을 생성하고 있습니다", "generation")
 
-    for index, candidate in enumerate(candidate_models):
-        is_last_candidate = index == len(candidate_models) - 1
+    for candidate in candidate_models:
+        checkpoint()
         candidate_api_key = get_model_api_key(candidate)
         if not candidate_api_key:
             continue
@@ -405,41 +355,48 @@ def generate_model_response(
         final_model = candidate
 
         try:
-            model_timeout = clamp_int(os.getenv("MODEL_TIMEOUT_SECONDS", "180"), 30, 300) or 180
+            first_content_deadline = perf_counter() + first_content_timeout if request.stream else None
             candidate_response = post_model_chat(
                 candidate,
                 candidate_api_key,
                 candidate_payload,
-                timeout=model_timeout,
+                timeout=stream_read_timeout if request.stream else model_timeout,
                 stream=bool(request.stream),
             )
-        except requests.Timeout as exc:
-            timeout_exc = exc
-            if is_last_candidate:
-                break
+            # HTTP 200 뒤에 발생하는 본문 읽기 오류도 같은 후보 폴백 범위에서
+            # 처리한다. 본문 소비가 끝나야 회로 성공 여부를 확정하고 연결을 닫는다.
+            with consume_model_response(candidate_response):
+                if candidate_response.status_code >= 400:
+                    error_text = candidate_response.text
+                    unsupported_hint = ""
+                    if any(keyword in error_text.lower() for keyword in (
+                        "extra", "unknown", "unsupported", "unexpected", "not permitted",
+                    )):
+                        unsupported_hint = " 선택한 생성 옵션 중 회사 모델 서버가 지원하지 않는 값이 있을 수 있습니다. 해당 옵션을 비우고 다시 시도해 주세요."
+                    raise HTTPException(
+                        status_code=candidate_response.status_code,
+                        detail=error_text[:1000] + unsupported_hint,
+                    )
+                data = _read_model_response(
+                    candidate_response, candidate, request.stream,
+                    first_content_deadline=first_content_deadline,
+                )
+                if not extract_model_content(data).strip():
+                    raise requests.ConnectionError("모델 응답에 답변 본문이 없습니다.")
+        except (requests.RequestException, HTTPException) as exc:
+            checkpoint()
+            last_error = exc
+            # 실패한 후보의 부분 답변과 다음 후보/근거 답변을 이어 붙이지 않는다.
+            if getattr(CHAT_STREAM_CONTEXT, "content_streamed", False):
+                emit_chat_event("reset")
+                CHAT_STREAM_CONTEXT.content_streamed = False
+            emit_chat_status("응답 연결을 다시 확인하고 있습니다", "generation")
+            data = None
             continue
-        except requests.RequestException as exc:
-            request_exc = exc
-            if is_last_candidate:
-                break
-            continue
-
-        if candidate_response.status_code >= 400:
-            if is_last_candidate:
-                response = candidate_response
-                final_model = candidate
-                break
-            continue
-
-        response = candidate_response
-        final_model = candidate
-        timeout_exc = None
-        request_exc = None
         break
 
-    if response is None:
-        connection_exc = timeout_exc or request_exc
-        if retrieval_result and connection_exc is not None:
+    if data is None:
+        if retrieval_result and isinstance(last_error, requests.RequestException):
             fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
             return {
                 "modelId": final_model["id"],
@@ -453,26 +410,15 @@ def generate_model_response(
                 "retrieval": retrieval_result,
                 "raw": {
                     "mode": "model_timeout_fallback",
-                    "error": str(connection_exc),
-                    "errorType": type(connection_exc).__name__,
+                    "error": str(last_error),
+                    "errorType": type(last_error).__name__,
                 },
             }
-        raise HTTPException(status_code=502, detail=f"Model connection failed: {connection_exc}")
-
-    if response.status_code >= 400:
-        unsupported_hint = ""
-        if any(
-            keyword in response.text.lower()
-            for keyword in ("extra", "unknown", "unsupported", "unexpected", "not permitted")
-        ):
-            unsupported_hint = " 선택한 생성 옵션 중 회사 모델 서버가 지원하지 않는 값이 있을 수 있습니다. 해당 옵션을 비우고 다시 시도해 주세요."
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=(response.text[:1000] + unsupported_hint),
-        )
-
-    with consume_model_response(response):
-        data = _read_model_response(response, final_model, request.stream)
+        if isinstance(last_error, HTTPException):
+            raise last_error
+        if last_error is None:
+            raise HTTPException(status_code=503, detail="답변을 생성할 모델의 API 키가 설정되지 않았습니다.")
+        raise HTTPException(status_code=502, detail=f"Model connection failed: {last_error}")
 
     final_sources = build_sources(retrieval_result, max_sources=active_limit)
     content = sanitize_customer_notice_answer(
@@ -492,27 +438,39 @@ def generate_model_response(
 
 def _read_model_response(
     response: requests.Response, model: Dict[str, Any], stream: bool,
+    *, first_content_deadline: Optional[float] = None,
 ) -> Dict[str, Any]:
+    has_content = False
+
+    def lines():
+        for raw_line in response.iter_lines(decode_unicode=True):
+            checkpoint()
+            # 역할/추론 청크만 계속 보내는 연결도 무한히 첫 답변을 미루지 않게 한다.
+            # 블로킹된 읽기는 별도 stream read timeout으로 끝난다.
+            if not has_content and first_content_deadline is not None and perf_counter() >= first_content_deadline:
+                raise requests.Timeout("모델의 첫 답변 대기 시간을 초과했습니다.")
+            yield (raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes)
+                   else str(raw_line or "")).strip()
+
     if stream and is_ollama_model(model):
         streamed_content = ""
         ollama_stream_chunks: List[Dict[str, Any]] = []
-        for raw_line in response.iter_lines(decode_unicode=True):
-            if isinstance(raw_line, bytes):
-                line = raw_line.decode("utf-8", errors="replace").strip()
-            else:
-                line = str(raw_line or "").strip()
+        for line in lines():
             if not line:
                 continue
             try:
                 chunk = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(chunk, dict):
+                continue
             ollama_stream_chunks.append(chunk)
-            delta = chunk.get("message", {}).get("content", "")
-            if delta:
+            message = chunk.get("message")
+            delta = message.get("content") if isinstance(message, dict) else None
+            if isinstance(delta, str) and delta:
+                has_content = has_content or bool(delta.strip())
                 streamed_content += delta
-                CHAT_STREAM_CONTEXT.content_streamed = True
-                emit_chat_event("delta", content=delta)
+                # 본문은 최종 검증 전까지 보내지 않고 후보별로 보관한다.
         data = {
             "choices": [{"message": {"content": streamed_content}}],
             "streamChunks": len(ollama_stream_chunks),
@@ -521,8 +479,7 @@ def _read_model_response(
     elif stream and "text/event-stream" in response.headers.get("content-type", "").lower():
         streamed_content = ""
         sse_stream_chunks: List[Dict[str, Any]] = []
-        for raw_line in response.iter_lines(decode_unicode=True):
-            line = str(raw_line or "").strip()
+        for line in lines():
             if not line or not line.startswith("data:"):
                 continue
             body = line[5:].strip()
@@ -532,12 +489,17 @@ def _read_model_response(
                 chunk = json.loads(body)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(chunk, dict):
+                continue
             sse_stream_chunks.append(chunk)
-            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-            if delta:
+            choices = chunk.get("choices")
+            choice = choices[0] if isinstance(choices, list) and choices else None
+            delta_message = choice.get("delta") if isinstance(choice, dict) else None
+            delta = delta_message.get("content") if isinstance(delta_message, dict) else None
+            if isinstance(delta, str) and delta:
+                has_content = has_content or bool(delta.strip())
                 streamed_content += delta
-                CHAT_STREAM_CONTEXT.content_streamed = True
-                emit_chat_event("delta", content=delta)
+                # 본문은 최종 검증 전까지 보내지 않고 후보별로 보관한다.
         data = {
             "choices": [{"message": {"content": streamed_content}}],
             "streamChunks": len(sse_stream_chunks),
@@ -545,27 +507,8 @@ def _read_model_response(
     else:
         data = response.json()
 
+    checkpoint()
     return data
-
-
-@dataclass
-class ChatPipelineContext:
-    """한 채팅 요청이 분석·라우팅·검색 단계를 지나며 공유하는 상태."""
-
-    latest_user_text: str
-    model: Dict[str, Any]
-    api_key: str
-    messages: List[Dict[str, Any]]
-    retrieval_text: str
-    enabled_tools: Dict[str, Any]
-    system_notes: List[str]
-    query_constraints: Dict[str, Any]
-    active_limit: int
-    authenticated_owner: str = ""
-    pending_effort_report: Optional[Dict[str, Any]] = None
-    intent_plan: Optional[Dict[str, Any]] = None
-    retrieval_result: Optional[Dict[str, Any]] = None
-    status_resolution: Optional[Dict[str, Any]] = None
 
 
 @measured("context")
@@ -582,12 +525,6 @@ def prepare_chat_pipeline(
         raise HTTPException(status_code=400, detail="Selected model is disabled")
 
     api_key = get_model_api_key(model)
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Missing API key env: {model.get('apiKeyEnv')}",
-        )
-
     messages = [message.model_dump(exclude={"notionActionId"}) for message in request.messages]
     history_limit = clamp_int(os.getenv("MODEL_HISTORY_MAX_MESSAGES", "20"), 2, 200) or 20
     if len(messages) > history_limit:
@@ -652,7 +589,7 @@ def prepare_chat_pipeline(
             retrieval_text = f"{notion_prefix} {latest_user_text}".strip()
             needs_follow_up_rewrite = False
 
-    if needs_follow_up_rewrite:
+    if needs_follow_up_rewrite and api_key:
         rewritten = rewrite_follow_up_query_with_model(
             get_recent_user_texts(request.messages, limit=5),
             model,
@@ -725,7 +662,11 @@ def prepare_chat_pipeline(
 
 
 @measured("planning")
-def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> StageResult:
+    return StageResult.from_response(_resolve_chat_plan(request, context, user))
+
+
+def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if context.query_constraints.get("unconfirmed_search_terms"):
         terms = ", ".join(str(term) for term in context.query_constraints["unconfirmed_search_terms"])
         plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
@@ -838,6 +779,7 @@ def _plan_chat_query(
     }
     should_plan = (
         planner_enabled
+        and bool(context.api_key)
         and not fast_path
         and any(context.enabled_tools.get(key) for key in ("mantis", "notion", "vectorDb"))
         and (
@@ -1004,7 +946,11 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
 
 
 @measured("retrieval")
-def retrieve_chat_evidence(
+def retrieve_chat_evidence(request: ChatRequest, context: ChatPipelineContext) -> StageResult:
+    return StageResult.from_response(_retrieve_chat_evidence(request, context))
+
+
+def _retrieve_chat_evidence(
     request: ChatRequest,
     context: ChatPipelineContext,
 ) -> Optional[Dict[str, Any]]:
@@ -1084,6 +1030,7 @@ class ChatService:
         """라우터가 admission lease를 이미 보유한 요청을 실행한다."""
         return self._build_response(request, user=user)
 
+    @request_execution
     @request_timing
     def _build_response(
         self,
@@ -1122,14 +1069,20 @@ class ChatService:
         with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
             return self._complete_response(request, context, user, finalize_chat_response)
 
-    def _complete_response(self, request, context, user, finalize_chat_response):
-        planned_response = plan_chat_query(request, context, user)
-        if planned_response:
-            return finalize_chat_response(attach_status_resolution(planned_response, context))
+    def _complete_response(
+        self,
+        request: ChatRequest,
+        context: ChatPipelineContext,
+        user: Optional[Dict[str, Any]],
+        finalize_chat_response: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        planned = plan_chat_query(request, context, user)
+        if planned.response is not None:
+            return finalize_chat_response(attach_status_resolution(planned.response, context))
 
-        retrieval_response = retrieve_chat_evidence(request, context)
-        if retrieval_response:
-            return finalize_chat_response(attach_status_resolution(retrieval_response, context))
+        retrieved = retrieve_chat_evidence(request, context)
+        if retrieved.response is not None:
+            return finalize_chat_response(attach_status_resolution(retrieved.response, context))
 
         if context.system_notes:
             context.messages.insert(
@@ -1144,6 +1097,8 @@ class ChatService:
             context.query_constraints,
             context.active_limit,
         )
-        return finalize_chat_response(attach_status_resolution(generated_response, context))
+        generated = StageResult.from_response(generated_response)
+        assert generated.response is not None
+        return finalize_chat_response(attach_status_resolution(generated.response, context))
 
 chat_service = ChatService()

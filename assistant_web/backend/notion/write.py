@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.execution import bounded_timeout
 from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
 from backend.config import (
     NOTION_API_BASE,
@@ -143,7 +144,7 @@ def create_notion_page(request: NotionPageWriteRequest, *, prepared_properties: 
         f"{NOTION_API_BASE}/pages",
         headers=get_notion_headers(),
         json=body,
-        timeout=30,
+        timeout=bounded_timeout(30),
     )
     if response.status_code >= 400:
         raise HTTPException(
@@ -164,7 +165,7 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest, *, expect
     page_response = requests.get(
         f"{NOTION_API_BASE}/pages/{page_id}",
         headers=get_notion_headers(),
-        timeout=20,
+        timeout=bounded_timeout(20),
     )
     if page_response.status_code >= 400:
         raise HTTPException(
@@ -189,7 +190,7 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest, *, expect
         f"{NOTION_API_BASE}/pages/{page_id}",
         headers=get_notion_headers(),
         json={"properties": properties},
-        timeout=30,
+        timeout=bounded_timeout(30),
     )
     if response.status_code >= 400:
         raise HTTPException(

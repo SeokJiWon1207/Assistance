@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 import requests
 from fastapi import HTTPException
 
+from backend.execution import bounded_timeout
 from backend.config import (
     NOTION_API_BASE,
     get_notion_headers as get_notion_headers,
@@ -79,7 +80,7 @@ def _lookup_name_cached(kind: str, identifier: str, token: str, bucket: int) -> 
     notion_request_slot()
     response = requests.get(
         f"{NOTION_API_BASE}/{kind}/{identifier}",
-        headers={**get_notion_headers(), "Authorization": token}, timeout=20,
+        headers={**get_notion_headers(), "Authorization": token}, timeout=bounded_timeout(20),
     )
     if response.status_code != 200:
         raise LookupError("Notion 이름 조회 실패")
@@ -139,7 +140,7 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
                 notion_request_slot()
                 response = requests.get(
                     f"{NOTION_API_BASE}/{path}", headers=get_notion_headers(),
-                    params=payload, timeout=min(8, available),
+                    params=payload, timeout=bounded_timeout(min(8, available)),
                 )
             if response.status_code != 200:
                 incomplete = True
@@ -267,7 +268,7 @@ def _request_notion_database(database_id: str) -> Dict[str, Any]:
     response = requests.get(
         f"{NOTION_API_BASE}/databases/{database_id}",
         headers=get_notion_headers(),
-        timeout=20,
+        timeout=bounded_timeout(20),
     )
     if response.status_code >= 400:
         raise HTTPException(
@@ -395,7 +396,7 @@ def _fetch_notion_users_cached(_bucket: int) -> tuple[tuple[str, str], ...]:
             f"{NOTION_API_BASE}/users",
             headers=get_notion_headers(),
             params=params,
-            timeout=20,
+            timeout=bounded_timeout(20),
         )
         if response.status_code >= 400:
             return tuple(users)

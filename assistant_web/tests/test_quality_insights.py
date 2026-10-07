@@ -348,7 +348,7 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(pages.count(2), 1)
         self.assertEqual(result["meta"]["searched_pages"], 2)
 
-    @patch.object(mantis.time, "sleep")
+    @patch.object(mantis, "interruptible_sleep")
     @patch.object(mantis, "get_mantis_headers", return_value={})
     @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
     @patch.object(mantis.requests, "get")
@@ -372,7 +372,7 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(sum(call.kwargs["params"]["page"] == 1 for call in get.call_args_list), 2)
         sleep.assert_called_once_with(1)
 
-    @patch.object(mantis.time, "sleep")
+    @patch.object(mantis, "interruptible_sleep")
     @patch.object(mantis, "get_mantis_headers", return_value={})
     @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
     @patch.object(mantis.requests, "get")

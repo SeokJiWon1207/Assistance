@@ -1,7 +1,10 @@
 """순서를 지키면서 뒤 작업을 미리 실행하는 공용 반복자."""
 
+from contextvars import copy_context
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Generator, Iterable, TypeVar
+
+from backend.execution import CURRENT_BUDGET, checkpoint, wait_for_result
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -20,15 +23,20 @@ def iter_in_order(
     """
     queue = list(items)
     limit = max(1, workers)
+    checkpoint()
     pool = ThreadPoolExecutor(max_workers=limit)
     pending: dict[int, Future[R]] = {}
     next_index = 0
     try:
         for index, item in enumerate(queue):
             while next_index < len(queue) and len(pending) < limit:
-                pending[next_index] = pool.submit(func, queue[next_index])
+                pending[next_index] = pool.submit(copy_context().run, func, queue[next_index])
+                budget = CURRENT_BUDGET.get()
+                if budget is not None:
+                    budget.track(pending[next_index])
                 next_index += 1
-            yield item, pending.pop(index).result()
+            yield item, wait_for_result(pending.pop(index))
     finally:
-        # 조기 종료가 정상 경로라 진행 중인 선실행을 기다리지 않는다.
+        # 정상적인 조기 종료에서는 답변을 지연시키지 않는다. 채팅 요청의 남은
+        # 선실행 작업은 ExecutionBudget이 추적하고 API 워커가 슬롯 반환 전에 기다린다.
         pool.shutdown(wait=False, cancel_futures=True)

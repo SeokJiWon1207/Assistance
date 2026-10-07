@@ -1,6 +1,7 @@
 """범위가 제한된 Mantis 페이지 수집과 원본 데이터 단기 캐시."""
 
 from collections import OrderedDict
+from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -10,6 +11,7 @@ from typing import Any, Callable, Generator
 
 from fastapi import HTTPException
 
+from backend.execution import checkpoint, execution_slot, wait_for_result
 from backend.ordered_prefetch import iter_in_order
 
 
@@ -32,7 +34,7 @@ def collection_metadata(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def clear_recent_cache() -> None:
     global _connection
-    with _lock:
+    with execution_slot(_lock):
         _connection = None
         _cache.clear()
 
@@ -48,13 +50,14 @@ def _collect(
     rows: list[dict[str, Any]] = []
     fetched_at = datetime.now(timezone.utc).isoformat()
     complete = False
+    checkpoint()
     pool = ThreadPoolExecutor(max_workers=workers)
-    futures = [pool.submit(fetch_page, page) for page in range(1, page_count + 1)]
+    futures = [pool.submit(copy_context().run, fetch_page, page) for page in range(1, page_count + 1)]
     try:
         # 페이지 순서로 결과를 읽으며 짧은 페이지까지의 오류는 전파한다.
         # 짧은 페이지를 확인한 뒤의 future는 읽지 않아 그 요청의 오류도 전파하지 않는다.
         for future in futures:
-            batch = future.result()
+            batch = wait_for_result(future)
             rows.extend(batch)
             if len(batch) < page_size:
                 complete = len(rows) <= limit
@@ -111,7 +114,7 @@ def fetch_recent_cached(
         # HTTP 동시 요청 상한은 fetch_mantis_issues의 세마포어가 적용한다.
         return _collect_unique(fetch_page, limit, page_size, workers)
     key = (limit, page_size, timeout)
-    with _lock:
+    with execution_slot(_lock):
         if _connection != connection or force_refresh:
             _cache.clear()
             _connection = connection

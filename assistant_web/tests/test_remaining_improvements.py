@@ -211,7 +211,7 @@ class StructuredFollowupTests(unittest.TestCase):
         context = chat.ChatPipelineContext(q, {}, "synthetic", [], q, {"mantis": True}, [], extract_query_constraints(q), 5)
         with patch.dict(os.environ, {"QUERY_PLANNER_ENABLED": "true"}), \
              patch.object(chat, "plan_search_intent_with_model") as planner:
-            result = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None)
+            result = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None).response
         planner.assert_not_called()
         self.assertIsNone(result)
         self.assertEqual(context.intent_plan["operation"], "search")

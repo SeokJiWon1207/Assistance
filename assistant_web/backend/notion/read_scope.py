@@ -13,6 +13,7 @@ from typing import Any, Dict, Tuple
 
 import requests
 
+from backend.execution import bounded_timeout
 from backend.config import (
     NOTION_API_BASE,
     RUNTIME_DIR,
@@ -159,7 +160,7 @@ def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int) -> tuple[Dict
                 notion_request_slot()
                 response = requests.get(
                     f"{NOTION_API_BASE}/{path}", headers=get_notion_headers(),
-                    timeout=min(8, remaining),
+                    timeout=bounded_timeout(min(8, remaining)),
                 )
             if response.status_code != 200:
                 complete = False

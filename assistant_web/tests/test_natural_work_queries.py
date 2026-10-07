@@ -146,7 +146,7 @@ class NaturalWorkQueryTests(unittest.TestCase):
         context = chat.ChatPipelineContext(q, {"id": "test"}, "key", [], q, {"mantis": True}, [], extract_query_constraints(q), 10)
         request = ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)])
         with patch.object(chat, "should_retrieve_chat_evidence", return_value=True), patch.object(chat, "retrieval_limit", return_value=(10, None)), patch.object(chat, "run_retrieval_pipeline", return_value={"stages": []}), patch.object(chat, "deterministic_retrieval_response", return_value=None):
-            response = chat.retrieve_chat_evidence(request, context)
+            response = chat.retrieve_chat_evidence(request, context).response
         self.assertEqual(response["raw"]["mode"], "empty_evidence")
         self.assertIn("0건이거나 모두 완료됐다는 뜻은 아닙니다", response["content"])
 

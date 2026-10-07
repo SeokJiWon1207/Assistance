@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.execution import bounded_timeout
 from backend.common import (
     clamp_int,
     extract_issue_id_from_text,
@@ -125,7 +126,7 @@ def rank_chroma_documents_semantically(
         response = requests.post(
             f"{embedding_base_url}/api/embeddings",
             json={"model": embedding_model, "prompt": search_keyword},
-            timeout=timeout,
+            timeout=bounded_timeout(timeout),
         )
         response.raise_for_status()
         embedding = response.json().get("embedding") or []

@@ -6,10 +6,12 @@ import os
 import time
 from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from threading import Lock
 from functools import lru_cache
 from datetime import datetime, timezone
 from fastapi import HTTPException
+from backend.execution import checkpoint, execution_slot, wait_for_result
 from backend.sources.mantis_collection import IssueBatch
 from backend.sources.mantis_store import read_complete_store, start_store_refresh, store_path, connection_key, MAX_AGE_SECONDS, refresh_in_progress, read_store_metadata
 from pathlib import Path
@@ -46,7 +48,7 @@ def fetch_workspace_recent_issues(
     settings = get_mantis_settings()
     key = (settings["url"], settings["token"])
     limit = max(1, min(int(total_limit), 3000))
-    with _live_lock:
+    with execution_slot(_live_lock):
         needs_larger_window = bool(
             _live_pages and len(_live_pages[-1]) == 100 and len(_live_pages) * 100 < limit
         )
@@ -69,8 +71,11 @@ def fetch_workspace_recent_issues(
                     while len(_live_pages) * 100 < limit and len(_live_pages[-1]) == 100:
                         first_page = len(_live_pages) + 1
                         last_page = min(first_page + 2, (limit + 99) // 100)
-                        # map은 완료 순서가 아니라 페이지 번호 순서로 돌려준다.
-                        for batch in pool.map(fetch_page, range(first_page, last_page + 1)):
+                        checkpoint()
+                        futures = [pool.submit(copy_context().run, fetch_page, page)
+                                   for page in range(first_page, last_page + 1)]
+                        for future in futures:
+                            batch = wait_for_result(future)
                             _live_pages.append(batch)
                             if len(batch) < 100:
                                 break
@@ -92,7 +97,7 @@ def fetch_workspace_recent_issues(
 
 def clear_workspace_live_cache() -> None:
     global _live_key, _live_pages, _live_expires_at
-    with _live_lock:
+    with execution_slot(_live_lock):
         _live_key, _live_pages, _live_expires_at = None, [], 0.0
 
 
