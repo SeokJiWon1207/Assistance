@@ -3079,6 +3079,35 @@ body.theme-dark .chat-header {
   font-weight: 700;
 }
 
+/* 결정형 업무 답변의 '조회 기준' 묶음(chat_rendering.js renderQueryBasis). 답보다 작고 흐리게. */
+.answer-basis {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.answer-basis-title {
+  margin: 0;
+}
+
+.answer-basis-title strong {
+  margin-right: 4px;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.answer-basis-notes {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.answer-basis-notes li + li {
+  margin-top: 2px;
+}
+
 .answer-callout {
   display: flex;
   align-items: flex-start;

@@ -373,6 +373,20 @@ class FrontendCoreTests(unittest.TestCase):
             self.assertIn(element_id, rest_parser.ids)
         self.assertIn("els.adminGenerationSettings.hidden = !adminToolsVisible", bootstrap_js)
 
+    def test_query_basis_block_is_drawn_smaller_than_the_answer(self):
+        rendering = (STATIC_DIR / "modules" / "chat_rendering.js").read_text(encoding="utf-8")
+        basis_js = (STATIC_DIR / "modules" / "query_basis.js").read_text(encoding="utf-8")
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        # 결정형 업무 답변의 '조회 기준:' 묶음은 문단이 아니라 작은 회색 영역으로 그린다.
+        self.assertIn('cleaned.startsWith("조회 기준:")', rendering)
+        self.assertIn("renderQueryBasis(rawBlock)", rendering)
+        self.assertIn('box.className = "answer-basis";', basis_js)
+        self.assertIn("item.textContent = text;", basis_js)
+        basis = styles[styles.index(".answer-basis {") : styles.index("}", styles.index(".answer-basis {"))]
+        self.assertIn("color: var(--muted);", basis)
+        self.assertIn("font-size: 13px;", basis)
+
     def test_template_picker_sits_beside_composer_without_nested_forms(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         events_js = (STATIC_DIR / "modules" / "events.js").read_text(encoding="utf-8")

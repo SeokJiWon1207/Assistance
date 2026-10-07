@@ -1,4 +1,5 @@
 import { icon } from "./icons.js?v=20260911-6";
+import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
 import {
   isMarkdownTableRow,
@@ -166,8 +167,8 @@ function appendAnswerParagraph(container, rawBlock, sources = [], messageIndex =
     return;
   }
 
-  if (cleaned.startsWith("검색 기준:")) {
-    container.appendChild(renderCriteriaChips(cleaned));
+  if (cleaned.startsWith("검색 기준:") || cleaned.startsWith("조회 기준:")) {
+    container.appendChild(cleaned.startsWith("검색") ? renderCriteriaChips(cleaned) : renderQueryBasis(rawBlock));
     return;
   }
 

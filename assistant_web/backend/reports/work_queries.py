@@ -16,6 +16,8 @@ from backend.sources.mantis import normalize_issue, select_mantis_rows, build_so
 from backend.sources.mantis_store import read_complete_store
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 from backend.common import display_mantis_status_label
+from backend.intent.search_terms import wants_all_results
+from backend.team_templates import customer_display_for_project
 from backend.reports.issue_relevance import (
     IOS, CRASH, crash_issue, incident_kind, recurrence_candidates,
     rank_similar, narrowing_question,
@@ -111,9 +113,30 @@ def _due(row: dict) -> str:
                  if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(fields.get(k) or "")[:10])), "")
 
 
+def _customer(project: str) -> str:
+    """Mantis 프로젝트 이름(112KBStar(KB증권))을 화면에서 쓰는 고객사 이름(KB증권)으로 보여 준다."""
+    return customer_display_for_project(str(project or "")) or str(project or "미상")
+
+
+def _day(value: str, today: date) -> str:
+    """'2026-10-07' → '10월 7일'. 올해가 아니면 연도를 붙인다."""
+    try:
+        parsed = date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return str(value)
+    return f"{parsed.month}월 {parsed.day}일" if parsed.year == today.year else f"{parsed.year}년 {parsed.month}월 {parsed.day}일"
+
+
+def _day_range(start: str, end: str, today: date) -> str:
+    first, last = _day(start, today), _day(end, today)
+    if first[:first.find("월") + 1] == last[:last.find("월") + 1] and "년" not in first + last:
+        return f"{first}~{last.split(' ', 1)[1]}"
+    return f"{first}~{last}"
+
+
 def _line(row: dict) -> str:
     title = str(row.get("summary") or "제목 없음").replace("\n", " ")
-    return f"- #{row['id']} {title} — {display_mantis_status_label(row['status'])} · {row['handler']} · {row['project']}"
+    return f"- #{row['id']} {title} — {display_mantis_status_label(row['status'])} · {row['handler']} · {_customer(row['project'])}"
 
 
 def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10) -> dict | None:
@@ -121,6 +144,10 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
     if not operation:
         return None
     today = today or date.today()
+    # '모두 보여줘'면 표시 개수 기본값(사이드바 5건)에 자르지 않는다.
+    show_all = wants_all_results(question)
+    if show_all:
+        limit = max(limit, 50)
     c = deepcopy(constraints)
     notice = []
     # 날짜 없는 운영 질문의 '오늘'은 등록일 필터가 아니다.
@@ -205,7 +232,7 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         missing = sum(not _due(r) for r in rows)
         rows = [r for r in rows if _due(r) and period["from"] <= _due(r) <= period["to"]]
         c["work_due_range"] = period
-        notice.append(f"목표일 기준 {period['from']} ~ {period['to']}. 고객사전달 → 개발완료 → QC 완료 목표일 순으로 사용했습니다. 기한 미입력 {missing}건은 이 기간에 포함되는지 알 수 없습니다.")
+        notice.append(f"목표일 {_day_range(period['from'], period['to'], today)} 기준이며 고객사전달 → 개발완료 → QC 완료 목표일 순으로 봤습니다. 목표일이 비어 있는 {missing}건은 포함 여부를 알 수 없습니다.")
     if operation == "aging":
         rows = [r for r in rows if r["created_at"] and r["created_at"] <= (today-timedelta(days=30)).isoformat()]
         rows.sort(key=lambda r: (r["created_at"], r["id"]))
@@ -221,13 +248,13 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         notice.append("기한 경과/도래 → 높은 우선순위 → 예정일/등록일 순 추천입니다. 실제 작업 중 여부는 상태만으로 알 수 없습니다.")
     elif operation != "similar":
         rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
-    shown = rows[:max(1, min(limit, 20))]
+    shown = rows[:max(1, min(limit, 50 if show_all else 20))]
     if operation == "workload":
         counts = Counter(r["handler"] for r in rows)
         body = f"미종료 {len(rows)}건 · 담당자 {len(counts)}명입니다.\n\n" + "\n".join(f"- {name}: {count}건" for name, count in counts.most_common())
         body += "\n\n미종료 건수 기준입니다. 난이도·공수·휴가를 반영한 실제 바쁨이나 성과 평가는 아닙니다."
     elif operation == "customers":
-        counts = Counter(r["project"] for r in rows)
+        counts = Counter(_customer(r["project"]) for r in rows)
         body = f"조건에 맞는 등록 이슈 {len(rows)}건입니다.\n\n" + "\n".join(f"- {name}: {count}건" for name, count in counts.most_common(10))
         if c.get("work_incident_only"):
             repeats = recurrence_candidates(rows)
@@ -238,7 +265,7 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         opened = [r for r in rows if mantis_status_bucket(r["status"]) == "open"]
         recent = [r for r in rows if (today-timedelta(days=29)).isoformat() <= r["created_at"] <= today.isoformat()]
         overdue = [r for r in opened if _due(r) and _due(r) < today.isoformat()]
-        body = f"전체 {len(rows)}건 중 미종료 {len(opened)}건, 최근 30일 등록 {len(recent)}건, 예정/마감일 경과 {len(overdue)}건입니다."
+        body = f"전체 {len(rows)}건 중 미종료 {len(opened)}건, 최근 30일 등록 {len(recent)}건, 목표일 경과 {len(overdue)}건입니다."
         shown = sorted(opened, key=lambda r: r["id"], reverse=True)[:limit]
     elif operation in {"cause", "owner", "detail"}:
         body = "\n".join(_line(r) for r in shown) or "해당 이슈를 찾지 못했습니다."
@@ -262,10 +289,10 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
                     body += "\n후보가 많아 임의의 최신 이슈를 정답처럼 제시하지 않았습니다."
                     shown = []
     if shown:
-        body += "\n\n" + "\n".join(_line(r) + (f" · 예정/마감 {_due(r)}" if operation in {"due", "priority"} and _due(r) else "") +
+        body += "\n\n" + "\n".join(_line(r) + (f" · 목표일 {_day(_due(r), today)}" if operation in {"due", "priority"} and _due(r) else "") +
                                   (" · 일치 개념: " + ", ".join(r["similarity_terms"]) if r.get("similarity_terms") else "") for r in shown)
         if len(rows) > len(shown):
-            body += f"\n\n위 목록은 {len(shown)}건만 표시했습니다."
+            body += f"\n\n전체 {len(rows)}건 중 {len(shown)}건을 표시했습니다. 나머지도 보려면 질문 끝에 '모두 보여줘'를 붙여 주세요."
     evidence = rows[:limit] if operation in {"cause", "owner", "detail"} else shown
     return _response(question, c, operation, body, evidence, meta, rows, notice)
 
@@ -273,12 +300,12 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
 def _response(question, constraints, operation, body, shown, meta, rows, notice):
     scope = confirmed_scope_text(constraints) or "전체 고객사"
     if constraints.get("statuses") == ["open"]:
-        notice.append("미종료는 해결·종료 제외이며 개발완료는 포함합니다.")
-    if meta:
-        notice.append(f"데이터 기준: {meta.get('fetchedAt', '알 수 없음')}")
-    content = f"{body}\n\n조회 범위: {scope}"
+        notice.append("미종료는 해결·종료를 빼고 개발완료는 포함합니다.")
+    # 저장 시각과 조회 완료 여부는 답변 아래 '데이터 기준' 영역(evaluation/data_scope.py)이 보여 준다.
+    # 본문에는 이 답변을 읽는 데 필요한 조회 기준만 '조회 기준:' 묶음으로 남긴다(chat_rendering.js가 작게 그림).
+    content = f"{body}\n\n조회 기준: {scope}"
     if notice:
-        content += "\n" + "\n".join(notice)
+        content += "\n" + "\n".join(f"- {line}" for line in notice)
     plan = build_query_plan(question, {"source": "mantis", "operation": "search"}, constraints)
     plan.update(source="mantis", resolved_constraints=deepcopy(constraints), terms=[], work_operation=operation)
     sources = build_sources_from_issue_rows(shown)

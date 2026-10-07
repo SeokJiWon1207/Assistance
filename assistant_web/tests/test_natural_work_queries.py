@@ -97,7 +97,40 @@ class NaturalWorkQueryTests(unittest.TestCase):
         r = self.report(QUESTIONS[4])
         self.assertEqual(self.ids(r), {10})
         self.assertNotIn("created_at", r["retrieval"]["constraints"])
-        self.assertIn("기한 미입력", r["content"])
+        self.assertIn("목표일이 비어 있는", r["content"])
+
+    def test_answer_reads_as_an_answer_then_a_small_query_basis(self):
+        r = self.report("우리 아직 못 끝낸 거 얼마나 돼?")
+        content = r["content"]
+        # 검증기가 첫 문장의 총 건수를 대조하므로 첫 문장 형식은 그대로 둔다.
+        self.assertRegex(content, r"^(?:조건에 맞는 이슈|미종료) \d+건")
+        # 고객사는 Mantis 프로젝트 이름 대신 화면에서 쓰는 이름으로, 상태는 내부 값 대신 '미종료'로 보인다.
+        self.assertIn("· NH투자증권", content)
+        self.assertNotIn("120NH(NH증권)", content)
+        self.assertNotIn("상태 오픈", content)
+        # 원시 저장 시각은 본문에 쓰지 않는다(답변 아래 데이터 기준 영역이 보여 준다).
+        self.assertNotIn("2026-10-01T04:00:00", content)
+        self.assertNotIn("데이터 기준:", content)
+        basis = content[content.index("\n\n조회 기준: ") + 2:]
+        self.assertTrue(basis.startswith("조회 기준: "))
+        self.assertTrue(all(line.startswith("- ") for line in basis.splitlines()[1:]))
+        self.assertEqual(verify_work_report("우리 아직 못 끝낸 거 얼마나 돼?", content, r["sources"], r["retrieval"])["checks"][2]["status"], "pass")
+
+    def test_truncated_lists_say_how_many_and_all_request_lifts_the_limit(self):
+        q = "우리 아직 못 끝낸 거 얼마나 돼?"
+        short = build_work_query_report(q, extract_query_constraints(q), today=date(2026, 10, 1), limit=2)
+        total = len(self.ids(short))
+        self.assertIn(f"전체 {total}건 중 2건을 표시했습니다. 나머지도 보려면 질문 끝에 '모두 보여줘'를 붙여 주세요.", short["content"])
+        q_all = "우리 아직 못 끝낸 거 모두 보여줘"
+        full = build_work_query_report(q_all, extract_query_constraints(q_all), today=date(2026, 10, 1), limit=2)
+        self.assertEqual(len(full["sources"]), len(self.ids(full)))
+        self.assertNotIn("건을 표시했습니다", full["content"])
+
+    def test_due_dates_read_as_korean_dates(self):
+        r = self.report("이번 주 안에 끝내야 하는 거 뭐야?")
+        self.assertIn("목표일 10월 2일", r["content"])
+        self.assertIn("목표일 9월 28일~10월 4일 기준", r["content"])
+        self.assertNotIn("예정/마감", r["content"])
 
     def test_duplicate_platform_alias_is_not_an_additional_and_filter(self):
         c = extract_query_constraints(QUESTIONS[6])
