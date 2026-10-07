@@ -19,7 +19,7 @@
       "title": "고객사별 이슈 분석",
       "description": "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
       "icon": "customer",
-      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}로 보여줘",
+      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}(으)로 보여줘",
       "fields": [
         { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "period", "label": "기간", "type": "select", "value": "이번 달", "options": ["이번 주", "이번 달", "지난달", "올해"] },
@@ -74,7 +74,7 @@
       "title": "유사 사례 조사",
       "description": "기준 이슈와 유사한 과거 원인과 해결 내용을 비교합니다.",
       "icon": "similar",
-      "questionTemplate": "#{issueId}와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+      "questionTemplate": "#{issueId}와(과) 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
       "fields": [
         { "name": "issueId", "label": "기준 이슈 ID", "type": "text", "required": true, "placeholder": "예: #30225", "normalize": "issue-id" }
       ]
@@ -110,7 +110,7 @@
       "title": "장애 초동 대응",
       "description": "증상을 기준으로 영향 범위, 확인 순서, 유사 사례와 전달 내용을 정리합니다.",
       "icon": "spike",
-      "questionTemplate": "{urgency|일반} 우선순위로 {customer?전체 고객사} {platform?전체}에서 발생한 '{symptom}' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘",
+      "questionTemplate": "{urgency|일반} 우선순위로 {platform?전체} {customer|전체 고객사}에서 발생한 '{symptom}' 이슈의 영향 범위, 초동 확인 순서, 유사 사례와 담당자 전달 내용을 정리해줘",
       "fields": [
         { "name": "symptom", "label": "발생 증상", "type": "text", "required": true, "placeholder": "예: 로그인 후 주문 화면이 열리지 않음" },
         { "name": "customer", "label": "고객사", "type": "customer", "placeholder": "전체 고객사" },
@@ -136,7 +136,7 @@
       "title": "사후 분석 작성",
       "description": "이슈의 타임라인과 원인을 정리하고 재발 방지 과제를 도출합니다.",
       "icon": "report",
-      "questionTemplate": "#{issueId} 이슈를 바탕으로 발생 영향, 타임라인, 직접 원인과 근본 원인, 대응 과정, 잘된 점, 개선점, 재발 방지 과제를 포함한 {format|사후 분석서}를 작성해줘",
+      "questionTemplate": "#{issueId} 이슈를 바탕으로 발생 영향, 타임라인, 직접 원인과 근본 원인, 대응 과정, 잘된 점, 개선점, 재발 방지 과제를 포함해 {format|사후 분석서} 형식으로 작성해줘",
       "fields": [
         { "name": "issueId", "label": "이슈 ID", "type": "text", "required": true, "placeholder": "예: #30225", "normalize": "issue-id" },
         { "name": "format", "label": "결과 형태", "type": "select", "value": "사후 분석서", "options": ["사후 분석서", "회의 안건", "5줄 요약"] }
@@ -148,7 +148,7 @@
       "title": "고객 안내문 작성",
       "description": "내부 기술 내용을 제거하고 고객에게 전달할 진행 상황과 안내 문구를 작성합니다.",
       "icon": "customer",
-      "questionTemplate": "#{issueId} 이슈를 바탕으로 내부 식별자와 불확실한 원인 추정을 제외하고, 현재 확인된 사실, 고객 영향, 진행 상황과 다음 안내 시점을 담은 {channel|고객 안내 메일}을 {tone|정중한} 말투로 작성해줘",
+      "questionTemplate": "#{issueId} 이슈를 바탕으로 내부 식별자와 불확실한 원인 추정을 제외하고, 현재 확인된 사실, 고객 영향, 진행 상황과 다음 안내 시점을 담아 {tone|정중한} 말투의 {channel|고객 안내 메일} 형식으로 작성해줘",
       "fields": [
         { "name": "issueId", "label": "이슈 ID", "type": "text", "required": true, "placeholder": "예: #30225", "normalize": "issue-id" },
         { "name": "channel", "label": "전달 형식", "type": "select", "value": "고객 안내 메일", "options": ["고객 안내 메일", "메신저 답변", "점검 공지", "회의 공유문"] },

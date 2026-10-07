@@ -3,7 +3,6 @@
 외부 I/O만 고정한 테스트다. 모델이 직접 작성하는 문안의 품질 평가는 포함하지 않는다.
 """
 
-import re
 import unittest
 from contextlib import ExitStack
 from datetime import date
@@ -17,6 +16,7 @@ from backend.services.chat_service import build_deterministic_report
 from backend.sources.mantis import normalize_issue
 from backend.sources.mantis_collection import IssueBatch
 from backend.team_templates import load_team_templates
+from backend.template_questions import fill_template_question
 from backend.understanding import build_keyword_terms, extract_query_constraints
 
 
@@ -47,17 +47,7 @@ def template_variants():
             if "month" in rendered:
                 rendered["month"] = "2026년 8월"
 
-            def substitute(match, rendered=rendered):
-                name, operator, operand = match.groups()
-                value = rendered.get(name, "")
-                if operator == "|":
-                    return value or operand
-                if operator == "?":
-                    return "" if value == operand else value
-                return value
-
-            question = re.sub(r"\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}", substitute, template["questionTemplate"])
-            yield template["id"], values, re.sub(r"\s+", " ", question).strip()
+            yield template["id"], values, fill_template_question(template["questionTemplate"], rendered)
 
 
 def raw_issues():

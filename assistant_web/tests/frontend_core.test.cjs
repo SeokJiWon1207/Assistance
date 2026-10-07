@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  attachKoreanParticles,
   storageSafeMessages,
   deriveConversationTitle,
   conversationContentChanged,
@@ -247,6 +248,31 @@ test("buildTeamTemplateQuestion creates every configured shared template questio
       platform: "전체",
     }),
     "2026년 8월 신한투자증권 월간 고객사 리포트를 만들어줘",
+  );
+});
+
+test("template particles follow the final sound of the chosen value", () => {
+  assert.equal(attachKoreanParticles("표(으)로 · 목록(으)로 · 파일(으)로"), "표로 · 목록으로 · 파일로");
+  assert.equal(attachKoreanParticles("#30225와(과) · #30220와(과) · #31573와(과)"), "#30225와 · #30220과 · #31573과");
+  assert.equal(attachKoreanParticles("HTS을(를) · MTS을(를) · [기준 이슈 ID]와(과)"), "HTS를 · MTS를 · [기준 이슈 ID]와");
+  assert.equal(attachKoreanParticles("보고서이(가) · 공지은(는)"), "보고서가 · 공지는");
+  const analysis = { period: "지난달", customer: "KB증권", platform: "전체", status: "전체" };
+  assert.equal(
+    buildTeamTemplateQuestion(template("customer-analysis"), { ...analysis, format: "목록" }),
+    "지난달 KB증권 이슈를 목록으로 보여줘",
+  );
+  assert.equal(
+    buildTeamTemplateQuestion(template("similar-issues"), { issueId: "#30220" }),
+    "#30220과 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘",
+  );
+  // 플랫폼을 '전체'로 두고 고객사만 골라도 '에서'가 고객사에 바로 붙는다.
+  assert.match(
+    buildTeamTemplateQuestion(template("incident-triage"), { symptom: "로그인 오류", customer: "KB증권", platform: "전체", urgency: "긴급" }),
+    /^긴급 우선순위로 KB증권에서 발생한 '로그인 오류' 이슈의/,
+  );
+  assert.match(
+    buildTeamTemplateQuestion(template("incident-triage"), { symptom: "로그인 오류", platform: "전체", urgency: "긴급" }),
+    /^긴급 우선순위로 전체 고객사에서 발생한/,
   );
 });
 

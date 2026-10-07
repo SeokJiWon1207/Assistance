@@ -63,6 +63,26 @@ class TemplateQuestionTests(unittest.TestCase):
             .startswith("#31567 이슈를 바탕으로")
         )
 
+    def test_particles_follow_the_value_chosen_for_every_option(self):
+        templates = {item["id"]: item for item in load_team_templates()["templates"]}
+        analysis = {"customer": "KB증권", "period": "지난달", "platform": "전체", "status": "전체"}
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "표"}).endswith("이슈를 표로 보여줘"))
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "목록"}).endswith("이슈를 목록으로 보여줘"))
+        self.assertTrue(fill_question(templates["customer-analysis"], {**analysis, "format": "요약"}).endswith("이슈를 요약으로 보여줘"))
+        similar = templates["similar-issues"]
+        self.assertTrue(fill_question(similar, {"issueId": "#30225"}).startswith("#30225와 비슷한"))
+        self.assertTrue(fill_question(similar, {"issueId": "#30220"}).startswith("#30220과 비슷한"))
+        # 고른 값과 빈 칸 조합 어디에서도 조사가 홀로 남거나 받침과 어긋나지 않는다.
+        for template in templates.values():
+            selects = [field for field in template["fields"] if field.get("options")]
+            for field in selects:
+                for option in field["options"]:
+                    values = {**{spec["name"]: "" for spec in template["fields"]}, field["name"]: option, "issueId": "#31572", "symptom": "로그인 오류", "month": "2026-09", "days": "30"}
+                    question = fill_question(template, values)
+                    with self.subTest(template=template["id"], option=option):
+                        self.assertNotRegex(question, r"(?:^|\s)(?:에서|으로|로|을|를|와|과)(?:\s|$)")
+                        self.assertNotRegex(question, r"\((?:으|을|를|이|가|은|는|과|와)\)")
+
     def test_every_template_gets_one_case_with_inputs_from_the_store(self):
         cases = build_cases(load_team_templates()["templates"], ISSUES, today=TODAY, rng=random.Random(1))
 

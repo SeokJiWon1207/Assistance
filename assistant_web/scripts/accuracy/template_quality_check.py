@@ -44,6 +44,7 @@ load_dotenv(APP_DIR / ".env")
 
 from backend.config import CUSTOMER_ALIASES
 from backend.mantis_status import mantis_status_bucket
+from backend.template_questions import fill_template_question
 from backend.team_templates import (
     customer_display_for_project,
     load_team_templates,
@@ -53,16 +54,15 @@ from backend.team_templates import (
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
 ACCURACY_USER_UID = "template-quality-" + uuid.uuid4().hex
-PLACEHOLDER = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}")
 # 한글 조사가 바로 붙어도(#31567을) 번호를 읽도록 \b 대신 숫자 경계만 본다.
 ISSUE_REFERENCE = re.compile(r"#\s?0*(\d{4,6})(?!\d)")
 # 정기점검 같은 반복 작업 티켓은 장애 분석·안내문 템플릿의 입력으로 맞지 않는다.
 ROUTINE_SUMMARY = re.compile(r"정기\s*점검|서버\s*점검|점검\s*공지|월간\s*보고")
+# 시스템이 답변을 끝내지 못했을 때만 쓰는 문구. '오류가 발생'처럼 장애 설명 본문에도 나오는 말은 넣지 않는다.
 FAILURE_PHRASES = (
     "사용할 수 없습니다",
     "확정할 수 없습니다",
     "완료되지 않아",
-    "오류가 발생",
     "응답하지 않",
     "시간이 초과",
 )
@@ -114,17 +114,7 @@ def fill_question(template: Mapping[str, Any], values: Mapping[str, str]) -> str
             match = re.fullmatch(r"(20\d{2})-(0?[1-9]|1[0-2])", normalized.get(name, ""))
             if match:
                 normalized[name] = f"{match.group(1)}년 {int(match.group(2))}월"
-
-    def replace(match: re.Match) -> str:
-        name, operator, operand = match.group(1), match.group(2), match.group(3) or ""
-        value = normalized.get(name, "")
-        if operator == "|":
-            return value or operand
-        if operator == "?":
-            return "" if value == operand else value
-        return value
-
-    return re.sub(r"\s+", " ", PLACEHOLDER.sub(replace, template["questionTemplate"])).strip()
+    return fill_template_question(template["questionTemplate"], normalized)
 
 
 def default_values(template: Mapping[str, Any]) -> Dict[str, str]:
@@ -473,9 +463,17 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
 # ── 실행 ───────────────────────────────────────────────────────────────────
 
 
-def prepare_store(progress: bool) -> List[Dict[str, Any]]:
+def prepare_store(progress: bool, *, allow_stale: bool = False) -> List[Dict[str, Any]]:
     from backend.sources.mantis_store import read_complete_store, read_store_metadata, refresh_in_progress, sync_complete_store
 
+    if allow_stale:
+        # Mantis가 느려 전체 동기화가 안 될 때 이슈별 문서 템플릿만 빠르게 확인하는 용도.
+        # 건수형 리포트는 최신 저장본을 요구하므로 '답변 완료'에서 실패할 수 있다.
+        stale = read_complete_store(allow_stale=True, summary_only=True)
+        if stale is None:
+            raise RuntimeError("저장된 Mantis 원본이 없습니다.")
+        emit(progress, f"저장본을 갱신 없이 사용합니다(기준 {stale.meta.get('fetchedAt')})")
+        return [dict(row) for row in stale]
     if read_store_metadata() is None:
         emit(progress, "Mantis 저장본을 최신으로 맞추고 있습니다")
         result = sync_complete_store()
@@ -604,11 +602,12 @@ def main() -> int:
     parser.add_argument("--model-id", default="")
     parser.add_argument("--only", default="", help="쉼표로 구분한 템플릿 ID만 실행")
     parser.add_argument("--progress", action="store_true")
+    parser.add_argument("--allow-stale", action="store_true", help="저장본을 갱신하지 않고 그대로 사용")
     args = parser.parse_args()
 
     from backend.llm import get_model_registry
 
-    issues = prepare_store(args.progress)
+    issues = prepare_store(args.progress, allow_stale=args.allow_stale)
     today = datetime.now().astimezone().date()
     templates = load_team_templates()["templates"]
     cases = build_cases(templates, issues, today=today, rng=random.Random(args.seed))

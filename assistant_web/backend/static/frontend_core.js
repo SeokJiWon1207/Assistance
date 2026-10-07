@@ -235,8 +235,48 @@
     return normalizedValues;
   }
 
+  // 숫자·영문은 읽는 소리로 받침을 정한다(0 영, 1 일, 3 삼, 6 육, 7 칠, 8 팔 / L 엘, M 엠, N 엔).
+  const BATCHIM_DIGITS = new Set(["0", "1", "3", "6", "7", "8"]);
+  const RIEUL_DIGITS = new Set(["1", "7", "8"]);
+  const BATCHIM_LETTERS = new Set(["l", "m", "n", "r"]);
+  const RIEUL_LETTERS = new Set(["l", "r"]);
+
+  function finalSound(word) {
+    // 닫는 괄호·따옴표는 건너뛰고 실제 마지막 글자를 본다: "[기준 이슈 ID]와(과)" → D.
+    const char = String(word || "").replace(/[\])}'"”’\s]+$/u, "").slice(-1);
+    const code = char.charCodeAt(0) - 0xac00;
+    if (code >= 0 && code <= 11171) {
+      const jong = code % 28;
+      return { batchim: jong !== 0, rieul: jong === 8 };
+    }
+    const lower = char.toLowerCase();
+    if (/[0-9]/.test(char)) return { batchim: BATCHIM_DIGITS.has(char), rieul: RIEUL_DIGITS.has(char) };
+    if (/[a-z]/.test(lower)) return { batchim: BATCHIM_LETTERS.has(lower), rieul: RIEUL_LETTERS.has(lower) };
+    return null;
+  }
+
+  // 질문 틀의 '(으)로', '을(를)', '와(과)'처럼 쓴 조사를 앞말의 받침에 맞춰 하나로 고른다.
+  // 고른 값에 따라 '목록로', '#30220와'처럼 어색해지는 것을 막는다.
+  const PARTICLE_PAIRS = [["으로", "로"], ["을", "를"], ["이", "가"], ["은", "는"], ["과", "와"]];
+
+  function attachKoreanParticles(text) {
+    return String(text || "").replace(
+      /\(으\)로|(을|를|이|가|은|는|과|와)\((을|를|이|가|은|는|과|와)\)/g,
+      (marker, first, second, offset, whole) => {
+        const pair = marker === "(으)로"
+          ? PARTICLE_PAIRS[0]
+          : PARTICLE_PAIRS.find(([withBatchim, without]) => [withBatchim, without].includes(first) && [withBatchim, without].includes(second));
+        if (!pair) return marker;
+        const sound = finalSound(whole.slice(0, offset));
+        if (!sound) return pair[1];
+        if (pair[0] === "으로") return sound.batchim && !sound.rieul ? "으로" : "로";
+        return sound.batchim ? pair[0] : pair[1];
+      },
+    );
+  }
+
   function fillTeamTemplateQuestion(questionTemplate, normalizedValues) {
-    return questionTemplate.replace(
+    return attachKoreanParticles(questionTemplate.replace(
       /\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}/g,
       (_token, name, operator, operand = "") => {
         const value = normalizedValues[name] || "";
@@ -244,7 +284,7 @@
         if (operator === "?") return value === operand ? "" : value;
         return value;
       },
-    ).replace(/\s+/g, " ").trim();
+    )).replace(/\s+/g, " ").trim();
   }
 
   function buildTeamTemplateQuestion(template, values = {}) {
@@ -274,6 +314,7 @@
   }
 
   const api = Object.freeze({
+    attachKoreanParticles,
     storageSafeMessages,
     mergeConversations,
     deriveConversationTitle,
