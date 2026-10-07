@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from backend.common import (
+    customer_alias_owner,
+    customer_project_owner,
     derive_customer_aliases_from_project,
     is_valid_handler_name,
     is_valid_person_name,
@@ -168,11 +170,21 @@ def _get_customer_alias_groups_cached(
 
     for dynamic_aliases in _load_project_alias_groups_cached(database_path, mtime_ns, size):
         normalized_dynamic = {normalize_for_match(alias) for alias in dynamic_aliases}
+        project_owner = next((
+            owner for alias in dynamic_aliases if (owner := customer_project_owner(alias))
+        ), None)
         merged = False
         for group in groups:
+            if project_owner and group[0] != project_owner:
+                continue
             normalized_group = {normalize_for_match(alias) for alias in group}
-            if normalized_dynamic & normalized_group:
-                group.extend(alias for alias in dynamic_aliases if alias not in group)
+            if project_owner or normalized_dynamic & normalized_group:
+                # 114Solomon(아이엠증권)의 옛 표시명이 현재 하이투자 별칭으로
+                # 다시 유입되어 두 프로젝트가 합쳐지지 않게 한다.
+                group.extend(
+                    alias for alias in dynamic_aliases if alias not in group
+                    and (not project_owner or customer_alias_owner(alias) in {None, project_owner})
+                )
                 merged = True
                 break
         if not merged:

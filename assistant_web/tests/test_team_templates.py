@@ -11,6 +11,7 @@ from backend.team_templates import (
     TeamTemplateConfigError,
     customer_display_for_project,
     customer_template_options,
+    customer_template_search_terms,
     load_team_templates,
     order_customer_options,
     recent_customer_issue_counts,
@@ -83,6 +84,19 @@ class TeamTemplateConfigTests(unittest.TestCase):
         counts = recent_customer_issue_counts(issues, today=date(2026, 10, 4), days=90)
 
         self.assertEqual(counts, {"NH투자증권": 2, "한국투자증권": 1})
+
+    def test_im_securities_option_and_counts_use_hi_project(self):
+        self.assertEqual(customer_display_for_project("163Hi-ib(하이투자증권)"), "아이엠증권")
+        self.assertEqual(customer_display_for_project("114Solomon(아이엠증권)"), "IM투자증권")
+        terms = customer_template_search_terms()["아이엠증권"]
+        for alias in ("하이투자", "IM증권", "163Hi-ib"):
+            self.assertIn(alias, terms)
+        self.assertNotIn("Solomon", terms)
+        counts = recent_customer_issue_counts([
+            {"project": {"name": "163Hi-ib(하이투자증권)"}, "created_at": "2026-10-01"},
+            {"project": {"name": "114Solomon(아이엠증권)"}, "created_at": "2026-10-01"},
+        ], today=date(2026, 10, 7))
+        self.assertEqual(counts, {"아이엠증권": 1, "IM투자증권": 1})
 
     def test_customer_options_put_busy_customers_first_and_keep_config_order_for_ties(self):
         payload = load_team_templates()

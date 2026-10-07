@@ -6,6 +6,7 @@
 
 import re
 from datetime import date, datetime
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from backend.config import (
@@ -172,11 +173,35 @@ def text_matches_any_alias(text: str, aliases: List[str]) -> bool:
     return any(normalize_for_match(alias) in normalized_text for alias in aliases)
 
 
+@lru_cache(maxsize=2048)
+def customer_alias_owner(alias: str) -> Optional[str]:
+    """설정에 명시된 별칭의 고객사를 반환한다. 원본의 옛 표시명보다 우선한다."""
+    normalized = normalize_for_match(alias)
+    return next((
+        key for key, values in CUSTOMER_ALIASES.items()
+        if normalized in {normalize_for_match(value) for value in [key, *values]}
+    ), None)
+
+
+@lru_cache(maxsize=512)
+def customer_project_owner(project_name: str) -> Optional[str]:
+    """등록된 프로젝트 코드는 괄호 안의 오래된 회사명보다 우선한다."""
+    match = re.match(r"^(\d{3}[A-Za-z가-힣][^()\s]*)", project_name.strip())
+    if not match:
+        return None
+    code = re.sub(r"_Project$", "", match.group(1), flags=re.IGNORECASE)
+    return customer_alias_owner(code)
+
+
 def text_matches_customer_aliases(text: str, aliases: List[str]) -> bool:
     """Match customer aliases without short ASCII aliases leaking into words."""
     normalized_text = normalize_for_match(text)
     boundary_text = str(text or "").casefold()
+    project_owner = customer_project_owner(text)
     for alias in aliases:
+        alias_owner = customer_alias_owner(alias) if project_owner else None
+        if alias_owner and alias_owner != project_owner:
+            continue
         normalized_alias = normalize_for_match(alias)
         if not normalized_alias:
             continue
