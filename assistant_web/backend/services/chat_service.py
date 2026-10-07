@@ -47,7 +47,7 @@ from backend.llm import (
 from backend.query_planning import build_query_plan, extract_group_by
 from backend.timing import TIMINGS, measured, request_timing
 from backend.intent.search_terms import build_keyword_terms
-from backend.intent.confirmed_context import confirmed_scope_text, confirmed_constraints_scope, merge_confirmed_constraints
+from backend.intent.confirmed_context import confirmed_scope_text, confirmed_constraints_scope, merge_confirmed_constraints, restore_confirmed_constraints, confirmed_keyword_text
 from backend.reports.aggregate import (
     build_mantis_count_report,
     build_mantis_pivot_report,
@@ -614,15 +614,13 @@ def prepare_chat_pipeline(
     if (prior_plan.get("source") == "mantis" and prior_plan.get("resolved_constraints")
             and (lookup_continuation or is_follow_up_question(latest_user_text) or (status_choice and prior_resolution.get("needs_clarification")))):
         # 이전 자연어를 다시 추측하지 않고 서버가 확정한 범위를 복원한다.
-        prior_text = confirmed_scope_text(prior_plan["resolved_constraints"])
+        inherited_constraints = restore_confirmed_constraints(prior_plan)
+        prior_text = confirmed_scope_text(inherited_constraints)
         scope_messages = [request.messages[-1].model_copy(update={"content": prior_text}),
                           request.messages[-1].model_copy(update={"content": latest_user_text if is_follow_up_question(latest_user_text) else f"그중 {latest_user_text}"})]
         retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(scope_messages)
         retrieval_text = "멘티스 " + retrieval_text
-        inherited_constraints = prior_plan["resolved_constraints"]
         # 문장은 라우팅/표시에만 사용하고 실행 조건은 아래에서 구조적으로 병합한다.
-        inherited_constraints = {**inherited_constraints,
-            "inherited_terms": prior_plan.get("terms") or inherited_constraints.get("inherited_terms") or []}
         needs_follow_up_rewrite = False
     elif status_choice and prior_resolution.get("needs_clarification"):
         follow_up_messages = [*request.messages[:-1], request.messages[-1].model_copy(
@@ -700,6 +698,9 @@ def prepare_chat_pipeline(
                 inherited_constraints, extract_query_constraints(latest_user_text), latest_user_text,
             )
             scoped_constraints["inherited_from_audit_id"] = request.contextAuditId
+            keyword_text = confirmed_keyword_text(scoped_constraints)
+            if keyword_text:
+                retrieval_text = f"{retrieval_text} {keyword_text}"
     if inherited_resolution:
         inherited_resolution["grounding_text"] = retrieval_text
     enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
@@ -725,6 +726,23 @@ def prepare_chat_pipeline(
 
 @measured("planning")
 def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if context.query_constraints.get("unconfirmed_search_terms"):
+        terms = ", ".join(str(term) for term in context.query_constraints["unconfirmed_search_terms"])
+        plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
+        plan["resolved_constraints"] = dict(context.query_constraints)
+        return {
+            "modelId": request.modelId,
+            "content": (
+                f"이전 대화의 검색어 조건({terms})을 확인해야 합니다. "
+                "필요한 검색어와 제목 조건을 ‘키워드 \"차트\" 포함’처럼 모두 다시 지정해 주세요. "
+                "검색어 제한 없이 조회하려면 고객사·담당자 등 필요한 조건을 포함해 새로 질문해 주세요. "
+                "조건을 확인하기 전에는 건수를 집계하지 않았습니다."
+            ),
+            "sources": [],
+            "retrieval": {"query": context.retrieval_text, "constraints": context.query_constraints,
+                          "query_plan": plan, "stages": []},
+            "raw": {"mode": "search_terms_clarification"},
+        }
     if user and not context.authenticated_owner and should_scope_to_authenticated_mantis_user(context.latest_user_text):
         return {"modelId": request.modelId, "content": "개인 이슈를 조회할 담당자명이 등록되어 있지 않습니다. 관리자에게 Mantis 담당자명 등록을 요청해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_scope"}}
@@ -764,6 +782,9 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
 
 def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: Dict[str, Any]) -> bool:
     """의미가 이미 확정된 단순 조회만 일반 플래너를 생략한다."""
+    if rule_plan.get("source") == "notion":
+        from backend.notion.formatting import is_simple_notion_title_lookup
+        return is_simple_notion_title_lookup(text)
     if rule_plan.get("source") not in {"mantis", "general"}:
         return False
     from backend.intent.status_semantics import is_structured_status_neutral_query
@@ -808,7 +829,7 @@ def _plan_chat_query(
     fast_path = can_skip_general_planner(context.retrieval_text, context.query_constraints, rule_plan)
     if fast_path:
         # '그중 전체 상태 몇 건'은 소스 단어가 생략되어도 확정 고객사 범위가 있다.
-        rule_plan = {**rule_plan, "source": "mantis", "reason": "확정된 구조화 조회"}
+        rule_plan = {**rule_plan, "source": "notion" if rule_plan.get("source") == "notion" else "mantis", "reason": "확정된 구조화 조회"}
     model_plan: Dict[str, Any] = {}
     planner_enabled = os.getenv("QUERY_PLANNER_ENABLED", "true").strip().lower() not in {
         "0",
@@ -965,6 +986,9 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
     model_retrieval_context = build_model_retrieval_context(context.retrieval_result, limit)
     context.system_notes.append(
         "너는 컨텐츠서비스 AI 비서다. 아래 [검색 파이프라인 결과] JSON에 있는 데이터만 사실로 사용해라. "
+        "첨부파일이나 이미지의 실제 내용은 이 JSON에 명시된 텍스트가 없으면 확인하지 못한 것이다. "
+        "'타 증권사와 비교한 이미지'라는 설명만으로 타사의 정상 동작이나 비교 결과를 단정하지 마라. "
+        "증상, 원인, 조치 완료 여부와 일정은 각각 원문에 직접 적힌 사실만 요약하고, 없는 내용은 추측해 채우지 마라. "
         "검색 파이프라인은 Notion DB 조회, Mantis 저장 필터, Mantis 페이지 스캔, ChromaDB 검색으로 구성된다. "
         "Notion 결과는 팀 주요 이슈/공지/일정/결재 상태 조회에 사용하고, Mantis 결과는 원본 이슈 목록 조회에 우선 사용하며, ChromaDB 결과는 유사 사례나 보조 맥락으로 사용해라. "
         "ChromaDB 문서에 latest_issue가 있으면 ChromaDB 스냅샷 대신 latest_issue 값을 최신 Mantis 원본으로 사용해라. "

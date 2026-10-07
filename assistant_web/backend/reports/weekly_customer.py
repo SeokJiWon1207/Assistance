@@ -5,6 +5,8 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.mantis_status import mantis_status_bucket
+from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
@@ -23,8 +25,7 @@ WEEKLY_REPORT_MAX_DAYS = 31
 
 
 def _is_closed(status: Any) -> bool:
-    label = str(status or "")
-    return "종료" in label or "closed" in label.casefold()
+    return mantis_status_bucket(str(status or "")) == "done"
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -118,6 +119,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
             error_kind="dependency",
         )
 
+    data_meta = collection_metadata(raw_issues)
     # 보고서가 신규·미종료·종료를 함께 세므로 질문의 상태·기간 표현으로 범위를
     # 좁히지 않는다. '미종료 이슈'라는 표현 때문에 종료 건이 빠지면 처리시간과
     # 종료 건수가 항상 0이 된다.
@@ -145,8 +147,9 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
         if _is_closed(issue.get("status"))
         and start <= (_parse_date(issue.get("updated_at")) or date.min) <= effective_end
     ]
-    open_rows = [issue for issue in scoped if not _is_closed(issue.get("status"))]
-    open_in_window = [issue for issue in current if not _is_closed(issue.get("status"))]
+    open_rows = [issue for issue in scoped if mantis_status_bucket(str(issue.get("status") or "")) == "open"]
+    open_in_window = [issue for issue in current if mantis_status_bucket(str(issue.get("status") or "")) == "open"]
+    unknown_count = sum(mantis_status_bucket(str(issue.get("status") or "")) == "unknown" for issue in scoped)
 
     handling_days = []
     for issue in closed_in_window:
@@ -179,19 +182,21 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
 
     lines = [
         f"{start.isoformat()}~{effective_end.isoformat()} {customer} 주간 보고서",
-        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · 최근 라이브 {len(raw_issues)}건 범위",
+        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
         "",
         "요약",
         f"- 신규 등록: **{len(current)}건** · 직전 {span}일 {len(previous)}건 대비 **{comparison}**",
-        f"- 기간 내 종료: **{len(closed_in_window)}건**",
+        f"- 기간 내 해결·종료: **{len(closed_in_window)}건**",
         f"- 현재 미종료: **{len(open_rows)}건** (이 중 이번 기간 등록 {len(open_in_window)}건)",
         f"- 장기 적체: **{len(aging)}건** ({WEEKLY_REPORT_AGING_DAYS}일 이상 미종료)",
         f"- 기간 공수 합계: **{total_effort:.2f}**",
-        f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (기간 내 종료 {len(handling_days)}건 기준)"
-        if handling_days else "- 평균 처리기간: 기간 내 종료 이슈가 없어 계산하지 않았습니다.",
+        f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (기간 내 해결·종료 {len(handling_days)}건 기준)"
+        if handling_days else "- 평균 처리기간: 기간 내 해결·종료 이슈가 없어 계산하지 않았습니다.",
         "",
         "신규 이슈",
     ]
+    if unknown_count:
+        lines.insert(lines.index("신규 이슈"), f"- 상태 미확인: **{unknown_count}건** (미종료·해결·종료 집계에서 제외)")
     if current_with_effort:
         lines.extend(
             f"- #{issue['id']} {issue['summary']} — {issue['status']} · {issue['handler']}"
@@ -236,7 +241,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
     lines.extend([
         "",
         "※ 상태와 미종료 건수는 조회 시점의 Mantis 상태입니다.",
-        "※ 처리기간은 정확한 종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
+        "※ 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
 
     source_rows: List[Dict[str, Any]] = sorted(
@@ -257,9 +262,11 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
                 "status": "ok",
                 "issues_list": source_rows[:10],
                 "meta": {
+                    **data_meta,
                     "current_count": len(current),
                     "previous_count": len(previous),
                     "closed_count": len(closed_in_window),
+                    "unknown_status_count": unknown_count,
                     "open_count": len(open_rows),
                     "aging_count": len(aging),
                     "total_effort": round(total_effort, 2),

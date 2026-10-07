@@ -11,6 +11,7 @@ from scripts.accuracy.dynamic_accuracy_check import (
     FollowUpScenario,
     prepare_mantis_store,
 )
+from backend.intent.constraints import extract_query_constraints
 
 
 class DynamicAccuracyDependencyTests(unittest.TestCase):
@@ -308,6 +309,51 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
 
         self.assertFalse(result["passed"])
         self.assertNotIn("oracle_reconciled", result)
+
+
+class FollowUpConstraintGradingTests(unittest.TestCase):
+    def run_scenario(self, question, constraints, *, correction=False):
+        parent = AccuracyCase(
+            "mantis-project-status", "mantis", "고객사·상태",
+            "하나금융에서 상태가 closed인 최근 이슈 2개 보여줘", "ordered_issue_ids", [31571, 31554],
+        )
+        scenario = FollowUpScenario(
+            "followup-project-status-correction" if correction else "followup-project-status-latest",
+            "mantis", "후속 질문·조건 상속", parent.id, question, "exact_issue_ids", [31571],
+        )
+        response = {
+            "content": "#31571", "sources": [{"type": "mantis", "issue_id": 31571}],
+            "retrieval": {"query": (constraints.get("status_resolution") or {}).get("grounding_text", question),
+                          "constraints": constraints, "query_plan": {"source": "mantis"}},
+        }
+        with patch("scripts.accuracy.dynamic_accuracy_check.execute_chat", return_value=response):
+            return run_follow_up_scenario(
+                scenario, parent, {"passed": True, "audit_id": "a" * 32, "answer": "이전 답변"}, "fixture",
+            )
+
+    def test_inherited_customer_is_required_even_when_answer_id_is_correct(self):
+        result = self.run_scenario(
+            "방금 조건에서 가장 최근 이슈 하나만 자세히 알려줘",
+            extract_query_constraints("상태 closed 최근 이슈"),
+        )
+        self.assertTrue(result["answer_passed"])
+        self.assertFalse(result["filter_recall_passed"])
+        self.assertFalse(result["passed"])
+        self.assertIn("조건 누락", result["failed_checks"])
+
+    def test_missing_constraints_cannot_skip_inherited_filter_grading(self):
+        result = self.run_scenario("방금 조건에서 가장 최근 이슈 하나만 자세히 알려줘", {})
+        self.assertFalse(result["filter_recall_passed"])
+        self.assertFalse(result["passed"])
+
+    def test_status_correction_replaces_status_but_still_requires_customer(self):
+        question = "아니, 고객사는 그대로 두고 상태만 confirmed로 바꿔서 가장 최근 이슈 하나를 알려줘"
+        constraints = extract_query_constraints("하나금융 상태 confirmed 최근 이슈")
+        result = self.run_scenario(question, constraints, correction=True)
+        self.assertTrue(result["filter_recall_passed"])
+        self.assertTrue(result["passed"])
+        missing_customer = self.run_scenario(question, extract_query_constraints("상태 confirmed 이슈"), correction=True)
+        self.assertFalse(missing_customer["filter_recall_passed"])
 
 
 if __name__ == "__main__":

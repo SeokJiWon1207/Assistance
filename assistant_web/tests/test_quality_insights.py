@@ -13,6 +13,7 @@ from backend.schemas import ChatRequest
 from backend.services.chat_service import chat_service
 from backend.sources import mantis
 from scripts.accuracy.dynamic_accuracy_check import (
+    ACCURACY_USER_UID,
     AccuracyCase,
     FollowUpScenario,
     build_mantis_cases,
@@ -286,6 +287,8 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
     def setUp(self):
         mantis.clear_mantis_recent_cache()
         self.addCleanup(mantis.clear_mantis_recent_cache)
+        # API 모의 응답을 검증하는 테스트가 로컬의 라이브 저장본을 읽지 않는다.
+        self.enterContext(patch.object(mantis, "read_complete_store", return_value=None))
 
     @patch.object(mantis, "fetch_mantis_issues")
     def test_live_count_collection_returns_error_metadata(self, fetch_issues):
@@ -627,7 +630,8 @@ class AccuracyInsightTests(unittest.TestCase):
         )
 
         self.assertEqual(execute_chat(request), build_response.return_value)
-        build_response.assert_called_once_with(request, user=None)
+        build_response.assert_called_once_with(request, user={"uid": ACCURACY_USER_UID})
+        self.assertTrue(ACCURACY_USER_UID.startswith("accuracy-"))
 
     @patch.dict(
         "os.environ",

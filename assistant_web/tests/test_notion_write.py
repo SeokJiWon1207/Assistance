@@ -70,8 +70,10 @@ class NotionWriteHttpTests(unittest.TestCase):
             patch.object(write, "fetch_notion_database_title", return_value="업무 DB"),
             patch.object(write, "normalize_notion_page", return_value=normalized),
             patch.object(write.requests, "post", return_value=success) as post,
+            patch.object(write, "clear_notion_query_cache") as clear_cache,
         ):
             self.assertEqual(write.create_notion_page(request), normalized)
+        clear_cache.assert_called_once_with()
         self.assertEqual(post.call_args.kwargs["timeout"], 30)
         self.assertIn("children", post.call_args.kwargs["json"])
 
@@ -100,12 +102,14 @@ class NotionWriteHttpTests(unittest.TestCase):
             patch.object(write.requests, "patch", return_value=updated),
             patch.object(write, "fetch_notion_database_title", return_value="업무 DB"),
             patch.object(write, "normalize_notion_page", return_value=normalized),
+            patch.object(write, "clear_notion_query_cache") as clear_cache,
         ):
             self.assertEqual(
                 write.update_notion_page("page", NotionPageUpdateRequest(status="완료")),
                 normalized,
             )
         ensure.assert_called_once_with("db")
+        clear_cache.assert_called_once_with()
 
         lookup_failure = Mock(status_code=404, text="missing")
         with (

@@ -11,6 +11,7 @@ class CustomerAliasFilterTests(unittest.TestCase):
     def setUp(self):
         mantis.clear_mantis_recent_cache()
         self.addCleanup(mantis.clear_mantis_recent_cache)
+        self.enterContext(patch.object(mantis, "read_complete_store", return_value=None))
         self.enterContext(patch.object(mantis, "get_mantis_settings", return_value={"url": "https://alias.test", "token": "test"}))
 
     def test_broker_name_precedes_product_alias_but_explicit_project_is_preserved(self):

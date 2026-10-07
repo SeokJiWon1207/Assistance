@@ -32,6 +32,19 @@ NOTION_STRONG_CONTENT_MARKERS = tuple(
 )
 
 
+def is_simple_notion_title_lookup(text: str) -> bool:
+    """명시한 제목을 찾는 요청만 모델 플래너를 생략한다."""
+    if not extract_quoted_value(text):
+        return False
+    intent = normalize_for_match(remove_quoted_value(text))
+    return bool(re.fullmatch(
+        r"(?:노션|notion)(?:에서|에)?(?:제목(?:이|은|으로)?|이름(?:이|은|으로)?)?"
+        r"(?:인|이라는|라는)?(?:문서|항목|페이지|자료)?(?:을|를)?"
+        r"(?:찾아(?:서)?|검색(?:해서|해(?:서)?)?|조회(?:해(?:서)?)?|보여)(?:줘|주세요)?"
+        r"(?:알려(?:줘|주세요))?[.!?]*", intent,
+    ))
+
+
 def has_deterministic_notion_list_intent(text: str) -> bool:
     """Return whether Notion can answer without reading page bodies."""
     # Quoted text is a title filter, not the requested answer form. For

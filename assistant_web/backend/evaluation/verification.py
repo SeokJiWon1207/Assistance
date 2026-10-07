@@ -85,6 +85,24 @@ def ungrounded_constraint_labels(
         if issue_id not in (expected.get("issue_ids") or []):
             labels.append(f"이슈 ID={issue_id}")
 
+    # 집계값과 실행 필터가 서로 일치해도, 질문에 없던 검색어로 범위를
+    # 좁혔다면 올바른 답변이 아니다. 특히 0건은 대조할 원문도 없으므로
+    # 제목/본문 필터와 상속 검색어의 근거를 원문 유무와 무관하게 확인한다.
+    keyword_values = [("검색어", value) for value in constraints.get("inherited_terms") or []]
+    for clause in constraints.get("filter_clauses") or []:
+        if clause.get("field") not in {"keyword", "title"}:
+            continue
+        values = clause.get("value")
+        if not isinstance(values, list):
+            values = [values]
+        label = "제목" if clause["field"] == "title" else "검색어"
+        keyword_values.extend((label, value) for value in values)
+    for label, value in keyword_values:
+        term = normalize_for_match(str(value or ""))
+        missing_label = f"{label}={value}"
+        if term and term not in normalized and missing_label not in labels:
+            labels.append(missing_label)
+
     return labels
 
 
@@ -100,16 +118,24 @@ def build_verification_report(
         return verify_work_report(question, content, sources, retrieval_result or {})
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     query_plan = (retrieval_result or {}).get("query_plan") or (retrieval_result or {}).get("intent_plan") or {}
-    if mode == "status_clarification":
+    if mode in {"status_clarification", "search_terms_clarification"}:
         resolution = query_plan.get("status_resolution") or {}
-        check = {"id": "status_clarification", "label": "상태 확인 대기", "status": "warning",
-                 "detail": f"{resolution.get('origin', 'unknown')} · {resolution.get('reason', '')} · 상태를 확정하지 못해 조회·집계를 실행하지 않음"}
+        label = "검색어 확인 대기" if mode == "search_terms_clarification" else "상태 확인 대기"
+        detail = (
+            "이전 대화의 검색어 조건을 확정하지 못해 조회·집계를 실행하지 않음"
+            if mode == "search_terms_clarification"
+            else f"{resolution.get('origin', 'unknown')} · {resolution.get('reason', '')} · 상태를 확정하지 못해 조회·집계를 실행하지 않음"
+        )
+        check = {"id": mode, "label": label, "status": "warning", "detail": detail}
         return {"score": 0, "status": "warning", "checks": [check],
-            "dimensions": [{"id": "intent", "label": "상태 확인 대기", "score": None, "status": "warning", "checks": [check]}],
+            "dimensions": [{"id": "intent", "label": label, "score": None, "status": "warning", "checks": [check]}],
             "completedDimensions": 0, "applicableDimensions": 1, "constraints": display_constraints(constraints),
             "queryPlan": query_plan, "trace": [], "sourceCount": 0, "mode": mode,
             "verifiedAt": datetime.now().astimezone().isoformat(), "note": "사용자 확인 전에는 결과를 확정하지 않습니다."}
     retrieval_checks: List[Dict[str, str]] = []
+    if constraints.get("unconfirmed_search_terms"):
+        retrieval_checks.append({"id": "unconfirmed_search_terms", "label": "검색어 조건 확인", "status": "warning",
+            "detail": "이전 대화의 검색어 조건이 아직 확정되지 않아 결과를 검증할 수 없음"})
     resolution = query_plan.get("status_resolution") or constraints.get("status_resolution") or {}
     if resolution:
         from backend.intent.status_semantics import resolution_is_grounded

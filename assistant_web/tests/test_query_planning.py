@@ -174,8 +174,8 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertIsNone(latest["customer_key"])
         self.assertFalse(needs_rewrite)
-        # 프로젝트 코드로 물어봐도 customer_aliases.json에 등록된 대표 이름으로 정규화된다.
-        self.assertEqual(inherited["customer_key"], "이베스트")
+        # 검색에 확정된 고객사 표기를 그대로 상속한다.
+        self.assertEqual(inherited["customer_key"], extract_query_constraints(messages[0].content)["customer_key"])
         self.assertEqual(inherited["statuses"], ["closed"])
         self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
 
@@ -194,7 +194,7 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertTrue(is_follow_up_question(messages[-1].content))
         self.assertFalse(needs_rewrite)
-        self.assertEqual(inherited["customer_key"], "현대차")
+        self.assertEqual(inherited["customer_key"], extract_query_constraints(messages[0].content)["customer_key"])
         self.assertEqual(inherited["statuses"], ["confirmed"])
         self.assertEqual(build_keyword_terms(retrieval_text, inherited), [])
 

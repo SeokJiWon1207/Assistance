@@ -25,6 +25,7 @@ from backend.notion.constants import (
 )
 from backend.notion.formatting import build_sources_from_notion_pages, build_sources_from_single_notion_page
 from backend.notion.mapping import normalize_notion_page
+from backend.notion.query_cache import clear_notion_query_cache
 from backend.notion.schema import (
     ensure_configured_notion_database,
     find_notion_option_property,
@@ -149,6 +150,7 @@ def create_notion_page(request: NotionPageWriteRequest, *, prepared_properties: 
             status_code=502,
             detail=f"Notion 항목 생성 실패: {response.status_code} {response.text[:500]}",
         )
+    clear_notion_query_cache()
     return normalize_notion_page(
         response.json(),
         include_blocks=True,
@@ -194,6 +196,7 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest, *, expect
             status_code=502,
             detail=f"Notion 항목 수정 실패: {response.status_code} {response.text[:500]}",
         )
+    clear_notion_query_cache()
     return normalize_notion_page(
         response.json(),
         include_blocks=True,

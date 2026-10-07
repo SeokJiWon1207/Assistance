@@ -634,7 +634,7 @@ class TeamQuestionSearchTests(unittest.TestCase):
             result = search.execute_notion_search('노션에서 상태가 시작전인 "배포 계획" 찾아줘', include_blocks=False)
         self.assertEqual([row["id"] for row in result["notion_pages"]], ["right"])
         self.assertEqual(post.call_count, 2)
-        self.assertIn(status_filter, post.call_args.args[1]["filter"]["and"])
+        self.assertEqual(post.call_args.args[1]["filter"], {"property": "제목", "title": {"equals": "배포 계획"}})
         self.assertTrue(result["meta"]["search_complete"])
 
     def test_partial_counts_are_not_presented_as_database_totals(self):

@@ -298,8 +298,10 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             # 다시 인식하므로, 상속 시에도 같은 형식으로 감싸야 재추출된다.
             inherited.extend(f"[{number}]" for number in prior_constraints["screen_numbers"])
             seen_screen_numbers = True
-        if not seen_customer and prior_constraints.get("customer_aliases"):
-            inherited.append(prior_constraints["customer_aliases"][0])
+        if not seen_customer and prior_constraints.get("customer_key"):
+            # 확정한 표기를 보존한다. 첫 별칭으로 줄이면 정확 프로젝트가
+            # 일반 고객사 범위로 넓어지거나 '하나금융'이 수량 '하나'와 충돌한다.
+            inherited.append(prior_constraints.get("customer_exact") or prior_constraints["customer_key"])
             seen_customer = True
         if not seen_customer and prior_constraints.get("excluded_customer_keys"):
             excluded.extend(f"{value} 제외" for value in prior_constraints["excluded_customer_keys"])

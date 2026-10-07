@@ -1,7 +1,8 @@
 """주간 보고서 결정형 집계 테스트."""
 
 import unittest
-from datetime import date, timedelta
+from datetime import date
+from unittest.mock import patch
 
 from backend.reports import weekly_customer
 
@@ -21,8 +22,17 @@ def issue(identifier, created, updated, status, *, effort=None, handler="석지�
     }
 
 
+class ReportDate(date):
+    @classmethod
+    def today(cls):
+        return cls(2026, 9, 14)
+
+
 class WeeklyReportTests(unittest.TestCase):
     def setUp(self):
+        self.date_patch = patch.object(weekly_customer, "date", ReportDate)
+        self.date_patch.start()
+        self.addCleanup(self.date_patch.stop)
         self.originals = {
             "fetch": weekly_customer.fetch_mantis_recent_issues,
             "normalize": weekly_customer.normalize_issue,
@@ -65,7 +75,7 @@ class WeeklyReportTests(unittest.TestCase):
         self.assertEqual(too_wide["retrieval"]["stages"][0]["error_kind"], "validation")
 
     def test_report_counts_new_open_closed_aging_and_effort(self):
-        aged = (date.today() - timedelta(days=weekly_customer.WEEKLY_REPORT_AGING_DAYS + 5)).isoformat()
+        aged = "2026-08-10"
         weekly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
             issue(201, "2026-09-08", "2026-09-11", "closed", effort={"3PC공수": "석지원(2.5)"}),
             issue(202, "2026-09-09", "2026-09-09", "confirmed", effort={"1문의공수": "우동헌(1.0)"}, handler="우동헌"),
@@ -88,7 +98,7 @@ class WeeklyReportTests(unittest.TestCase):
         content = report["content"]
         self.assertIn("주간 보고서", content)
         self.assertIn("신규 등록: **2건**", content)
-        self.assertIn("기간 내 종료: **2건**", content)
+        self.assertIn("기간 내 해결·종료: **2건**", content)
         self.assertIn("장기 적체: **1건**", content)
         self.assertIn("#204", content)
         self.assertEqual(report["raw"]["mode"], "deterministic_weekly_report")

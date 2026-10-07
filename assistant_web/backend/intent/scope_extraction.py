@@ -47,13 +47,20 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
     customer_text = re.sub(r"(?<![A-Za-z0-9_])DB\d{2}_[가-힣A-Za-z0-9_]+", " ", text, flags=re.IGNORECASE)
     if customer_text != text:
         text, normalized_text = customer_text, normalize_for_match(customer_text)
+    # 수량에 쓰인 위치만 지운 뒤 별칭을 찾는다. 문장에 '이슈 하나만'이
+    # 있다는 이유로 별도로 명시한 고객사 '하나'까지 제거하지 않는다.
+    alias_text = re.sub(
+        r"((?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*)하나(?=\s*(?:만|씩|를|가|는|$))",
+        r"\1 ",
+        text,
+    )
     customer_matches: List[tuple[int, str, List[str]]] = []
     excluded_matches: List[tuple[int, str, List[str]]] = []
     for aliases in get_customer_alias_groups():
         for alias in aliases:
             normalized_alias = normalize_for_match(alias)
-            if normalized_alias and text_matches_customer_aliases(text, [alias]):
-                target = excluded_matches if expression_is_excluded(text, alias) else customer_matches
+            if normalized_alias and text_matches_customer_aliases(alias_text, [alias]):
+                target = excluded_matches if expression_is_excluded(alias_text, alias) else customer_matches
                 target.append((len(normalized_alias), alias, aliases))
 
     # 프로젝트 코드와 표시명을 함께 적은 표기(예: ``138Meritz(메리츠)``)는
@@ -78,17 +85,6 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
         customer_matches = [
             item for item in customer_matches if normalize_for_match(item[1]) not in SOURCE_NAME_ALIASES
         ]
-
-    # 수량 '이슈 하나'는 고객사 후보를 고르기 전에 제외한다. 이후에 지우면
-    # 더 짧은 실제 고객사 NH가 하나에 밀려 함께 사라진다.
-    hana_count_expression = bool(
-        re.search(
-            r"(?:이슈|건|항목|결과|문서|페이지)\s*(?:을|를)?\s*하나\s*(?:만|씩|를|가|는|$)",
-            text,
-        )
-    )
-    if hana_count_expression:
-        customer_matches = [item for item in customer_matches if normalize_for_match(item[1]) != "하나"]
 
     # 긴 제외 별칭 안의 짧은 별칭(NH증권/NH)을 포함 조건으로 되살리지 않는다.
     excluded_aliases = {

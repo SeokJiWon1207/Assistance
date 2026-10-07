@@ -20,6 +20,17 @@ from backend.timing import TIMINGS, measured, request_timing
 
 
 class AccuracyPerformanceTests(unittest.TestCase):
+    def test_notion_planner_skip_requires_an_explicit_simple_title_lookup(self):
+        for question, expected in (
+            ('노션에서 "배포 계획" 항목을 찾아서 알려줘', True),
+            ('노션에서 "배포 계획" 찾아줘', True),
+            ('노션에서 "배포 계획" 내용 요약해줘', False),
+            ('노션에서 "배포 계획" 찾아줘. 보관됨 상태는 빼고', False),
+            ('노션에서 배포 계획 찾아줘', False),
+            ('노션에서 "배포 계획"과 "다른 계획" 비교해줘', False),
+        ):
+            self.assertEqual(can_skip_general_planner(question, {}, {"source": "notion"}), expected, question)
+
     def test_evidence_requires_more_than_entity_or_generic_noun(self):
         for q, e in (("NH 이슈 몇 건", "NH"), ("NH 이슈 몇 건", "이슈"),
                      ("NH 이슈 몇 건", "NH 이슈"), ("삼성증권 이슈", "삼성증권"),

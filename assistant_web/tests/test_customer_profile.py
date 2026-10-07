@@ -65,7 +65,7 @@ class CustomerProfileReportTests(unittest.TestCase):
 
         self.assertIn("신한투자증권 고객사 프로필", content)
         self.assertNotIn("132SHGM(신한굿모닝증권) 고객사 프로필", content)
-        self.assertIn("전체: **3건** · 미종료: **1건** · 종료: **2건**", content)
+        self.assertIn("전체: **3건** · 미종료: **1건** · 해결·종료: **2건**", content)
         self.assertIn("평균 처리기간: **7.0일**", content)
         self.assertIn("2026-06: 1건", content)
         self.assertIn("석지원: 2건", content)

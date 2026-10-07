@@ -11,6 +11,8 @@ import re
 import statistics
 import sys
 import time
+import uuid
+from copy import deepcopy
 from collections import Counter
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
@@ -46,6 +48,9 @@ from backend.understanding import extract_query_constraints
 
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
+# 외부 계정 생성 없이 실행별 감사 문맥을 분리한다. 기본/후속 호출이 같은
+# UID를 사용해야 웹 요청처럼 직전의 확정 조건을 안전하게 복원할 수 있다.
+ACCURACY_USER_UID = "accuracy-" + uuid.uuid4().hex
 MANTIS_PAGES = 16
 MANTIS_PAGE_SIZE = 50
 MANTIS_REQUEST_ATTEMPTS = 3
@@ -185,8 +190,8 @@ def fetch_mantis_snapshot(progress: bool = False) -> List[Dict[str, Any]]:
 
 
 def execute_chat(request: ChatRequest) -> Dict[str, Any]:
-    """Run the chat service without depending on the authenticated HTTP route."""
-    return chat_service.build_response(request, user=None)
+    """Run the service with the same audit owner throughout this accuracy run."""
+    return chat_service.build_response(request, user={"uid": ACCURACY_USER_UID})
 
 
 def notion_plain_text(items: Iterable[Dict[str, Any]]) -> str:
@@ -785,8 +790,12 @@ def dependency_reason_from_stage(stage: Dict[str, Any]) -> str:
     return ""
 
 
-def filter_recall_matches(question: str, actual: Dict[str, Any]) -> bool:
-    expected = extract_query_constraints(question)
+def filter_recall_matches(
+    question: str,
+    actual: Dict[str, Any],
+    expected_constraints: Optional[Dict[str, Any]] = None,
+) -> bool:
+    expected = expected_constraints if expected_constraints is not None else extract_query_constraints(question)
     scalar_keys = ("customer_key", "platform_key")
     if any(expected.get(key) and expected.get(key) != actual.get(key) for key in scalar_keys):
         return False
@@ -796,6 +805,7 @@ def filter_recall_matches(question: str, actual: Dict[str, Any]) -> bool:
         "screen_numbers",
         "excluded_statuses",
         "excluded_platform_keys",
+        "excluded_customer_keys",
     )
     for key in list_keys:
         if not set(expected.get(key) or []).issubset(set(actual.get(key) or [])):
@@ -885,8 +895,8 @@ def grade(case: AccuracyCase, response: Dict[str, Any]) -> Dict[str, Any]:
     )
     filter_precision_passed = not ungrounded if actual_constraints else None
     filter_recall_passed = (
-        filter_recall_matches(case.question, actual_constraints)
-        if actual_constraints
+        filter_recall_matches(case.question, actual_constraints, case.expected_constraints)
+        if actual_constraints or case.expected_constraints is not None
         else None
     )
     source_constraints_passed = None
@@ -1091,6 +1101,29 @@ def blocked_follow_up_result(
     }
 
 
+def expected_follow_up_constraints(
+    scenario: FollowUpScenario,
+    parent_case: AccuracyCase,
+) -> Optional[Dict[str, Any]]:
+    """상속/교정의 기대 조건은 반환된 질의나 실행 필터와 독립적으로 만든다."""
+    if scenario.source != "mantis" or scenario.id not in {
+        "followup-project-status-latest", "followup-project-status-correction",
+    }:
+        # 순번/단건 참조는 선택한 ID로 직접 조회하므로 목록의 필터를 강제하지 않는다.
+        return None
+    expected = deepcopy(parent_case.expected_constraints if parent_case.expected_constraints is not None
+                        else extract_query_constraints(parent_case.question))
+    if scenario.id == "followup-project-status-correction":
+        corrected = extract_query_constraints(scenario.question)
+        for key in ("statuses", "excluded_statuses"):
+            expected[key] = corrected.get(key) or []
+        expected["filter_clauses"] = [
+            clause for clause in expected.get("filter_clauses") or [] if clause["field"] != "status"
+        ] + [clause for clause in corrected.get("filter_clauses") or [] if clause["field"] == "status"]
+        expected.pop("status_resolution", None)
+    return expected
+
+
 def run_follow_up_scenario(
     scenario: FollowUpScenario,
     parent_case: AccuracyCase,
@@ -1107,6 +1140,7 @@ def run_follow_up_scenario(
         scenario.question,
         scenario.expected_kind,
         scenario.expected,
+        expected_constraints=expected_follow_up_constraints(scenario, parent_case),
     )
     started = time.perf_counter()
     try:

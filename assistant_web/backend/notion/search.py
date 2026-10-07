@@ -9,7 +9,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import requests
 from fastapi import HTTPException
@@ -51,6 +51,7 @@ from backend.notion.constants import (
 )
 from backend.notion.mapping import normalize_notion_page, resolve_notion_page_owner
 from backend.notion.read_scope import resolve_notion_read_scope
+from backend.notion.query_cache import cached_title_query
 from backend.notion.database_roles import select_notion_database_ids
 from backend.notion.property_roles import (
     CUSTOMER_NAMES,
@@ -1511,7 +1512,9 @@ def execute_notion_search(
                 }
                 exact_payload: Dict[str, Any] = {
                     "page_size": page_size,
-                    "filter": notion_title_query_filter(title_filter, status_api_filter),
+                    # 상태는 아래의 공통 필터에서 적용한다. 후속 상태 변경 질문도
+                    # 동일한 제목 후보를 재사용하면서 현재 조건으로 다시 검증한다.
+                    "filter": title_filter,
                     "sorts": [database_sort],
                 }
                 exact_max_pages = notion_search_max_pages(
@@ -1521,9 +1524,10 @@ def execute_notion_search(
                 )
                 for _ in range(exact_max_pages):
                     try:
-                        exact_response = notion_post_json(
+                        exact_response = cached_title_query(
                             f"{NOTION_API_BASE}/databases/{database_id}/query",
                             exact_payload,
+                            notion_post_json,
                             timeout=45,
                             retries=2,
                         )
@@ -1539,6 +1543,17 @@ def execute_notion_search(
                         })
                         break
                     exact_data = exact_response.json()
+                    scan.meta = scan.meta or {}
+                    response_headers = getattr(exact_response, "headers", {})
+                    if not isinstance(response_headers, Mapping):
+                        response_headers = {}
+                    scan.meta["query_cache_age_seconds"] = max(
+                        float(scan.meta.get("query_cache_age_seconds", 0)),
+                        float(response_headers.get("X-Assistance-Cache-Age", "0")),
+                    )
+                    scan.meta["query_cache_hit"] = scan.meta.get("query_cache_hit", False) or (
+                        "X-Assistance-Cache-Age" in response_headers
+                    )
                     exact_results = exact_data.get("results", [])
                     scan.scanned_count += len(exact_results)
                     for raw_page in exact_results:
@@ -1577,6 +1592,7 @@ def execute_notion_search(
                 # scan when a literal title is absent or one database is slow.
                 scan.meta = (
                     {
+                        **(scan.meta or {}),
                         "database_id": database_id,
                         "database_label": database_label,
                         "found_count": 0,
@@ -1990,6 +2006,9 @@ def execute_notion_search(
             "exact_title_index_hit": bool(indexed_exact_database_ids),
             "title_term_index_hit": bool(indexed_term_database_ids),
             "title_search_only": title_search_only,
+            "queriedAt": datetime.now(timezone.utc).isoformat(),
+            "query_cache_hit": any(row.get("query_cache_hit") for row in database_meta),
+            "query_cache_age_seconds": max((row.get("query_cache_age_seconds", 0) for row in database_meta), default=0),
         },
         "notion_pages": limited_pages,
     }

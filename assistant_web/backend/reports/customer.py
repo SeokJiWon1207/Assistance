@@ -5,6 +5,8 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional
 
+from backend.mantis_status import mantis_status_bucket
+from backend.sources.mantis_collection import collection_metadata
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
@@ -64,8 +66,7 @@ def _health_content(
 
 
 def _is_closed(status: Any) -> bool:
-    label = str(status or "")
-    return "종료" in label or "closed" in label.casefold()
+    return mantis_status_bucket(str(status or "")) == "done"
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -143,6 +144,7 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
             error_kind="dependency",
         )
 
+    data_meta = collection_metadata(raw_issues)
     issues = [
         normalize_issue(issue)
         for issue in raw_issues
@@ -159,8 +161,9 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
 
     today = date.today()
     customer = _customer_label(constraints, issues)
-    open_issues = [issue for issue in issues if not _is_closed(issue.get("status"))]
+    open_issues = [issue for issue in issues if mantis_status_bucket(str(issue.get("status") or "")) == "open"]
     closed_issues = [issue for issue in issues if _is_closed(issue.get("status"))]
+    unknown_count = len(issues) - len(open_issues) - len(closed_issues)
     aging_rows: List[Dict[str, Any]] = []
     for issue in open_issues:
         created = _parse_date(issue.get("created_at"))
@@ -192,14 +195,16 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
         "- 판단 근거: " + " · ".join(health["reasons"]),
         "",
         "핵심 지표",
-        f"- 전체: **{len(issues)}건** · 미종료: **{len(open_issues)}건** · 종료: **{len(closed_issues)}건**",
+        f"- 전체: **{len(issues)}건** · 미종료: **{len(open_issues)}건** · 해결·종료: **{len(closed_issues)}건**",
         f"- {CUSTOMER_PROFILE_AGING_DAYS}일 이상 장기 미종료: **{len(aging_rows)}건**",
         "- 플랫폼: " + " · ".join(f"{name} {count}건" for name, count in platforms.most_common()),
     ]
+    if unknown_count:
+        lines.append(f"- 상태 미확인: **{unknown_count}건** (미종료·해결·종료 집계에서 제외)")
     if handling_days:
-        lines.append(f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (종료 {len(handling_days)}건 기준)")
+        lines.append(f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (해결·종료 {len(handling_days)}건 기준)")
     else:
-        lines.append("- 평균 처리기간: 계산 가능한 종료 이슈 없음")
+        lines.append("- 평균 처리기간: 계산 가능한 해결·종료 이슈 없음")
 
     lines.extend(["", "월별 이슈 추이"])
     if monthly:
@@ -227,7 +232,7 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
     )
     lines.extend(["", "권장 확인 항목"])
     lines.extend(f"- {action}" for action in health["actions"])
-    lines.extend(["", "※ 평균 처리기간은 정확한 종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다."])
+    lines.extend(["", "※ 평균 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다."])
 
     source_rows = recent[:CUSTOMER_PROFILE_TOP_N]
     for issue in aging_rows[:CUSTOMER_PROFILE_TOP_N]:
@@ -246,9 +251,11 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
                 "status": "ok",
                 "issues_list": source_rows[:10],
                 "meta": {
+                    **data_meta,
                     "matched_count": len(issues),
                     "open_count": len(open_issues),
                     "closed_count": len(closed_issues),
+                    "unknown_status_count": unknown_count,
                     "aging_count": len(aging_rows),
                     "health_level": health["level"],
                 },

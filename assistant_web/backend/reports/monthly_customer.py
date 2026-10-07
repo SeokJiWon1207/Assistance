@@ -6,6 +6,8 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.mantis_status import mantis_status_bucket
+from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
@@ -23,8 +25,7 @@ MONTHLY_CUSTOMER_TOP_N = 5
 
 
 def _is_closed(status: Any) -> bool:
-    label = str(status or "")
-    return "종료" in label or "closed" in label.casefold()
+    return mantis_status_bucket(str(status or "")) == "done"
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -131,6 +132,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
             error_kind="dependency",
         )
 
+    data_meta = collection_metadata(raw_issues)
     scope_constraints = {
         key: value for key, value in constraints.items()
         if key not in {"created_at", "filter_clauses"}
@@ -150,7 +152,8 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     ]
     customer = _customer_label(constraints, current or scoped)
     closed = [issue for issue in current if _is_closed(issue.get("status"))]
-    open_rows = [issue for issue in current if not _is_closed(issue.get("status"))]
+    open_rows = [issue for issue in current if mantis_status_bucket(str(issue.get("status") or "")) == "open"]
+    unknown_count = len(current) - len(open_rows) - len(closed)
 
     handling_days = []
     for issue in closed:
@@ -162,7 +165,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     aging = []
     for issue in scoped:
         created = _parse_date(issue.get("created_at"))
-        if created and created <= effective_end and not _is_closed(issue.get("status")):
+        if created and created <= effective_end and mantis_status_bucket(str(issue.get("status") or "")) == "open":
             age_days = (today - created).days
             if age_days >= MONTHLY_CUSTOMER_AGING_DAYS:
                 aging.append({**issue, "age_days": age_days})
@@ -184,18 +187,20 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     comparison = f"{delta:+d}건 ({rate:+.1f}%)" if rate is not None else f"{delta:+d}건 (전월 0건)"
     lines = [
         f"{start.year}년 {start.month}월 {customer} 월간 고객사 리포트",
-        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · 최근 라이브 {len(raw_issues)}건 범위",
+        f"기준: 등록일 {start.isoformat()}~{effective_end.isoformat()} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
         "",
         "요약",
         f"- 등록 이슈: **{len(current)}건** · 전월{' 동기' if effective_end < end else ''} {len(previous)}건 대비 **{comparison}**",
-        f"- 현재 상태: 미종료 **{len(open_rows)}건** · 종료 **{len(closed)}건**",
+        f"- 현재 상태: 미종료 **{len(open_rows)}건** · 해결·종료 **{len(closed)}건**",
         f"- 총 공수: **{total_effort:.2f}**",
-        f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (종료 {len(handling_days)}건 기준)"
-        if handling_days else "- 평균 처리기간: 계산 가능한 종료 이슈 없음",
+        f"- 평균 처리기간: **{sum(handling_days) / len(handling_days):.1f}일** (해결·종료 {len(handling_days)}건 기준)"
+        if handling_days else "- 평균 처리기간: 계산 가능한 해결·종료 이슈 없음",
         f"- 현재 장기 미종료: **{len(aging)}건** (보고 종료일까지 등록된 이슈 중 {MONTHLY_CUSTOMER_AGING_DAYS}일 이상)",
         "",
         "최근 월별 추이",
     ]
+    if unknown_count:
+        lines.insert(lines.index("최근 월별 추이"), f"- 상태 미확인: **{unknown_count}건** (미종료·해결·종료 집계에서 제외)")
     lines.extend(f"- {month}: {trend[month]}건" for month in trend_months)
     if not trend_months:
         lines.append("- 추이를 계산할 등록일 데이터가 없습니다.")
@@ -229,7 +234,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     lines.extend([
         "",
         "※ 상태는 현재 Mantis 상태이며 과거 월말 상태를 복원한 값이 아닙니다.",
-        "※ 평균 처리기간은 정확한 종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
+        "※ 평균 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
 
     source_rows = ranked[:MONTHLY_CUSTOMER_TOP_N]
@@ -248,10 +253,12 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
                 "status": "ok",
                 "issues_list": source_rows[:10],
                 "meta": {
+                    **data_meta,
                     "current_count": len(current),
                     "previous_count": len(previous),
                     "open_count": len(open_rows),
                     "closed_count": len(closed),
+                    "unknown_status_count": unknown_count,
                     "aging_count": len(aging),
                     "total_effort": round(total_effort, 2),
                 },

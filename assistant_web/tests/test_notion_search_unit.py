@@ -296,6 +296,11 @@ class NotionSearchParsingTests(unittest.TestCase):
 
 
 class NotionSearchExecutionTests(unittest.TestCase):
+    def setUp(self):
+        from backend.notion.query_cache import clear_notion_query_cache
+        clear_notion_query_cache()
+        self.addCleanup(clear_notion_query_cache)
+
     def test_schema_failure_keeps_full_scan_page_size_and_does_not_short_circuit(self):
         response = Mock(status_code=200)
         response.json.return_value = {"results": [], "has_more": False}
@@ -1113,10 +1118,11 @@ class NotionFilterNestingTests(unittest.TestCase):
             patch.object(search, "notion_property_schema", return_value={"이슈내용": {"type": "title"}}),
             patch.object(search, "notion_post_json", side_effect=respond),
             patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
-            patch.object(search, "notion_page_matches_and_enrich", return_value=True),
+            patch.object(search, "notion_page_matches_and_enrich", return_value=True) as matches,
         ):
             result = search.execute_notion_search(
                 "노션에서 상태가 시작전인 '케이프증권 2026.09 정기점검' 항목을 정확히 찾아줘",
+                constraints={"customer_aliases": ["케이프증권"]},
                 include_blocks=False,
             )
 
@@ -1124,9 +1130,10 @@ class NotionFilterNestingTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in result["notion_pages"]], ["p1"])
         exact_filter = payloads[0]["filter"]
         self.assertLessEqual(compound_levels(exact_filter), 2)
-        # 펼치기만 했을 뿐 조건은 하나도 빠지지 않는다.
-        self.assertIn(self.STATUS_ANY, exact_filter["and"])
-        self.assertIn(self.CUSTOMER, exact_filter["and"])
+        # 제목 후보는 재사용하고 상태·고객사 조건은 공통 필터에서 재검증한다.
+        self.assertEqual(exact_filter, {"property": "이슈내용", "title": {"equals": page["title"]}})
+        self.assertEqual(matches.call_args.args[1]["status"], "시작전")
+        self.assertTrue(matches.call_args.args[1]["customer_aliases"])
 
     def test_date_filter_beyond_nesting_limit_is_checked_locally_instead(self):
         date_by_property = {"or": [
