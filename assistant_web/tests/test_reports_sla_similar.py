@@ -265,6 +265,61 @@ class SimilarResolutionReportTest(unittest.TestCase):
         )
         self.assertEqual(captured["constraints"]["semantic_focus_terms"], [])
 
+    def test_report_compares_recorded_causes_and_fixes_side_by_side(self):
+        similar.normalize_issue = lambda raw: {
+            "id": raw["id"], "summary": "[1200] 세션 만료 현상", "description": "",
+            "resolution_fields": {"사유 및 원인": "세션 타임아웃 설정 누락"}, "notes": [],
+        }
+
+        def search(q, limit, cons, semantic=False):
+            return {"status": "ok", "documents": [
+                {"issue_id": 9001, "latest_issue": {
+                    "id": 9001, "summary": "세션 끊김", "project": "유진증권", "status": "종료된 이슈",
+                    "resolution_fields": {"사유 및 원인": "서버 세션 타임아웃 10분 설정", "조치 및 개선": "타임아웃 30분으로 조정"},
+                    "notes": [], "history": [],
+                }},
+                {"issue_id": 9002, "latest_issue": {
+                    "id": 9002, "summary": "재로그인 반복", "project": "KB증권", "status": "종료된 이슈",
+                    "resolution_fields": {},
+                    "notes": [{"text": "원인 확인 요청드립니다."},
+                              {"text": "확인 결과 원인은 인증 토큰 갱신 누락입니다. 패치 배포 완료."}],
+                    "history": [],
+                }},
+                {"issue_id": 9003, "latest_issue": {
+                    "id": 9003, "summary": "세션 만료 문의", "project": "NH증권", "status": "종료된 이슈",
+                    "resolution_fields": {}, "notes": [{"text": "고객 안내 후 종료"}], "history": [],
+                }},
+                {"issue_id": 9004, "latest_issue": {
+                    "id": 9004, "summary": "세션 조회 불가", "project": "교보증권", "status": "종료된 이슈",
+                    "resolution_fields": {},
+                    "notes": [
+                        {"text": "안녕하세요. 교보증권 유호준 대리입니다. 현재 개발기 디스크문제로 조회가 안되는 상황입니다."},
+                        {"text": "안녕하세요. 한국금융아이티 이영희부장입니다. 0009004: 세션 조회 불가 서버 설정 수정해서 소스 전달드립니다."},
+                        {"text": "[고객사 전달] z:\\01_버전처리\\2024.zip"},
+                    ],
+                    "history": [],
+                }},
+            ]}
+
+        similar.execute_chroma_search = search
+        report = similar.build_similar_resolution_report("#12345와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘")
+        content = report["content"]
+        self.assertIn('현상"과 비슷한 과거 사례의 원인과 그때의 조치', content)
+        self.assertIn("| 이슈 | 원인 | 해결·조치 |", content)
+        self.assertIn("| 기준 #12345 | 세션 타임아웃 설정 누락 | 기록 없음 |", content)
+        self.assertIn("| #9001 | 서버 세션 타임아웃 10분 설정 | 타임아웃 30분으로 조정 |", content)
+        # 원인을 묻기만 하는 노트는 건너뛰고, 노트에서 뽑은 원인은 (노트)로 표시한다.
+        self.assertIn("| #9002 | 확인 결과 원인은 인증 토큰 갱신 누락입니다 (노트) |", content)
+        self.assertIn("| #9003 | 기록 없음 | 고객 안내 후 종료 (노트) |", content)
+        # 인사말·제목 반복과 파일 경로뿐인 전달 기록은 걷어내고 실제 원인·조치를 보여 준다.
+        self.assertIn("| #9004 | 현재 개발기 디스크문제로 조회가 안되는 상황입니다 (노트) | 서버 설정 수정해서 소스 전달드립니다 (노트) |", content)
+        self.assertIn("원인 기록: 기준 이슈 있음, 과거 사례 3/4건.", content)
+        self.assertIn("#9001: 기준 이슈와 겹치는 원인 단서 설정, 세션, 타임아웃", content)
+        self.assertIn("기록된 조치: 타임아웃 30분으로 조정", content)
+        self.assertIn("같은 원인이라고 단정하지 않았습니다", content)
+        self.assertIn("#12345 세션 타임아웃 설정 누락", report["playbookCandidate"]["cause"])
+        self.assertIn("#9001 서버 세션 타임아웃 10분 설정", report["playbookCandidate"]["cause"])
+
     def test_returns_none_without_resolution_intent(self):
         self.assertIsNone(similar.build_similar_resolution_report("#12345 비슷한 이슈 목록"))
 
