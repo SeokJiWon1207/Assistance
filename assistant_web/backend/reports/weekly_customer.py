@@ -245,12 +245,19 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
         "※ 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
 
-    source_rows: List[Dict[str, Any]] = sorted(
-        current_with_effort, key=lambda row: int(row.get("id") or 0), reverse=True
-    )[:WEEKLY_REPORT_TOP_N]
-    known_ids = {issue.get("id") for issue in source_rows}
-    source_rows.extend(issue for issue in aging[:WEEKLY_REPORT_TOP_N] if issue.get("id") not in known_ids)
-    sources = build_sources_from_issue_rows(source_rows[:10])
+    # 근거 목록은 본문의 신규·미종료·장기 적체 목록과 같아야 한다. 하나라도 빠지면
+    # 응답 검증이 본문의 이슈 번호를 근거 없는 번호로 보고 답변 전체를 보류한다.
+    source_rows: List[Dict[str, Any]] = []
+    known_ids = set()
+    for issue in [
+        *sorted(current_with_effort, key=lambda row: int(row.get("id") or 0), reverse=True)[:WEEKLY_REPORT_TOP_N],
+        *sorted(open_rows, key=lambda row: int(row.get("id") or 0), reverse=True)[:WEEKLY_REPORT_TOP_N],
+        *aging[:WEEKLY_REPORT_TOP_N],
+    ]:
+        if issue.get("id") not in known_ids:
+            known_ids.add(issue.get("id"))
+            source_rows.append(issue)
+    sources = build_sources_from_issue_rows(source_rows)
     return {
         "content": "\n".join(lines),
         "sources": sources,
@@ -261,7 +268,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
             "stages": [{
                 "source": "mantis_weekly_report",
                 "status": "ok",
-                "issues_list": source_rows[:10],
+                "issues_list": source_rows,
                 "meta": {
                     **data_meta,
                     "current_count": len(current),

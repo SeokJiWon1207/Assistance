@@ -320,6 +320,23 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("#12345 세션 타임아웃 설정 누락", report["playbookCandidate"]["cause"])
         self.assertIn("#9001 서버 세션 타임아웃 10분 설정", report["playbookCandidate"]["cause"])
 
+    def test_base_issue_in_the_header_is_marked_for_answer_verification(self):
+        from backend.retrieval import similar_base_issue_ids_from_retrieval
+
+        def search(q, limit, cons, semantic=False):
+            return {"status": "ok", "documents": [{"issue_id": 9001, "latest_issue": {
+                "id": 9001, "summary": "세션 끊김", "project": "유진증권", "status": "종료된 이슈", "notes": [], "history": [],
+            }}]}
+
+        similar.execute_chroma_search = search
+        report = similar.build_similar_resolution_report("#12345와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘")
+        self.assertIn("#12345", report["content"])
+        self.assertEqual(similar_base_issue_ids_from_retrieval(report["retrieval"]), [12345])
+
+        similar.execute_chroma_search = lambda q, limit, cons, semantic=False: {"status": "ok", "documents": []}
+        empty = similar.build_similar_resolution_report("#12345와 비슷한 과거 이슈를 찾아서 원인과 해결 내용을 비교해줘")
+        self.assertEqual(similar_base_issue_ids_from_retrieval(empty["retrieval"]), [12345])
+
     def test_returns_none_without_resolution_intent(self):
         self.assertIsNone(similar.build_similar_resolution_report("#12345 비슷한 이슈 목록"))
 

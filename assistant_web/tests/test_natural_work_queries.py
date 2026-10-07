@@ -174,6 +174,16 @@ class NaturalWorkQueryTests(unittest.TestCase):
         self.assertNotIn("scanned_ids", context["stages"][0]["meta"])
         self.assertNotIn("reason", context["stages"][0])
 
+    def test_model_is_told_bracketed_screen_numbers_are_not_issue_numbers(self):
+        # 모델이 본문의 화면번호 [9414]를 #9414로 옮겨 쓰면 응답 검증이 근거 없는 이슈 번호로 보고 답변을 보류한다.
+        q = "#31300 이슈를 바탕으로 사후 분석서를 작성해줘"
+        context = chat.ChatPipelineContext(q, {"id": "test"}, "key", [], q, {"mantis": True}, [], extract_query_constraints(q), 10)
+        context.retrieval_result = {"stages": []}
+        chat.append_retrieval_system_note(context, 10)
+        note = context.system_notes[-1]
+        self.assertIn("이슈 번호(#숫자)는 결과 JSON의 issue_id에 있는 값만 써라", note)
+        self.assertIn("대괄호 안 숫자는 화면번호", note)
+
     def test_empty_retrieval_returns_limitation_instead_of_generation(self):
         q = "NH 차트 문제"
         context = chat.ChatPipelineContext(q, {"id": "test"}, "key", [], q, {"mantis": True}, [], extract_query_constraints(q), 10)

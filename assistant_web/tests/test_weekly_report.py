@@ -103,6 +103,23 @@ class WeeklyReportTests(unittest.TestCase):
         self.assertIn("#204", content)
         self.assertEqual(report["raw"]["mode"], "deterministic_weekly_report")
 
+    def test_every_issue_number_in_the_report_is_in_its_sources(self):
+        # 신규에 없는 오래된 미종료 이슈(301·302)가 '미종료 이슈' 목록에만 나와도 근거에 들어가야
+        # 응답 검증이 본문의 번호를 근거 없는 번호로 보고 답변 전체를 보류하지 않는다.
+        weekly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
+            issue(201, "2026-09-08", "2026-09-11", "closed", effort={"3PC공수": "석지원(2.5)"}),
+            issue(301, "2026-09-01", "2026-09-01", "assigned"),
+            issue(302, "2026-08-31", "2026-08-31", "confirmed"),
+            issue(204, "2026-08-10", "2026-08-10", "assigned"),
+        ]
+        report = weekly_customer.build_weekly_report("지난주 신한 주간 보고서 작성해줘")
+        import re
+        mentioned = {int(value) for value in re.findall(r"#(\d+)", report["content"])}
+        self.assertEqual(mentioned, {201, 301, 302, 204})
+        self.assertEqual(mentioned, {source["issue_id"] for source in report["sources"]})
+        # 상태는 내부 값 대신 화면 이름으로 보인다.
+        self.assertNotRegex(report["content"], r"— (?:assigned|confirmed|closed) ·")
+
     def test_dependency_failure_is_reported(self):
         def explode(**kwargs):
             raise RuntimeError("timeout")

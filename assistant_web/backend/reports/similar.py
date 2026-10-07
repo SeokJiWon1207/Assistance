@@ -261,7 +261,7 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
                 "query": text,
                 "constraints": constraints,
                 "stages": [{"source": "mantis_similar_resolution", "status": "base_not_found",
-                            "meta": {"base_id": base_id}}],
+                            "meta": {"base_id": base_id, "base_issue_ids": [base_id]}}],
             },
             "raw": {"mode": "deterministic_similar_resolution"},
         }
@@ -301,7 +301,7 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
                 "query": text,
                 "constraints": constraints,
                 "stages": [{"source": "mantis_similar_resolution", "status": "search_failed",
-                            "reason": reason}],
+                            "reason": reason, "meta": {"base_id": base_id, "base_issue_ids": [base_id]}}],
             },
             "raw": {"mode": "deterministic_similar_resolution"},
         }
@@ -323,7 +323,7 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
                 "query": text,
                 "constraints": constraints,
                 "stages": [{"source": "mantis_similar_resolution", "status": "no_results",
-                            "meta": {"base_id": base_id, "derived_query": similar_query[:300]}}],
+                            "meta": {"base_id": base_id, "base_issue_ids": [base_id], "derived_query": similar_query[:300]}}],
             },
             "raw": {"mode": "deterministic_similar_resolution"},
         }
@@ -368,6 +368,8 @@ def build_similar_resolution_report(text: str) -> Optional[Dict[str, Any]]:
             "issues_list": example_rows,
             "meta": {
                 "base_id": base_id,
+                # 응답 검증이 머리글의 기준 이슈 번호를 근거 없는 번호로 보지 않게 한다.
+                "base_issue_ids": [base_id],
                 "derived_query": similar_query[:300],
                 "displayed_count": len(example_rows),
             },

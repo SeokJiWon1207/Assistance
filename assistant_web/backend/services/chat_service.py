@@ -940,7 +940,9 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
         "실시간 조회를 할 수 없다고 말하지 마라. "
         "사용자가 검색 과정이나 기준을 묻지 않는 한 mantis_filter, mantis_page_scan, chroma_db 같은 내부 단계명이나 스킵 여부는 말하지 마라. "
         "대신 필요한 경우 '검색 기준: 고객사/담당자/상태/키워드, 정렬: 최신 이슈 ID 기준'처럼 사용자에게 의미 있는 기준만 짧게 말해라. "
-        "이슈가 있으면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라.\n\n"
+        "이슈가 있으면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라. "
+        "이슈 번호(#숫자)는 결과 JSON의 issue_id에 있는 값만 써라. 제목·본문의 [0389]처럼 대괄호 안 숫자는 화면번호이므로 "
+        "#을 붙여 이슈 번호처럼 쓰지 말고 '화면 0389'처럼 써라.\n\n"
         f"[검색 파이프라인 결과]\n{json.dumps(model_retrieval_context, ensure_ascii=False, indent=2)}"
     )
 
