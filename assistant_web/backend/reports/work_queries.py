@@ -40,6 +40,8 @@ def work_operation(question: str, constraints: dict) -> str | None:
         return None
     if constraints.get("unknown_customers"):
         return None
+    if constraints.get("issue_ids") and ISSUE_DOCUMENT_REQUEST.search(question):
+        return None
     if any(p.get("origin") == "ambiguous_alias" for p in constraints.get("people", {}).get("candidates", [])):
         return "ambiguous_person"
     if re.search(r"남은\s*(?:공수|시간|기간|예산)|잔여\s*(?:공수|시간|기간|예산)", question):
@@ -63,8 +65,6 @@ def work_operation(question: str, constraints: dict) -> str | None:
     if re.search(r"담당자.*(?:안\s*정|미정|미지정)", question):
         return "unassigned"
     if constraints.get("issue_ids"):
-        if ISSUE_DOCUMENT_REQUEST.search(question):
-            return None
         if re.search(r"비슷|유사|예전에도", question):
             return None if SIMILAR_RESOLUTION_REQUEST.search(question) else "similar"
         if re.search(r"왜|원인|사유", question):

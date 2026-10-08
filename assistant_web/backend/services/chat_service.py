@@ -21,6 +21,7 @@ from backend.answers import (
     format_deterministic_issue_answer,
     format_model_timeout_fallback,
     sanitize_customer_notice_answer,
+    customer_notice_instruction,
     select_grouped_issue_rows,
     should_return_deterministic_issue_list,
 )
@@ -931,6 +932,8 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
         "첨부파일이나 이미지의 실제 내용은 이 JSON에 명시된 텍스트가 없으면 확인하지 못한 것이다. "
         "'타 증권사와 비교한 이미지'라는 설명만으로 타사의 정상 동작이나 비교 결과를 단정하지 마라. "
         "증상, 원인, 조치 완료 여부와 일정은 각각 원문에 직접 적힌 사실만 요약하고, 없는 내용은 추측해 채우지 마라. "
+        "일반 분석 답변은 결론을 먼저 1~2문장으로 말하고, 주요 근거와 필요한 다음 행동을 이어서 정리해라. "
+        "사용자가 요청한 보고서·안내문·인수인계 형식이 있으면 그 형식을 우선해라. "
         "검색 파이프라인은 Notion DB 조회, Mantis 저장 필터, Mantis 페이지 스캔, ChromaDB 검색으로 구성된다. "
         "Notion 결과는 팀 주요 이슈/공지/일정/결재 상태 조회에 사용하고, Mantis 결과는 원본 이슈 목록 조회에 우선 사용하며, ChromaDB 결과는 유사 사례나 보조 맥락으로 사용해라. "
         "ChromaDB 문서에 latest_issue가 있으면 ChromaDB 스냅샷 대신 latest_issue 값을 최신 Mantis 원본으로 사용해라. "
@@ -940,11 +943,14 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
         "실시간 조회를 할 수 없다고 말하지 마라. "
         "사용자가 검색 과정이나 기준을 묻지 않는 한 mantis_filter, mantis_page_scan, chroma_db 같은 내부 단계명이나 스킵 여부는 말하지 마라. "
         "대신 필요한 경우 '검색 기준: 고객사/담당자/상태/키워드, 정렬: 최신 이슈 ID 기준'처럼 사용자에게 의미 있는 기준만 짧게 말해라. "
-        "이슈가 있으면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라. "
+        "사용자가 이슈 목록을 요청하면 번호 목록으로 ID, 프로젝트, 제목, 상태, 담당자, 등록일을 포함해 요약해라. "
         "이슈 번호(#숫자)는 결과 JSON의 issue_id에 있는 값만 써라. 제목·본문의 [0389]처럼 대괄호 안 숫자는 화면번호이므로 "
         "#을 붙여 이슈 번호처럼 쓰지 말고 '화면 0389'처럼 써라.\n\n"
         f"[검색 파이프라인 결과]\n{json.dumps(model_retrieval_context, ensure_ascii=False, indent=2)}"
     )
+    notice_instruction = customer_notice_instruction(context.latest_user_text)
+    if notice_instruction:
+        context.system_notes.append(notice_instruction)
 
 
 @measured("retrieval")

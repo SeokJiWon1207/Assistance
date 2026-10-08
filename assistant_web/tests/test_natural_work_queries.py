@@ -158,6 +158,16 @@ class NaturalWorkQueryTests(unittest.TestCase):
         for q in ("노션 마감 일정", "안녕하세요", "파이썬 사용법 알려줘", "NH 남은 공수 알려줘", "마감이라는 단어가 뭐야"):
             self.assertIsNone(work_operation(q, extract_query_constraints(q)))
 
+    def test_document_requests_win_over_all_work_lookup_markers(self):
+        for subject in (
+            "고객 회신을 기다리는 이슈", "이번 주 끝내야 할 이슈",
+            "담당자 미지정 상태", "지난주보다 늘어난 이슈", "한 사람에게 몰린 업무",
+        ):
+            question = f"#31572 {subject}를 포함해서 인수인계 초안을 작성해줘"
+            with self.subTest(question=question):
+                self.assertIsNone(work_operation(question, extract_query_constraints(question)))
+                self.assertIsNone(self.report(question))
+
     def test_ambiguous_short_name_requests_disambiguation(self):
         with patch("backend.intent.entities.load_known_people", return_value=(("김영훈", "하영훈"), ())):
             r = self.report("영훈님 지금 뭐 하고 있어?")

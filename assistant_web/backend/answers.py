@@ -73,6 +73,39 @@ CONVERSATION_TONE_NOTE = (
 )
 
 
+def customer_notice_instruction(question: str) -> str:
+    """고객 전달 문안의 필수 항목과 원문에 없는 정보의 표시 방법."""
+    normalized = normalize_for_match(question)
+    document = re.search(r"고객안내(?:문|메일|메시지|문자)|메신저답변|점검공지|회의공유문", normalized)
+    excludes_internal = "내부식별자" in normalized and any(word in normalized for word in ("제외", "빼"))
+    if not (
+        document
+        and ("고객" in normalized or "외부" in normalized or excludes_internal)
+        and any(action in normalized for action in ("작성", "만들", "초안", "써줘", "써주세요", "정리"))
+    ):
+        return ""
+    if re.search(
+        r"(?:작성|만들|쓰)(?:하지|지)(?:마|말|않)|"
+        r"(?:안내문|안내메일|메신저답변|점검공지|회의공유문)(?:은|는|을|를)?말고",
+        normalized,
+    ):
+        return ""
+    instruction = (
+        "고객에게 전달할 문안 작성 요청이다. 요청한 채널과 말투에 맞춰 바로 사용할 문안만 작성해라. "
+        "AI 비서 소개, 작성 과정 설명, 문안 밖의 도입부나 후속 질문은 넣지 마라. "
+        "문안 안에 '확인된 사실', '고객 영향', '진행 상황', '다음 안내 시점' 네 항목을 모두 명시해라. "
+        "원문에 영향 범위나 다음 안내 일정이 없으면 해당 항목을 생략하지 말고 미확정이라고 표시해라. "
+        "확인되지 않은 고객 수, 업무 중단, 원인, 복구 완료, 발송 일시와 다음 안내 시각을 만들어내지 마라. "
+        "등록일·수정일·종료일을 고객에게 안내한 날짜로 바꾸지 마라. "
+    )
+    if excludes_internal:
+        instruction += (
+            "내부 이슈 번호, 내부 담당자 이름과 이관 내역은 제외하고 고객이 알아야 할 진행 상황으로 표현해라. "
+            "화면번호나 주문번호처럼 고객이 알아야 할 업무 식별자는 보존해라."
+        )
+    return instruction
+
+
 def sanitize_customer_notice_answer(question: str, content: str) -> str:
     """고객 전달용 문안에서 내부 Mantis 식별자를 제거한다."""
     normalized = normalize_for_match(question)
@@ -104,6 +137,7 @@ def sanitize_customer_notice_answer(question: str, content: str) -> str:
         flags=re.IGNORECASE,
     )
     sanitized = re.sub(r"\(\s*\)", "", sanitized)
+    sanitized = re.sub(r"(?<!\*)\*\*\s*\*\*(?!\*)|(?<!_)__\s*__(?!_)", "", sanitized)
     sanitized = re.sub(r"[ \t]+\n", "\n", sanitized)
     return sanitized.strip()
 

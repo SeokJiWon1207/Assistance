@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 import requests
 
-from backend.answers import format_deterministic_issue_answer, sanitize_customer_notice_answer, should_return_deterministic_issue_list
+from backend.answers import customer_notice_instruction, format_deterministic_issue_answer, sanitize_customer_notice_answer, should_return_deterministic_issue_list
+from backend.services.chat_service import append_retrieval_system_note
+from backend.services.contracts import ChatPipelineContext
 from backend.evaluation.verification import build_verification_report
 from backend.intent.source_router import rule_based_search_intent
 from backend.query_planning import build_query_plan
@@ -104,6 +106,35 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
         for value in ("화면번호 9580", "주문번호 1234567", "버전 번호 20260917", "화면 #9580", "주문 ID: 1234567"):
             self.assertIn(value, sanitized)
         self.assertEqual(sanitize_customer_notice_answer("인수인계해줘", content), content)
+
+    def test_notice_removes_empty_emphasis_after_internal_identifier(self):
+        question = "#31411 내부 식별자를 제외하고 고객 안내 메일을 작성해줘"
+        sanitized = sanitize_customer_notice_answer(question, "요청하신 **#31411** 이슈입니다. **고객 영향**을 안내드립니다.")
+        self.assertNotIn("****", sanitized)
+        self.assertIn("**고객 영향**", sanitized)
+
+    def test_customer_notice_generation_has_complete_customer_document_instructions(self):
+        question = "#31411 이슈의 내부 식별자를 제외하고 확인된 사실, 고객 영향, 진행 상황과 다음 안내 시점을 담아 고객 안내 메일로 작성해줘"
+        context = ChatPipelineContext(
+            latest_user_text=question, model={}, api_key="", messages=[], retrieval_text=question,
+            enabled_tools={}, system_notes=[], query_constraints={}, active_limit=5,
+            retrieval_result=self._retrieval(size=1),
+        )
+        append_retrieval_system_note(context, 5)
+        instructions = context.system_notes[-1]
+        for required in ("확인된 사실", "고객 영향", "진행 상황", "다음 안내 시점", "미확정", "문안만"):
+            self.assertIn(required, instructions)
+        self.assertIn("내부 담당자", instructions)
+
+    def test_customer_notice_instructions_do_not_override_internal_or_negated_requests(self):
+        for question in (
+            "#31411 이슈의 내부 회의 공유문을 담당자와 이슈번호를 포함해서 작성해줘",
+            "고객 안내문을 작성하지 말고 이슈의 원인과 담당자를 정리해줘",
+            "고객 안내문 말고 내부 메신저 답변을 작성해줘",
+            "지난달 고객 안내 내역을 정리해줘",
+        ):
+            with self.subTest(question=question):
+                self.assertEqual(customer_notice_instruction(question), "")
 
     def test_explicit_status_is_retained_but_notice_instructions_are_not_statuses(self):
         for phrase, status in (("확인 상태인", "confirmed"), ("해결 상태인", "resolved"), ("검토 상태인", "review")):
