@@ -76,6 +76,24 @@ class SlaReportTest(unittest.TestCase):
         # 기준 미만의 최근 이슈는 전체 미종료 통계에는 포함되지만 상세 목록에서는 빠진다.
         self.assertNotIn("#202", content)
 
+    def test_aging_answers_from_a_stale_complete_store_with_its_time(self):
+        rows = [{"id": 201, "summary": "묵은건", "status": "assigned", "project": "유진증권",
+                 "created_at": "2026-01-01", "updated_at": "2026-01-02"}]
+        stale = IssueBatch(rows, {"status": "snapshot", "fetchedAt": "2026-10-07T05:35:00+00:00",
+                                  "search_complete": False, "snapshot_complete": True})
+        sla.fetch_mantis_recent_issues = lambda **kwargs: self.fail("저장본이 있으면 최근 N건 실시간 조회로 세지 않는다")
+        with patch.object(sla, "read_complete_store", side_effect=lambda allow_stale=False: stale if allow_stale else None):
+            content = sla.build_sla_report("가장 오래 방치된 이슈 알려줘")["content"]
+        # 갱신이 1시간 넘게 늦어도 답을 거부하지 않고, 몇 시 기준인지 밝힌다.
+        self.assertIn("#201", content)
+        self.assertIn("저장본 수집 시각: 10월 7일 오후 2:35 (갱신 지연", content)
+        self.assertNotIn("확정할 수 없습니다", content)
+
+    def test_aging_still_refuses_when_only_recent_issues_are_available(self):
+        sla.fetch_mantis_recent_issues = lambda **kwargs: IssueBatch([], {"search_complete": False})
+        content = sla.build_sla_report("가장 오래 방치된 이슈 알려줘")["content"]
+        self.assertIn("확정할 수 없습니다", content)
+
     def test_aging_uses_requested_threshold_without_false_scope_note(self):
         recent = (date.today().replace(day=1)).isoformat()
         old = date(date.today().year - 1, 1, 1).isoformat()

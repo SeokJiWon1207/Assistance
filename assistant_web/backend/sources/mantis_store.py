@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import fcntl
 import hashlib
 import json
@@ -223,7 +223,6 @@ def sync_complete_store(
         except BlockingIOError:
             return {"status": "running"}
         identity = connection_key()
-        started = time.monotonic()
         fetch = fetch_page or (lambda page: fetch_mantis_issues(
             {"page": page, "page_size": page_size}, timeout=12, attempts=2,
         ))
@@ -237,6 +236,9 @@ def sync_complete_store(
                 previous = None
                 for attempt in range(3):
                     fetched_at = datetime.now(timezone.utc).isoformat()
+                    # 한도는 수집 한 번마다 둔다. 전체에 한 번만 두면 Mantis가 느린 날
+                    # 두 번째 확인 수집 도중 한도가 끝나 저장본이 계속 갱신되지 않는다.
+                    started = time.monotonic()
                     try:
                         issue_ids, duplicate = _collect_pass(
                             db, fetch, page_size=page_size, max_pages=max_pages, workers=workers, started=started,
@@ -249,8 +251,8 @@ def sync_complete_store(
                             raise
                         continue
                     if not duplicate and issue_ids == previous:
-                        meta = {"connection": identity, "fetchedAt": fetched_at, "count": len(issue_ids),
-                                "consistency": "two_matching_passes", "passes": attempt + 1}
+                        meta = {"connection": identity, "fetchedAt": fetched_at, "fullSyncAt": fetched_at,
+                                "count": len(issue_ids), "consistency": "two_matching_passes", "passes": attempt + 1}
                         break
                     previous = None if duplicate else issue_ids
                 if not meta:
@@ -262,6 +264,120 @@ def sync_complete_store(
         finally:
             Path(temporary).unlink(missing_ok=True)
     return {"status": "complete", "count": meta["count"], "fetchedAt": meta["fetchedAt"], "passes": meta["passes"]}
+
+
+# 평소에는 바뀐 이슈만 받아 저장본에 덮어쓰고, 삭제·이동 정리는 하루 한 번 전체 수집으로 한다.
+# Mantis는 이슈를 최근 수정 시각 내림차순으로 페이지에 담아 주므로 앞 페이지만 읽으면 된다.
+INCREMENTAL_OVERLAP_SECONDS = 600
+INCREMENTAL_MAX_PAGES = 30
+FULL_SYNC_INTERVAL_SECONDS = 86400
+SCHEDULE_INTERVAL_SECONDS = 600
+
+
+def _saved_metadata() -> dict[str, Any] | None:
+    """갱신 시각과 관계없이 현재 연결 설정의 저장본 메타데이터를 읽는다."""
+    path = store_path()
+    if not path.exists():
+        return None
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+            meta = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
+        return meta if meta.get("connection") == connection_key() else None
+    except (OSError, sqlite3.Error, ValueError, TypeError, HTTPException):
+        return None
+
+
+def _updated_at(issue: dict[str, Any]) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(issue.get("updated_at") or ""))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _changed_since(fetch, cutoff: datetime, *, page_size: int, max_pages: int) -> tuple[dict[int, dict], bool]:
+    """cutoff 이후 수정된 이슈를 모은다. (이슈들, cutoff 이전 이슈까지 도달했는지)."""
+    changed: dict[int, dict] = {}
+    for page in range(1, max_pages + 1):
+        batch = fetch(page)
+        reached = not batch or len(batch) < page_size
+        for issue in batch:
+            updated = _updated_at(issue)
+            if updated is None or updated >= cutoff:
+                changed[int(issue["id"])] = issue
+            else:
+                reached = True
+        if reached:
+            return changed, True
+    return changed, False
+
+
+def refresh_changed_issues(
+    fetch_page: Callable[[int], list[dict[str, Any]]] | None = None,
+    *, page_size: int = 100, max_pages: int = INCREMENTAL_MAX_PAGES,
+) -> dict[str, Any]:
+    """지난 저장 이후 수정·등록된 이슈만 받아 저장본에 덮어쓴다.
+
+    두 번 읽어 합친다. 읽는 도중 다른 이슈가 수정돼 맨 앞으로 오면 뒤 이슈들이 한 칸씩
+    밀려 페이지 경계의 이슈를 한 번 놓칠 수 있기 때문이다. 바뀐 이슈가 너무 많거나
+    저장본이 없으면 'needs_full'을 돌려주고 전체 수집에 맡긴다.
+    """
+    from backend.sources.mantis import fetch_mantis_issues
+    path = store_path()
+    with path.with_suffix(".lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {"status": "running"}
+        saved = _saved_metadata()
+        if saved is None:
+            return {"status": "needs_full", "reason": "no_store"}
+        fetch = fetch_page or (lambda page: fetch_mantis_issues(
+            {"page": page, "page_size": page_size}, timeout=12, attempts=2,
+        ))
+        identity = connection_key()
+        fetched_at = datetime.now(timezone.utc)
+        cutoff = datetime.fromisoformat(saved["fetchedAt"]) - timedelta(seconds=INCREMENTAL_OVERLAP_SECONDS)
+        first, reached_first = _changed_since(fetch, cutoff, page_size=page_size, max_pages=max_pages)
+        second, reached_second = _changed_since(fetch, cutoff, page_size=page_size, max_pages=max_pages)
+        if not (reached_first and reached_second):
+            return {"status": "needs_full", "reason": "too_many_changes"}
+        changed = {**first, **second}
+        if identity != connection_key():
+            raise RuntimeError("수집 중 Mantis 연결 설정이 변경되었습니다.")
+        fd, temporary = tempfile.mkstemp(prefix="mantis-complete-", suffix=".sqlite3", dir=path.parent)
+        os.close(fd)
+        try:
+            with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source, \
+                    closing(sqlite3.connect(temporary)) as db:
+                source.backup(db)
+                with db:
+                    for issue_id, issue in changed.items():
+                        payload = json.dumps(issue, ensure_ascii=False, sort_keys=True)
+                        db.execute("INSERT OR REPLACE INTO issues VALUES (?, ?)", (issue_id, payload))
+                    count = db.execute("SELECT COUNT(*) FROM issues").fetchone()[0]
+                    meta = {**saved, "connection": identity, "fetchedAt": fetched_at.isoformat(), "count": count,
+                            "fullSyncAt": saved.get("fullSyncAt") or saved["fetchedAt"],
+                            "consistency": "incremental", "changed": len(changed)}
+                    db.execute("DELETE FROM metadata")
+                    db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    return {"status": "complete", "mode": "incremental", "count": count, "changed": len(changed),
+            "fetchedAt": meta["fetchedAt"]}
+
+
+def refresh_store(fetch_page: Callable[[int], list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+    """평소에는 바뀐 이슈만, 하루가 지났거나 증분으로 확정할 수 없으면 전체를 수집한다."""
+    saved = _saved_metadata()
+    if saved:
+        full_at = datetime.fromisoformat(saved.get("fullSyncAt") or saved["fetchedAt"])
+        if (datetime.now(timezone.utc) - full_at).total_seconds() < FULL_SYNC_INTERVAL_SECONDS:
+            result = refresh_changed_issues(fetch_page)
+            if result.get("status") != "needs_full":
+                return result
+    return sync_complete_store(fetch_page)
 
 
 def refresh_in_progress() -> bool:
@@ -282,7 +398,7 @@ def start_store_refresh() -> Thread:
     global _refresh_thread
     def refresh() -> None:
         try:
-            sync_complete_store()
+            refresh_store()
         except Exception as exc:
             # API 응답/인증값을 로그에 남기지 않는다.
             LOGGER.warning("Mantis 전체 동기화 실패: %s", type(exc).__name__)
@@ -298,10 +414,10 @@ def start_store_scheduler() -> Event:
     def run() -> None:
         while not stop.is_set():
             try:
-                sync_complete_store()
+                refresh_store()
             except Exception as exc:
                 LOGGER.warning("Mantis 전체 동기화 실패: %s", type(exc).__name__)
-            stop.wait(1800)
+            stop.wait(SCHEDULE_INTERVAL_SECONDS)
     Thread(target=run, name="mantis-store-scheduler", daemon=True).start()
     return stop
 

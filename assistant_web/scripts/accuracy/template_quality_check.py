@@ -536,7 +536,7 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
 
 
 def prepare_store(progress: bool, *, allow_stale: bool = False) -> List[Dict[str, Any]]:
-    from backend.sources.mantis_store import read_complete_store, read_store_metadata, refresh_in_progress, sync_complete_store
+    from backend.sources.mantis_store import read_complete_store, read_store_metadata, refresh_in_progress, refresh_store
 
     if allow_stale:
         # Mantis가 느려 전체 동기화가 안 될 때 이슈별 문서 템플릿만 빠르게 확인하는 용도.
@@ -548,7 +548,8 @@ def prepare_store(progress: bool, *, allow_stale: bool = False) -> List[Dict[str
         return [dict(row) for row in stale]
     if read_store_metadata() is None:
         emit(progress, "Mantis 저장본을 최신으로 맞추고 있습니다")
-        result = sync_complete_store()
+        # 평소에는 바뀐 이슈만 받는다(전체 수집은 하루 한 번).
+        result = refresh_store()
         deadline = time.monotonic() + 900
         if result.get("status") == "running":
             while refresh_in_progress() and read_store_metadata() is None and time.monotonic() < deadline:

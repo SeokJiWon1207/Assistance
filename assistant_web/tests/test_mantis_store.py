@@ -74,6 +74,59 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.assertFalse(stored.meta['search_complete'])
         self.assertEqual(stored.meta['fetchedAt'], meta['fetchedAt'])
 
+    def pages(self, rows, page_size=2, calls=None):
+        """Mantis처럼 최근 수정 순으로 정렬해 페이지를 돌려준다."""
+        ordered = sorted(rows, key=lambda row: row['updated_at'], reverse=True)
+        def fetch(page):
+            if calls is not None:
+                calls.append(page)
+            return ordered[(page - 1) * page_size:page * page_size]
+        return fetch
+
+    def backdate(self, **fields):
+        with sqlite3.connect(self.path) as db:
+            meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
+            meta.update(fields)
+            db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
+
+    def test_incremental_refresh_overwrites_only_changed_issues_and_keeps_the_rest(self):
+        old = [{'id': i, 'summary': f'옛 이슈 {i}', 'updated_at': f'2026-01-0{i}T09:00:00+09:00'} for i in range(1, 6)]
+        mantis_store.sync_complete_store(self.pages(old), page_size=2, max_pages=5, workers=1)
+        self.backdate(fetchedAt='2026-10-07T00:00:00+00:00')
+        changed = [{'id': 3, 'summary': '상태가 바뀐 이슈', 'updated_at': '2026-10-08T10:00:00+09:00'},
+                   {'id': 9, 'summary': '새 이슈', 'updated_at': '2026-10-08T11:00:00+09:00'}]
+        current = [row for row in old if row['id'] != 3] + changed
+        calls = []
+        result = mantis_store.refresh_changed_issues(self.pages(current, calls=calls), page_size=2, max_pages=10)
+        self.assertEqual((result['mode'], result['changed'], result['count']), ('incremental', 2, 6))
+        # 지난 저장 시각보다 오래된 이슈가 나온 페이지에서 멈춘다(두 번 읽어 합친다).
+        self.assertEqual(calls, [1, 2, 1, 2])
+        stored = {row['id']: row for row in mantis_store.read_complete_store()}
+        self.assertEqual(stored[3]['summary'], '상태가 바뀐 이슈')
+        self.assertEqual(stored[9]['summary'], '새 이슈')
+        self.assertEqual(stored[1]['summary'], '옛 이슈 1')
+        meta = mantis_store.read_store_metadata()
+        self.assertTrue(meta['search_complete'])
+
+    def test_too_many_changes_or_an_old_full_sync_fall_back_to_the_full_two_pass_sync(self):
+        rows = [{'id': i, 'updated_at': '2026-10-08T10:00:00+09:00'} for i in range(1, 6)]
+        mantis_store.sync_complete_store(self.pages(rows), page_size=2, max_pages=5, workers=1)
+        self.backdate(fetchedAt='2026-10-07T00:00:00+00:00')
+        self.assertEqual(
+            mantis_store.refresh_changed_issues(self.pages(rows), page_size=2, max_pages=1)['status'], 'needs_full')
+        with patch.object(mantis_store, 'sync_complete_store', return_value={'status': 'complete', 'passes': 2}) as full:
+            self.backdate(fullSyncAt='2020-01-01T00:00:00+00:00')
+            mantis_store.refresh_store(self.pages(rows))
+            full.assert_called_once()
+
+    def test_each_full_sync_pass_gets_its_own_time_budget(self):
+        # 수집 한 번에 500초씩 걸려도 두 번째 수집에서 전체 한도(900초)에 걸리지 않는다.
+        ticks = iter(range(0, 100000, 500))
+        with patch.object(mantis_store.time, 'monotonic', side_effect=lambda: next(ticks)):
+            result = mantis_store.sync_complete_store(
+                lambda page: [{'id': 1}] if page == 1 else [], page_size=2, max_pages=2, workers=1)
+        self.assertEqual(result['status'], 'complete')
+
     def test_short_page_completeness_differs_from_full_limit(self):
         partial = _collect(lambda page: [{'id': page}], 2, 1, 2)
         full = _collect(lambda page: [{'id': 1}] if page == 1 else [], 2, 1, 2)
@@ -126,7 +179,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
             entered.set()
             release.wait(5)
         with (patch.object(mantis_store, '_refresh_thread', None),
-              patch.object(mantis_store, 'sync_complete_store', side_effect=sync) as collect):
+              patch.object(mantis_store, 'refresh_store', side_effect=sync) as collect):
             first = mantis_store.start_store_refresh()
             try:
                 self.assertTrue(entered.wait(2))

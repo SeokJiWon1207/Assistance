@@ -219,13 +219,14 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
     coverage: Dict[str, Any] = {}
     try:
         # 매체 미입력 이슈의 본문 폴백까지 목록·집계와 같은 원본으로 판정한다.
-        stored = read_complete_store() if mode == "aging" else None
+        # 갱신이 늦어진 저장본도 전체 범위이므로 최근 N건 실시간 조회보다 정확하다. 기준 시각은 본문에 밝힌다.
+        stored = (read_complete_store() or read_complete_store(allow_stale=True)) if mode == "aging" else None
         raw_issues = stored if stored is not None else fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
         coverage = collection_metadata(raw_issues)
     except Exception as exc:  # 네트워크/설정 오류는 조용히 흘리지 않고 사유를 남긴다.
         return _unavailable(text, constraints, f"Mantis 라이브 조회 실패: {exc}")
 
-    if mode == "aging" and not coverage.get("search_complete"):
+    if mode == "aging" and stored is None and not coverage.get("search_complete"):
         return _unavailable(text, constraints, "전체 조회가 완료되지 않아 장기 이슈의 총건수와 오래된 순위를 확정할 수 없습니다. 저장본 동기화 후 다시 요청해 주세요.")
 
     issues = _match_issues(raw_issues, match_constraints)
@@ -401,7 +402,9 @@ def _build_aging_report(
         f"- {threshold_days}일 이상 경과한 미종료 이슈: **{len(over_threshold)}건**",
     ]
     if (coverage or {}).get("fetchedAt"):
-        lines.insert(2, f"저장본 수집 시각: {korean_time((coverage or {})['fetchedAt'])}")
+        stale_store = (coverage or {}).get("snapshot_complete") and (coverage or {}).get("search_complete") is False
+        delay = " (갱신 지연 — 이후 바뀐 상태는 반영되지 않았습니다)" if stale_store else ""
+        lines.insert(2, f"저장본 수집 시각: {korean_time((coverage or {})['fetchedAt'])}{delay}")
     if rows:
         ages = [row["age_days"] for row in rows]
         lines.append(f"- 미종료 이슈 평균 경과일: **{sum(ages) / len(ages):.1f}일** (최장 {max(ages)}일)")
