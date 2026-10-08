@@ -16,11 +16,12 @@ from backend.sources.mantis import (
     issue_matches_constraints,
     normalize_issue,
 )
+from backend.reports.report_data import load_report_issues, report_scope_label
+from backend.sources.mantis_store import read_complete_store
 from backend.understanding import extract_query_constraints
 
 
 MONTHLY_CUSTOMER_PATTERN = re.compile(r"월간\s*고객사\s*리포트|고객사\s*월간\s*리포트", re.IGNORECASE)
-MONTHLY_CUSTOMER_FETCH_LIMIT = 1000
 MONTHLY_CUSTOMER_AGING_DAYS = 30
 MONTHLY_CUSTOMER_TOP_N = 5
 
@@ -124,7 +125,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
         )
 
     try:
-        raw_issues = fetch_mantis_recent_issues(total_limit=MONTHLY_CUSTOMER_FETCH_LIMIT)
+        raw_issues = load_report_issues(read_complete_store, fetch_mantis_recent_issues)
     except Exception as exc:
         return _failure(
             text,
@@ -188,7 +189,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     comparison = f"{delta:+d}건 ({rate:+.1f}%)" if rate is not None else f"{delta:+d}건 (전월 0건)"
     lines = [
         f"{start.year}년 {start.month}월 {customer} 월간 고객사 리포트",
-        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
+        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {report_scope_label(raw_issues)}",
         "",
         "요약",
         f"- 등록 이슈: **{len(current)}건** · 전월{' 동기' if effective_end < end else ''} {len(previous)}건 대비 **{comparison}**",

@@ -13,7 +13,10 @@ class MonthlyCustomerReportTests(unittest.TestCase):
             "matches": monthly_customer.issue_matches_constraints,
             "constraints": monthly_customer.extract_query_constraints,
             "sources": monthly_customer.build_sources_from_issue_rows,
+            "store": monthly_customer.read_complete_store,
         }
+        # 기본은 저장본이 없는 상황(최근 등록분 실시간)으로 고정해 개발 PC의 실제 저장본에 흔들리지 않게 한다.
+        monthly_customer.read_complete_store = lambda **kwargs: None
         monthly_customer.normalize_issue = lambda issue: issue
         monthly_customer.issue_matches_constraints = lambda issue, constraints: True
         monthly_customer.extract_query_constraints = lambda text: {
@@ -29,6 +32,37 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         monthly_customer.issue_matches_constraints = self.originals["matches"]
         monthly_customer.extract_query_constraints = self.originals["constraints"]
         monthly_customer.build_sources_from_issue_rows = self.originals["sources"]
+        monthly_customer.read_complete_store = self.originals["store"]
+
+    def test_open_and_aging_counts_use_the_complete_store_not_the_latest_1000(self):
+        from backend.sources.mantis_collection import IssueBatch
+
+        def row(i, created, status):
+            return {"id": i, "project": "132SHGM", "summary": f"이슈 {i}", "status": status, "handler": "석지원",
+                    "created_at": created, "updated_at": created, "media_type": "MTS", "screen_number": "7600",
+                    "effort_fields": {}}
+
+        # 최근 1,000건 밖의 오래된 미종료 이슈(#5)도 전체 저장본에서는 장기 미종료로 센다.
+        stored = IssueBatch([row(2001, "2026-07-02", "confirmed"), *[row(1000 + i, "2026-07-03", "closed") for i in range(1000)],
+                             row(5, "2021-01-04", "assigned")],
+                            {"status": "snapshot", "fetchedAt": "2026-08-01T00:00:00+00:00", "search_complete": True})
+        monthly_customer.read_complete_store = lambda **kwargs: stored
+        monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: self.fail("저장본이 있으면 최근 1,000건 실시간 조회를 하지 않는다")
+        report = monthly_customer.build_monthly_customer_report("2026년 7월 신한투자증권 월간 고객사 리포트")
+        # 장기 미종료는 그 달 등록분이 아니라 보고 종료일까지 열려 있는 전체 이슈를 센다.
+        self.assertIn("현재 장기 미종료: **2건**", report["content"])
+        self.assertIn("- #5 이슈 5 — 현재", report["content"])
+        self.assertIn("Mantis 전체 1,002건 기준", report["content"])
+        self.assertNotIn("건 범위", report["content"])
+
+    def test_without_a_store_the_report_says_its_scope_is_partial(self):
+        monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
+            {"id": 101, "project": "132SHGM", "summary": "이슈", "status": "confirmed", "handler": "석지원",
+             "created_at": "2026-07-01", "updated_at": "2026-07-01", "media_type": "MTS", "screen_number": "7600",
+             "effort_fields": {}},
+        ]
+        report = monthly_customer.build_monthly_customer_report("2026년 7월 신한투자증권 월간 고객사 리포트")
+        self.assertIn("최근 등록 1건만 확인 — 미종료·장기 적체가 실제보다 적을 수 있습니다", report["content"])
 
     def test_unrelated_question_is_not_intercepted(self):
         self.assertIsNone(monthly_customer.build_monthly_customer_report("신한 이슈 보여줘"))

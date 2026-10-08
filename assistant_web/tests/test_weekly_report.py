@@ -39,7 +39,9 @@ class WeeklyReportTests(unittest.TestCase):
             "matches": weekly_customer.issue_matches_constraints,
             "constraints": weekly_customer.extract_query_constraints,
             "sources": weekly_customer.build_sources_from_issue_rows,
+            "store": weekly_customer.read_complete_store,
         }
+        weekly_customer.read_complete_store = lambda **kwargs: None
         weekly_customer.normalize_issue = lambda row: row
         weekly_customer.issue_matches_constraints = lambda row, constraints: True
         weekly_customer.extract_query_constraints = lambda text: {
@@ -56,6 +58,7 @@ class WeeklyReportTests(unittest.TestCase):
         weekly_customer.issue_matches_constraints = self.originals["matches"]
         weekly_customer.extract_query_constraints = self.originals["constraints"]
         weekly_customer.build_sources_from_issue_rows = self.originals["sources"]
+        weekly_customer.read_complete_store = self.originals["store"]
 
     def test_unrelated_question_is_not_intercepted(self):
         self.assertIsNone(weekly_customer.build_weekly_report("신한 이슈 보여줘"))
@@ -119,6 +122,18 @@ class WeeklyReportTests(unittest.TestCase):
         self.assertEqual(mentioned, {source["issue_id"] for source in report["sources"]})
         # 상태는 내부 값 대신 화면 이름으로 보인다.
         self.assertNotRegex(report["content"], r"— (?:assigned|confirmed|closed) ·")
+
+    def test_weekly_open_counts_match_the_complete_store_even_when_stale(self):
+        from backend.sources.mantis_collection import IssueBatch
+        rows = [issue(201, "2026-09-08", "2026-09-11", "confirmed"), issue(7, "2020-10-22", "2020-10-22", "assigned")]
+        stale = IssueBatch(rows, {"status": "snapshot", "fetchedAt": "2026-09-14T00:30:00+00:00", "search_complete": False})
+        # 최신 저장본이 없으면 갱신이 지연된 저장본을 쓰고, 몇 시 기준인지 밝힌다.
+        weekly_customer.read_complete_store = lambda allow_stale=False, summary_only=False: stale if allow_stale else None
+        weekly_customer.fetch_mantis_recent_issues = lambda **kwargs: self.fail("저장본이 있으면 최근 1,000건 실시간 조회를 하지 않는다")
+        report = weekly_customer.build_weekly_report("지난주 신한 주간 보고서 작성해줘")
+        self.assertIn("현재 미종료: **2건**", report["content"])
+        self.assertIn("장기 적체: **1건**", report["content"])
+        self.assertIn("Mantis 전체 2건(갱신 지연 · 9월 14일 오전 9:30 저장분)", report["content"])
 
     def test_dependency_failure_is_reported(self):
         def explode(**kwargs):

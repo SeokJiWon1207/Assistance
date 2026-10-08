@@ -15,11 +15,12 @@ from backend.sources.mantis import (
     issue_matches_constraints,
     normalize_issue,
 )
+from backend.reports.report_data import load_report_issues, report_scope_label
+from backend.sources.mantis_store import read_complete_store
 from backend.understanding import extract_query_constraints
 
 
 WEEKLY_REPORT_PATTERN = re.compile(r"주간\s*(?:보고서|리포트)", re.IGNORECASE)
-WEEKLY_REPORT_FETCH_LIMIT = 1000
 WEEKLY_REPORT_AGING_DAYS = 30
 WEEKLY_REPORT_TOP_N = 5
 WEEKLY_REPORT_MAX_DAYS = 31
@@ -111,7 +112,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
     previous_start = previous_end - timedelta(days=span - 1)
 
     try:
-        raw_issues = fetch_mantis_recent_issues(total_limit=WEEKLY_REPORT_FETCH_LIMIT)
+        raw_issues = load_report_issues(read_complete_store, fetch_mantis_recent_issues)
     except Exception as exc:
         return _failure(
             text,
@@ -183,7 +184,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
 
     lines = [
         f"{korean_day_range(start.isoformat(), effective_end.isoformat())} {customer} 주간 보고서",
-        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {'저장본' if data_meta.get('status') == 'snapshot' else '조회 결과'} {len(raw_issues)}건 범위",
+        f"기준: 등록일 {korean_day_range(start.isoformat(), effective_end.isoformat())} · {report_scope_label(raw_issues)}",
         "",
         "요약",
         f"- 신규 등록: **{len(current)}건** · 직전 {span}일 {len(previous)}건 대비 **{comparison}**",
