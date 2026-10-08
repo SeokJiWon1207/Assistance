@@ -196,6 +196,12 @@ cd assistant_web
 .venv/bin/python scripts/accuracy/dynamic_accuracy_check.py --all-cases --progress
 ```
 
+팀 템플릿의 보고서·분석·문서 작성 품질은 별도 실행기로 확인합니다.
+기본 12개에 기간·상태 변경과 고객사·기간을 상속하는 후속 질문 3개를 더하려면
+`.venv/bin/python scripts/accuracy/template_quality_check.py --extended --progress`를 실행합니다.
+필수 고객사·상태·기간이 누락되거나 요청한 지표 대신 다른 항목의 건수가 맞는 경우는 실패입니다.
+이 점검은 실제 이슈 원문을 설정된 모델에 보낼 수 있으므로 해당 전송이 허용된 환경에서 실행합니다.
+
 전체 점검은 실제 Mantis·Notion 원문을 정답 근거로 사용하며, 두 검색 소스를 모두 켠
 상태로 실행합니다. 이슈 번호, 고객사·상태·플랫폼·제외 조건, 담당자, 월별 건수,
 Notion 제목·상태, 결과 없음, 한글 개수·구어체, 이전 항목 참조와 조건 변경을 검사합니다.

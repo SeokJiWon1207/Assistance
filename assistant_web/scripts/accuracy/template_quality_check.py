@@ -23,7 +23,7 @@ import statistics
 import sys
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
@@ -80,7 +80,7 @@ REQUIRED_SECTIONS: Dict[str, List[tuple[str, ...]]] = {
     "incident-triage": [("영향",), ("확인",), ("유사",), ("전달", "담당")],
     "issue-handoff": [("현재 상태", "현재 상황"), ("다음",), ("주의",)],
     "incident-review": [("타임라인", "경과"), ("원인",), ("재발",)],
-    "customer-notice": [("영향",), ("진행", "현재")],
+    "customer-notice": [("확인된 사실", "확인 사항"), ("영향",), ("진행", "현재"), ("다음 안내", "추가 안내", "재안내")],
 }
 
 
@@ -98,6 +98,7 @@ class TemplateCase:
     expected_issue_ids: List[int] = field(default_factory=list)
     base_issue_id: Optional[int] = None
     forbidden_terms: List[str] = field(default_factory=list)
+    preceding_questions: List[str] = field(default_factory=list)
 
 
 # ── 질문 만들기 ─────────────────────────────────────────────────────────────
@@ -257,6 +258,7 @@ def build_cases(
     *,
     today: date,
     rng: random.Random,
+    include_variants: bool = False,
 ) -> List[TemplateCase]:
     by_id = {template["id"]: template for template in templates}
     customers = busiest_customers(issues, today)
@@ -326,6 +328,27 @@ def build_cases(
         handler = handler_name(done_issue)
         add("customer-notice", {"issueId": f"#{done_id}"}, base_issue_id=done_id,
             forbidden_terms=[f"#{done_id}", str(done_id), *([handler] if handler else [])])
+    if include_variants:
+        baseline = {case.template_id: case for case in cases}
+        if analysis := baseline.get("customer-analysis"):
+            values = {**analysis.values, "period": "이번 주", "status": "미종료"}
+            cases.append(replace(analysis, id="template-customer-analysis-open-week",
+                title=analysis.title + " · 기간·상태 변경", values=values,
+                question=fill_question(by_id[analysis.template_id], values), expected_statuses=["open"],
+                expected_range=as_range(*this_week), expected_count=count_issues(
+                    issues, start=this_week[0], end=this_week[1], customer=customer, bucket="open")))
+            cases.append(replace(analysis, id="template-customer-analysis-followup-open",
+                title=analysis.title + " · 후속 질문", question="그중 미종료만 표로 모두 보여줘",
+                preceding_questions=[analysis.question], expected_statuses=["open"],
+                expected_count=count_issues(issues, start=last_month[0], end=last_month[1],
+                                            customer=customer, bucket="open")))
+        if profile := baseline.get("customer-profile"):
+            six_months = recent_months_range(today, 6)
+            values = {**profile.values, "period": "최근 6개월"}
+            cases.append(replace(profile, id="template-customer-profile-six-months",
+                title=profile.title + " · 기간 변경", values=values,
+                question=fill_question(by_id[profile.template_id], values), expected_range=as_range(*six_months),
+                expected_count=count_issues(issues, start=six_months[0], end=six_months[1], customer=customer)))
     return cases
 
 
@@ -362,14 +385,36 @@ def failed_stages(response: Mapping[str, Any]) -> List[str]:
     ]
 
 
-def count_mentioned(content: str, count: int) -> bool:
-    if count == 0 and re.search(r"(?:없습니다|없어요|0\s*건)", content):
-        return True
-    return bool(re.search(rf"(?<![\d,.]){count:,}\s*건|(?<![\d,.]){count}\s*건", content))
+def count_mentioned(content: str, count: int, template_id: str = "") -> bool:
+    """질문이 요구한 건수만 대조한다. 전월·종료·공수 누락 건수는 정답이 아니다."""
+    text = re.sub(r"[*`_]", "", content)
+    number = r"\s*(?:는|가|은)?\s*[:：]?\s*([\d,]+)\s*건"
+    total = r"(?:총|전체(?:\s*이슈(?:는|가)?\s*(?:총)?)?|합계|분석\s*대상)"
+    metric = {
+        "weekly-report": r"신규\s*(?:등록\s*)?(?:이슈)?",
+        "monthly-customer-report": r"등록\s*이슈",
+        "aging-issues": r"\d+일\s*(?:이상|넘게)\s*(?:경과한\s*)?(?:미종료\s*)?이슈",
+    }.get(template_id, "")
+    values = re.findall((metric or total) + number, text)
+    if not values and template_id == "aging-issues":
+        # 적체 목록의 독립된 총건수만 허용한다. 전체 미종료 건수로 대신하지 않는다.
+        if re.search(metric, text):
+            return False
+        values = re.findall(r"(?:^|[.\n])\s*(?:[-•]\s*)?(?:오래된\s*순으로\s*)?총" + number, text)
+    if not values and not metric:
+        values = re.findall(r"(?:조건에\s*맞는\s*이슈|미종료(?:\s*이슈)?|이슈)" + number, text)
+    if values:
+        return all(int(value.replace(",", "")) == count for value in values)
+    absent = r"(?:조건에\s*맞는\s*|해당\s*|전체\s*|등록된\s*)?이슈"
+    if template_id in {"weekly-report", "monthly-customer-report"}:
+        absent = metric
+    return count == 0 and bool(re.search(
+        r"(?:^|[.\n])\s*(?:[-•]\s*)?" + absent + r"(?:가|는)?\s*(?:없습니다|없어요|없음)", text,
+    ))
 
 
 def check_filter(case: TemplateCase, constraints: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-    if not constraints:
+    if not (case.customer or case.expected_statuses or case.expected_range):
         return None
     problems: List[str] = []
     if case.customer:
@@ -388,6 +433,30 @@ def check_filter(case: TemplateCase, constraints: Mapping[str, Any]) -> Optional
                 f"{actual_range.get('from') or '?'}~{actual_range.get('to') or '?'}"
             )
     return {"passed": not problems, "problems": problems}
+
+
+def notice_update_explained(content: str) -> bool:
+    """다음 안내 약속에 시점·조건이나 일정 미확정 여부가 있는지 확인한다."""
+    time_or_condition = re.compile(
+        r"미확정|미정|확정되지\s*않|"
+        r"(?:20\d{2}[./-])?\d{1,2}[./-]\d{1,2}|"
+        r"\d{1,2}\s*(?:월\s*\d{1,2}\s*일|일\s*(?:후|이내)|시|:\d{2})|"
+        r"오늘|내일|모레|금일|익일|다음\s*(?:주|달)|이번\s*주|"
+        r"(?:원인|복구|조사|담당자|결과|확인|변경|변동)[^\n.!?]{0,25}(?:후|즉시|되면|시점)"
+    )
+    other_section = r"(?:확인된\s*사실|고객\s*영향|진행\s*상황|현재\s*상태|원인|조치)\s*[:：]"
+    for update in re.finditer(r"(?:다음|추가|재)\s*안내", content):
+        line, _, following = content[update.start():].partition("\n")
+        line = re.split(r"(?<!\d)[.!?。](?!\d)|" + other_section, line, maxsplit=1)[0]
+        plain_line = re.sub(r"[*_`#]", "", line).strip()
+        if re.fullmatch(r"(?:다음|추가|재)\s*안내\s*(?:시점|일정|일시|예정|시간)\s*[:：]?", plain_line):
+            # 제목 바로 아래 값은 허용하되 다른 항목의 미확정 여부를 끌어오지 않는다.
+            value = following.split("\n", 1)[0]
+            if not re.search(other_section, value):
+                line += "\n" + value
+        if time_or_condition.search(line):
+            return True
+    return False
 
 
 def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[int]) -> Dict[str, Any]:
@@ -417,8 +486,8 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
     oracle_applies = False
     if case.expected_count is not None:
         oracle_applies = True
-        if not count_mentioned(content, case.expected_count):
-            oracle_problems.append(f"저장본 기준 {case.expected_count}건이 답변에 없음")
+        if not count_mentioned(content, case.expected_count, case.template_id):
+            oracle_problems.append(f"요청한 지표가 저장본 기준 {case.expected_count}건과 다름 또는 답변에 없음")
     if case.expected_issue_ids:
         oracle_applies = True
         mentioned = response_issue_ids(response) | {int(value) for value in ISSUE_REFERENCE.findall(content)}
@@ -442,6 +511,9 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
         if not any(term in content for term in group)
     ]
     checks["sections"] = {"passed": not missing_sections, "problems": [f"'{name}' 항목 없음" for name in missing_sections]}
+    if case.template_id == "customer-notice" and not notice_update_explained(content):
+        checks["sections"]["passed"] = False
+        checks["sections"]["problems"].append("다음 안내 시점·조건 또는 일정 미확정 여부 없음")
 
     mentioned_ids = {int(value) for value in ISSUE_REFERENCE.findall(content)}
     unknown_ids = sorted(mentioned_ids - known_issue_ids)
@@ -493,20 +565,28 @@ def run_case(case: TemplateCase, model_id: str, known_issue_ids: set[int]) -> Di
 
     started = time.perf_counter()
     try:
-        response = chat_service.build_response(ChatRequest(
-            modelId=model_id,
-            messages=[ChatMessage(role="user", content=case.question)],
-            temperature=0.0,
-            seed=42,
-            maxTokens=1600,
-            searchLimit=5,
-            showSources=True,
-            abTest=False,
-            stream=False,
-            # 화면(runtime.js)이 보내는 도구 설정과 같게 둬야 실제 팀원이 받는 답변을 채점한다.
-            tools={"mantis": True, "notion": True, "vectorDb": True},
-        ), user={"uid": ACCURACY_USER_UID})
+        messages = []
+        context_audit_id = None
+        for question in [*case.preceding_questions, case.question]:
+            messages.append(ChatMessage(role="user", content=question))
+            response = chat_service.build_response(ChatRequest(
+                modelId=model_id,
+                messages=list(messages),
+                contextAuditId=context_audit_id,
+                temperature=0.0,
+                seed=42,
+                maxTokens=1600,
+                searchLimit=5,
+                showSources=True,
+                abTest=False,
+                stream=False,
+                # 화면(runtime.js)이 보내는 도구 설정과 같게 둬야 실제 팀원이 받는 답변을 채점한다.
+                tools={"mantis": True, "notion": True, "vectorDb": True},
+            ), user={"uid": ACCURACY_USER_UID})
+            messages.append(ChatMessage(role="assistant", content=str(response.get("content") or "")))
+            context_audit_id = response.get("auditId")
         result = grade(case, response, known_issue_ids)
+        result["timings"] = response.get("timings") or {}
     except Exception as exc:  # 한 템플릿이 실패해도 나머지 점검은 계속한다.
         result = {
             **asdict(case),
@@ -603,6 +683,7 @@ def main() -> int:
     parser.add_argument("--only", default="", help="쉼표로 구분한 템플릿 ID만 실행")
     parser.add_argument("--progress", action="store_true")
     parser.add_argument("--allow-stale", action="store_true", help="저장본을 갱신하지 않고 그대로 사용")
+    parser.add_argument("--extended", action="store_true", help="기간·상태 변경과 후속 질문 3건도 실행")
     args = parser.parse_args()
 
     from backend.llm import get_model_registry
@@ -610,7 +691,7 @@ def main() -> int:
     issues = prepare_store(args.progress, allow_stale=args.allow_stale)
     today = datetime.now().astimezone().date()
     templates = load_team_templates()["templates"]
-    cases = build_cases(templates, issues, today=today, rng=random.Random(args.seed))
+    cases = build_cases(templates, issues, today=today, rng=random.Random(args.seed), include_variants=args.extended)
     if args.only:
         wanted = {value.strip() for value in args.only.split(",") if value.strip()}
         cases = [case for case in cases if case.template_id in wanted]

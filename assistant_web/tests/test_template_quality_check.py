@@ -109,6 +109,20 @@ class TemplateQuestionTests(unittest.TestCase):
             cases = {case.template_id: case for case in build_cases(templates, ISSUES, today=TODAY, rng=random.Random(seed))}
             self.assertIn(cases["incident-review"].base_issue_id, {1003, 1005})
 
+    def test_extended_checks_cover_period_status_and_inherited_customer_filters(self):
+        cases = build_cases(load_team_templates()["templates"], ISSUES, today=TODAY,
+                            rng=random.Random(1), include_variants=True)
+        by_id = {case.id: case for case in cases}
+        self.assertEqual(len(cases), 15)
+        variant = by_id["template-customer-analysis-open-week"]
+        self.assertEqual(variant.expected_count, 1)
+        self.assertEqual(variant.expected_range, {"from": "2026-10-05", "to": "2026-10-11"})
+        followup = by_id["template-customer-analysis-followup-open"]
+        self.assertEqual(followup.question, "그중 미종료만 표로 모두 보여줘")
+        self.assertEqual(followup.expected_count, 2)
+        self.assertIn("지난달 미래에셋증권", followup.preceding_questions[0])
+        self.assertEqual(by_id["template-customer-profile-six-months"].expected_count, 8)
+
 
 class StoreOracleTests(unittest.TestCase):
     def test_periods_match_the_question_parser(self):
@@ -133,6 +147,15 @@ class StoreOracleTests(unittest.TestCase):
         self.assertTrue(count_mentioned("미종료 1,204건", 1204))
         self.assertFalse(count_mentioned("112건", 12))
         self.assertTrue(count_mentioned("조건에 맞는 이슈가 없습니다.", 0))
+
+    def test_absent_effort_and_subtotals_cannot_satisfy_the_issue_total(self):
+        self.assertFalse(count_mentioned("총 12건입니다. 공수 정보는 없습니다.", 0))
+        self.assertFalse(count_mentioned("전체 이슈는 총 12건이며 종료된 이슈는 3건입니다.", 3))
+        self.assertFalse(count_mentioned("이슈 12건 중 공수 미입력 0건", 0))
+        self.assertFalse(count_mentioned("종료된 이슈가 없습니다.", 0, "customer-analysis"))
+        self.assertFalse(count_mentioned("신규 등록 이슈: 12건. 미종료 총 3건. 장기 적체 0건. 공수 없음.", 3, "weekly-report"))
+        self.assertFalse(count_mentioned("전월 총 3건. 현재 등록 이슈는 미확인입니다. 공수 비교는 생략합니다.", 3, "monthly-customer-report"))
+        self.assertFalse(count_mentioned("전체 미종료 총 3건. 30일 이상 이슈 건수는 미확인입니다.", 3, "aging-issues"))
 
 
 class GradingTests(unittest.TestCase):
@@ -171,6 +194,24 @@ class GradingTests(unittest.TestCase):
         )
         self.assertTrue(result["passed"], result["checks"])
 
+    def test_required_filters_cannot_disappear_from_the_evaluation(self):
+        result = grade(self.case(), self.response(
+            "오래된 순으로 총 3건입니다. #1001, #1002, #1004", constraints={},
+        ), {1001, 1002, 1004})
+        self.assertFalse(result["passed"])
+        self.assertIn("filter", result["checks"])
+        self.assertFalse(result["checks"]["filter"]["passed"])
+
+    def test_report_total_is_bound_to_the_requested_metric(self):
+        for template_id, text in (
+            ("monthly-customer-report", "등록 이슈: 12건 · 전월 3건 대비 증가. 공수 비교"),
+            ("weekly-report", "신규 등록: 12건 · 미종료 3건 · 장기 적체 0건 · 공수 0"),
+            ("aging-issues", "미종료 12건 중 30일 이상 경과한 이슈: 3건 · 오래된 순"),
+        ):
+            result = grade(self.case(template_id=template_id, expected_issue_ids=[]), self.response(text), set())
+            with self.subTest(template_id=template_id):
+                self.assertEqual(result["checks"]["oracle"]["passed"], template_id == "aging-issues")
+
     def test_incomplete_store_answers_and_wrong_filters_fail_with_reasons(self):
         result = grade(
             self.case(),
@@ -201,6 +242,35 @@ class GradingTests(unittest.TestCase):
         self.assertFalse(result["checks"]["grounding"]["passed"])
         self.assertEqual(result["checks"]["forbidden"]["problems"], ["내부 정보 노출: #1003", "내부 정보 노출: 1003", "내부 정보 노출: 홍길동"])
         self.assertNotIn("filter", result["checks"])
+
+    def test_customer_notice_requires_all_requested_sections(self):
+        notice = self.case(
+            template_id="customer-notice", customer="", expected_statuses=[],
+            expected_count=None, expected_issue_ids=[], base_issue_id=1003,
+        )
+        text = "확인된 사실: 오류 발생. 고객 영향: 범위 미확정. 진행 상황: 조사 중. 다음 안내 시점: 미확정."
+        for missing in ("확인된 사실: 오류 발생. ", "다음 안내 시점: 미확정."):
+            result = grade(notice, self.response(text.replace(missing, ""), sources=[1003]), {1003})
+            self.assertFalse(result["checks"]["sections"]["passed"])
+        self.assertTrue(grade(notice, self.response(text, sources=[1003]), {1003})["checks"]["sections"]["passed"])
+
+    def test_customer_notice_next_update_needs_a_time_condition_or_unknown_schedule(self):
+        notice = self.case(template_id="customer-notice", customer="", expected_statuses=[],
+                           expected_count=None, expected_issue_ids=[], base_issue_id=1003)
+        prefix = "확인된 사실: 오류 접수. 고객 영향: 범위 미확정. 진행 상황: 조사 중.\n"
+        for update in (
+            "추가 안내를 드리겠습니다.", "다음 안내 시점:",
+            "추가 안내를 드리겠습니다.\n고객 영향: 범위 미확정.",
+            "추가 안내를 드리겠습니다. 고객 영향: 범위 미확정.",
+            "다음 안내 시점:\n고객 영향: 범위 미확정.",
+        ):
+            with self.subTest(update=update):
+                self.assertFalse(grade(notice, self.response(prefix + update, sources=[1003]), {1003})["checks"]["sections"]["passed"])
+        for update in ("다음 안내 시점: 미확정", "추가 안내는 내일 오전에 드리겠습니다.",
+                       "다음 안내는 원인 확인 후 드리겠습니다.", "다음 안내 시점: 2026-10-08 10:00",
+                       "**다음 안내 시점**\n* 미확정"):
+            with self.subTest(update=update):
+                self.assertTrue(grade(notice, self.response(prefix + update, sources=[1003]), {1003})["checks"]["sections"]["passed"])
 
     def test_summary_scores_each_check_separately(self):
         passed = {"passed": True, "checks": {"completed": {"passed": True, "problems": []}}, "latency_ms": 100.0}
