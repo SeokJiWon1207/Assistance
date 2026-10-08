@@ -622,6 +622,11 @@ cron에 등록하지 않는다 - 시스템 스케줄 변경은 사용자가 직�
 
 `NOTION_MIN_REQUEST_INTERVAL_SECONDS`는 integration 전체의 Notion 요청 간 최소 간격입니다. 기본값은 `0.36`초이며, 429 응답이 오면 `Retry-After`를 우선해 재시도합니다.
 
+성공한 DB 스키마는 `runtime/notion_schemas`에 보관해 재시작 후 첫 검색의 DB별 스키마 요청을 줄입니다.
+토큰과 페이지 본문은 저장하지 않으며 권한·API 버전별로 캐시를 구분합니다.
+`NOTION_CACHE_TTL_SECONDS` 안에서는 바로 재사용하고, 이후 `NOTION_SCHEMA_MAX_STALE_SECONDS` 안에서는
+백그라운드로 갱신합니다. 만료·손상된 캐시는 다시 조회하며 페이지 검색은 현재 연결 범위를 모두 확인합니다.
+
 `scripts/accuracy/rebaseline_notion_titles.py`는 현재 연결 범위의 제목 색인, 마지막으로 완료된 하위 DB 범위, 과거 질문 분류 리포트를 `ASSISTANT_RUNTIME_DIR` 아래에 갱신합니다. 배포 후와 Notion DB 구성이 바뀔 때 이 스크립트를 별도 유지보수 작업으로 실행해야 합니다. 제목 색인은 기본 24시간(`NOTION_TITLE_INDEX_TTL_SECONDS`) 동안 정확 제목 조회 우선순위에 사용합니다. 하위 DB 탐색이 끝난 경우에만 별도 범위 스냅샷을 교체하므로, 실패한 갱신이 마지막 완료 범위를 지우지 않습니다.
 
 `MANTIS_LIVE_REFILL_MAX_ATTEMPTS`는 스냅샷 상위 결과가 최신 조건과 달라졌을 때 대체 이슈를 실시간으로 확인하는 최대 횟수입니다. 기본값은 12이며, 연결 오류가 발생하면 추가 보충 조회를 즉시 중단합니다.

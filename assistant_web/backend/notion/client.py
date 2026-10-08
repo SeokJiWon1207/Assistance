@@ -11,6 +11,7 @@ import requests
 from fastapi import HTTPException
 
 from backend.execution import bounded_timeout
+from backend.notion.schema_cache import load_schema, save_schema
 from backend.config import (
     NOTION_API_BASE,
     get_notion_headers as get_notion_headers,
@@ -291,6 +292,7 @@ def _load_notion_database(key: tuple[str, str]) -> Dict[str, Any]:
         _database_cache[key] = (time.monotonic(), data)
         while len(_database_cache) > 256:
             _database_cache.pop(next(iter(_database_cache)))
+    save_schema(key[0], get_notion_headers(), data)
     return data
 
 
@@ -326,6 +328,13 @@ def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
     with _database_cache_lock:
         cached = _database_cache.get(key)
         failure = _database_failures.get(key)
+    if not cached:
+        persisted = load_schema(database_id, get_notion_headers(), max(_notion_cache_ttl(), _notion_schema_max_stale()))
+        if persisted:
+            age, data = persisted
+            cached = (now - age, data)
+            with _database_cache_lock:
+                _database_cache[key] = cached
     if cached:
         age = now - cached[0]
         if age < _notion_cache_ttl():

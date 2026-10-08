@@ -240,6 +240,29 @@ class NotionClientTests(unittest.TestCase):
             self.assertEqual(client.warm_notion_database_cache(), 0)
         fetch.assert_not_called()
 
+    def test_schema_survives_process_cache_reset_without_an_extra_network_request(self):
+        data = {"id": "persistentdb", "object": "database", "title": [], "properties": {"제목": {"type": "title"}}}
+        with patch.object(client, "_request_notion_database", return_value=data) as request:
+            self.assertEqual(client.fetch_notion_database_schema("persistent-db"), data)
+            client.clear_notion_database_cache()
+            self.assertEqual(client.fetch_notion_database_schema("persistentdb"), data)
+            self.assertEqual(request.call_count, 1)
+
+    def test_expired_or_different_permission_schema_is_fetched_again(self):
+        data = {"id": "expiredb", "object": "database", "title": [], "properties": {"title": {"type": "title"}}}
+        with patch.object(client, "get_notion_headers", return_value={"Authorization": "Bearer original", "Notion-Version": "2022-06-28"}) as headers, \
+                patch.object(client, "_request_notion_database", return_value=data) as request, \
+                patch.dict(os.environ, {"NOTION_CACHE_TTL_SECONDS": "30", "NOTION_SCHEMA_MAX_STALE_SECONDS": "0"}):
+            client.fetch_notion_database_schema("expiredb")
+            client.clear_notion_database_cache()
+            headers.return_value = {"Authorization": "Bearer other", "Notion-Version": "2022-06-28"}
+            client.fetch_notion_database_schema("expiredb")
+            self.assertEqual(request.call_count, 2)
+            client.clear_notion_database_cache()
+            with patch("backend.notion.schema_cache.time.time", return_value=10**12):
+                client.fetch_notion_database_schema("expiredb")
+            self.assertEqual(request.call_count, 3)
+
     def test_user_list_follows_pagination_and_caches_the_result(self):
         first = Mock(status_code=200)
         first.json.return_value = {
