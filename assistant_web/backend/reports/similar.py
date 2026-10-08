@@ -53,7 +53,17 @@ _DELIVERY_ONLY = re.compile(r"\[\s*고객사\s*전달\s*\]|\.zip\b|ftp://|svn://
 _GREETING = re.compile(
     r"안녕하세요[.!~]*\s*|[^.\n]{0,25}(?:부장|차장|과장|대리|주임|선임|책임|수석|사원|팀장|매니저|이사|대표)(?:님)?입니다[.!~]*\s*"
 )
-_CAUSE_QUESTION = re.compile(r"원인\s*(?:을|를)?\s*(?:확인|파악|분석)\s*(?:요청|부탁|필요|중)|원인\s*(?:미상|불명|모름)")
+_UNCONFIRMED = re.compile(
+    r"요청(?:드|합|함|하|해|$)|부탁|예정|계획|검토\s*중|진행\s*중|분석\s*중|확인\s*중|"
+    r"추정|의심|가능성|미상|불명|모름|미확인|필요|무엇인지|때문인지|"
+    r"미완료|미해결|"
+    r"(?:수정|조치|반영|적용|패치|배포|조사)\s*중|하겠|모르|"
+    r"것\s*같|인\s*듯|인가요|입니까|일까요|맞나요|(?:할|알)\s*수\s*없|"
+    r"해야|바랍|주세요|해줘"
+)
+_CAUSE_NEGATION = re.compile(r"(?:원인|때문)[^.\n]*(?:아닙|아니었|아닌)")
+_FIX_NOT_DONE = re.compile(r"않|못했|못하|미(?:반영|적용|배포|수정|처리)|안\s*(?:됨|됐|되|했|하)|하면|한다면|된다면|되면|했으면")
+_COMPLETED_NOTE = re.compile(r"완료|종료|해결|수정|조치|반영|변경|적용|패치|개선|배포|조정|전달|추가\s*(?:했|하였|함|완료|반영|됨)")
 _COMPARE_STOPWORDS = frozenset({"현상", "문제", "오류", "수정", "요청", "확인", "관련", "발생", "처리", "원인", "화면", "경우"})
 _GENERIC_SIMILAR_FOCUS_TERMS = frozenset({
     "찾아", "찾아서", "원인", "해결", "내용", "비교", "비교해줘", "과거", "사례",
@@ -77,26 +87,17 @@ def _summarize_resolution(detail: Dict[str, Any]) -> str:
         if "=>" in change and ("상태" in field or "status" in field.casefold()):
             resolved_event = item
 
-    # 마지막으로 의미 있는 노트를 조치 내용으로 쓴다(보통 처리 결과가 담긴다).
-    last_note_text = ""
-    for note in reversed(detail.get("notes") or []):
-        note_text = str(note.get("text") or "").strip()
-        if note_text and not note_text.startswith("이슈노트 추가됨"):
-            last_note_text = note_text
-            break
-
     parts = [f"상태 {status}"]
     if resolved_event:
         when = str(resolved_event.get("created_at") or "")[:10]
         change = str(resolved_event.get("change") or "").replace("=>", "→")
         parts.append(f"상태 변경 {change}{f' ({when})' if when else ''}")
-    recorded_fix = str((detail.get("resolution_fields") or {}).get(FIX_FIELD) or "").strip()
-    if last_note_text:
-        parts.append(f"마지막 조치: {compact_text(last_note_text, NOTE_SNIPPET_CHARS)}")
-    elif recorded_fix:
-        parts.append(f"기록된 조치: {compact_text(recorded_fix, NOTE_SNIPPET_CHARS)}")
-    if not resolved_event and not last_note_text and not recorded_fix:
-        parts.append("기록된 처리 노트가 없습니다.")
+    recorded_fix, origin = _recorded_fix(detail, max_chars=NOTE_SNIPPET_CHARS)
+    if recorded_fix:
+        label = "기록된 조치" if origin == "field" else "마지막 조치"
+        parts.append(f"{label}: {recorded_fix}")
+    else:
+        parts.append("확인된 해결·조치 기록이 없습니다.")
     return " · ".join(parts)
 
 
@@ -111,28 +112,32 @@ def _clean_note(text: str, detail: Dict[str, Any]) -> str:
         cleaned = re.sub(rf"0*{re.escape(issue_id)}\s*[:：]\s*{title}", " ", cleaned)
     if summary:
         cleaned = cleaned.replace(summary, " ")
-    return re.sub(r"\s+", " ", cleaned).strip(" .-~")
+    return re.sub(r"[^\S\n]+", " ", cleaned).strip(" .-~\n")
+
+
+def _unconfirmed(text: str, *, cause: bool = False) -> bool:
+    # '예외를 처리하지 않아 발생한 오류'는 원인이다. 완료 조치의 부정과 구분한다.
+    return bool(_UNCONFIRMED.search(text) or (_CAUSE_NEGATION if cause else _FIX_NOT_DONE).search(text))
 
 
 def _recorded_cause(detail: Dict[str, Any]) -> Tuple[str, str]:
     """(원인 문장, 출처). 출처는 'field'(사유 및 원인), 'note'(노트 속 원인 문장), ''(기록 없음)."""
     field = str((detail.get("resolution_fields") or {}).get(CAUSE_FIELD) or "").strip()
-    if field:
+    if field and not _unconfirmed(field, cause=True):
         return compact_text(field, COMPARE_CELL_CHARS), "field"
     for note in reversed(detail.get("notes") or []):
         for sentence in _CAUSE_SENTENCE.findall(_clean_note(note.get("text"), detail)):
             sentence = sentence.strip(" -·:")
-            if len(sentence) >= 8 and not _CAUSE_QUESTION.search(sentence):
+            if len(sentence) >= 8 and not _unconfirmed(sentence, cause=True):
                 return compact_text(sentence, COMPARE_CELL_CHARS), "note"
     return "", ""
 
 
-def _recorded_fix(detail: Dict[str, Any]) -> Tuple[str, str]:
+def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS) -> Tuple[str, str]:
     """(해결 내용, 출처). 'field'(조치 및 개선) → 'note'(마지막 처리 노트) 순으로 찾는다."""
     field = str((detail.get("resolution_fields") or {}).get(FIX_FIELD) or "").strip()
-    if field:
-        return compact_text(field, COMPARE_CELL_CHARS), "field"
-    fallback = ""
+    if field and not _unconfirmed(field):
+        return compact_text(field, max_chars), "field"
     for note in reversed(detail.get("notes") or []):
         raw = str(note.get("text") or "").strip()
         if not raw or raw.startswith("이슈노트 추가됨"):
@@ -140,10 +145,13 @@ def _recorded_fix(detail: Dict[str, Any]) -> Tuple[str, str]:
         cleaned = _clean_note(raw, detail)
         if not cleaned or (_DELIVERY_ONLY.search(cleaned) and not _FIX_HINT.search(_DELIVERY_ONLY.sub("", cleaned))):
             continue
-        if _FIX_HINT.search(cleaned):
-            return compact_text(cleaned, COMPARE_CELL_CHARS), "note"
-        fallback = fallback or cleaned
-    return (compact_text(fallback, COMPARE_CELL_CHARS), "note") if fallback else ("", "")
+        # 같은 노트의 '배포 완료. 확인 부탁'은 완료 문장만 남긴다.
+        sentences = [part.strip(" .-~") for part in re.split(r"[.。!?\n]+", cleaned)]
+        confirmed = [part for part in sentences if part and _COMPLETED_NOTE.search(part)
+                     and not _unconfirmed(part)]
+        if confirmed:
+            return compact_text(". ".join(confirmed), max_chars), "note"
+    return "", ""
 
 
 def _table_cell(text: str, origin: str) -> str:

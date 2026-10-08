@@ -206,6 +206,52 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertTrue(similar._wants_resolution("어떻게 해결했어"))
         self.assertFalse(similar._wants_resolution("비슷한 이슈 목록만"))
 
+    def test_requests_hypotheses_and_negations_are_not_recorded_causes(self):
+        for text in (
+            "원인이 무엇인지 확인 부탁드립니다.", "원인은 인증서 문제가 아닙니다.",
+            "원인은 인증서 문제로 추정됩니다.", "원인 분석 진행 중입니다.",
+            "원인 미확인", "인증서 오류 때문인지 확인 요청드립니다.",
+            "원인이 세션 만료인가요?", "원인은 인증서 문제인 것 같습니다.",
+            "원인을 확인할 수 없습니다.", "원인 조사 중입니다.",
+        ):
+            with self.subTest(text=text):
+                detail = {"notes": [{"text": text}]}
+                self.assertEqual(similar._recorded_cause(detail), ("", ""))
+                self.assertNotIn(text.rstrip("."), "\n".join(similar._comparison_lines({}, [detail])))
+
+    def test_pending_notes_do_not_replace_completed_fixes_or_enter_playbooks(self):
+        for text in (
+            "서버 설정 수정 후 다시 확인 부탁드립니다.", "패치 배포 예정입니다.",
+            "수정이 완료되지 않았습니다.", "아직 해결하지 못했습니다.", "추가 확인 필요",
+            "수정 중입니다.", "패치를 적용하겠습니다.", "패치 미적용",
+            "서버 설정을 수정해야 합니다.", "패치 배포 바랍니다.",
+            "원인과 수정 방법을 공유해주세요.", "추가 문의가 접수되었습니다.",
+            "패치를 적용하면 해결됩니다.", "패치 적용 안 됨.",
+        ):
+            with self.subTest(text=text):
+                detail = {"id": 9001, "notes": [{"text": text}]}
+                self.assertEqual(similar._recorded_fix(detail), ("", ""))
+                self.assertNotIn("마지막 조치:", similar._summarize_resolution(detail))
+                self.assertNotIn(text, similar._build_playbook_candidate({}, [detail])["resolution"])
+                detail["notes"].insert(0, {"text": "서버 설정 수정 완료."})
+                self.assertEqual(similar._recorded_fix(detail), ("서버 설정 수정 완료", "note"))
+
+    def test_completed_action_is_retained_when_the_same_note_contains_a_followup_request(self):
+        detail = {"notes": [{"text": "서버 설정 수정 완료. 고객 확인 부탁드립니다."}]}
+        self.assertEqual(similar._recorded_fix(detail), ("서버 설정 수정 완료", "note"))
+        detail["notes"][0]["text"] = "서버 설정 수정 완료\n고객 확인 부탁드립니다."
+        self.assertEqual(similar._recorded_fix(detail), ("서버 설정 수정 완료", "note"))
+
+    def test_request_subjects_and_negative_failure_causes_retain_confirmed_records(self):
+        detail = {"notes": [{"text": "추가 요청사항 반영 완료."}]}
+        self.assertEqual(similar._recorded_fix(detail), ("추가 요청사항 반영 완료", "note"))
+        detail["resolution_fields"] = {"조치 및 개선": "추가 요청사항 반영 완료."}
+        self.assertEqual(similar._recorded_fix(detail), ("추가 요청사항 반영 완료.", "field"))
+        detail["notes"] = [{"text": "예외를 처리하지 않아 발생한 오류가 원인입니다."}]
+        self.assertEqual(similar._recorded_cause(detail), ("예외를 처리하지 않아 발생한 오류가 원인입니다", "note"))
+        detail["notes"] = [{"text": "원인은 요청 파라미터 누락입니다."}]
+        self.assertEqual(similar._recorded_cause(detail), ("원인은 요청 파라미터 누락입니다", "note"))
+
     def test_summarize_resolution_pulls_status_and_last_note(self):
         detail = {
             "status": "종료된 이슈",
