@@ -13,9 +13,15 @@ export function answerScopeLabel(row) {
 
 export function renderAnswerScope(rows) {
   if (!rows?.length) return null;
-  const section = document.createElement("section");
-  section.className = rows.some((row) => row.warning) ? "answer-data-scope is-warning" : "answer-data-scope";
+  const warning = rows.some((row) => row.warning);
+  const section = document.createElement(warning ? "section" : "details");
+  section.className = warning ? "answer-data-scope is-warning" : "answer-data-scope";
   section.setAttribute("aria-label", "답변 데이터 기준과 조회 범위");
+  if (!warning) {
+    const summary = document.createElement("summary");
+    summary.textContent = `데이터 기준 · ${[...new Set(rows.map((row) => row.source))].join(" · ")}`;
+    section.appendChild(summary);
+  }
   rows.forEach((row) => {
     const line = document.createElement("div");
     line.className = row.warning ? "answer-data-scope-row is-warning" : "answer-data-scope-row";

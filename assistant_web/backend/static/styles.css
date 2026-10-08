@@ -1754,8 +1754,6 @@ body.theme-dark .chat-header {
 }
 
 .answer-data-scope {
-  display: grid;
-  gap: 6px;
   margin: 14px 0 10px;
   padding: 10px 12px;
   border-left: 3px solid var(--line-strong);
@@ -1764,6 +1762,23 @@ body.theme-dark .chat-header {
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.answer-data-scope summary {
+  cursor: pointer;
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+.answer-data-scope summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.answer-data-scope-row + .answer-data-scope-row,
+.answer-data-scope summary + .answer-data-scope-row {
+  margin-top: 6px;
 }
 
 .answer-data-scope-row.is-warning {

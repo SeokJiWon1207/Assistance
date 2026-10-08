@@ -57,7 +57,7 @@ import {
   truncateChartLabel,
 } from "./charts.js?v=20260911-6";
 import { renderEffortTrendChart } from "./trend_chart.js?v=20260911-6";
-import { renderAnswerScope } from "./answer_scope.js?v=20261006-1";
+import { renderAnswerScope } from "./answer_scope.js?v=20261007-1";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -289,11 +289,13 @@ function renderMessages() {
       const conditionBar = renderSearchConditionChips(presentation.conditions, messageIndex);
       if (conditionBar) content.appendChild(conditionBar);
       const dataScope = renderAnswerScope(message.verification?.dataScope);
-      if (dataScope) content.appendChild(dataScope);
+      if (dataScope?.classList.contains("is-warning")) content.appendChild(dataScope);
       if (message.abTest?.enabled && abComparisonEnabled()) {
         content.appendChild(renderAbComparison(message, bubble, messageIndex));
+        if (dataScope && !dataScope.classList.contains("is-warning")) content.appendChild(dataScope);
       } else {
         content.appendChild(bubble);
+        if (dataScope && !dataScope.classList.contains("is-warning")) content.appendChild(dataScope);
         appendAssistantExtras(content, message, messageIndex);
       }
       if (message.streaming && message.progress) {
