@@ -13,7 +13,31 @@ from backend.config import (
     STOPWORDS,
 )
 from backend.intent.entities import extract_mantis_keyword
+from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit
 from backend.team_scope import remove_team_scope_phrase
+
+
+KEYWORD_ALIAS_GROUPS = (
+    ("VB스크립트", "VBScript", "VB Script"),
+    ("자바스크립트", "JavaScript", "Java Script", "JScript", "J Script"),
+)
+
+
+def keyword_term_aliases(term: str) -> tuple[str, ...]:
+    normalized = normalize_for_match(term)
+    for aliases in KEYWORD_ALIAS_GROUPS:
+        if any(normalized == normalize_for_match(alias) for alias in aliases):
+            return aliases
+    return (term,)
+
+
+def text_matches_keyword_terms(text: str, terms: List[str]) -> bool:
+    """요청 주제는 모두 유지하고, 같은 용어의 표기 차이만 허용한다."""
+    normalized_text = normalize_for_match(text)
+    return all(
+        any(normalize_for_match(alias) in normalized_text for alias in keyword_term_aliases(term))
+        for term in terms
+    )
 
 
 def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bool:
@@ -80,6 +104,9 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    text = re.sub(r"\b(VB|자바)\s+스크립트", r"\1스크립트", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b(VB|Java|J)\s+Script(?=\b|[가-힣])", r"\1Script", text, flags=re.IGNORECASE)
+    scope_edit = has_scope_edit(text)
     resolution = (constraints or {}).get("status_resolution") or {}
     if resolution.get("status_intent") == "open" and resolution.get("evidence") and not resolution.get("needs_clarification"):
         text = text.replace(str(resolution["evidence"]), " ")
@@ -124,6 +151,8 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         "내", "나", "저", "나의", "제", "내가", "제가", "내게", "나에게", "저에게",
         "맡은", "담당한", "할당된", "고객사", "보여주세요", "알려주세요",
         "쪽", "쪽에", "쪽은", "보면", "있어", "있나", "있을까", "있나요", "있는지", "그럼", "그러면",
+        "관련해서", "관련하여", "관련된", "관련한", "관련해", "바꿔달라", "바꿔달라는", "있었어", "곳", "곳은", "곳이", "어디", "어디야", "어디인가요",
+        "해제", "제거", "해제해줘", "제거해줘", "무관", "상관없이",
     }
     personal_control_terms = {"장기"} if personal_scope_text else set()
     terms = [
@@ -134,6 +163,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         and term not in STOPWORDS
         and term not in filter_control_terms
         and term not in personal_control_terms
+        and not (scope_edit and SCOPE_CONTROL_TERM.fullmatch(term))
         and not compact_personal_term.fullmatch(term)
         and not is_control_search_term(term)
     ]
@@ -141,6 +171,14 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         terms = [term for term in terms if not term_is_covered_by_constraints(term, constraints)]
     inherited = (constraints or {}).get("inherited_terms") or []
     return list(dict.fromkeys([*terms[:4], *inherited]))
+
+
+def replacement_topic_terms(question: str, constraints: Dict[str, Any]) -> List[str]:
+    """'그럼 X 관련…'의 새 주제만 읽고 '그중 X…'의 추가 조건은 보존한다."""
+    match = re.match(r"^\s*(?:그럼|그러면)\s+(.+?)\s*관련(?:해서|하여|된|한|해)?", question)
+    if not match or re.search(r"그\s*중|그대로|유지|추가|도\s*포함", match.group(1)):
+        return []
+    return build_keyword_terms(match.group(1), constraints)
 
 
 def wants_similar_issue_search(text: str, constraints: Optional[Dict[str, Any]] = None) -> bool:
@@ -230,7 +268,8 @@ def extract_requested_limit(text: str) -> Optional[int]:
 
 def wants_all_results(text: str) -> bool:
     normalized = normalize_for_match(text)
-    return any(
+    return bool(re.search(r"(?:모두|전부)(?:표로|목록으로|리스트로)?(?:정리|요약|조회|보여|알려)", normalized)
+                or re.search(r"(?:이슈|결과|항목|문서)(?:를|을)?전체(?:표로|목록으로)?(?:정리|요약|조회)", normalized)) or any(
         marker in normalized
         for marker in (
             "다보여",
@@ -242,7 +281,7 @@ def wants_all_results(text: str) -> bool:
             "전체보여",
             "전체알려",
             "전체리스트",
-            "이슈리스트다",
+                "이슈리스트다",
             "목록다",
         )
     )

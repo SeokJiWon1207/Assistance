@@ -23,6 +23,7 @@ from backend.common import (
     normalize_for_match,
 )
 from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR, STATUS_MATCH_ALIASES
+from backend.sources.mantis_evidence import constraint_evidence_terms
 from backend.sources.mantis import (
     fetch_mantis_issue_by_id,
     issue_matches_constraints,
@@ -329,15 +330,16 @@ def execute_chroma_search(
                     continue
         if latest_issue:
             refreshed_count += 1
+            refreshed_issue_ids.add(issue_id)
             if has_constraint(constraints) and not issue_matches_constraints(latest_issue, constraints):
                 skipped_after_refresh += 1
                 continue
             if not semantic:
-                latest_text = issue_to_search_text(latest_issue).casefold()
-                if not all(term.casefold() in latest_text for term in terms[:4]):
+                latest_text = normalize_for_match(issue_to_search_text(latest_issue))
+                if not all(normalize_for_match(term) in latest_text for term in terms[:4]):
                     skipped_after_refresh += 1
                     continue
-            document["latest_issue"] = normalize_issue(latest_issue)
+            document["latest_issue"] = normalize_issue(latest_issue, search_terms=terms + constraint_evidence_terms(constraints))
             document["latest_source"] = "mantis"
         else:
             document["latest_source"] = "chroma_snapshot"

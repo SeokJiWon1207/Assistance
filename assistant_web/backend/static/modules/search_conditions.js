@@ -7,7 +7,11 @@ const keyFor = (label) => LABEL_KEYS[label] || label;
 
 function parseCriteria(text) {
   // 값 안의 쉼표(여러 담당자·상태)는 유지하고 다음 '라벨=값' 앞에서만 나눈다.
-  return text.split(/,\s*(?=[^,=:]{1,30}\s*[=:]|(?:title|keyword)\s+(?:포함|미포함|일치|제외))/).map((part) => {
+  return text.split(/,\s*(?=[^,=:]{1,30}\s*[=:]|(?:title|keyword)\s+(?:포함|미포함|일치|제외)|Mantis\s+(?:전체 저장본|인덱스 전체|실시간|스냅샷)|최신\s*\d+건\s*기준)/).map((part) => {
+    // 집계한 데이터 범위는 등록일·검색어 값에 붙이지 않는다.
+    if (/^(?:Mantis\s+(?:전체 저장본|인덱스 전체|실시간|스냅샷)|최신\s*\d+건\s*기준)/.test(part.trim())) {
+      return { label: "조회 범위", value: part.trim() };
+    }
     const pair = part.trim().match(/^([^=:]+?)\s*[=:]\s*(.+)$/);
     if (pair) return { label: pair[1].trim(), value: pair[2].trim() };
     const clause = part.trim().match(/^(title|keyword)\s+(.+)$/);

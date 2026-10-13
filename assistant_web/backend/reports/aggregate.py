@@ -511,7 +511,7 @@ def build_mantis_count_report(
     group_by = str(query_plan.get("group_by") or "")
     # "상태별 이슈 개수"처럼 다른 조건이 없어도 그룹 집계 자체가 요청이다.
     # 예전에는 여기서 빠져나가 Notion 검색으로 흘러갔다.
-    if not has_constraint(constraints) and not count_group_key(group_by):
+    if not has_constraint(constraints) and not count_group_key(group_by) and query_plan.get("source") != "mantis":
         return None
 
     # "최신 N건 기준"은 반드시 집계 범위를 제한한다. 등록일 조건이 함께 있어도
@@ -672,6 +672,7 @@ def build_mantis_count_report(
                     "snapshot_limit": snapshot_limit,
                     "scanned_count": snapshot["scanned_count"],
                     "scan_complete": scan_complete,
+                    "search_complete": scan_complete,
                     "live_scanned_pages": live_scanned_pages,
                     "total_count": total_count,
                     "displayed_count": len(representative_issues),

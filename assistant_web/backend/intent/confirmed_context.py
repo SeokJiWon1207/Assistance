@@ -67,7 +67,19 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
     절 사이 AND, in/not_in 값 사이 OR 계약을 문자열로 재해석하지 않는다.
     """
     from backend.intent.status_semantics import ALL_STATUSES
+    from backend.intent.search_terms import replacement_topic_terms
+    from backend.intent.scope_changes import cleared_scope_fields, followup_created_at
     result = deepcopy(previous)
+    current = deepcopy(current)
+    cleared = cleared_scope_fields(question)
+    result.pop("followup_base_created_at", None)
+    if "created_at" not in cleared and (period := followup_created_at(previous, question)):
+        # 검증도 같은 이전 연도에서 출발해야 한다. 실행 결과의 날짜를
+        # 정답으로 삼지 않도록, 인증된 직전 범위를 별도로 보존한다.
+        result["followup_base_created_at"] = deepcopy(previous["created_at"])
+        current["created_at"] = period
+        current["filter_clauses"] = [c for c in current.get("filter_clauses") or [] if c["field"] != "created_at"]
+        current["filter_clauses"].append({"field": "created_at", "operator": "between", "value": [period["from"], period["to"]]})
     result.pop("status_resolution", None)
     groups = {
         "customer": ("customer_key", "customer_exact", "customer_aliases", "excluded_customer_keys", "excluded_customer_aliases", "unknown_customers"),
@@ -79,6 +91,14 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
         "created_at": ("created_at",),
     }
     replaced = set()
+    new_topic = replacement_topic_terms(question, current)
+    if new_topic:
+        # 새 주제의 관련 사례를 묻는 질문은 이전 전환/증상 키워드의 AND
+        # 조건을 해제한다. 고객사·매체·기간·상태 등 구조화 범위는 유지한다.
+        replaced.update({"keyword", "title"})
+        result.pop("unconfirmed_search_terms", None)
+        result["inherited_terms"] = new_topic
+        result["confirmed_terms_version"] = CONFIRMED_TERMS_VERSION
     if result.get("unconfirmed_search_terms") and any(
         clause.get("field") in {"keyword", "title"}
         for clause in current.get("filter_clauses") or []
@@ -95,7 +115,7 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
             explicit = bool((current.get("people") or {}).get("names") or current.get("unassigned_people"))
         if field == "status":
             explicit |= bool(ALL_STATUSES.search(question))
-        if explicit:
+        if explicit or field in cleared:
             replaced.add(field)
             if field == "owner":
                 replaced.add("reporter")

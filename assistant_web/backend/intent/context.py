@@ -21,6 +21,7 @@ from backend.intent.constants import (
 )
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
 from backend.intent.status_semantics import ALL_STATUSES
+from backend.intent.scope_changes import cleared_scope_fields, followup_created_at, has_scope_edit
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_planning import extract_created_at_range
 from backend.schemas import ChatMessage
@@ -66,6 +67,8 @@ def is_affirmative_read_follow_up(text: str) -> bool:
 
 def is_follow_up_question(text: str) -> bool:
     if is_affirmative_read_follow_up(text):
+        return True
+    if has_scope_edit(text):
         return True
     normalized = normalize_for_match(text)
     if re.fullmatch(r"\s*(?:모바일|MTS|HTS|아이폰|iOS|PC)(?:이야|야|요|쪽|만)?[?.!]?\s*", text, re.I):
@@ -255,29 +258,25 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
     # 제외 표현은 바로 뒤 단어를 제외 대상으로 삼으므로 항상 맨 뒤에 모아 붙인다.
     # "mts 제외 유진"처럼 앞에 오면 상속한 고객사가 제외 대상으로 뒤집힌다.
     excluded: List[str] = []
-    seen_customer = bool(latest_constraints.get("customer_key") or latest_constraints.get("excluded_customer_keys"))
-    seen_platform = bool(latest_constraints.get("platform_key") or latest_constraints.get("excluded_platform_keys"))
+    cleared = cleared_scope_fields(latest)
+    seen_customer = "customer" in cleared or bool(latest_constraints.get("customer_key") or latest_constraints.get("excluded_customer_keys"))
+    seen_platform = "platform" in cleared or bool(latest_constraints.get("platform_key") or latest_constraints.get("excluded_platform_keys"))
     seen_status = bool(latest_constraints.get("statuses") or latest_constraints.get("excluded_statuses") or ALL_STATUSES.search(latest))
     seen_issue_ids = bool(latest_constraints.get("issue_ids") or latest_constraints.get("exclude_issue_ids"))
     seen_screen_numbers = bool(latest_constraints.get("screen_numbers"))
     seen_date_fields = set((latest_constraints.get("date_fields") or {}).keys())
-    seen_created_at = bool(latest_constraints.get("created_at"))
-    seen_people = bool(latest_constraints.get("people", {}).get("names") or latest_constraints.get("unassigned_people"))
+    seen_created_at = "created_at" in cleared or bool(latest_constraints.get("created_at"))
+    seen_people = "owner" in cleared or bool(latest_constraints.get("people", {}).get("names") or latest_constraints.get("unassigned_people"))
     seen_notion_db = bool(re.search(r"DB\d{2}_", latest, re.IGNORECASE))
     # "그중 4월 것만"처럼 연도 없이 월만 좁히는 후속 질문은 이전 턴의 연도를
     # 물려받아야 한다. 물려받지 못하면 모델이 임의의 연도를 채워 넣는다.
     latest_month = re.search(r"(?<!\d)(1[0-2]|0?[1-9])\s*월", latest)
     latest_has_year = bool(re.search(r"20\d{2}\s*년", latest))
-    prior_range = None if seen_created_at else resolve_recent_created_at(recent[1:])
+    previous_range = resolve_recent_created_at(recent[1:]) if "created_at" not in cleared else None
+    narrowed_range = followup_created_at({"created_at": previous_range}, latest)
+    prior_range = narrowed_range or (None if seen_created_at else previous_range)
     if prior_range:
-        prior_year = int(str(prior_range["from"])[:4])
-        if latest_month and not latest_has_year:
-            month = int(latest_month.group(1))
-            last_day = calendar.monthrange(prior_year, month)[1]
-            inherited.append(
-                f"{prior_year}년 {month}월 1일부터 {prior_year}년 {month}월 {last_day}일까지"
-            )
-        elif not latest_month and not latest_has_year:
+        if narrowed_range or (not latest_month and not latest_has_year):
             start, end = str(prior_range["from"]), str(prior_range["to"])
             inherited.append(
                 f"{start[:4]}년 {int(start[5:7])}월 {int(start[8:])}일부터 "

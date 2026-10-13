@@ -587,6 +587,12 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     created_at = raw_created_at if isinstance(raw_created_at, dict) else None
 
     expected_date = extract_created_at_range(question)
+    resolved = plan.get("resolved_constraints") or {}
+    if isinstance(resolved, dict) and resolved.get("inherited_from_audit_id"):
+        from backend.intent.scope_changes import followup_created_at
+        previous_range = resolved.get("followup_base_created_at")
+        if isinstance(previous_range, dict):
+            expected_date = followup_created_at({"created_at": previous_range}, question) or expected_date
     if plan.get("source") == "notion":
         from backend.query_filters import notion_temporal_field
         if notion_temporal_field(question) != "created_at":
@@ -666,7 +672,16 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         "status": "pass" if schema_passed else "fail",
         "detail": f"검증된 조건={len(clauses)}개",
     })
-    has_negative_phrase = bool(re.search(r"빼고|제외|아닌|말고|없이|미포함|없는", question))
+    from backend.intent.scope_changes import cleared_scope_fields, without_scope_clear_phrases
+    cleared = cleared_scope_fields(question)
+    if cleared:
+        active = {"customer": filters.get("customer"), "platform": filters.get("platform"),
+                  "owner": (filters.get("people") or {}).get("names"), "created_at": filters.get("created_at")}
+        uncleared = [field for field in cleared if active.get(field) or any(
+            c["field"] in ({"owner", "reporter"} if field == "owner" else {field}) for c in clauses)]
+        checks.append({"id": "scope_reset", "label": "조건 해제 반영", "status": "fail" if uncleared else "pass",
+                       "detail": "해제할 조건이 남아 있음: " + ", ".join(uncleared) if uncleared else "요청한 조건만 해제됨"})
+    has_negative_phrase = bool(re.search(r"빼고|제외|아닌|말고|없이|미포함|없는", without_scope_clear_phrases(question)))
     if has_negative_phrase:
         negative_passed = any(
             clause["operator"] in {"not_equals", "not_in", "not_contains", "not_exists"}

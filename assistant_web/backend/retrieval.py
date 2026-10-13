@@ -594,6 +594,8 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 "media_type": (issue.get("detail") or {}).get("media_type", ""),
                 "date_fields": (issue.get("detail") or {}).get("date_fields", {}),
                 "resolution_fields": (issue.get("detail") or {}).get("resolution_fields", {}),
+                "matching_evidence": (issue.get("detail") or {}).get("matching_evidence", []),
+                "additional_information": compact_text((issue.get("detail") or {}).get("additional_information", ""), 620),
                 "description": compact_text(
                     (issue.get("detail") or {}).get("description") or issue.get("preview", ""),
                     620,

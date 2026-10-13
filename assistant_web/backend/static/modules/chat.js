@@ -1,4 +1,4 @@
-import { answerSearchPresentation } from "./search_conditions.js?v=20260911-6";
+import { answerSearchPresentation } from "./search_conditions.js?v=20261012-1";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";

@@ -243,6 +243,9 @@ def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any
         for keyword in ISSUE_ANALYSIS_INTENT_KEYWORDS - {"정리해줘", "요약해줘"}
     ):
         return False
+    # 관련 사례를 접수한 곳/고객사 조회도 원문 목록으로 답한다.
+    if re.search(r"(?:들어온|접수된|등록된)(?:곳|고객사)(?:은|는|이|가)?", normalized_text):
+        return True
     if group_by and any(marker in normalized_text for marker in ("요약", "정리")):
         return True
     if any(marker in normalized_text for marker in ("요약해줘", "정리해줘")):

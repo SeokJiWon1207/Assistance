@@ -438,6 +438,7 @@ def render_document(raw: dict[str, Any]) -> str:
     for label, values in [("일정/전달일", issue['date_fields']), ("공수", issue['effort_fields'])]:
         lines.extend(["", f"[{label}]", *(f"- {name}: {value}" for name, value in values.items())])
     lines.extend(["", "[제목]", issue['summary'], "", "[고객사 본문 요청 내용]", raw.get('description') or "",
+                  "", "[추가 정보]", raw.get('additional_information') or "",
                   "", "[재현 과정 및 단계]", raw.get('steps_to_reproduce') or "", "", "[내부 개발 진행 및 대화 이력]"])
     lines.extend(str(note.get('text') or '') for note in raw.get('notes') or [])
     return "\n".join(lines)

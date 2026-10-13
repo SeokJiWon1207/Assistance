@@ -53,6 +53,7 @@ from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
 from backend.query_planning import infer_operation
 from backend.intent.request_scope import AUTHENTICATED_OWNER
+from backend.intent.scope_changes import cleared_scope_fields
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase
 
 
@@ -68,6 +69,22 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
         return empty_query_constraints()
     team_scope = has_mantis_team_scope(text)
     constraints = extract_scope_constraints(remove_team_scope_phrase(text) if team_scope else text)
+    for field in cleared_scope_fields(text):
+        if field == "owner":
+            constraints["people"] = empty_people()
+            constraints["unassigned_people"] = False
+        elif field == "created_at":
+            constraints["created_at"] = None
+        else:
+            constraints[f"{field}_key"] = None
+            constraints[f"{field}_aliases"] = []
+            constraints[f"excluded_{field}_keys"] = []
+            constraints[f"excluded_{field}_aliases"] = []
+            if field == "customer":
+                constraints["customer_exact"] = None
+                constraints["unknown_customers"] = []
+        constraints["filter_clauses"] = [c for c in constraints["filter_clauses"]
+                                          if c["field"] not in ({"owner", "reporter"} if field == "owner" else {field})]
     from backend.intent.status_semantics import ALL_STATUSES
     if ALL_STATUSES.search(text) and not set(constraints.get("statuses") or []) - {"open", "closed"}:
         constraints["statuses"] = []

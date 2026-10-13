@@ -163,7 +163,7 @@ def is_control_search_term(term: str) -> bool:
         or PERIOD_EXPRESSION_PATTERN.fullmatch(normalized)
         or re.fullmatch(r"\d{4}년?", normalized)
         or re.fullmatch(r"\d{1,2}월", normalized)
-        or re.fullmatch(r"\d{1,2}일", normalized)
+        or re.fullmatch(r"\d{1,2}일(?:부터|까지)?", normalized)
         or re.fullmatch(r"\d+건기준", normalized)
     )
 

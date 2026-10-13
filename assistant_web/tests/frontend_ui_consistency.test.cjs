@@ -44,6 +44,29 @@ test('older and streaming answers retain Notion title, keywords and unverified f
   assert.equal(keywords.conditions[1].value, '포함 주문, 오류');
 });
 
+test('count scope metadata stays outside removable date and keyword conditions', async () => {
+  const { answerSearchPresentation } = await load('search_conditions');
+  const date = { id: 'created_at', label: '등록일', value: '2025년', values: ['2025'] };
+  const dateOnly = answerSearchPresentation({
+    content: '검색 기준: 등록일=2025년, Mantis 전체 저장본 31233건 기준\n총 16건입니다.',
+    verification: { constraints: [date] },
+  });
+  assert.equal(dateOnly.conditions[0].value, '2025년');
+  assert.equal(dateOnly.conditions[1].label, '조회 범위');
+  for (const scope of ['Mantis 전체 저장본 31233건 기준', 'Mantis 스냅샷 + 실시간 병합 기준', '최신 100건 기준']) {
+    const result = answerSearchPresentation({
+      content: `검색 기준: 등록일=2025년 1월 1일~2025년 12월 31일, keyword 포함 차트, 오류, ${scope}, 저장본 수집 시각=2026-10-12T00:00:00Z\n총 16건입니다.`,
+      verification: { constraints: [date] },
+    });
+    assert.equal(result.conditions[0].value, '2025년 1월 1일~2025년 12월 31일');
+    assert.equal(result.conditions[0].removeCondition, date);
+    assert.equal(result.conditions[1].value, '포함 차트, 오류');
+    assert.equal(result.conditions[2].label, '조회 범위');
+    assert.equal(result.conditions[2].value, scope);
+    assert.equal(result.conditions[2].removeCondition, undefined);
+  }
+});
+
 test('every date formatter uses Korean local time at minute precision and retains historical years', async () => {
   const { formatUiDateTime } = await load('ui_format');
   const now = new Date(2026, 9, 6, 9, 30);

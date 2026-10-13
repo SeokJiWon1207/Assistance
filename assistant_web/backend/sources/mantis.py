@@ -41,6 +41,7 @@ from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
 from backend.sources.mantis_store import read_complete_store, read_store_metadata
+from backend.sources.mantis_evidence import constraint_evidence_terms, matching_issue_evidence
 from backend.timing import measured
 from backend.understanding import (
     chroma_text_matches_constraints,
@@ -109,7 +110,7 @@ def mantis_enum_label(value: Any, default: str = "") -> str:
     return str(value or default)
 
 
-def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] = None) -> Dict[str, Any]:
     media_type = "기타/미상"
     screen_number = "미상"
     work_subject = "미상"
@@ -165,6 +166,8 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
         "status": mantis_enum_label(issue.get("status"), "상태 미상"),
         "priority": mantis_enum_label(issue.get("priority"), ""),
         "severity": mantis_enum_label(issue.get("severity"), ""),
+        "priority_label": (issue.get("priority") or {}).get("label", "") if isinstance(issue.get("priority"), dict) else "",
+        "severity_label": (issue.get("severity") or {}).get("label", "") if isinstance(issue.get("severity"), dict) else "",
         "media_type": media_type,
         "screen_number": screen_number,
         "work_subject": work_subject,
@@ -176,8 +179,10 @@ def normalize_issue(issue: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": str(issue.get("created_at", ""))[:10],
         "updated_at": str(issue.get("updated_at", ""))[:10],
         "description": str(issue.get("description", ""))[:2400],
+        "additional_information": str(issue.get("additional_information") or "")[:2400],
         "notes": notes,
         "history": history,
+        **({"matching_evidence": matching_issue_evidence(issue, search_terms)} if search_terms else {}),
     }
 
 
@@ -373,6 +378,7 @@ def issue_to_search_text(issue: Dict[str, Any]) -> str:
             str((issue.get("project") or {}).get("name", "")),
             str(issue.get("summary", "")),
             str(issue.get("description", "")),
+            str(issue.get("additional_information") or ""),
             str(issue.get("steps_to_reproduce", "")),
             str((issue.get("reporter") or {}).get("real_name", "")),
             str((issue.get("handler") or {}).get("real_name", "")),
@@ -839,6 +845,7 @@ def revalidate_mantis_snapshot_stage(
         return stage
 
     refreshed: List[Dict[str, Any]] = []
+    evidence_terms = constraint_evidence_terms(constraints)
     matched_issue_ids = {
         int(issue_id)
         for issue_id in (stage.get("meta") or {}).get("matched_issue_ids", [])
@@ -867,7 +874,7 @@ def revalidate_mantis_snapshot_stage(
             continue
         revalidated_count += 1
         if issue_matches_constraints(live_issue, constraints):
-            refreshed.append(normalize_issue(live_issue))
+            refreshed.append(normalize_issue(live_issue, search_terms=evidence_terms))
             matched_issue_ids.add(issue_id)
         else:
             removed_count += 1
@@ -913,7 +920,7 @@ def revalidate_mantis_snapshot_stage(
             continue
         revalidated_count += 1
         if issue_matches_constraints(live_issue, constraints):
-            refreshed.append(normalize_issue(live_issue))
+            refreshed.append(normalize_issue(live_issue, search_terms=evidence_terms))
         else:
             removed_count += 1
             matched_issue_ids.discard(issue_id)
@@ -964,7 +971,7 @@ def execute_mantis_page_scan(
     limit: int = 5,
     constraints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    keywords = [kw.strip().casefold() for kw in search_keyword.split() if kw.strip()]
+    keywords = [normalize_for_match(kw) for kw in search_keyword.split() if kw.strip()]
     filtered_issues: List[Dict[str, Any]] = []
     scanned_issue_ids: set[int] = set()
     status_excluded_count = 0
@@ -983,7 +990,7 @@ def execute_mantis_page_scan(
             if issue_id:
                 scanned_issue_ids.add(issue_id)
             combined_text = issue_to_search_text(issue)
-            normalized_text = combined_text.casefold()
+            normalized_text = normalize_for_match(combined_text)
             if constraints and has_constraint(constraints) and not issue_matches_constraints(
                 issue,
                 constraints,
@@ -1039,5 +1046,6 @@ def execute_mantis_page_scan(
             "searched_pages": 0 if stored is not None else min(len(raw_issues) // page_size + 1, max_pages),
             "status_excluded_count": status_excluded_count,
         },
-        "issues_list": [normalize_issue(issue) for issue in target_batch],
+        "issues_list": [normalize_issue(issue, search_terms=keywords + constraint_evidence_terms(constraints or {}))
+                        for issue in target_batch],
     }
