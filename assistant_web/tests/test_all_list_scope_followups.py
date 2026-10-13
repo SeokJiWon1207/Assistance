@@ -33,15 +33,20 @@ class AllListScopeFollowupTests(unittest.TestCase):
         ):
             return request, chat.prepare_chat_pipeline(request,question,{"uid":"fixture-user"})
 
-    def test_entire_list_and_original_table_survive_two_scope_changes(self):
+    def test_entire_list_and_original_table_survive_four_scope_changes(self):
         plan = {"source":"mantis","grounding_text":BASE,"terms":[],
                 "resolved_constraints":extract_query_constraints(BASE)}
         previous = BASE
-        for question,month in (("HTS로 바꿔줘","10"),("9월로 바꿔줘","09")):
+        for question,month in (("HTS로 바꿔줘","10"),("9월로 바꿔줘","09"),
+                               ("NH증권만 보여줘","09"),("담당자는 우동헌으로 바꿔줘","09")):
             with self.subTest(question=question):
                 request, context = self.prepare(previous,plan,question)
                 self.assertEqual(context.query_constraints["platform_key"],"hts")
                 self.assertEqual(context.query_constraints["created_at"]["from"],f"2026-{month}-01")
+                if question in ("NH증권만 보여줘","담당자는 우동헌으로 바꿔줘"):
+                    self.assertEqual(context.query_constraints["customer_key"],"NH증권")
+                if question == "담당자는 우동헌으로 바꿔줘":
+                    self.assertEqual(context.query_constraints["people"]["names"],["우동헌"])
                 self.assertTrue(context.query_constraints.get("list_show_all"))
                 with (
                     patch("backend.reports.work_queries.build_work_query_report",side_effect=AssertionError("업무 요약으로 우회 금지")),
@@ -53,7 +58,7 @@ class AllListScopeFollowupTests(unittest.TestCase):
                 limit,_ = chat.retrieval_limit(request,context)
                 self.assertGreaterEqual(limit,74)
                 rows = [{"id":32000+i,"summary":f"[3600] 원문 제목 {i}","project":"120NH(NH증권)",
-                         "handler":"이영희","media_type":"HTS","created_at":f"2026-{month}-02"} for i in range(74)]
+                         "handler":"우동헌","media_type":"HTS","created_at":f"2026-{month}-02"} for i in range(74)]
                 context.retrieval_result={"query":context.retrieval_text,"constraints":context.query_constraints,
                                           "stages":[{"source":"mantis_page_scan","status":"ok","issues_list":rows,
                                                      "meta":{"found_count":74,"search_complete":True}}]}

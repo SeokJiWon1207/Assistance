@@ -671,9 +671,12 @@ def prepare_chat_pipeline(
     scoped_constraints.pop("list_continuation", None)
     scoped_constraints.pop("list_cursor", None)
     from backend.intent.scope_changes import has_scope_edit
+    from backend.intent.context import is_customer_only_refinement
     scoped_constraints.pop("list_scope_edit", None)
     scoped_constraints.pop("list_show_all", None)
-    if inherited_constraints is not None and has_scope_edit(latest_user_text):
+    if inherited_constraints is not None and (
+        has_scope_edit(latest_user_text) or is_customer_only_refinement(latest_user_text, latest_constraints)
+    ):
         scoped_constraints["list_scope_edit"] = True
         if extract_requested_limit(latest_user_text) is None and (
             inherited_constraints.get("list_show_all")
@@ -751,7 +754,7 @@ def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user:
         from backend.reports.work_queries import build_work_query_report, work_operation
         refining_list = bool(context.query_constraints.get("list_scope_edit")
                              and context.query_constraints.get("inherited_from_audit_id")
-                             and work_operation(context.latest_user_text, context.query_constraints) == "list")
+                             and work_operation(context.latest_user_text, context.query_constraints) in {None, "list"})
         work_report = None if refining_list else build_work_query_report(
             context.latest_user_text, context.query_constraints,
             limit=extract_requested_limit(context.latest_user_text) or clamp_int(request.searchLimit, 1, 20) or 10,

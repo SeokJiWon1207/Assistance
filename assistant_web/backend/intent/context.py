@@ -67,6 +67,20 @@ def is_affirmative_read_follow_up(text: str) -> bool:
     ))
 
 
+def is_customer_only_refinement(text: str, direct: Optional[Dict[str, Any]] = None) -> bool:
+    """고객사만 지정해 직전 목록을 축소하는 질문을 공통으로 판정한다."""
+    direct = extract_query_constraints(text) if direct is None else direct
+    match = re.fullmatch(
+        r"\s*(?:(?:고객사|프로젝트)(?:은|는|도)?\s*[:=]?\s*)?"
+        r"(.+?)\s*(?:(?:이슈|것|건)\s*)?만"
+        r"(?:\s*(?:보여\s*(?:줘|주세요)|알려\s*(?:줘|주세요)))?[.!?]*\s*", text,
+    )
+    return bool(direct.get("customer_key") and match and normalize_for_match(match.group(1)) in {
+        normalize_for_match(str(value)) for value in
+        [direct.get("customer_key"), direct.get("customer_exact"), *direct.get("customer_aliases", [])] if value
+    })
+
+
 def is_follow_up_question(text: str) -> bool:
     if list_continuation_mode(text):
         return True
@@ -105,15 +119,7 @@ def is_follow_up_question(text: str) -> bool:
     # 'NH MTS 몇 건이야'의 '몇 건'만으로 직전 단건 ID를 물려받지 않는다.
     # 명시적인 제외·교체 표현은 기존 범위를 수정하는 후속으로 유지한다.
     direct = extract_query_constraints(text)
-    customer_only = re.fullmatch(
-        r"\s*(?:(?:고객사|프로젝트)(?:은|는|도)?\s*[:=]?\s*)?"
-        r"(.+?)\s*(?:(?:이슈|것|건)\s*)?만"
-        r"(?:\s*(?:보여\s*(?:줘|주세요)|알려\s*(?:줘|주세요)))?[.!?]*\s*", text,
-    )
-    if direct.get("customer_key") and customer_only and normalize_for_match(customer_only.group(1)) in {
-        normalize_for_match(str(value)) for value in
-        [direct.get("customer_key"), direct.get("customer_exact"), *direct.get("customer_aliases", [])] if value
-    }:
+    if is_customer_only_refinement(text, direct):
         return True
     if (direct.get("customer_key") or direct.get("issue_ids")) and not re.search(
         r"빼줘|빼고|제외|말고|바꿔|변경", text
@@ -425,6 +431,7 @@ __all__ = [
     "get_latest_user_text",
     "get_recent_user_texts",
     "is_follow_up_question",
+    "is_customer_only_refinement",
     "parse_ordinal_reference",
     "has_demonstrative_issue_reference",
     "resolve_reference_from_context",
