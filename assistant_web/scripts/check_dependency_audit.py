@@ -10,6 +10,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
+from packaging.utils import canonicalize_name
+
 
 APP_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_REQUIREMENTS = APP_DIR / "requirements.lock"
@@ -40,6 +44,21 @@ def load_active_exceptions(path: Path, *, today: date | None = None) -> list[dic
 
 
 def build_audit_command(requirements: Path, exceptions: list[dict[str, Any]]) -> list[str]:
+    scoped = [item for item in exceptions if "package" in item or "version" in item]
+    for item in scoped:
+        if not item.get("package") or not item.get("version"):
+            raise ValueError("버전 한정 예외에는 package와 version이 모두 필요합니다.")
+    if scoped:
+        pinned = {}
+        for line in requirements.read_text(encoding="utf-8").splitlines():
+            value = line.split("#", 1)[0].strip()
+            if not value or value.startswith("-"):
+                continue
+            requirement = Requirement(value)
+            pinned[canonicalize_name(requirement.name)] = requirement.specifier
+        for item in scoped:
+            if pinned.get(canonicalize_name(item["package"])) != SpecifierSet(f"=={item['version']}"):
+                raise RuntimeError(f"보안 예외의 검토 대상 버전이 달라졌습니다: {item['package']}=={item['version']}")
     command = [
         sys.executable,
         "-m",

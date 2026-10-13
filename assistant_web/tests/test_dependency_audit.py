@@ -42,6 +42,42 @@ class DependencyAuditTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "만료"):
             check_dependency_audit.load_active_exceptions(path, today=date(2026, 8, 11))
 
+    def test_exception_cannot_hide_a_different_package_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            requirements = Path(directory) / "requirements.lock"
+            requirements.write_text("chromadb==1.5.10\n", encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "검토.*버전"):
+                check_dependency_audit.build_audit_command(requirements, [{
+                    "id": "PYSEC-TEST", "package": "chromadb", "version": "1.5.9",
+                }])
+
+    def test_exception_cannot_hide_an_absent_or_unpinned_package(self):
+        for requirement in ("urllib3==2.8.0", "chromadb>=1.5.9"):
+            with self.subTest(requirement=requirement), tempfile.TemporaryDirectory() as directory:
+                requirements = Path(directory) / "requirements.lock"
+                requirements.write_text(requirement + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "검토.*버전"):
+                    check_dependency_audit.build_audit_command(requirements, [{
+                        "id": "PYSEC-TEST", "package": "chromadb", "version": "1.5.9",
+                    }])
+
+    def test_matching_package_version_keeps_the_reviewed_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            requirements = Path(directory) / "requirements.lock"
+            requirements.write_text("ChromaDB==1.5.9  # 고정 버전\n", encoding="utf-8")
+            command = check_dependency_audit.build_audit_command(requirements, [{
+                "id": "PYSEC-TEST", "package": "chromadb", "version": "1.5.9",
+            }])
+            self.assertIn("PYSEC-TEST", command)
+
+    def test_partial_package_scope_is_rejected(self):
+        for scope in ({"package": "chromadb"}, {"version": "1.5.9"}):
+            with self.subTest(scope=scope):
+                with self.assertRaisesRegex(ValueError, "package.*version"):
+                    check_dependency_audit.build_audit_command(Path("requirements.lock"), [{
+                        "id": "PYSEC-TEST", **scope,
+                    }])
+
 
 if __name__ == "__main__":
     unittest.main()

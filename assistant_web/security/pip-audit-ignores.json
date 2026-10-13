@@ -2,9 +2,39 @@
   "exceptions": [
     {
       "id": "PYSEC-2026-311",
-      "expiresAt": "2026-09-30",
-      "reason": "ChromaDB의 취약한 HTTP 서버를 노출하지 않고 로컬 PersistentClient만 사용합니다. 패치 버전이 출시되면 즉시 업그레이드합니다.",
+      "package": "chromadb",
+      "version": "1.5.9",
+      "reviewedAt": "2026-10-13",
+      "expiresAt": "2026-11-12",
+      "reason": "공식 패치가 없어 1.5.9의 로컬 PersistentClient 사용에 한정합니다. Chroma HTTP 서버를 실행하지 않고 질의 벡터와 신뢰한 Ollama 함수를 명시합니다. CHROMA_REVIEW.md의 재검토 조건을 따릅니다.",
       "tracking": "https://github.com/advisories/GHSA-f4j7-r4q5-qw2c"
+    },
+    {
+      "id": "PYSEC-2026-3814",
+      "package": "chromadb",
+      "version": "1.5.9",
+      "reviewedAt": "2026-10-13",
+      "expiresAt": "2026-11-12",
+      "reason": "컬렉션 설정 변경 API의 코드 주입 문제입니다. 공식 패치가 없으며 프로젝트는 Chroma HTTP 서버와 원격 컬렉션 변경 API를 제공하지 않습니다. CHROMA_REVIEW.md의 로컬 사용 조건에 한정합니다.",
+      "tracking": "https://github.com/advisories/GHSA-36p7-vc44-83pf"
+    },
+    {
+      "id": "PYSEC-2026-3815",
+      "package": "chromadb",
+      "version": "1.5.9",
+      "reviewedAt": "2026-10-13",
+      "expiresAt": "2026-11-12",
+      "reason": "Chroma SimpleRBAC의 자원별 권한 검사 누락 문제입니다. 공식 패치가 없으며 프로젝트는 Chroma 서버의 SimpleRBAC과 다중 테넌트 인증을 사용하지 않습니다. CHROMA_REVIEW.md의 로컬 사용 조건에 한정합니다.",
+      "tracking": "https://github.com/advisories/GHSA-xph7-9rjv-w5fr"
+    },
+    {
+      "id": "PYSEC-2026-3813",
+      "package": "chromadb",
+      "version": "1.5.9",
+      "reviewedAt": "2026-10-13",
+      "expiresAt": "2026-11-12",
+      "reason": "Chroma 서버의 테넌트 간 권한 검사 누락 문제입니다. 공식 패치가 없으며 프로젝트는 로컬 저장소만 사용하고 Chroma 테넌트 API를 외부에 제공하지 않습니다. CHROMA_REVIEW.md의 로컬 사용 조건에 한정합니다.",
+      "tracking": "https://github.com/advisories/GHSA-2wm9-hf6c-p5cr"
     }
   ]
 }
