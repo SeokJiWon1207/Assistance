@@ -7,6 +7,7 @@ import tracemalloc
 import unittest
 import weakref
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from threading import Event
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +35,7 @@ class StoreMemoryTests(unittest.TestCase):
             self.addCleanup(mock.stop)
 
     def write_rows(self, count=1200):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TABLE IF NOT EXISTS issues (id INTEGER PRIMARY KEY, payload TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS metadata (value TEXT)")
             db.execute("DELETE FROM issues")
@@ -82,7 +83,7 @@ class StoreMemoryTests(unittest.TestCase):
         for first_summary in (True, False):
             store._generation_cache.clear()
             self.write_rows(1)
-            with sqlite3.connect(self.path) as db:
+            with closing(sqlite3.connect(self.path)) as db, db:
                 db.execute("UPDATE issues SET payload=json_set(payload, '$.description', '본문', '$.notes', json(?))",
                            ('[{"text":"검색할 메모"}]',))
             first = store.read_complete_store(summary_only=first_summary)
