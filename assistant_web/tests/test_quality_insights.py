@@ -665,44 +665,20 @@ class AccuracyInsightTests(unittest.TestCase):
         self.assertEqual(summary["blocked_by_prerequisite"], 1)
         self.assertEqual(summary["score"], 33)
 
-    @patch("scripts.accuracy.dynamic_accuracy_check.mantis.revalidate_mantis_snapshot_stage")
-    @patch("scripts.accuracy.dynamic_accuracy_check.mantis.execute_mantis_snapshot_search")
+    @patch("scripts.accuracy.dynamic_accuracy_check.mantis.fetch_mantis_issue_by_id")
+    @patch("scripts.accuracy.dynamic_accuracy_check.read_complete_store")
     def test_mutable_oracle_combines_live_sample_with_verified_full_snapshot(
-        self, snapshot_search, revalidate
+        self, read_store, fetch_issue
     ):
-        snapshot_search.return_value = {
-            "source": "mantis_snapshot",
-            "status": "ok",
-            "issues_list": [{"id": 30072}, {"id": 29730}],
-            "meta": {},
-        }
-        revalidate.return_value = {
-            "source": "mantis_snapshot",
-            "status": "ok",
-            "issues_list": [{"id": 30072}, {"id": 29730}],
-            "meta": {"live_fallback_count": 0},
-        }
-        live_sample = [
-            {
-                "id": 29730,
-                "project": {"name": "테스트"},
-                "handler": {"real_name": "이준옥"},
-                "status": {"name": "closed"},
-            },
-            {
-                "id": 29115,
-                "project": {"name": "테스트"},
-                "handler": {"real_name": "이준옥"},
-                "status": {"name": "closed"},
-            },
-        ]
-
+        def issue(issue_id, owner="이준옥"):
+            return {"id": issue_id, "project": {"name": "테스트"},
+                    "handler": {"real_name": owner}, "status": {"name": "closed"}}
+        read_store.return_value = [issue(30073), issue(30072), issue(29730)]
+        latest = {30073: issue(30073, "다른담당자"), 30072: issue(30072), 29730: issue(29730)}
+        fetch_issue.side_effect = latest.get
         expected = complete_mutable_mantis_ids(
-            "담당자 이준옥의 최근 이슈 2개 보여줘",
-            live_sample,
-            2,
+            {"handler": "이준옥"}, [issue(29730), issue(29115)], 2,
         )
-
         self.assertEqual(expected, [30072, 29730])
 
     def test_dependency_timeout_is_not_counted_as_accuracy_failure(self):

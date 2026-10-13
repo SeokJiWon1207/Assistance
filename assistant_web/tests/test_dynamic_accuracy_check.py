@@ -1,5 +1,11 @@
+import random
 import unittest
+from pathlib import Path
+from contextlib import redirect_stdout
+from io import StringIO
 from unittest.mock import patch
+
+from scripts.accuracy import dynamic_accuracy_check as accuracy
 
 from scripts.accuracy.dynamic_accuracy_check import (
     AccuracyCase,
@@ -10,11 +16,122 @@ from scripts.accuracy.dynamic_accuracy_check import (
     run_follow_up_scenario,
     FollowUpScenario,
     prepare_mantis_store,
+    build_follow_up_scenarios,
+    build_mantis_cases,
+    complete_mutable_mantis_ids,
 )
 from backend.intent.constraints import extract_query_constraints
 
 
+class IndependentAccuracyOracleTests(unittest.TestCase):
+    def test_oracle_collection_failure_is_reported_as_incomplete(self):
+        with (
+            patch.dict(accuracy.os.environ),
+            patch.object(accuracy.sys, "argv", ["accuracy", "--all-cases"]),
+            patch.object(accuracy, "prepare_mantis_store", return_value={"search_complete": True}),
+            patch.object(accuracy, "fetch_mantis_snapshot", return_value=[{"id": 1}]),
+            patch.object(accuracy, "fetch_notion_snapshot", return_value=[]),
+            patch.object(accuracy, "build_mantis_cases", side_effect=RuntimeError("oracle unavailable")),
+            patch.object(accuracy, "build_notion_cases", return_value=[]),
+            patch.object(accuracy, "get_model_registry", return_value=[]),
+            patch.object(accuracy, "write_report", return_value=(Path("r.json"), Path("r.md"))) as write,
+            redirect_stdout(StringIO()),
+        ):
+            try:
+                exit_code = accuracy.main()
+            except RuntimeError:
+                exit_code = None
+        self.assertEqual(exit_code, 1, "원본 수집 실패도 최종 incomplete 리포트가 있어야 한다")
+        report = write.call_args.args[0]
+        self.assertEqual(report["summary"]["status"], "incomplete")
+        self.assertTrue(any("oracle" in error for error in report["errors"]))
+
+    def test_customer_followup_accepts_display_alias_but_rejects_another_customer(self):
+        case = AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "#31597", "exact_issue_ids", [31597])
+        scenario = build_follow_up_scenarios(
+            [case], [{"id": 31597, "project": {"name": "117Hantu(한투증권)"}}], 1,
+        )[0]
+        followup = AccuracyCase(scenario.id, scenario.source, scenario.category, scenario.question,
+                                scenario.expected_kind, scenario.expected)
+        self.assertTrue(grade(followup, {"content": "프로젝트: 한국투자증권"})["passed"])
+        self.assertFalse(grade(followup, {"content": "프로젝트: 신한투자증권"})["passed"])
+
+    @staticmethod
+    def issue(issue_id, project, platform):
+        return {"id": issue_id, "project": {"name": project}, "summary": "로그인 오류",
+                "status": {"name": "confirmed"}, "handler": {"real_name": "김담당"},
+                "created_at": "2025-06-01", "custom_fields": [
+                    {"field": {"name": "매체구분"}, "value": platform},
+                    {"field": {"name": "화면번호"}, "value": "1234"},
+                ]}
+
+    def test_case_expected_ids_do_not_follow_broken_production_filter(self):
+        issues = [self.issue(6, "고객A", "HTS"), self.issue(5, "고객B", "HTS"),
+                  self.issue(4, "고객A", "MTS"), self.issue(3, "고객B", "MTS"),
+                  self.issue(2, "고객A", "HTS"), self.issue(1, "고객B", "MTS")]
+        with patch("scripts.accuracy.dynamic_accuracy_check.mantis.issue_matches_constraints", return_value=True):
+            cases = {case.id: case for case in build_mantis_cases(issues, random.Random(42))}
+        platform = cases["mantis-project-platform"]
+        wanted = {"고객A HTS": [6, 2], "고객B MTS": [3, 1]}
+        self.assertEqual(platform.expected, next(ids for prefix, ids in wanted.items()
+                                               if platform.question.startswith(prefix)))
+        exclusion = cases["mantis-project-platform-exclusion"]
+        wanted_excluded = {("고객A", "MTS"): [6, 2], ("고객B", "HTS"): [3, 1]}
+        self.assertEqual(exclusion.expected, next(ids for (project, excluded), ids in wanted_excluded.items()
+                                                if exclusion.question.startswith(project)
+                                                and f"{excluded}는 빼고" in exclusion.question))
+
+    def test_mutable_oracle_filters_raw_rows_without_search_helpers(self):
+        live = [self.issue(200, "고객B", "HTS"), self.issue(100, "고객A", "HTS")]
+        older = self.issue(90, "고객A", "HTS")
+        latest = {row["id"]: row for row in [*live, older]}
+        with (
+            patch("scripts.accuracy.dynamic_accuracy_check.extract_query_constraints", return_value={}),
+            patch("scripts.accuracy.dynamic_accuracy_check.mantis.issue_matches_constraints", return_value=True),
+            patch("scripts.accuracy.dynamic_accuracy_check.mantis.execute_mantis_snapshot_search",
+                  return_value={"status": "error"}),
+            patch("scripts.accuracy.dynamic_accuracy_check.mantis.revalidate_mantis_snapshot_stage",
+                  return_value={"status": "error"}),
+            patch("scripts.accuracy.dynamic_accuracy_check.read_complete_store", create=True, return_value=[older]),
+            patch("scripts.accuracy.dynamic_accuracy_check.mantis.fetch_mantis_issue_by_id",
+                  side_effect=latest.get),
+        ):
+            self.assertEqual(complete_mutable_mantis_ids({"project": "고객A", "platform": "HTS"}, live, 2),
+                             [100, 90])
+
+
 class DynamicAccuracyDependencyTests(unittest.TestCase):
+    def test_clarification_is_never_a_successful_empty_search(self):
+        case = AccuracyCase("none", "mantis", "결과 없음", "화면번호 99999 이슈", "no_results", [])
+        for response in (
+            {"content": "상태와 관계없는 전체 이슈를 뜻하시나요?", "raw": {"mode": "status_clarification"}},
+            {"content": "이슈가 없습니다.", "raw": {"mode": "search_terms_clarification"}},
+            {"content": "이슈가 없습니다.", "retrieval": {"constraints": {
+                "status_resolution": {"needs_clarification": True, "origin": "unavailable",
+                                      "reason": "planner_unavailable"}}}},
+            {"content": "접근 권한이 없습니다."},
+            {"content": "전체가 0건이거나 모두 완료됐다는 뜻은 아닙니다.",
+             "raw": {"mode": "empty_evidence"}},
+        ):
+            with self.subTest(response=response):
+                self.assertFalse(grade(case, response)["passed"])
+
+    def test_empty_search_accepts_the_actual_screen_lookup_answer(self):
+        from backend.answers import build_issue_intro_line
+        case = AccuracyCase("none", "mantis", "결과 없음", "화면번호 99999 이슈", "no_results", [])
+        content = build_issue_intro_line({"screen_numbers": ["99999"]}, [], 0)
+        self.assertTrue(grade(case, {"content": content, "sources": []})["passed"])
+
+    def test_unavailable_status_planner_is_a_dependency_failure(self):
+        case = AccuracyCase("none", "mantis", "결과 없음", "화면번호 99999 이슈", "no_results", [])
+        response = {"content": "상태와 관계없는 전체 이슈를 뜻하시나요?",
+                    "raw": {"mode": "status_clarification"}, "retrieval": {"constraints": {
+                        "status_resolution": {"needs_clarification": True, "origin": "unavailable",
+                                              "reason": "planner_unavailable"}}}}
+        result = grade(case, response)
+        self.assertEqual(result["outcome"], "dependency_error")
+        self.assertFalse(result["answer_passed"])
+
     @patch("scripts.accuracy.dynamic_accuracy_check.sync_complete_store")
     @patch("scripts.accuracy.dynamic_accuracy_check.read_store_metadata")
     def test_stale_search_store_is_refreshed_before_accuracy_queries(self, metadata, sync):
@@ -167,6 +284,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             "issue_ids",
             [31465, 31446],
             mutable_oracle=True,
+            oracle_filters={"handler": "정희진"},
         )
         response = {
             "sources": [
@@ -184,7 +302,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
         self.assertTrue(result["oracle_reconciled"])
         self.assertEqual(result["failed_checks"], [])
         self.assertEqual(result["expected"], [31469, 31468])
-        complete_oracle.assert_called_once_with(case.question, fetch_snapshot.return_value, 2)
+        complete_oracle.assert_called_once_with({"handler": "정희진"}, fetch_snapshot.return_value, 2)
         # 기대값 변경은 원문/실행 오류까지 성공으로 바꿀 근거가 아니다.
         unsafe = {**original, "failed_checks": ["답변 내용", "원문 속성"]}
         self.assertEqual(reconcile_mutable_mantis_oracle(case, response, unsafe), unsafe)
@@ -205,6 +323,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             "issue_ids",
             [31419, 31383],
             mutable_oracle=True,
+            oracle_filters={"handler": "강민성"},
         )
         response = {
             "sources": [
@@ -236,6 +355,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             "issue_ids",
             [30980, 30979],
             mutable_oracle=True,
+            oracle_filters={"project": "120NH(NH증권)", "status": "confirmed"},
         )
         response = {
             "sources": [{"type": "mantis", "issue_id": 31268}],
@@ -247,7 +367,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
         self.assertEqual(result["expected"], [31268])
-        complete_oracle.assert_called_once_with(case.question, [], 2)
+        complete_oracle.assert_called_once_with({"project": "120NH(NH증권)", "status": "confirmed"}, [], 2)
 
     @patch("scripts.accuracy.dynamic_accuracy_check.fetch_mantis_snapshot")
     def test_oracle_reconciliation_refuses_wrong_returned_constraints(self, fetch_snapshot):
@@ -259,6 +379,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             "issue_ids",
             [200, 190],
             mutable_oracle=True,
+            oracle_filters={"handler": "홍길동"},
         )
         response = {
             "sources": [
@@ -293,6 +414,7 @@ class DynamicAccuracyDependencyTests(unittest.TestCase):
             "issue_ids",
             [200, 190],
             mutable_oracle=True,
+            oracle_filters={"handler": "홍길동"},
         )
         response = {
             "sources": [
