@@ -127,8 +127,9 @@ def run(model_id):
         elapsed = round((perf_counter() - start) * 1000)
         expected = oracle(scope)
         if kind == "count":
-            actual = next((s.get("meta", {}).get("total_count") for s in response.get("retrieval", {}).get("stages", [])
-                           if s.get("meta", {}).get("total_count") is not None), None)
+            count_key = "matched_count" if response.get("raw", {}).get("mode") == "deterministic_work_report" else "total_count"
+            actual = next((s.get("meta", {}).get(count_key) for s in response.get("retrieval", {}).get("stages", [])
+                           if s.get("meta", {}).get(count_key) is not None), None)
             passed = actual == len(expected)
         else:
             actual = [int(s["issue_id"]) for s in response.get("sources", []) if s.get("issue_id")]
