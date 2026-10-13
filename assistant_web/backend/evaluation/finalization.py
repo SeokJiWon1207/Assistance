@@ -128,6 +128,14 @@ def finalize_chat_response(
             baseline = {**baseline, "content": append_notion_completeness_notice(
                 str(baseline.get("content") or ""), retrieval_result,
             )}
+            baseline_verification = build_verification_report(
+                question, baseline.get("content", ""), baseline.get("sources") or [],
+                retrieval_result, "model",
+            )
+            baseline_delivery = decide_delivery(baseline_verification)
+            if not baseline_delivery.allowed:
+                baseline = {"status": "blocked", "content": BLOCKED_ANSWER, "sources": [],
+                            "sourceCount": 0, "blockedChecks": list(baseline_delivery.blocked_checks)}
         variant_a_evaluation_input = {
             "status": "ok",
             "content": response.get("content", ""),
@@ -148,7 +156,7 @@ def finalize_chat_response(
                 "description": (
                     "후보 모델이 현재 모델과 같은 검증·검색 결과로 생성한 답변"
                     if comparing_models
-                    else "Mantis·Notion 기본 검색 결과만 전달하고 별칭 보정·재정렬·검증은 적용하지 않은 답변"
+                    else "Mantis·Notion 기본 검색 결과로 생성하고 전송 전 원문 일치를 검증한 답변"
                 ),
                 **baseline,
             },

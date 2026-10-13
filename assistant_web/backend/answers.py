@@ -55,7 +55,6 @@ from backend.understanding import (
     build_keyword_terms,
     extract_query_constraints,
     extract_requested_limit,
-    has_constraint,
 )
 
 
@@ -229,8 +228,6 @@ def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
 
 def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any]) -> bool:
     group_by = extract_group_by(text)
-    if not has_constraint(constraints) and not group_by:
-        return False
     normalized_text = normalize_for_match(text)
     if constraints.get("issue_ids") and any(
         field in normalized_text for field in ("사유및원인", "조치및개선")
@@ -248,8 +245,10 @@ def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any
         return True
     if group_by and any(marker in normalized_text for marker in ("요약", "정리")):
         return True
-    if any(marker in normalized_text for marker in ("요약해줘", "정리해줘")):
+    if re.search(r"안내문|메일|메시지|초안|작성|써줘|써주세요|인수인계", normalized_text):
         return False
+    if constraints.get("issue_ids"):
+        return True
     return any(
         normalize_for_match(keyword) in normalized_text
         for keyword in ISSUE_LIST_INTENT_KEYWORDS

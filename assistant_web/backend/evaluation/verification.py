@@ -13,11 +13,13 @@ from backend.query_planning import plan_created_at_matches, validate_query_plan,
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.retrieval import (
     build_model_retrieval_context,
-    build_sources,
+    build_model_evidence_sources,
+    count_retrieved_issues,
     retrieval_trace,
     similar_base_issue_ids_from_retrieval,
 )
 from backend.schemas import ChatRequest
+from backend.evaluation.issue_facts import check_issue_fields, extract_issue_claims, has_definite_scope_mismatch, plain_text
 from backend.understanding import (
     extract_query_constraints,
     extract_requested_limit,
@@ -201,7 +203,13 @@ def build_verification_report(
     )
 
     # 날짜 소수부·전체 저장본 건수를 ID로 오인하지 않는다.
-    answer_ids = {int(value) for value in re.findall(r"(?:#|이슈\s*(?:ID\s*[:：]?\s*)?)0*(\d{3,7})\b", content or "", re.IGNORECASE)}
+    answer_ids, field_claims = extract_issue_claims(
+        content or "", source_sections=mode == "deterministic_issue_list",
+        source_quotes=tuple(plain_text(text) for source in sources
+                            for text in [(source.get("detail") or {}).get("description", ""),
+                                         *[note.get("text", "") for note in (source.get("detail") or {}).get("notes", [])]]
+                            if text),
+    )
     source_ids = {int(source["issue_id"]) for source in sources if source.get("issue_id")}
     similar_base_issue_ids = set(similar_base_issue_ids_from_retrieval(retrieval_result or {}))
     unsupported_ids = sorted(answer_ids - source_ids)
@@ -219,6 +227,26 @@ def build_verification_report(
             "detail": "모든 ID가 원문과 일치" if not unsupported_ids else f"근거 없는 ID: {', '.join(map(str, unsupported_ids))}",
         }
     )
+
+    retrieval_checks.append(check_issue_fields(field_claims, sources))
+    if mode == "model" and query_plan.get("source") in {"mantis", "both"}:
+        count_text = plain_text(content)
+        claimed_counts = [int(match.group(1) or match.group(2)) for match in re.finditer(
+            r"(?:이슈|결과)(?:는|가)?\s*(?:총|전체)\s*([\d,]+)\s*건"
+            r"|(?:총|전체)\s*([\d,]+)\s*건(?:의)?\s*(?:이슈|결과)", count_text.replace(",", ""),
+        )]
+        if claimed_counts:
+            count_stages = [stage for stage in (retrieval_result or {}).get("stages", [])
+                            if str(stage.get("source", "")).startswith("mantis_")
+                            and not stage.get("meta", {}).get("reference_only")]
+            complete = any(stage.get("status") == "ok" and stage.get("meta", {}).get("search_complete") is True
+                           and stage.get("meta", {}).get("coverage") not in {"saved_filter", "top_k", "snapshot_matches"}
+                           for stage in count_stages) and not any(
+                               stage.get("status") in {"error", "partial_error"} for stage in count_stages)
+            expected_count = count_retrieved_issues(retrieval_result or {})
+            retrieval_checks.append({"id": "answer_count", "label": "답변 총건수",
+                "status": "pass" if complete and all(n == expected_count for n in claimed_counts) else "fail",
+                "detail": f"확인한 이슈 {expected_count}건 · 전체 조회 {'완료' if complete else '미확인'}"})
 
     match_constraints = constraints
     if similar_base_issue_ids:
@@ -247,12 +275,26 @@ def build_verification_report(
             matched_sources.append(matched)
             definite_mismatches += int(not matched)
             continue
+        definite_mismatches += int(has_definite_scope_mismatch(source, match_constraints))
         if not has_constraint(match_constraints):
             matched_sources.append(True)
             continue
         source_text = json.dumps(source, ensure_ascii=False, default=str)
         source_issue_id = source.get("issue_id")
-        matches = text_matches_constraints(source_text, match_constraints)
+        text_constraints = dict(match_constraints)
+        if source.get("type") == "mantis":
+            # 구조화 속성은 위에서 검증했다. 본문의 비교 대상 고객사·매체로
+            # 같은 조건을 다시 판단하면 올바른 조회에도 잘못된 경고가 붙는다.
+            source_detail = source.get("detail") or {}
+            project = source.get("project") or source_detail.get("project")
+            media = source.get("media_type") or source_detail.get("media_type")
+            if project and project not in {"미상", "기타/미상"}:
+                for key in ("customer_exact", "customer_aliases", "excluded_customer_aliases"):
+                    text_constraints.pop(key, None)
+            if media and media not in {"미상", "기타/미상"}:
+                for key in ("platform_aliases", "excluded_platform_aliases"):
+                    text_constraints.pop(key, None)
+        matches = text_matches_constraints(source_text, text_constraints)
         matches = matches and text_matches_status(source_status(source), match_constraints.get("statuses", []))
         matches = matches and text_matches_screen_numbers(source_text, match_constraints.get("screen_numbers", []))
         matches = matches and text_matches_people(
@@ -589,10 +631,7 @@ def build_basic_grounding(
         "limit": limit,
         "stages": basic_stages,
     }
-    return build_model_retrieval_context(basic_result, limit), build_sources(
-        basic_result,
-        max_sources=max(1, limit * 2),
-    )
+    return build_model_retrieval_context(basic_result, limit), build_model_evidence_sources(basic_result, limit)
 
 
 def generate_basic_grounded_baseline(

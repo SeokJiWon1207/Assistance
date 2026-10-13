@@ -32,6 +32,7 @@ from backend.notion.formatting import has_deterministic_notion_list_intent
 from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_structural_query, split_notion_body_query
 from backend.sources.chroma import execute_chroma_search, get_chroma_document
 from backend.sources.mantis import (
+    build_sources_from_issue_rows,
     execute_mantis_filter_search,
     execute_mantis_id_lookup,
     execute_mantis_page_scan,
@@ -40,6 +41,7 @@ from backend.sources.mantis import (
     revalidate_mantis_snapshot_stage,
 )
 from backend.sources.notion import (
+    build_sources_from_notion_pages,
     build_notion_terms,
     collect_retrieved_notion_pages,
     execute_notion_search,
@@ -567,7 +569,12 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
         "query": retrieval_result.get("query", ""),
         "keyword": retrieval_result.get("keyword", ""),
         "constraints": retrieval_result.get("constraints", {}),
-        "limit": limit,
+        "limit": max(len(issues), len(notion_pages)),
+        "requested_limit": limit,
+        "provided_issue_count": len(issues),
+        "issues_truncated": len(collect_retrieved_issues(retrieval_result, None)) > len(issues),
+        "provided_notion_count": len(notion_pages),
+        "notion_pages_truncated": len(collect_retrieved_notion_pages(retrieval_result, notion_limit + 1)) > len(notion_pages),
         "customer_counts": dict(Counter(customer_groups.values())),
         "customer_counts_complete": len(customer_groups) == count_retrieved_issues(retrieval_result),
         "stages": [
@@ -588,8 +595,11 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 "project": issue.get("project"),
                 "title": issue.get("summary"),
                 "status": display_mantis_status_label(issue.get("status")),
+                "priority": (issue.get("detail") or {}).get("priority_label") or issue.get("priority", ""),
+                "severity": (issue.get("detail") or {}).get("severity_label") or issue.get("severity", ""),
                 "handler": issue.get("handler"),
                 "created_at": issue.get("created_at"),
+                "updated_at": (issue.get("detail") or {}).get("updated_at", ""),
                 "screen_number": (issue.get("detail") or {}).get("screen_number", ""),
                 "media_type": (issue.get("detail") or {}).get("media_type", ""),
                 "date_fields": (issue.get("detail") or {}).get("date_fields", {}),
@@ -619,12 +629,22 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
     }
 
 
+def build_model_evidence_sources(retrieval_result: Optional[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """모델에 전달한 행과 같은 정렬·한도로 검증 근거를 만든다."""
+    if not retrieval_result:
+        return []
+    evidence_limit = max(5, min(limit, 10))
+    return [
+        *build_sources_from_issue_rows(collect_retrieved_issues(retrieval_result, evidence_limit)),
+        *build_sources_from_notion_pages(collect_retrieved_notion_pages(retrieval_result, evidence_limit)),
+    ]
+
+
 def build_sources(retrieval_result: Optional[Dict[str, Any]], max_sources: int = 8) -> List[Dict[str, Any]]:
     if not retrieval_result:
         return []
 
     sources: List[Dict[str, Any]] = []
-    seen_issue_ids = set()
 
     for stage in retrieval_result.get("stages", []):
         source_name = stage.get("source")
@@ -649,70 +669,7 @@ def build_sources(retrieval_result: Optional[Dict[str, Any]], max_sources: int =
                 }
             )
 
-        for issue in stage.get("issues_list", []):
-            issue_id = issue.get("id")
-            if not issue_id or issue_id in seen_issue_ids:
-                continue
-            seen_issue_ids.add(issue_id)
-            sources.append(
-                {
-                    "type": "mantis",
-                    "source": source_name,
-                    "issue_id": issue_id,
-                    "title": issue.get("summary", "제목 없음"),
-                    "project": issue.get("project", "미상"),
-                    "status": issue.get("status", "상태 미상"),
-                    "priority": issue.get("priority", ""),
-                    "severity": issue.get("severity", ""),
-                    "handler": issue.get("handler", "담당자 미지정"),
-                    "created_at": issue.get("created_at", ""),
-                    "preview": issue.get("description", "")[:260],
-                    "detail": issue,
-                }
-            )
-
-        for doc in stage.get("documents", []):
-            issue_id = doc.get("issue_id")
-            if not issue_id or issue_id in seen_issue_ids:
-                continue
-            latest_issue = doc.get("latest_issue")
-            if latest_issue:
-                seen_issue_ids.add(issue_id)
-                sources.append(
-                    {
-                        "type": "mantis",
-                        "source": f"{source_name}_mantis_latest",
-                        "issue_id": issue_id,
-                        "title": latest_issue.get("summary", "제목 없음"),
-                        "project": latest_issue.get("project", "미상"),
-                        "status": latest_issue.get("status", "상태 미상"),
-                        "priority": latest_issue.get("priority", ""),
-                        "severity": latest_issue.get("severity", ""),
-                        "handler": latest_issue.get("handler", "담당자 미지정"),
-                        "created_at": latest_issue.get("created_at", ""),
-                        "preview": latest_issue.get("description", "")[:260],
-                        "detail": latest_issue,
-                    }
-                )
-                continue
-            content = doc.get("content", "")
-            seen_issue_ids.add(issue_id)
-            sources.append(
-                {
-                    "type": "chroma",
-                    "source": source_name,
-                    "issue_id": issue_id,
-                    "title": extract_title_from_chroma_text(content),
-                    "project": extract_project_from_chroma_text(content),
-                    "status": "ChromaDB",
-                    "priority": "",
-                    "severity": "",
-                    "handler": "",
-                    "created_at": "",
-                    "preview": re.sub(r"\s+", " ", content)[:260],
-                    "detail": {"content": content, "reporter": extract_chroma_field(content, "요청자") or "미상"},
-                }
-            )
+    sources.extend(build_sources_from_issue_rows(collect_retrieved_issues(retrieval_result, None)))
 
     plan_source = str((retrieval_result.get("intent_plan") or {}).get("source", ""))
     if plan_source == "both":
@@ -728,15 +685,42 @@ def build_sources(retrieval_result: Optional[Dict[str, Any]], max_sources: int =
     return sources[:max_sources]
 
 
+def _ordered_issue_stages(retrieval_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """저장본을 먼저 적용하고 실시간 확인은 실행 순서대로 덮어쓴다."""
+    def priority(stage: Dict[str, Any]) -> int:
+        meta = stage.get("meta") or {}
+        if ("live_revalidation_complete" in meta
+                or any(doc.get("latest_issue") for doc in stage.get("documents", []))
+                or (str(stage.get("source", "")).startswith("chroma") and meta.get("scanned_issue_ids"))):
+            return 2
+        if stage.get("source") == "mantis_snapshot" or meta.get("status") == "snapshot":
+            return 1
+        return 2 if str(stage.get("source", "")).startswith("mantis_") else 0
+    return sorted(retrieval_result.get("stages", []), key=priority)
+
+
 def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[int]) -> List[Dict[str, Any]]:
     rows: Dict[int, Dict[str, Any]] = {}
+    stages = [stage for stage in _ordered_issue_stages(retrieval_result)
+              if stage.get("status") not in {"error", "skipped", "not_found"}
+              and not stage.get("meta", {}).get("reference_only")]
+    excluded_ids: set[int] = set()
     similarity_search = any(
         stage.get("source") == "chroma_similar" for stage in retrieval_result.get("stages", [])
     )
-    for stage in retrieval_result.get("stages", []):
+    for stage in stages:
+        meta = stage.get("meta") or {}
+        if "matched_issue_ids" in meta:
+            scanned = {int(value) for value in meta.get("scanned_issue_ids", [])}
+            matched = {int(value) for value in meta["matched_issue_ids"]}
+            excluded_ids.update(scanned - matched)
+            # 부분 재조회에 섞인 저장본은 앞선 실시간 제외를 취소할 수 없다.
+            excluded_ids.difference_update(matched & scanned if "scanned_issue_ids" in meta else matched)
+            for issue_id in scanned - matched:
+                rows.pop(issue_id, None)
         for issue in stage.get("issues_list", []):
             issue_id = issue.get("id")
-            if not issue_id or issue_id in rows:
+            if not issue_id or int(issue_id) in excluded_ids:
                 continue
             rows[issue_id] = {
                 "type": "mantis",
@@ -756,10 +740,11 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
 
         for document_index, doc in enumerate(stage.get("documents", []), start=1):
             issue_id = doc.get("issue_id")
-            if not issue_id or issue_id in rows:
+            if not issue_id:
                 continue
             latest_issue = doc.get("latest_issue")
             if latest_issue:
+                excluded_ids.discard(int(issue_id))
                 rows[issue_id] = {
                     "type": "mantis",
                     "source": f"{stage.get('source', 'chroma_db')}_mantis_latest",
@@ -776,6 +761,8 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                     "detail": latest_issue,
                     "_retrieval_rank": int(doc.get("similarity_rank") or document_index),
                 }
+                continue
+            if issue_id in rows or int(issue_id) in excluded_ids:
                 continue
             content = doc.get("content", "")
             rows[issue_id] = {
@@ -806,7 +793,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
 def collect_retrieved_customer_groups(retrieval_result: Dict[str, Any]) -> Dict[int, str]:
     """표시 개수와 관계없이 집계하고 라이브 재조회 결과로 중복·상태 변경을 보정한다."""
     groups: Dict[int, str] = {}
-    for stage in retrieval_result.get("stages", []):
+    for stage in _ordered_issue_stages(retrieval_result):
         meta = stage.get("meta") or {}
         if stage.get("status") != "ok" or meta.get("reference_only"):
             continue
@@ -832,9 +819,10 @@ def count_retrieved_issues(retrieval_result: Dict[str, Any]) -> int:
     이슈도 총 건수에서 제외한다.
     """
     issue_ids: set[int] = set()
+    excluded_ids: set[int] = set()
     fallback_count = 0
 
-    for stage in retrieval_result.get("stages", []):
+    for stage in _ordered_issue_stages(retrieval_result):
         meta = stage.get("meta") or {}
         if stage.get("status") != "ok" or meta.get("reference_only"):
             continue
@@ -847,11 +835,14 @@ def count_retrieved_issues(retrieval_result: Dict[str, Any]) -> int:
         issue_ids.difference_update(scanned_ids)
 
         if "matched_issue_ids" in meta:
-            issue_ids.update(
+            matched_ids = {
                 int(issue_id)
                 for issue_id in meta.get("matched_issue_ids", [])
                 if str(issue_id).isdigit()
-            )
+            }
+            excluded_ids.update(scanned_ids - matched_ids)
+            excluded_ids.difference_update(matched_ids & scanned_ids if "scanned_issue_ids" in meta else matched_ids)
+            issue_ids.update(matched_ids - excluded_ids)
             continue
 
         stage_ids = {

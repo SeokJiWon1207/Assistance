@@ -20,6 +20,7 @@ from backend.intent.constants import (
     KOREAN_ORDINAL_WORDS,
 )
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
+from backend.intent.search_terms import wants_all_results
 from backend.intent.status_semantics import ALL_STATUSES
 from backend.intent.scope_changes import cleared_scope_fields, followup_created_at, has_scope_edit
 from backend.llm import extract_model_content, post_model_chat
@@ -67,6 +68,10 @@ def is_affirmative_read_follow_up(text: str) -> bool:
 
 def is_follow_up_question(text: str) -> bool:
     if is_affirmative_read_follow_up(text):
+        return True
+    # 전체 표시 요청은 직전 조회의 범위를 유지해야 한다. 새 고객사·기간 등을
+    # 명시한 독립 질문은 이 규칙으로 이전 검색에 묶지 않는다.
+    if wants_all_results(text) and not has_targeting_constraint(extract_query_constraints(text)):
         return True
     if has_scope_edit(text):
         return True

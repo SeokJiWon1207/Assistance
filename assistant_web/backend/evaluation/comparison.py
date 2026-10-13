@@ -20,7 +20,7 @@ from backend.llm import (
     get_private_model,
     post_model_chat,
 )
-from backend.retrieval import build_model_retrieval_context, build_sources
+from backend.retrieval import build_model_retrieval_context, build_model_evidence_sources
 from backend.schemas import ChatRequest
 from backend.sources.notion import (
     extract_notion_constraints,
@@ -237,6 +237,9 @@ def generate_basic_grounded_baseline(
     limit = clamp_int(request.searchLimit, 1, 20) or 5
     grounding, baseline_sources = build_basic_grounding(retrieval_result, limit)
     evidence_count = len(grounding.get("issues", [])) + len(grounding.get("notion_pages", []))
+    if not evidence_count:
+        return {"status": "unavailable", "content": "비교 답변에 사용할 원문 근거가 없어 생성하지 않았습니다.",
+                "sources": [], "sourceCount": 0}
     payload = {
         "model": model.get("model", model["id"]),
         "messages": [
@@ -252,7 +255,7 @@ def generate_basic_grounded_baseline(
             },
             {"role": "user", "content": question},
         ],
-        "temperature": request.temperature,
+        "temperature": 0,
         "stream": False,
         "chat_template_kwargs": {"enable_thinking": False},
     }
@@ -316,7 +319,10 @@ def generate_candidate_model_answer(
 
     limit = clamp_int(request.searchLimit, 1, 20) or 5
     grounding = build_model_retrieval_context(retrieval_result, limit)
-    candidate_sources = build_sources(retrieval_result, max_sources=max(1, limit * 2))
+    candidate_sources = build_model_evidence_sources(retrieval_result, limit)
+    if not candidate_sources:
+        return {"status": "unavailable", "content": "비교 답변에 사용할 원문 근거가 없어 생성하지 않았습니다.",
+                "sources": [], "sourceCount": 0}
     payload = {
         "model": model.get("model", model["id"]),
         "messages": [
@@ -332,7 +338,7 @@ def generate_candidate_model_answer(
             },
             {"role": "user", "content": question},
         ],
-        "temperature": request.temperature,
+        "temperature": 0,
         "stream": False,
         "chat_template_kwargs": {"enable_thinking": False},
     }

@@ -7,8 +7,8 @@ from typing import Any
 # 작업 의도 추정(operation_intent), 텍스트 기반 조건 추정 경고, AI 서술 검토는
 # 확정적 오류가 아니므로 전달 차단에 사용하지 않는다.
 BLOCKING_CHECKS = frozenset({
-    "issue_ids", "constraints", "status_resolution", "filter_schema",
-    "count_result", "count_filters", "effort_recalculation", "effort_breakdown",
+    "issue_ids", "issue_fields", "constraints", "status_resolution", "filter_schema",
+    "count_result", "count_filters", "answer_count", "effort_recalculation", "effort_breakdown",
     "effort_display", "effort_issue_count", "work_intent", "work_scope",
     "work_evidence", "work_answer_count",
 })
@@ -37,6 +37,6 @@ def decide_delivery(verification: dict[str, Any]) -> DeliveryDecision:
 
 
 BLOCKED_ANSWER = (
-    "조회 조건 또는 집계 결과가 원문과 일치하는지 확인하지 못해 답변을 보류했습니다. "
-    "고객사·담당자·기간 등 조회 조건을 구체적으로 지정해 다시 요청해 주세요."
+    "답변의 이슈 정보·조회 조건·집계 결과가 원문과 일치하지 않아 해당 답변을 차단했습니다. "
+    "확인되지 않은 내용을 제공할 수 없습니다. 원문을 확인하거나 다시 조회해 주세요."
 )

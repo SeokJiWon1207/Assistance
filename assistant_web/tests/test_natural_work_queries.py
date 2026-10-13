@@ -191,7 +191,7 @@ class NaturalWorkQueryTests(unittest.TestCase):
         context.retrieval_result = {"stages": []}
         chat.append_retrieval_system_note(context, 10)
         note = context.system_notes[-1]
-        self.assertIn("이슈 번호(#숫자)는 결과 JSON의 issue_id에 있는 값만 써라", note)
+        self.assertIn("이슈 번호(#숫자)는 결과 JSON의 issues[].id에 있는 값만 써라", note)
         self.assertIn("대괄호 안 숫자는 화면번호", note)
 
     def test_empty_retrieval_returns_limitation_instead_of_generation(self):

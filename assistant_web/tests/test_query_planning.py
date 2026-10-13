@@ -349,7 +349,10 @@ class QueryPlanningTests(unittest.TestCase):
         retrieval = {
             "query": "질문",
             "constraints": {"filter_clauses": []},
-            "stages": [],
+            "stages": [{"source": "mantis_page_scan", "status": "ok", "issues_list": [{
+                "id": 31585, "summary": "원문 제목", "project": "112KBStar(KB증권)",
+                "handler": "석지원", "status": "confirmed", "created_at": "2026-10-06",
+            }]}],
         }
 
         result = generate_candidate_model_answer(
@@ -363,6 +366,8 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(result["modelId"], "candidate-model")
         payload = post_chat.call_args.args[2]
         self.assertIn("검증된 검색 결과", payload["messages"][0]["content"])
+        self.assertEqual(result["sources"][0]["issue_id"], 31585)
+        self.assertIn('"id": 31585', payload["messages"][0]["content"])
 
     def test_platform_exclusion_is_not_reversed_to_inclusion(self):
         question = "유진증권 이슈에서 MTS는 빼고 최근 10개 보여줘"
@@ -1006,6 +1011,7 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(stage["status"], "partial_error")
         self.assertEqual(stage["error_kind"], "dependency")
         self.assertFalse(stage["meta"]["scan_complete"])
+        self.assertFalse(stage["meta"]["search_complete"])
         self.assertIn("정확한 건수를 확정할 수 없습니다", report["content"])
         self.assertNotIn("총 5건입니다", report["content"])
 
