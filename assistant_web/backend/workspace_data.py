@@ -31,6 +31,8 @@ _live_pages: list[list[Dict[str, Any]]] = []
 _live_expires_at = 0.0
 _live_fetched_at = ""
 WORKSPACE_LIVE_TTL_SECONDS = 60
+_complete_workspace_lock = Lock()
+_complete_workspace_key: tuple | None = None
 
 
 def fetch_workspace_recent_issues(
@@ -175,6 +177,7 @@ def complete_store_expired() -> bool:
 
 
 def load_complete_workspace(*, force_refresh: bool = False, predicate: Callable | None = None):
+    global _complete_workspace_key
     path = store_path()
     if not path.exists():
         return None
@@ -184,7 +187,13 @@ def load_complete_workspace(*, force_refresh: bool = False, predicate: Callable 
         # 갱신 상태를 알리고, 제한된 최근 페이지로 전체 집계를 대체하지 않는다.
     try:
         identity = connection_key()
-        rows, saved_meta = _complete_workspace_cached(str(path), *_signature(path), identity)
+        key = (str(path), *_signature(path), identity)
+        # lru_cache만으로는 동시에 들어온 cache miss가 각각 전체 변환을 실행한다.
+        with execution_slot(_complete_workspace_lock):
+            if key != _complete_workspace_key:
+                _complete_workspace_cached.cache_clear()
+                _complete_workspace_key = key
+            rows, saved_meta = _complete_workspace_cached(*key)
     except (HTTPException, LookupError):
         return None
     age = time.time() - datetime.fromisoformat(saved_meta["fetchedAt"]).timestamp()
@@ -225,5 +234,8 @@ def load_workspace_snapshot(limit: int = 1000) -> tuple[List[Dict[str, Any]], Di
 
 
 def clear_workspace_snapshot_cache() -> None:
+    global _complete_workspace_key
     _load_snapshot_cached.cache_clear()
-    _complete_workspace_cached.cache_clear()
+    with execution_slot(_complete_workspace_lock):
+        _complete_workspace_cached.cache_clear()
+        _complete_workspace_key = None

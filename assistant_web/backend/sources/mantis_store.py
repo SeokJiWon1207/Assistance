@@ -120,19 +120,23 @@ def _read_complete_store(*, allow_stale: bool = False, summary_only: bool = Fals
     try:
         with _generation_lock:
             generation = _generation_key(store_path())
+            # 이전 세대를 새 원본·읽기 전용 사본과 겹쳐 보관하면 2GB 서버에서
+            # OOM이 발생한다. 진행 중인 요청의 참조는 유지하고 캐시 소유권만 먼저 해제한다.
+            for old in list(_generation_cache):
+                if old[0] != generation:
+                    del _generation_cache[old]
             key = (generation, summary_only)
             cached = _generation_cache.get(key)
             if cached is None:
-                rows = _load_complete_store(allow_stale=True, summary_only=summary_only)
+                other_view = _generation_cache.get((generation, not summary_only))
+                shared_rows = {row["id"]: row for row in other_view[0]} if other_view else {}
+                rows = _load_complete_store(allow_stale=True, summary_only=summary_only, shared_rows=shared_rows)
                 if rows is None:
                     return None
                 if generation != _generation_key(store_path()):
                     # 읽는 동안 게시된 세대는 다음 요청에서 다시 읽는다.
                     return None
-                cached = (tuple(freeze(row) for row in rows), rows.meta["fetchedAt"])
-                for old in list(_generation_cache):
-                    if old[0] != generation:
-                        del _generation_cache[old]
+                cached = (tuple(rows), rows.meta["fetchedAt"])
                 _generation_cache[key] = cached
             age = time.time() - datetime.fromisoformat(cached[1]).timestamp()
             fresh = 0 <= age < MAX_AGE_SECONDS
@@ -148,7 +152,9 @@ def _read_complete_store(*, allow_stale: bool = False, summary_only: bool = Fals
         return None
 
 
-def _load_complete_store(*, allow_stale: bool = False, summary_only: bool = False) -> IssueBatch | None:
+def _load_complete_store(
+    *, allow_stale: bool = False, summary_only: bool = False, shared_rows: dict | None = None,
+) -> IssueBatch | None:
     # 메타데이터와 원본은 같은 연결에서 읽어 교체 중 서로 다른 세대를 합치지 않는다.
     path = store_path()
     if not path.exists():
@@ -168,7 +174,16 @@ def _load_complete_store(*, allow_stale: bool = False, summary_only: bool = Fals
             if summary_only:
                 omitted += ["description", "steps_to_reproduce", "notes", "additional_information"]
             paths = ", ".join("'$." + key + "'" for key in omitted)
-            rows = [json.loads(row[0]) for row in db.execute(f"SELECT json_remove(payload, {paths}) FROM issues ORDER BY id DESC")]
+            # 한 행을 읽는 즉시 공유 원본으로 바꿔 전체 가변 사본이 쌓이지 않게 한다.
+            rows = []
+            for (payload,) in db.execute(f"SELECT json_remove(payload, {paths}) FROM issues ORDER BY id DESC"):
+                row = json.loads(payload)
+                # 같은 세대의 요약/검색 원본은 본문 유무만 다르다. 이미 적재한
+                # 사용자·프로젝트·사용자 정의 필드를 다시 보관하지 않는다.
+                shared = (shared_rows or {}).get(row.get("id"), {})
+                for name in row.keys() & shared.keys():
+                    row[name] = shared[name]
+                rows.append(freeze(row))
             if len(rows) != saved["count"]:
                 return None
         return IssueBatch(rows, {

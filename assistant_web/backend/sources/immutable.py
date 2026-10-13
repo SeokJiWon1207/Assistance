@@ -1,5 +1,6 @@
 """공유 JSON 원본은 읽기 전용으로, 명시적인 복사본은 수정 가능하게 만든다."""
 from copy import deepcopy
+from sys import intern
 
 
 def _deny(*args, **kwargs):
@@ -21,8 +22,11 @@ class FrozenList(list):
 
 
 def freeze(value):
+    if isinstance(value, (FrozenDict, FrozenList)):
+        return value
     if isinstance(value, dict):
-        return FrozenDict({key: freeze(item) for key, item in value.items()})
+        # JSON 행마다 반복되는 필드명은 한 문자열을 공유한다.
+        return FrozenDict({intern(key) if isinstance(key, str) else key: freeze(item) for key, item in value.items()})
     if isinstance(value, list):
         return FrozenList(freeze(item) for item in value)
     return value
