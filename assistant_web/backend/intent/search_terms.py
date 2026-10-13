@@ -104,8 +104,21 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
     )
 
 
+def remove_list_display_instruction(text: str) -> str:
+    # 여러 표시 열과 출력 동사를 함께 지정한 절만 제거한다. '등록일 표시 오류'
+    # 같은 실제 이슈 주제는 보존한다.
+    column = r"(?:이슈\s*번호|제목|담당자|등록일|프로젝트|상태|중요도)"
+    return re.sub(
+        rf"(?<![가-힣]){column}(?:\s*(?:[,·/]|과|와|및)\s*{column})+"
+        r"\s*(?:을|를)?\s*(?:(?:모두|전부|각각)\s*)?"
+        r"(?:표시|보여|출력)(?:해\s*줘|해\s*주세요|줘|주세요)[.!?]?",
+        " ",
+        text,
+    )
+
+
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
-    text = remove_list_continuation_request(text)
+    text = remove_list_display_instruction(remove_list_continuation_request(text))
     text = re.sub(r"\b(VB|자바)\s+스크립트", r"\1스크립트", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(VB|Java|J)\s+Script(?=\b|[가-힣])", r"\1Script", text, flags=re.IGNORECASE)
     scope_edit = has_scope_edit(text)
@@ -126,6 +139,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         text,
     )
     text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
+    text = re.sub(r"(?:^|(?<=\s))[.!?]+(?=\s|$)", " ", text)
     terms = [normalize_search_token(term) for term in extract_mantis_keyword(text).split() if term]
     personal_scope_text = bool(
         re.search(

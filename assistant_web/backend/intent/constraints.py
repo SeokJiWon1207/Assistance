@@ -33,6 +33,7 @@ from backend.intent.search_terms import (
     extract_limit,
     extract_requested_limit,
     resolve_result_limit,
+    remove_list_display_instruction,
     split_project_search_terms,
     term_is_covered_by_constraints,
     wants_all_results,
@@ -64,6 +65,7 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     if confirmed is not None and confirmed[0] == text:
         from backend.intent.status_semantics import apply_status_resolution
         return apply_status_resolution(text, deepcopy(confirmed[1]))
+    text = remove_list_display_instruction(text)
     # "하이"는 하이투자증권의 현업 약칭이기도 하지만, 단독 입력은 인사로 취급한다.
     if is_simple_greeting(text):
         return empty_query_constraints()
