@@ -8,7 +8,8 @@ from backend.intent.entities import extract_people_constraints
 from backend.intent.people import grounded_model_people
 from backend.intent.search_terms import build_keyword_terms
 from backend.intent.scope_changes import has_scope_edit
-from backend.reports.work_queries import work_operation
+from backend.reports.work_queries import work_operation, build_work_query_report
+from backend.sources.mantis_collection import IssueBatch
 from backend.schemas import ChatMessage, ChatRequest
 from backend.services import chat_service as chat
 
@@ -80,3 +81,18 @@ class FollowupWebRefinementTests(unittest.TestCase):
         self.assertEqual(build_keyword_terms(context.retrieval_text, constraints), [])
         self.assertEqual(work_operation(question, constraints), "list")
         self.assertIsNone(work_operation(question, extract_query_constraints(question)))
+
+    def test_confirmed_filter_edit_does_not_add_an_open_status_filter(self):
+        constraints = extract_query_constraints("2025년 NH증권 MTS 담당자 이영희 이슈")
+        constraints["inherited_from_audit_id"] = "a" * 32
+        rows = IssueBatch([{
+            "id": 901, "summary": "[MTS] 종료된 차트 이슈", "project": {"name": "120NH(NH증권)"},
+            "handler": {"real_name": "이영희"}, "status": {"name": "closed"},
+            "created_at": "2025-12-18T01:00:00Z",
+            "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}],
+        }], {"search_complete": True, "snapshot_complete": True})
+        with patch("backend.reports.work_queries.read_complete_store", return_value=rows):
+            report = build_work_query_report("담당자는 이영희로 바꿔줘", constraints)
+        self.assertEqual(report["retrieval"]["constraints"]["statuses"], [])
+        self.assertEqual([source["issue_id"] for source in report["sources"]], [901])
+        self.assertNotIn("미종료 업무", report["content"])

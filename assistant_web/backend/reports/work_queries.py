@@ -143,9 +143,11 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
     if operation in {"open", "unassigned", "list"}:
         if re.search(r"다\s*끝났|끝난\s*건\s*빼", question):
             _clear(c, "status", "statuses", "excluded_statuses", "status_resolution")
-        if operation != "list" or (c.get("people", {}).get("names") and not re.search(r"전체\s*상태|모든\s*상태", question)):
+        refining_search = bool(c.get("inherited_from_audit_id") and has_scope_edit(question))
+        if operation != "list" or (c.get("people", {}).get("names") and not refining_search
+                                   and not re.search(r"전체\s*상태|모든\s*상태", question)):
             _open(c)
-    if operation == "list" and c.get("people", {}).get("names"):
+    if operation == "list" and c.get("people", {}).get("names") and c.get("statuses") == ["open"]:
         notice.append("Mantis에 배정된 미종료 업무이며 실시간 작업 중 여부를 뜻하지 않습니다.")
     if operation == "unassigned":
         c["unassigned_people"] = True
