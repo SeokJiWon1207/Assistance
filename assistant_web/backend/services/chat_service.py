@@ -670,6 +670,18 @@ def prepare_chat_pipeline(
     # 페이지 이력은 조건 변경·전체 요청으로 전파하지 않는다.
     scoped_constraints.pop("list_continuation", None)
     scoped_constraints.pop("list_cursor", None)
+    from backend.intent.scope_changes import has_scope_edit
+    scoped_constraints.pop("list_scope_edit", None)
+    scoped_constraints.pop("list_show_all", None)
+    if inherited_constraints is not None and has_scope_edit(latest_user_text):
+        scoped_constraints["list_scope_edit"] = True
+        if extract_requested_limit(latest_user_text) is None and (
+            inherited_constraints.get("list_show_all")
+            or wants_all_results(str(prior_plan.get("grounding_text") or ""))
+        ):
+            scoped_constraints["list_show_all"] = True
+    if wants_all_results(latest_user_text) and extract_requested_limit(latest_user_text) is None:
+        scoped_constraints["list_show_all"] = True
     if list_continuation_mode(latest_user_text):
         if inherited_constraints is not None:
             scoped_constraints["list_continuation"] = confirmed_list_continuation(
@@ -736,9 +748,14 @@ def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user:
         return {"modelId": request.modelId, "content": "개인 Notion 문서를 조회할 사용자 이름이 등록되어 있지 않습니다. 계정 표시 이름을 확인해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_notion_scope"}}
     if context.enabled_tools.get("mantis"):
-        from backend.reports.work_queries import build_work_query_report
-        work_report = build_work_query_report(context.latest_user_text, context.query_constraints,
-                                              limit=extract_requested_limit(context.latest_user_text) or clamp_int(request.searchLimit, 1, 20) or 10)
+        from backend.reports.work_queries import build_work_query_report, work_operation
+        refining_list = bool(context.query_constraints.get("list_scope_edit")
+                             and context.query_constraints.get("inherited_from_audit_id")
+                             and work_operation(context.latest_user_text, context.query_constraints) == "list")
+        work_report = None if refining_list else build_work_query_report(
+            context.latest_user_text, context.query_constraints,
+            limit=extract_requested_limit(context.latest_user_text) or clamp_int(request.searchLimit, 1, 20) or 10,
+        )
         if work_report:
             context.query_constraints = work_report["retrieval"]["constraints"]
             context.intent_plan = work_report["retrieval"]["query_plan"]
@@ -773,6 +790,9 @@ def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: 
         return is_simple_notion_title_lookup(text)
     if rule_plan.get("source") not in {"mantis", "general"}:
         return False
+    if (constraints.get("list_scope_edit") and constraints.get("inherited_from_audit_id")
+            and not build_keyword_terms(text, constraints)):
+        return True
     from backend.intent.status_semantics import is_structured_status_neutral_query
     if is_structured_status_neutral_query(text, constraints):
         return True
@@ -899,7 +919,8 @@ def retrieval_limit(request: ChatRequest, context: ChatPipelineContext) -> tuple
     if continuation:
         return requested_limit or (200 if continuation["mode"] == "rest" else continuation["page_size"]), None
     if requested_limit is None:
-        requested_limit = 200 if wants_all_results(context.latest_user_text) else (context.intent_plan or {}).get("limit")
+        requested_limit = 200 if (wants_all_results(context.latest_user_text)
+                                  or context.query_constraints.get("list_show_all")) else (context.intent_plan or {}).get("limit")
     sidebar_limit = clamp_int(request.searchLimit, 1, 20)
     group_by = (context.intent_plan or {}).get("group_by") or extract_group_by(
         context.retrieval_text
@@ -957,7 +978,9 @@ def deterministic_retrieval_response(
             "raw": {"mode": "deterministic_notion_list"},
         }
     if (context.intent_plan or {}).get("source") != "notion" and (
-        context.query_constraints.get("list_continuation") or should_return_deterministic_issue_list(
+        context.query_constraints.get("list_continuation")
+        or (context.query_constraints.get("list_scope_edit") and context.query_constraints.get("inherited_from_audit_id"))
+        or should_return_deterministic_issue_list(
             context.retrieval_text, context.query_constraints,
         )
     ):
