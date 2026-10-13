@@ -55,7 +55,18 @@ def get_recent_user_texts(messages: List[ChatMessage], limit: int = 5) -> List[s
     return texts
 
 
+def is_affirmative_read_follow_up(text: str) -> bool:
+    """대상을 생략한 긍정형 열람 요청만 인식한다. 쓰기 승인은 포함하지 않는다."""
+    return bool(re.fullmatch(
+        r"\s*(?:응|네|예|좋아|그래)(?:요)?\s*[,，]?\s*(?:더\s*)?"
+        r"(?:자세히\s*)?(?:보여\s*(?:줘|주세요)|알려\s*(?:줘|주세요))"
+        r"[.!?]*\s*", text,
+    ))
+
+
 def is_follow_up_question(text: str) -> bool:
+    if is_affirmative_read_follow_up(text):
+        return True
     normalized = normalize_for_match(text)
     if re.fullmatch(r"\s*(?:모바일|MTS|HTS|아이폰|iOS|PC)(?:이야|야|요|쪽|만)?[?.!]?\s*", text, re.I):
         return True

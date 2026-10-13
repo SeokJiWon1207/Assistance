@@ -29,6 +29,7 @@ from backend.common import (
 )
 from backend.query_filters import filter_audit_for_source
 from backend.notion.formatting import has_deterministic_notion_list_intent
+from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_structural_query, split_notion_body_query
 from backend.sources.chroma import execute_chroma_search, get_chroma_document
 from backend.sources.mantis import (
     execute_mantis_filter_search,
@@ -190,14 +191,19 @@ def run_retrieval_pipeline(
     )
     planner_notion = plan_source == "notion"
     effective_constraints = {} if explicit_notion or planner_notion else constraints
-    literal_notion_title = extract_quoted_value(query_text) if notion_intent else ""
+    literal_notion_title = notion_literal_title(query_text) if notion_intent else ""
+    _body_subject, body_clauses = split_notion_body_query(query_text) if notion_intent else (query_text, [])
     # A quoted Notion value is an exact document title, not a bag of customer,
     # platform, status, owner, or screen-number filters. Re-parse only the text
     # outside the quotes so an explicitly stated outer condition is preserved
     # without turning words inside the title into accidental AND filters.
     notion_constraints = (
-        extract_query_constraints(remove_quoted_value(query_text))
-        if literal_notion_title
+        grounded_notion_body_constraints(query_text, {
+            **constraints, "filter_clauses": [
+                *(constraints.get("filter_clauses") or []), *((intent_plan or {}).get("filter_clauses") or []),
+            ],
+        }) if body_clauses else
+        extract_query_constraints(notion_structural_query(query_text)) if literal_notion_title
         else constraints
     )
     notion_terms = planned_terms if plan_source == "notion" and planned_terms else None
@@ -309,8 +315,18 @@ def run_retrieval_pipeline(
                 stages.append(similar_stage)
 
         if not exact_issue_lookup and not similar_issue_search and structured_snapshot_eligible:
-            snapshot_stage = execute_mantis_snapshot_search(limit, constraints)
-            snapshot_stage = revalidate_mantis_snapshot_stage(snapshot_stage, constraints)
+            # 기간/화면 조건으로 전체 원본을 훑을 때도 질문의 검색어를 함께
+            # 적용한다. 표시 행만 나중에 거르면 전체 일치 ID와 총 건수가 틀린다.
+            snapshot_constraints = {
+                **constraints,
+                "filter_clauses": [
+                    *(constraints.get("filter_clauses") or []),
+                    *({"field": "keyword", "operator": "contains", "value": term}
+                      for term in keyword.split()),
+                ],
+            }
+            snapshot_stage = execute_mantis_snapshot_search(limit, snapshot_constraints)
+            snapshot_stage = revalidate_mantis_snapshot_stage(snapshot_stage, snapshot_constraints)
             stages.append(snapshot_stage)
             historical_snapshot_used = snapshot_stage.get("status") == "ok"
 
@@ -377,6 +393,18 @@ def run_retrieval_pipeline(
     ):
         stages.append(execute_chroma_search(query_text, limit, constraints))
 
+    # 만료된 전체 저장본 대신 구형 벡터 인덱스로 시작했어도, 뒤의 전체
+    # 원본 조회가 성공하면 그 결과가 최종 범위다. 이전 인덱스를 합치면
+    # 삭제된 이슈가 되살아나고 완료된 조회에도 불완전 경고가 붙는다.
+    superseded_stages = []
+    if any(stage.get("source") == "mantis_page_scan" and stage.get("status") == "ok"
+           and stage.get("meta", {}).get("search_complete") is True for stage in stages):
+        superseded_stages = [stage for stage in stages
+                             if stage.get("source") == "mantis_snapshot"
+                             and stage.get("meta", {}).get("tool") == "mantis_chroma_snapshot"
+                             and stage.get("meta", {}).get("search_complete") is False]
+        stages = [stage for stage in stages if stage not in superseded_stages]
+
     for stage in stages:
         stage_meta = dict(stage.get("meta") or {})
         audit_constraints = notion_constraints if stage.get("source") == "notion" else constraints
@@ -396,11 +424,136 @@ def run_retrieval_pipeline(
         "query_plan": intent_plan,
         "limit": limit,
         "stages": stages,
+        "superseded_stages": superseded_stages,
         "filter_audit": {
             "planned_filters": result_constraints.get("filter_clauses") or [],
             "sources": [stage.get("meta", {}).get("filter_audit", {}) for stage in stages],
         },
     }
+
+
+def _notion_model_content(page: Dict[str, Any], retrieval_result: Dict[str, Any]) -> Dict[str, Any]:
+    """이미 읽은 원문에서 질문 근처를 발췌한다. 조회 범위와 발췌 범위는 구분한다."""
+    from backend.notion.client import NOTION_CONTENT_INCOMPLETE
+    from backend.notion.query_text import split_notion_body_query
+
+    content = str(page.get("content") or "")
+    max_chars = 520
+    result = {
+        "content": content,
+        "content_excerpted": len(content) > max_chars,
+        "content_incomplete": bool(page.get("content_incomplete") or NOTION_CONTENT_INCOMPLETE in content),
+    }
+    query = str(retrieval_result.get("query") or "")
+    _subject, current_body_clauses = split_notion_body_query(query)
+    title = str(page.get("title") or "")
+    if normalize_for_match(extract_quoted_value(query)) == normalize_for_match(title):
+        query = remove_quoted_value(query)
+    title_terms = {normalize_for_match(term) for term in build_notion_terms(title)}
+    generic_terms = {
+        "본문", "내용", "코드", "표", "문서", "항목", "페이지", "자료", "설명", "요약",
+        "동작", "부분", "조건", "관련", "그", "이", "body", "table", "code",
+    }
+    keyword_terms: List[str] = []
+    body_clauses: List[Dict[str, Any]] = []
+    matched_terms = list(page.get("matched_terms") or [])
+    for stage in retrieval_result.get("stages", []):
+        if stage.get("source") != "notion" or not any(
+            item.get("id") == page.get("id") for item in stage.get("notion_pages", [])
+        ):
+            continue
+        meta = stage.get("meta") or {}
+        matched_terms.extend(meta.get("terms") or [])
+        body_clauses.extend((meta.get("constraints") or {}).get("body_filter_clauses") or [])
+        for clause in (meta.get("constraints") or {}).get("common_filter_clauses", []):
+            if clause.get("field") == "keyword" and clause.get("operator") in {"contains", "equals", "in"}:
+                value = clause.get("value")
+                keyword_terms.extend(str(item) for item in (value if isinstance(value, list) else [value]) if item)
+
+    def specific_terms(values: List[str]) -> List[str]:
+        return list(dict.fromkeys(
+            str(term) for term in values
+            if len(str(term)) >= 2
+            and normalize_for_match(str(term)) not in generic_terms | title_terms
+        ))
+
+    def matching_terms(values: List[str]) -> List[str]:
+        return [term for term in specific_terms(values) if re.search(re.escape(term), content, re.IGNORECASE)]
+
+    query_values = [str(clause["value"]) for clause in current_body_clauses
+                    if clause.get("operator") == "contains"] + build_notion_terms(query)
+    has_current_subject = bool(current_body_clauses or specific_terms(query_values))
+    active_body_clauses = [
+        clause for clause in body_clauses if clause.get("operator") == "contains"
+        and (
+            any(clause == current for current in current_body_clauses)
+            if current_body_clauses else
+            not has_current_subject or normalize_for_match(str(clause.get("value") or "")) in normalize_for_match(query)
+        )
+    ]
+    # 같은 낱말이 속성/다른 종류의 블록에도 있어도 검색에서 검증한 원문을 우선한다.
+    # 후속 질문이 바뀌면 이전 블록·조건을 그대로 재사용하지 않는다.
+    matched_body_texts = list(dict.fromkeys(
+        str(block["text"]) for block in page.get("matched_body_blocks") or []
+        if str(block.get("owner_page_id") or block.get("page_id") or "").replace("-", "")
+        == str(page.get("id") or "").replace("-", "")
+        and block.get("text")
+        and normalize_for_match(str(block["text"])) in normalize_for_match(content)
+        and any(
+            (not clause.get("block_type") or clause["block_type"] == block.get("type"))
+            and normalize_for_match(str(clause["value"])) in normalize_for_match(str(block["text"]))
+            for clause in active_body_clauses
+        )
+    ))
+    if matched_body_texts:
+        selected_content = "\n[…]\n".join(matched_body_texts)
+        result["content_excerpted"] = result["content_excerpted"] or selected_content != content
+        content = selected_content
+        result["content"] = content
+    if len(content) <= max_chars:
+        return result
+
+    if has_current_subject:
+        keyword_terms = [term for term in keyword_terms if normalize_for_match(term) in normalize_for_match(query)]
+    # 실제 질문에 맞는 구절이 있으면 이전 검색의 다른 코드·표를 끼워 넣지 않는다.
+    literal_terms = [str(clause["value"]) for clause in [*current_body_clauses, *active_body_clauses]
+                     if clause.get("operator") == "contains" and clause.get("value")
+                     and re.search(re.escape(str(clause["value"])), content, re.IGNORECASE)]
+    # 명시한 본문 리터럴은 제목과 같거나 '코드' 같은 일반 명사여도 그대로 보존한다.
+    terms = list(dict.fromkeys(literal_terms + matching_terms(keyword_terms + query_values)))
+    if not terms and not has_current_subject:
+        terms = matching_terms(matched_terms)
+    hits = [match.span() for term in terms[:8]
+            if (match := re.search(re.escape(term), content, re.IGNORECASE))]
+    groups: List[List[int]] = []
+    for start, end in sorted(hits):
+        if groups and end - groups[-1][0] <= 160:
+            groups[-1][1] = max(groups[-1][1], end)
+        else:
+            groups.append([start, end])
+    groups = groups[:3]
+    if not groups:
+        # 구체적인 질문 근거가 없을 때도 줄바꿈을 유지하고 발췌 여부를 알린다.
+        result["content"] = content[:max_chars]
+        return result
+
+    separator = "\n[…]\n"
+    window_size = (max_chars - len(separator) * (len(groups) - 1)) // len(groups)
+    excerpts = []
+    for hit_start, hit_end in groups:
+        start = max(0, (hit_start + hit_end - window_size) // 2)
+        end = min(len(content), start + window_size)
+        start = max(0, end - window_size)
+        # 가능한 한 완전한 줄을 보낸다. 한 줄 자체가 길면 일치 지점을 포함해 자른다.
+        next_line = content.find("\n", start, hit_start)
+        if next_line >= 0:
+            start = next_line + 1
+        previous_line = content.rfind("\n", hit_end, end)
+        if previous_line >= 0:
+            end = previous_line
+        excerpts.append(content[start:end].strip("\r\n"))
+    result["content"] = separator.join(excerpts)
+    return result
 
 
 def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) -> Dict[str, Any]:
@@ -424,7 +577,8 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 # 조회 ID 목록/스캔 건수는 답변 근거가 아니다. 특히 빈 결과에서
                 # scanned_count를 일치 건수로 오독하거나 내부 로그를 출력하지 않게 한다.
                 "meta": {key: value for key, value in stage.get("meta", {}).items()
-                         if key in {"operation", "matched_count", "search_complete", "fetchedAt"}},
+                         if key in {"operation", "matched_count", "search_complete", "fetchedAt"}
+                         or (stage.get("source") == "notion" and key == "content_complete")},
             }
             for stage in retrieval_result.get("stages", [])
         ],
@@ -449,13 +603,14 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
         ],
         "notion_pages": [
             {
+                "id": page.get("id"),
                 "title": page.get("title", "제목 없음"),
                 "database": page.get("database_label", "Notion DB"),
                 "status": page.get("status", "상태 미상"),
                 "owner": page.get("owner", "담당자 미지정"),
                 "due_date": page.get("due_date", ""),
                 "updated_at": page.get("last_edited_time", ""),
-                "content": compact_text(page.get("content", ""), 520),
+                **_notion_model_content(page, retrieval_result),
             }
             for page in notion_pages
         ],
@@ -553,6 +708,7 @@ def build_sources(retrieval_result: Optional[Dict[str, Any]], max_sources: int =
                     "handler": "",
                     "created_at": "",
                     "preview": re.sub(r"\s+", " ", content)[:260],
+                    "detail": {"content": content, "reporter": extract_chroma_field(content, "요청자") or "미상"},
                 }
             )
 
@@ -633,7 +789,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "created_at": extract_chroma_date(content),
                 "media_type": extract_chroma_field(content, "매체구분") or "기타/미상",
                 "preview": re.sub(r"\s+", " ", content)[:260],
-                "detail": {"content": content},
+                "detail": {"content": content, "reporter": extract_chroma_field(content, "요청자") or "미상"},
                 "_retrieval_rank": int(doc.get("similarity_rank") or document_index),
             }
 

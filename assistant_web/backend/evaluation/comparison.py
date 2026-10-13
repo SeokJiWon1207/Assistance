@@ -106,7 +106,11 @@ def evaluate_ab_variant(
         matched = text_matches_constraints(source_text, constraints)
         matched = matched and text_matches_status(source_status(source), constraints.get("statuses", []))
         matched = matched and text_matches_screen_numbers(source_text, constraints.get("screen_numbers", []))
-        matched = matched and text_matches_people(source_text, constraints.get("people", {}))
+        matched = matched and text_matches_people(
+            source_text, constraints.get("people", {}),
+            str(source.get("handler") or (source.get("detail") or {}).get("handler") or ""),
+            str(source.get("reporter") or (source.get("detail") or {}).get("reporter") or ""),
+        )
         if constraints.get("issue_ids"):
             matched = matched and source.get("issue_id") in constraints["issue_ids"]
         matches.append(matched)

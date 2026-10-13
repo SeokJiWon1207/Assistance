@@ -48,6 +48,8 @@ from backend.llm import (
 from backend.query_planning import build_query_plan, extract_group_by
 from backend.timing import TIMINGS, measured, request_timing
 from backend.intent.search_terms import build_keyword_terms
+from backend.intent.context import is_affirmative_read_follow_up
+from backend.notion.formatting import append_notion_completeness_notice, format_notion_missing_information_answer
 from backend.intent.confirmed_context import confirmed_scope_text, confirmed_constraints_scope, merge_confirmed_constraints, restore_confirmed_constraints, confirmed_keyword_text
 from backend.reports.aggregate import (
     build_mantis_count_report,
@@ -399,13 +401,21 @@ def generate_model_response(
     if data is None:
         if retrieval_result and isinstance(last_error, requests.RequestException):
             fallback_sources = build_sources(retrieval_result, max_sources=active_limit)
+            notion_pages = collect_retrieved_notion_pages(retrieval_result, active_limit)
+            issues = collect_retrieved_issues(retrieval_result, active_limit)
+            if notion_pages and issues:
+                fallback_content = format_deterministic_combined_answer(fallback_sources)
+            elif not issues and any(stage.get("source") == "notion" for stage in retrieval_result.get("stages", [])):
+                fallback_content = format_deterministic_notion_answer(
+                    str(retrieval_result.get("query") or ""), retrieval_result, active_limit,
+                )
+            else:
+                fallback_content = format_model_timeout_fallback(query_constraints, retrieval_result, active_limit)
+            if notion_pages:
+                fallback_content = "모델 분석 응답이 지연되어 확인한 자료를 안내합니다.\n\n" + fallback_content
             return {
                 "modelId": final_model["id"],
-                "content": format_model_timeout_fallback(
-                    query_constraints,
-                    retrieval_result,
-                    active_limit,
-                ),
+                "content": append_notion_completeness_notice(fallback_content, retrieval_result),
                 "sources": fallback_sources if request.showSources else [],
                 "sourcesForFollowUps": fallback_sources,
                 "retrieval": retrieval_result,
@@ -428,7 +438,9 @@ def generate_model_response(
     )
     return {
         "modelId": final_model["id"],
-        "content": content or "응답 본문을 찾지 못했습니다.",
+        # 모델 스트림도 최종 검증 전까지 버퍼링되므로 저장·검증·전송에
+        # 동일한 안내가 포함된다. 결정형 목록은 이 모델 경로를 거치지 않는다.
+        "content": append_notion_completeness_notice(content or "응답 본문을 찾지 못했습니다.", retrieval_result),
         "sources": final_sources if request.showSources else [],
         "sourcesForFollowUps": final_sources,
         "retrieval": retrieval_result,
@@ -584,10 +596,19 @@ def prepare_chat_pipeline(
         needs_follow_up_rewrite = False
         inherited_resolution = None
         inherited_constraints = None
+    elif (is_affirmative_read_follow_up(latest_user_text)
+          and prior_plan.get("source") == "notion" and prior_plan.get("grounding_text")):
+        # 직전 서버 검색 입력에는 이미 후속 턴에서 바꾼 조건이 반영되어 있다.
+        retrieval_text = f"노션 {prior_plan['grounding_text']} 상세 내용 알려줘"
+        needs_follow_up_rewrite = False
     else:
-        notion_prefix = inherit_notion_context(get_recent_user_texts(request.messages, limit=5))
+        notion_prefix = inherit_notion_context(
+            get_recent_user_texts(request.messages, limit=5),
+            prior_source=str(prior_plan.get("source") or ""),
+        )
         if notion_prefix and not team_scope and inherited_constraints is None:
-            retrieval_text = f"{notion_prefix} {latest_user_text}".strip()
+            detail = "상세 내용 알려줘" if is_affirmative_read_follow_up(latest_user_text) else latest_user_text
+            retrieval_text = f"{notion_prefix} {detail}".strip()
             needs_follow_up_rewrite = False
 
     if needs_follow_up_rewrite and api_key:
@@ -883,6 +904,17 @@ def deterministic_retrieval_response(
                 "retrieval": retrieval_result,
                 "raw": {"mode": "deterministic_combined_search"},
             }
+    if (context.intent_plan or {}).get("source") == "notion":
+        notion_pages = collect_retrieved_notion_pages(retrieval_result, limit)
+        missing_information = format_notion_missing_information_answer(context.retrieval_text, notion_pages)
+        if missing_information:
+            notion_sources = build_sources_from_notion_pages(notion_pages)
+            return {
+                "modelId": request.modelId, "content": missing_information,
+                "sources": notion_sources if request.showSources else [],
+                "sourcesForFollowUps": notion_sources, "retrieval": retrieval_result,
+                "raw": {"mode": "deterministic_notion_missing_field"},
+            }
     if should_return_deterministic_notion_list(context.retrieval_text, retrieval_result):
         notion_pages = collect_retrieved_notion_pages(retrieval_result, limit)
         notion_sources = build_sources_from_notion_pages(notion_pages)
@@ -932,6 +964,14 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
         "첨부파일이나 이미지의 실제 내용은 이 JSON에 명시된 텍스트가 없으면 확인하지 못한 것이다. "
         "'타 증권사와 비교한 이미지'라는 설명만으로 타사의 정상 동작이나 비교 결과를 단정하지 마라. "
         "증상, 원인, 조치 완료 여부와 일정은 각각 원문에 직접 적힌 사실만 요약하고, 없는 내용은 추측해 채우지 마라. "
+        "원문의 권고·가능성·의무 수준을 유지해라. '지양'·'권장'을 '금지'·'필수'로 강화하지 마라. "
+        "Notion 코드·표를 인용할 때 주석·식별자·셀 값을 추가하거나 바꾸지 마라. "
+        "해설은 인용 밖에 쓰고 식별자의 약어나 업무상 의미가 원문에 정의되어 있지 않으면 이름만으로 확정하지 마라. "
+        "Notion 공지의 일시·장소가 빈칸이면 '원문에 확정 일시·장소가 미기재'라고 답하고, 투표 후보를 확정 장소로 바꾸지 마라. "
+        "미기재 또는 본문 일부 미확인은 아직 확정되지 않았다는 근거가 아니다. 확정 여부 자체를 단정하지 마라. "
+        "Notion 속성의 목표일·기한·등록일은 그 이름을 유지하고, 행사일이나 최종 결정일로 바꾸지 마라. "
+        "날짜의 요일은 원문에 적혀 있지 않으면 덧붙이지 마라. "
+        "이전 답변에 나온 날짜·장소·안내도 이번 검색 원문에서 확인되지 않으면 재사용하지 마라. "
         "일반 분석 답변은 결론을 먼저 1~2문장으로 말하고, 주요 근거와 필요한 다음 행동을 이어서 정리해라. "
         "사용자가 요청한 보고서·안내문·인수인계 형식이 있으면 그 형식을 우선해라. "
         "검색 파이프라인은 Notion DB 조회, Mantis 저장 필터, Mantis 페이지 스캔, ChromaDB 검색으로 구성된다. "
@@ -990,8 +1030,16 @@ def _retrieve_chat_evidence(
         return deterministic
     grounding = build_model_retrieval_context(context.retrieval_result, limit)
     if not grounding.get("issues") and not grounding.get("notion_pages"):
+        notion_only = (context.intent_plan or {}).get("source") == "notion" or (
+            bool((context.retrieval_result or {}).get("stages"))
+            and all(stage.get("source") == "notion" for stage in context.retrieval_result["stages"])
+        )
+        guidance = (
+            "조회한 범위에서 문서를 찾지 못했습니다. 문서 제목이나 검색어를 더 구체적으로 지정하거나 연결된 노션 범위를 확인해 주세요."
+            if notion_only else "전체가 0건이거나 모두 완료됐다는 뜻은 아닙니다. 고객사·담당자·이슈 번호를 확인해 주세요."
+        )
         return {"modelId": request.modelId,
-                "content": "질문 조건에 맞는 원문 근거를 확보하지 못했습니다. 전체가 0건이거나 모두 완료됐다는 뜻은 아닙니다. 고객사·담당자·이슈 번호를 확인해 주세요.",
+                "content": f"질문 조건에 맞는 원문 근거를 확보하지 못했습니다. {guidance}",
                 "sources": [], "retrieval": context.retrieval_result, "raw": {"mode": "empty_evidence"}}
     append_retrieval_system_note(context, limit)
     return None

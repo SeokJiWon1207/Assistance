@@ -47,8 +47,9 @@ NOISY_PROPERTY_TYPES = frozenset(
 # 본문 검색은 외부 요청을 발생시키므로 DB 수와 무관한 요청 전체 예산으로 제한한다.
 NOTION_BODY_SCAN_MAX_PER_REQUEST = 30
 
-# 최종 답변에 넘길 본문은 요약·근거 생성에 필요한 앞부분만 읽는다.
-NOTION_RESULT_BODY_MAX_BLOCKS = 30
+# 제목 검색에서 선택된 문서는 빈 블록·열·하위 투표를 포함한 본문까지 읽는다.
+# 후보를 넓게 훑는 본문 검색의 예산과 분리하고 요청 수·시간 제한도 적용한다.
+NOTION_RESULT_BODY_MAX_BLOCKS = 200
 
 NOTION_WRITE_CONFIRM_HEADER_CREATE = "📝 다음 내용으로 Notion에 새 항목을 만들까요?"
 

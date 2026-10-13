@@ -2,13 +2,49 @@
 
 import re
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from backend.common import extract_quoted_value, has_lookup_request, normalize_for_match, remove_quoted_value
 from backend.intent.constants import ISSUE_ANALYSIS_INTENT_KEYWORDS, ISSUE_LIST_INTENT_KEYWORDS
-from backend.notion.search import collect_retrieved_notion_pages
+from backend.notion.client import NOTION_CONTENT_INCOMPLETE
+from backend.notion.search import collect_retrieved_notion_pages, notion_requested_information_fields
+from backend.notion.query_text import notion_structural_query
 from backend.query_filters import filter_clause_label
 from backend.query_planning import extract_group_by, has_count_intent
+
+
+def append_notion_completeness_notice(
+    content: str, retrieval_result: Optional[Dict[str, Any]],
+) -> str:
+    """모델·비교·대체 답변에 확인된 Notion 검색·본문 범위의 한계를 표시한다."""
+    stages = [stage for stage in (retrieval_result or {}).get("stages", [])
+              if stage.get("source") == "notion"]
+    search_incomplete = any(
+        (stage.get("meta") or {}).get("search_complete") is False
+        or stage.get("status") in {"partial_error", "error"}
+        or bool((stage.get("meta") or {}).get("errors"))
+        for stage in stages
+    )
+    content_incomplete = any(
+        (stage.get("meta") or {}).get("content_complete") is False
+        or bool((stage.get("meta") or {}).get("content_incomplete_page_ids"))
+        or any(page.get("content_incomplete") or NOTION_CONTENT_INCOMPLETE in str(page.get("content") or "")
+               for page in stage.get("notion_pages", []))
+        for stage in stages
+    )
+    notices = []
+    # 결정형 Notion 목록을 재사용한 대체 답변에는 이미 검색 범위 안내가 있다.
+    scope_already_explained = any(notice in content for notice in (
+        "일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.",
+        "전체 항목을 확인한 결과는 아닙니다.",
+        "전체 조회가 끝나지 않아 결과가 없다고 확정할 수 없습니다.",
+    ))
+    if search_incomplete and not scope_already_explained:
+        notices.append("Notion 전체 검색이 완료되지 않아, 확인한 범위의 근거로 답변했습니다.")
+    if content_incomplete:
+        notices.append("일부 문서 본문을 끝까지 읽지 못해 누락된 내용이 있을 수 있습니다.")
+    missing_notices = [notice for notice in notices if notice not in content]
+    return content + "\n\n" + " ".join(missing_notices) if missing_notices else content
 
 
 NOTION_CONTENT_ANSWER_MARKERS = (
@@ -50,10 +86,12 @@ def has_deterministic_notion_list_intent(text: str) -> bool:
     # Quoted text is a title filter, not the requested answer form. For
     # example, ``'배포 요청 문서' 상세 내용`` needs the page body even
     # though the title itself contains a list-intent keyword.
-    intent_text = remove_quoted_value(text) if extract_quoted_value(text) else text
+    intent_text = notion_structural_query(text)
     normalized_text = normalize_for_match(intent_text)
     if extract_group_by(intent_text):
         return True
+    if notion_requested_information_fields(intent_text):
+        return False
     if re.search(
         r"(?:문서|항목|페이지|자료|업무)(?:가|은|는)?있(?:어(?:요)?|나요|는지)",
         normalized_text,
@@ -130,6 +168,36 @@ def should_return_deterministic_notion_list(text: str, retrieval_result: Dict[st
     if plan_source != "notion" and not has_notion_stage:
         return False
     return has_deterministic_notion_list_intent(text) and has_notion_stage
+
+
+def format_notion_missing_information_answer(text: str, pages: List[Dict[str, Any]]) -> str:
+    """단일 공지에 명시된 빈 항목은 확정 여부나 목표일을 추론하지 않고 답한다."""
+    fields = notion_requested_information_fields(text)
+    if not fields or len(pages) != 1:
+        return ""
+    content = str(pages[0].get("content") or "")
+    evidence = content + "\n" + str(pages[0].get("properties_text") or "")
+    labels = {"location": "장소|위치", "schedule": "일시|일정|날짜|시간"}
+    for field in fields:
+        values = re.findall(rf"^[^\S\r\n]*(?:{labels[field]})[^\S\r\n]*[:：][^\S\r\n]*(.*)$", evidence, re.MULTILINE)
+        if not values or any(value.strip() for value in values):
+            return ""
+    names = "·".join("장소" if field == "location" else "일시" for field in fields)
+    title = pages[0].get('title', '해당 공지')
+    if pages[0].get("content_incomplete") or NOTION_CONTENT_INCOMPLETE in content:
+        answer = f"**{title}**에서 확인한 ‘{names}’ 항목은 비어 있습니다. 본문 일부가 미확인되어 확정 {names}는 확인이 필요합니다."
+    else:
+        answer = f"**{title}**의 확정 {names}는 원문에 미기재되어 있습니다."
+    if "location" in fields:
+        candidates = list(dict.fromkeys(
+            re.sub(r"^\s*\d+[.)]\s*", "", item).strip()
+            for match in re.finditer(r"^\s*회식장소\s*[:：]\s*(.+)$", content, re.MULTILINE)
+            for item in match.group(1).split(",") if item.strip()
+        ))
+        if candidates:
+            label = "원문에 기록된 투표 후보" if "투표" in content else "본문에 기재된 회식장소"
+            answer += f"\n\n{label}: " + ", ".join(candidates) + "."
+    return answer
 
 
 def notion_page_owner_names(page: Dict[str, Any]) -> List[str]:

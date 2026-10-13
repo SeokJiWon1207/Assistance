@@ -112,6 +112,44 @@ class StatusSemanticTests(unittest.TestCase):
                 post.assert_not_called()
                 self.assertTrue(chat.can_skip_general_planner(q, constraints, {"source": "mantis"}))
 
+    def test_polite_counts_and_screen_existence_lookups_survive_status_planner_outage(self):
+        questions = (
+            "115다올투자증권(구KTB) 최근 이슈 세 개 보여줄래?",
+            "화면번호 99999 관련 Mantis 이슈가 있는지 확인해줘",
+            "NH 최근 이슈 세개 보여줄래?",
+            "NH 최근 이슈 한 건 알려줄래?",
+            "화면번호 6110 관련 mantis 이슈가 있는지 확인해주세요.",
+            "하나금융 이슈에서 HTS는 제외하고 최근 세 건만 보여주세요",
+            "담당자 홍성식의 최근 이슈 두 개 보여줄래?",
+        )
+        with patch.object(semantic, "post_model_chat", side_effect=requests.Timeout):
+            for question in questions:
+                with self.subTest(question=question):
+                    constraints = extract_query_constraints(question)
+                    # 운영 원본에서 확인한 프로젝트 표시명. 격리된 테스트
+                    # 스냅샷에는 이 고객사의 동적 별칭이 포함되어 있지 않다.
+                    if question.startswith("115다올투자증권(구KTB)"):
+                        constraints["customer_aliases"].append("115다올투자증권(구KTB)")
+                    result = semantic.resolve_status_intent(question, constraints)
+                    self.assertFalse(result["needs_clarification"])
+                    self.assertIsNone(result["status_intent"])
+                    self.assertEqual(result["reason"], "structured_status_neutral")
+
+    def test_polite_lookup_words_do_not_hide_ambiguous_work_status(self):
+        questions = (
+            "115다올투자증권(구KTB) 최근 아직 손봐야 할 이슈 세 개 보여줄래?",
+            "화면번호 99999 관련 Mantis 이슈가 챙겨야 하는 건인지 확인해줘",
+            "NH 최근 이슈 세 개 보여줄래 단 마무리 못 한 것만",
+        )
+        with patch.object(semantic, "post_model_chat", side_effect=requests.Timeout):
+            for question in questions:
+                with self.subTest(question=question):
+                    constraints = extract_query_constraints(question)
+                    self.assertFalse(semantic.is_structured_status_neutral_query(question, constraints))
+                    result = semantic.resolve_status_intent(question, constraints)
+                    self.assertTrue(result["needs_clarification"])
+                    self.assertEqual(result["reason"], "planner_unavailable")
+
     def test_unknown_modifiers_cannot_disappear_into_neutral_fast_path(self):
         for q in (
             "NH 최근 아직 손봐야 할 이슈 3개 보여줘",

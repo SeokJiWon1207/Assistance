@@ -423,7 +423,7 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
         "work_subject": extract_chroma_field(text, "작업주체") or "미상",
         "effort_fields": {},
         "date_fields": {},
-        "reporter": "미상",
+        "reporter": extract_chroma_field(text, "요청자") or "미상",
         "handler": extract_chroma_field(text, "담당자") or "담당자 미지정",
         "created_at": created_at,
         "updated_at": "",

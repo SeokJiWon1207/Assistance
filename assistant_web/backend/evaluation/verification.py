@@ -255,7 +255,11 @@ def build_verification_report(
         matches = text_matches_constraints(source_text, match_constraints)
         matches = matches and text_matches_status(source_status(source), match_constraints.get("statuses", []))
         matches = matches and text_matches_screen_numbers(source_text, match_constraints.get("screen_numbers", []))
-        matches = matches and text_matches_people(source_text, match_constraints.get("people", {}))
+        matches = matches and text_matches_people(
+            source_text, match_constraints.get("people", {}),
+            str(source.get("handler") or (source.get("detail") or {}).get("handler") or ""),
+            str(source.get("reporter") or (source.get("detail") or {}).get("reporter") or ""),
+        )
         matches = matches and plan_created_at_matches(
             str(source.get("created_at") or (source.get("detail") or {}).get("created_at") or ""),
             match_constraints.get("created_at"),

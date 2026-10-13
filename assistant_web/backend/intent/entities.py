@@ -243,7 +243,11 @@ def extract_status_constraints(text: str) -> List[str]:
                 r"(?:상태\s*(?:가|는|만|를|=|:)?\s*feedback\b|"
                 r"\bfeedback\s*(?:인|상태(?:인)?|로|으로)(?=\s|$|[,.;!?]))",
                 status_text, re.IGNORECASE,
-            )) if alias == "feedback" else normalize_for_match(alias) in alias_text
+            )) if alias == "feedback" else (
+                bool(re.search(r"(?<![A-Za-z0-9_])" + re.escape(alias) + r"(?![A-Za-z0-9_])",
+                               status_text, re.IGNORECASE))
+                if re.fullmatch(r"[A-Za-z_]+", alias) else normalize_for_match(alias) in alias_text
+            )
             for alias in aliases
         ):
             statuses.append(status_key)

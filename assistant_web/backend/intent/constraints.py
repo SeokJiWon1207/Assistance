@@ -228,7 +228,17 @@ def merge_query_plan_constraints(
             str((query_plan or {}).get("grounding_text") or ""),
             re.IGNORECASE,
         ):
-            continue
+            # 명시적인 제외 값 바로 뒤의 표현만 허용한다. 다른 조건의 '빼고'는 근거가 아니다.
+            grounded_exclusion = operator in {"not_contains", "not_equals", "not_in"} and bool(values) and all(
+                re.search(
+                    rf"(?<![가-힣A-Za-z0-9_]){re.escape(str(item))}(?:은|는|이|가|을|를)?\s*"
+                    r"(?:빼고|말고|아닌)(?=\s|$|[,.;!?])",
+                    str((query_plan or {}).get("grounding_text") or ""), re.IGNORECASE,
+                )
+                for item in values
+            )
+            if not grounded_exclusion:
+                continue
         if (field == "customer" and merged.get("customer_key")) or (field == "platform" and merged.get("platform_key")):
             # The rule parser already expanded the customer's exact project and
             # aliases. A model-produced shorthand such as ``138Meritz`` must

@@ -36,6 +36,7 @@ from backend.config import (
     get_mantis_settings,
 )
 from backend.query_planning import plan_created_at_matches
+from backend.intent.matching import extract_reporter_names
 from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
@@ -494,9 +495,9 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         "미상",
     }:
         return False
-    if not text_matches_people(combined_text, constraints.get("people", {}), handler_text):
-        return False
     reporter_text = str((issue.get("reporter") or {}).get("real_name", ""))
+    if not text_matches_people(combined_text, constraints.get("people", {}), handler_text, reporter_text):
+        return False
     return matches_source_filters("mantis", {
         "customer": project_name,
         "platform": get_issue_custom_field_value(issue, "매체구분") or combined_text,
@@ -505,7 +506,7 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
         "screen_number": screen_filter_values(get_issue_custom_field_value(issue, "화면번호"), str(issue.get("summary") or "")),
         "created_at": issue.get("created_at", ""),
         "title": str(issue.get("summary", "")), "keyword": combined_text,
-        "owner": handler_text, "reporter": reporter_text,
+        "owner": handler_text, "reporter": extract_reporter_names(combined_text, reporter_text),
     }, constraints.get("filter_clauses") or [])
 
 

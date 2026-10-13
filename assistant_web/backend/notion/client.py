@@ -100,25 +100,37 @@ NOTION_CONTENT_INCOMPLETE = "[본문 일부 미확인: 하위 문서 또는 조�
 
 
 def fetch_notion_page_blocks(page_id: str, max_blocks: int = 30) -> str:
+    return str(fetch_notion_page_content(page_id, max_blocks)["text"])
+
+
+def fetch_notion_page_content(page_id: str, max_blocks: int = 30) -> Dict[str, Any]:
+    """동일한 원본 순회에서 본문 문자열과 유형·소유 문서를 보존한 근거를 반환한다."""
     if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
-        return ""
-    return _page_content_cached(page_id, max_blocks, get_notion_headers().get("Authorization", ""), int(time.monotonic() // 60))
+        return {"text": "", "segments": []}
+    content = _page_content_cached(
+        page_id, max_blocks, get_notion_headers().get("Authorization", ""), int(time.monotonic() // 60),
+    )
+    # 호출자가 근거를 보강해도 다음 요청이 사용하는 원본 캐시는 바뀌지 않는다.
+    return {"text": content["text"], "segments": [dict(segment) for segment in content["segments"]]}
 
 
 @lru_cache(maxsize=256)
-def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int) -> str:
+def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int) -> Dict[str, Any]:
     """소유한 하위 블록/DB만 따라가며 총 블록·깊이·요청 수를 제한한다.
 
     relation, 링크, synced_from으로 연결된 다른 업무 영역은 따라가지 않는다.
     하위 문서의 제목과 URL을 함께 남겨 상위 문서와 근거를 구분한다.
     """
     if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
-        return ""
+        return {"text": "", "segments": []}
     remaining = max(0, min(max_blocks, 400))
-    requests_left = 20 if max_blocks > 30 else 3
+    # 결과 본문은 여러 토글·표에 흩어질 수 있다. 블록 한도에 맞춰
+    # 요청 수를 늘리되 총 60회와 기존 25초 마감 안에서만 읽는다.
+    requests_left = min(60, max_blocks) if max_blocks > 30 else 3
     deadline = time.monotonic() + (25 if max_blocks > 30 else 4)
     seen: set[str] = set()
     texts: List[str] = []
+    segments: List[Dict[str, str]] = []
     incomplete = False
 
     def same_id(left: str, right: str) -> bool:
@@ -151,7 +163,9 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
             incomplete = True
             return {}
 
-    def walk(identifier: str, depth: int, database: bool = False, parent_id: str = "") -> None:
+    def walk(
+        identifier: str, depth: int, database: bool = False, parent_id: str = "", owner_page_id: str = "",
+    ) -> None:
         nonlocal remaining, incomplete
         key = identifier.replace("-", "")
         if key in seen:
@@ -179,7 +193,7 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
             if not data:
                 return
             rows = data.get("results") or []
-            children: List[tuple[str, int, bool, str]] = []
+            children: List[tuple[str, int, bool, str, str]] = []
             for block in rows:
                 if remaining <= 0:
                     incomplete = True
@@ -196,22 +210,26 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
                     properties = block.get("properties") or {}
                     texts.append(f"[하위 문서: {notion_title(properties)}] https://www.notion.so/{block_id.replace('-', '')}")
                     texts.append(notion_properties_to_text(properties))
-                    children.append((block_id, depth + 1, False, ""))
+                    children.append((block_id, depth + 1, False, "", block_id))
                 else:
+                    kind = str(block.get("type") or "")
                     text = notion_block_text(block)
                     if text:
                         texts.append(text)
-                    kind = block.get("type")
+                        # 하위 문서/DB의 제목 표시는 본문 블록 근거가 아니다.
+                        if kind not in {"child_page", "child_database"}:
+                            segments.append({"block_id": block_id, "type": kind, "text": text,
+                                             "page_id": owner_page_id, "owner_page_id": owner_page_id})
                     if kind == "child_database":
-                        children.append((block_id, depth + 1, True, identifier))
+                        children.append((block_id, depth + 1, True, identifier, owner_page_id))
                     elif kind == "child_page":
                         texts.append(f"[하위 문서: {(block.get(kind) or {}).get('title', '')}] https://www.notion.so/{block_id.replace('-', '')}")
-                        children.append((block_id, depth + 1, False, ""))
+                        children.append((block_id, depth + 1, False, "", block_id))
                     elif block.get("has_children"):
                         if kind == "synced_block" and (block.get(kind) or {}).get("synced_from"):
                             incomplete = True
                         else:
-                            children.append((block_id, depth + 1, False, ""))
+                            children.append((block_id, depth + 1, False, "", owner_page_id))
             for child in children:
                 walk(*child)
             if not data.get("has_more"):
@@ -223,10 +241,10 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
             cursors.add(cursor)
         incomplete = True
 
-    walk(page_id, 0)
+    walk(page_id, 0, owner_page_id=page_id)
     if incomplete:
         texts.append(NOTION_CONTENT_INCOMPLETE)
-    return "\n".join(text for text in texts if text).strip()
+    return {"text": "\n".join(text for text in texts if text).strip(), "segments": segments}
 
 
 def _notion_cache_ttl() -> int:
@@ -429,6 +447,7 @@ __all__ = [
     "fetch_notion_database_schema",
     "fetch_notion_database_title",
     "fetch_notion_page_blocks",
+    "fetch_notion_page_content",
     "fetch_notion_relation_title",
     "fetch_notion_user_name",
     "fetch_notion_users",

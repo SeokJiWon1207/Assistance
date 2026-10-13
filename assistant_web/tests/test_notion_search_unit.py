@@ -710,7 +710,7 @@ class NotionSearchExecutionTests(unittest.TestCase):
                 '노션에서 "배포 계획" 내용 알려줘',
                 include_blocks=True,
             )
-        blocks.assert_called_once_with("p1", max_blocks=30)
+        blocks.assert_called_once_with("p1", max_blocks=200)
         self.assertEqual(result["notion_pages"][0]["content"], "본문")
 
     def test_search_skips_when_not_configured(self):

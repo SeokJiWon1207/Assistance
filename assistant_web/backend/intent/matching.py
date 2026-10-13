@@ -117,7 +117,19 @@ def text_matches_issue_ids(text: str, issue_ids: List[int]) -> bool:
     return any(str(issue_id) in normalized_text for issue_id in issue_ids)
 
 
-def text_matches_people(text: str, people: Dict[str, Any], role_text: str = "") -> bool:
+def extract_reporter_names(text: str, reporter_text: Optional[str] = None) -> List[str]:
+    """Mantis 등록자와 명시된 고객 메일 발신자를 같은 요청자 경계로 읽는다."""
+    reporters = [reporter_text if reporter_text is not None else extract_chroma_field(text, "요청자")]
+    reporters.extend(match.group(1) for match in re.finditer(
+        r"(?:^|[^가-힣A-Za-z0-9_]|\\[nr])From\.\s*([가-힣A-Za-z][가-힣A-Za-z0-9_-]*)",
+        text, re.IGNORECASE,
+    ))
+    return list(dict.fromkeys(reporter for reporter in reporters if reporter))
+
+
+def text_matches_people(
+    text: str, people: Dict[str, Any], role_text: str = "", reporter_text: Optional[str] = None,
+) -> bool:
     names = people.get("names", []) if people else []
     if not names:
         return True
@@ -127,12 +139,11 @@ def text_matches_people(text: str, people: Dict[str, Any], role_text: str = "") 
     if role == "handler":
         return any(text_matches_any_alias(search_text, [name]) for name in names)
     if role == "reporter":
-        from_text = " ".join(
-            match.group(0)
-            for match in re.finditer(r"From\.\s*[가-힣A-Za-z]{2,6}", text, re.IGNORECASE)
-        )
-        reporter_context = " ".join([from_text, text])
-        return any(text_matches_any_alias(reporter_context, [name]) for name in names)
+        # Mantis 등록 계정과 원문 메일의 고객 요청자는 다를 수 있다. 요청자
+        # 필드 또는 명시한 From. 발신자만 인정하고 담당자/본문 언급은 제외한다.
+        reporters = extract_reporter_names(text, reporter_text)
+        return any(normalize_for_match(reporter) == normalize_for_match(name)
+                   for reporter in reporters if reporter for name in names)
     return any(text_matches_any_alias(text, [name]) for name in names)
 
 
@@ -199,6 +210,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         text,
         constraints.get("people", {}),
         extract_chroma_field(text, "담당자"),
+        extract_chroma_field(text, "요청자"),
     ):
         return False
     return matches_source_filters("chroma", {
@@ -206,6 +218,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         "platform": platform_source,
         "status": extract_chroma_field(text, "현재 상태"),
         "owner": extract_chroma_field(text, "담당자"),
+        "reporter": extract_reporter_names(text, extract_chroma_field(text, "요청자")),
         "issue_id": str(issue_id),
         "screen_number": screen_filter_values(extract_chroma_field(text, "화면번호"), extract_title_from_chroma_text(text)),
         "created_at": extract_chroma_date(text),
@@ -220,6 +233,7 @@ __all__ = [
     "chroma_text_matches_date_fields",
     "chroma_text_matches_screen_numbers",
     "field_matches_screen_number",
+    "extract_reporter_names",
     "text_matches_constraints",
     "text_matches_issue_ids",
     "text_matches_people",

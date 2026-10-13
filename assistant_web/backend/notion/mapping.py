@@ -193,12 +193,14 @@ def notion_owner(properties: Dict[str, Dict[str, Any]]) -> str:
 
 
 def resolve_notion_page_owner(page: Dict[str, Any]) -> Dict[str, Any]:
-    if page.get("owner") and page.get("owner") != "담당자 미지정":
-        return page
     names = [
+        name.strip() for name in str(page.get("owner") or "").split(",")
+        if name.strip() and name.strip() not in {"담당자 미지정", "미지정"}
+    ]
+    names.extend(
         fetch_notion_relation_title(str(page_id))
         for page_id in page.get("owner_relation_ids", [])
-    ]
+    )
     hints = page.get("owner_user_name_hints") or {}
     for user_id in page.get("owner_user_ids", []):
         resolved_name = str(hints.get(user_id) or fetch_notion_user_name(str(user_id)) or "").strip()
@@ -321,8 +323,11 @@ def notion_block_text(block: Dict[str, Any]) -> str:
         "toggle",
         "quote",
         "callout",
+        "code",
     }:
         return notion_rich_text_to_plain(value.get("rich_text", []))
+    if block_type == "table_row":
+        return " | ".join(notion_rich_text_to_plain(cell) for cell in value.get("cells", []))
     if block_type == "child_page":
         return value.get("title", "")
     return ""

@@ -25,6 +25,7 @@ from backend.evaluation.verification import (
     generate_basic_grounded_baseline,
 )
 from backend.schemas import ChatRequest
+from backend.notion.formatting import append_notion_completeness_notice
 
 
 Dependency = TypeVar("Dependency", bound=Callable[..., Any])
@@ -123,6 +124,10 @@ def finalize_chat_response(
             if comparing_models
             else generate_baseline(request, question, retrieval_result or {})
         )
+        if baseline.get("status") == "ok":
+            baseline = {**baseline, "content": append_notion_completeness_notice(
+                str(baseline.get("content") or ""), retrieval_result,
+            )}
         variant_a_evaluation_input = {
             "status": "ok",
             "content": response.get("content", ""),

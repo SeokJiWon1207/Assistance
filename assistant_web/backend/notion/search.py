@@ -1,6 +1,8 @@
 """Notion 제약 추출, 검색, 필터링과 랭킹을 담당한다."""
 
 import os
+
+from backend.notion.body_index import segment_belongs_to_page
 import json
 import re
 import time
@@ -16,7 +18,6 @@ from fastapi import HTTPException
 
 from backend.common import (
     LOOKUP_REQUEST_PATTERN,
-    extract_quoted_value,
     is_valid_person_name,
     normalize_for_match,
     normalize_search_token,
@@ -32,6 +33,7 @@ from backend.config import (
     notion_unavailable_reason,
 )
 from backend.intent.constants import NOTION_QUERY_STOPWORDS
+from backend.execution import CURRENT_BUDGET
 from backend.ordered_prefetch import iter_in_order
 from backend.intent.entities import load_known_people
 from backend.notion.client import (
@@ -51,7 +53,9 @@ from backend.notion.constants import (
 )
 from backend.notion.mapping import normalize_notion_page, resolve_notion_page_owner
 from backend.notion.read_scope import resolve_notion_read_scope
+from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_structural_query, split_notion_body_query
 from backend.notion.query_cache import cached_title_query
+from backend.notion.body_index_search import find_indexed_body_candidates
 from backend.notion.database_roles import select_notion_database_ids
 from backend.notion.property_roles import (
     CUSTOMER_NAMES,
@@ -144,7 +148,93 @@ def correct_notion_status_typo(text: str) -> Tuple[str, Optional[Tuple[str, str]
     return text, None
 
 
+_NOTION_FIELD_QUESTIONS = {
+    "location": re.compile(
+        r"(?<![가-힣])어디(?:에서|서)?(?:해|하[가-힣]*|야|예요|인가요|인지|죠|요)?(?=\s|$|[.!?])"
+        r"|(?:장소|위치)(?:는|은|가|이|을|를)?\s*(?:알려[가-힣]*|확인(?:해줘|해주세요)|어디[가-힣]*)(?=\s|$|[.!?])"
+    ),
+    "schedule": re.compile(
+        r"(?<![가-힣])언제(?:해|하[가-힣]*|야|예요|인가요|인지|죠|요)?(?=\s|$|[.!?])"
+        r"|(?:일정|일시|날짜|시간)(?:는|은|가|이|을|를)?\s*(?:알려[가-힣]*|확인(?:해줘|해주세요)|언제[가-힣]*)(?=\s|$|[.!?])"
+    ),
+}
+_NOTION_REQUESTED_FIELD_TERMS = {
+    "location": {"장소", "위치", "어디", "어디서"},
+    "schedule": {"일정", "일시", "날짜", "시간", "언제"},
+}
+
+
+def notion_requested_information_fields(text: str) -> List[str]:
+    return [kind for kind, pattern in _NOTION_FIELD_QUESTIONS.items() if pattern.search(remove_quoted_value(text))]
+
+
+def notion_subject_text(text: str) -> str:
+    """본문에서 읽을 정보의 질문 표현을 검색 대상 명사와 분리한다."""
+    for pattern in _NOTION_FIELD_QUESTIONS.values():
+        text = pattern.sub(" ", text)
+    return re.sub(r"(회식|송년회|신년회|팀빌딩)(?:일정|일시|장소)", r"\1", text)
+
+
+def ground_notion_terms(text: str, terms: List[str], constraints: Dict[str, Any]) -> List[str]:
+    """플래너가 빠뜨린 분기를 복원하고 본문 질문을 제목의 AND 조건에서 뺀다."""
+    if constraints.get("exact_title"):
+        return terms
+    requested_fields = {
+        normalize_for_match(term)
+        for kind, pattern in _NOTION_FIELD_QUESTIONS.items()
+        if pattern.search(text)
+        for term in _NOTION_REQUESTED_FIELD_TERMS[kind]
+    }
+    grounded = [
+        re.sub(r"^(회식|송년회|신년회|팀빌딩)(?:일정|일시|장소)$", r"\1", term)
+        for term in terms if normalize_for_match(term) not in requested_fields
+    ]
+    excluded_quarters = set()
+    for match in re.finditer(r"(?<!\d)[1-4]\s*분기", text):
+        quarter = re.sub(r"\s+", "", match.group())
+        tail = text[match.end():]
+        registration_period = re.match(
+            r"(?:에|동안|중에|중)?\s*(?:등록|접수|생성|작성)(?:된|한|됐|되었)", tail,
+        )
+        if registration_period or re.match(r"(?:는|은|를|을)?\s*(?:말고|제외|빼고|아닌)", tail):
+            excluded_quarters.add(quarter)
+        else:
+            grounded.append(quarter)
+    grounded = [term for term in grounded if normalize_for_match(term) not in excluded_quarters]
+    return remove_structured_date_terms(list(dict.fromkeys(grounded))[:8], constraints)
+
+
+def notion_keyword_subject_text(text: str, constraints: Dict[str, Any]) -> Tuple[str, set[str]]:
+    """부정 키워드 조건으로 소비한 값과 요청 표현을 자유 검색 대상에서 분리한다."""
+    consumed: set[str] = set()
+    if constraints.get("exact_title"):
+        return text, consumed
+    for clause in constraints.get("common_filter_clauses", []):
+        if clause.get("field") != "keyword" or clause.get("operator") not in {"not_contains", "not_equals", "not_in"}:
+            continue
+        for value in values_for_clause(clause.get("value")):
+            pattern = re.compile(
+                rf"(?<![가-힣A-Za-z0-9_]){re.escape(value)}(?:은|는|이|가|을|를)?\s*"
+                r"(?:제외(?:한|된|하고|해서|해|해줘|해주세요)?|빼고|뺀|빼줘|빼주세요|말고|아닌)"
+                r"(?=\s|$|[,.;!?])", re.IGNORECASE,
+            )
+
+            def remove_request(match: re.Match[str]) -> str:
+                consumed.update(normalize_for_match(normalize_search_token(token)) for token in match.group().split())
+                return " "
+
+            text = pattern.sub(remove_request, text)
+    return text, consumed
+
+
 def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    text, body_clauses = split_notion_body_query(text)
+    if body_clauses and (constraints or {}).get("exact_title"):
+        # 정확한 제목은 서버 필터가 처리한다. 제목 지정 문구까지 본문 AND 검색어로 넣지 않는다.
+        return []
+    if not (constraints or {}).get("exact_title"):
+        text = notion_subject_text(text)
+    text, _consumed = notion_keyword_subject_text(text, constraints or {})
     owner_values = [
         value
         for clause in (constraints or {}).get("common_filter_clauses", [])
@@ -153,6 +243,13 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
     ]
     if (constraints or {}).get("owner") or owner_values:
         text = _PERSONAL_OWNER_QUERY.sub(" ", text)
+    if (constraints or {}).get("unassigned_owner"):
+        # 담당자 유무는 속성 필터가 처리한다. '없는'을 별도 본문 검색어로 남기지 않는다.
+        text = re.sub(
+            r"(?<![가-힣A-Za-z0-9_])담당자?\s*(?:가|는|를|도)?\s*"
+            r"(?:없는|없이|없음|미지정|미배정|안\s*정해진|지정\s*안\s*된|할당\s*안\s*된|배정\s*안\s*된)",
+            " ", text,
+        )
     text = _EXISTENCE_LIST_QUERY.sub(" ", text)
     for pattern in GROUP_BY_PATTERNS.values():
         text = pattern.sub(" ", text)
@@ -164,11 +261,14 @@ def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) 
     text = LOOKUP_REQUEST_PATTERN.sub(" ", text)
     cleaned = re.sub(r"[#,:;!?()\[\]{}\"']", " ", text)
     cleaned = re.sub(r"\d+\s*(개|건)\s*만?", " ", cleaned)
-    cleaned = re.sub(r"(?<![가-힣])(?:문서|항목|페이지|자료)(?:들)?(?:만|을|를|은|는)?(?=\s|$)", " ", cleaned)
+    cleaned = re.sub(r"(?<![가-힣])(?:문서|항목|페이지|자료)(?:들)?(?:에서|에는|만|을|를|은|는)?(?=\s|$)", " ", cleaned)
     notion_stopwords = {
         normalize_for_match(keyword)
         for keyword in {*STOPWORDS, *NOTION_QUERY_STOPWORDS, "관한", "관해서", "관하여"}
     }
+    if any(clause.get("operator") == "in" and len(values_for_clause(clause.get("value"))) > 1
+           for clause in (constraints or {}).get("common_filter_clauses", [])):
+        notion_stopwords.update({"또는", "혹은"})
     terms: List[str] = []
     for token in cleaned.split():
         normalized = token if token in NOTION_IN_ENDING_NOUNS else normalize_search_token(token)
@@ -281,7 +381,7 @@ def known_notion_owner(text: str) -> str:
     return names[match.group("owner").casefold()][1] if match else ""
 
 
-def inherit_notion_context(recent_texts: List[str]) -> str:
+def inherit_notion_context(recent_texts: List[str], *, prior_source: str = "") -> str:
     """후속 질문이 잃어버린 Notion 조건(DB·상태)을 이전 턴에서 물려받는다.
 
     "노션에서 결재요청 상태인 항목 보여줘" 다음의 "담당자별로 묶어줘"는
@@ -290,7 +390,8 @@ def inherit_notion_context(recent_texts: List[str]) -> str:
     """
     if len(recent_texts) < 2:
         return ""
-    from backend.intent.context import is_follow_up_question
+    from backend.intent.context import is_affirmative_read_follow_up, is_follow_up_question
+    from backend.intent.source_router import has_notion_retrieval_signal
 
     if re.search(r"mantis|맨티스|노션|notion", recent_texts[0], re.IGNORECASE) and not re.search(
         r"그\s*(?:중|항목|문서)|방금|그대로|상태만|담당자만", recent_texts[0],
@@ -302,7 +403,18 @@ def inherit_notion_context(recent_texts: List[str]) -> str:
         return ""
     latest = extract_notion_constraints(recent_texts[0])
     for prior in recent_texts[1:]:
+        independent = not is_follow_up_question(prior)
+        if is_affirmative_read_follow_up(recent_texts[0]) and not independent and not is_affirmative_read_follow_up(prior):
+            # 중간 턴의 변경 조건은 확정된 감사 로그 또는 문맥 재작성으로 복원한다.
+            return ""
+        if is_affirmative_read_follow_up(recent_texts[0]) and independent and (
+            prior_source == "notion" or has_notion_retrieval_signal(prior)
+        ):
+            # 이전 사용자 질문을 다시 조회한다. 모델의 이전 답변은 근거로 쓰지 않는다.
+            return f"노션 {prior}"
         if not re.search(r"노션|notion|이슈리스트|주요이슈", prior, re.IGNORECASE):
+            if independent:
+                break
             continue
         prior_constraints = extract_notion_constraints(prior)
         parts = []
@@ -325,6 +437,8 @@ def inherit_notion_context(recent_texts: List[str]) -> str:
         if parts:
             # 소스가 Notion이라는 사실도 함께 물려줘야 Mantis로 새지 않는다.
             return " ".join([*parts, "노션"])
+        if independent:
+            break
     return ""
 
 
@@ -372,8 +486,8 @@ def remove_notion_database_label_terms(terms: List[str], database_label: str) ->
 
 
 def extract_notion_constraints(text: str) -> Dict[str, Any]:
-    exact_title = extract_quoted_value(text) or ""
-    constraint_text = remove_quoted_value(text) if exact_title else text
+    exact_title = notion_literal_title(text)
+    constraint_text = notion_structural_query(text)
     # 인용된 제목은 사용자가 지정한 정확한 문자열이므로 건드리지 않는다.
     # DB 옵션은 고유한 값이다. '결제완료'가 실제 옵션인 DB도 있으므로
     # 스키마를 보지 않은 상태에서 '결재완료'로 고쳐 쓰지 않는다.
@@ -507,8 +621,16 @@ def merge_common_notion_constraints(
     if notion_constraints.get("native_status_constraint"):
         # Notion 원문 상태를 Mantis의 open/closed로 재해석한 공통 조건과
         # 교집합하면 실제 DB 옵션과 모순되어 정상 문서도 모두 사라진다.
+        native_status = normalize_for_match(str(merged.get("status") or ""))
         merged["common_filter_clauses"] = [
-            clause for clause in merged["common_filter_clauses"] if clause["field"] != "status"
+            clause for clause in merged["common_filter_clauses"]
+            if clause["field"] != "status" or (
+                clause["operator"] == "in"
+                and len(values_for_clause(clause.get("value"))) > 1
+                and native_status in {
+                    normalize_for_match(value) for value in values_for_clause(clause.get("value"))
+                }
+            )
         ]
         merged["excluded_statuses"] = list(notion_constraints.get("excluded_statuses") or [])
     for clause in merged["common_filter_clauses"]:
@@ -532,10 +654,22 @@ def merge_common_notion_constraints(
         if clause["field"] == "status":
             if clause["operator"] in {"not_equals", "not_in"}:
                 merged["excluded_statuses"].extend(values)
+            elif clause["operator"] == "in" and len(values) > 1:
+                # 원문 파서가 잡은 첫 값이 OR 후보에 포함돼도 단일 AND 조건으로 남기지 않는다.
+                if normalize_for_match(str(merged.get("status") or "")) in {
+                    normalize_for_match(value) for value in values
+                }:
+                    merged["status"] = ""
             elif clause["operator"] in {"equals", "in"} and values and not merged.get("status"):
                 merged["status"] = values[0]
-        elif clause["field"] == "owner" and clause["operator"] in {"equals", "in"} and values and not merged.get("owner"):
-            merged["owner"] = values[0]
+        elif clause["field"] == "owner" and clause["operator"] in {"equals", "in"}:
+            if len(values) > 1:
+                if normalize_for_match(str(merged.get("owner") or "")) in {
+                    normalize_for_match(value) for value in values
+                }:
+                    merged["owner"] = ""
+            elif values and not merged.get("owner"):
+                merged["owner"] = values[0]
         elif clause["field"] == "database" and clause["operator"] in {"equals", "contains"} and values and not merged.get("database_label"):
             merged["database_label"] = values[0]
         elif clause["field"] == "title" and clause["operator"] == "equals" and values and not merged.get("exact_title"):
@@ -569,6 +703,8 @@ def notion_page_matches_common_filters(page: Dict[str, Any], clauses: List[Dict[
                 return False
             continue
         candidate_raw = str(field_values[clause["field"]] or "")
+        if clause["field"] == "owner" and candidate_raw.strip() in {"담당자 미지정", "미지정"}:
+            candidate_raw = ""
         candidate = normalize_for_match(candidate_raw)
         values = [normalize_for_match(value) for value in values_for_clause(clause.get("value"))]
         operator = clause["operator"]
@@ -928,7 +1064,8 @@ def notion_database_owner_filter(
         # 폴백한다. 실제 속성이 있는데 관련자 필드가 없는 DB만 건너뛴다.
         return bool(properties), None
     people_fields = [name for name in fields if properties[name].get("type") == "people"]
-    if not people_fields:
+    if not people_fields or len(people_fields) != len(fields):
+        # 다른 담당자 속성에만 배정된 항목을 people 필터가 먼저 제외하지 않게 한다.
         return False, None
     normalized_owner = normalize_for_match(owner)
     user_id = _NOTION_USER_ID_HINTS.get(normalized_owner, "") or next(
@@ -1157,6 +1294,77 @@ def notion_search_max_workers() -> int:
         return 4
 
 
+def _indexed_body_matches(
+    indexed: Dict[str, Any], constraints: Dict[str, Any], pre_body_constraints: Dict[str, Any],
+    body_clauses: List[Dict[str, Any]], keyword_clauses: List[Dict[str, Any]],
+    terms: List[str], read_scope: Dict[str, str],
+) -> List[Dict[str, Any]]:
+    """현재 원문을 읽은 색인 후보에도 기존 속성·유형·소유 문서 조건을 적용한다."""
+    matched_pages = []
+    labels: Dict[str, str] = {}
+    remaining_constraints = {
+        **constraints,
+        "common_filter_clauses": [
+            clause for clause in constraints["common_filter_clauses"]
+            if clause not in normalize_filter_clauses(body_clauses)
+        ],
+    }
+    for candidate in indexed["candidates"]:
+        database_id = str(candidate["database_id"])
+        try:
+            if database_id not in labels:
+                label = fetch_notion_database_title(database_id)
+                root_id = read_scope.get(database_id)
+                if root_id and root_id != database_id:
+                    label = f"{fetch_notion_database_title(root_id)} / {label}"
+                labels[database_id] = label
+            page = normalize_notion_page(candidate["raw_page"], include_blocks=False,
+                                         database_id=database_id, database_label=labels[database_id])
+            if not notion_page_matches_and_enrich(page, pre_body_constraints):
+                continue
+        except (HTTPException, requests.RequestException):
+            indexed["incomplete_reasons"].append("body_index_metadata_error")
+            continue
+        page_id = str(page.get("id") or "").replace("-", "")
+        segments = [block for block in candidate["segments"]
+                    if segment_belongs_to_page(block, page_id)]
+        # 명시적 본문 조건에는 속성/자식 문서의 텍스트를 섞지 않는다.
+        body_text = "\n".join(str(block["text"]) for block in segments)
+        page["content"] = "\n\n".join(part for part in (page.get("properties_text", ""), body_text) if part)
+        if not candidate.get("complete"):
+            page["content_incomplete"] = True
+            if any(clause["operator"] in {"not_contains", "not_equals", "not_in", "not_exists"}
+                   for clause in keyword_clauses):
+                continue
+        search_text = f"{page.get('search_text', '')}\n{body_text}"
+        if not all(normalize_for_match(term) in normalize_for_match(search_text) for term in terms):
+            continue
+        evidence = []
+        for clause in body_clauses:
+            matching = [block for block in segments
+                        if (not clause["block_type"] or block["type"] == clause["block_type"])
+                        and normalize_for_match(str(clause["value"])) in normalize_for_match(str(block["text"]))]
+            if bool(matching) != (clause["operator"] == "contains"):
+                break
+            evidence.extend(matching)
+        else:
+            if not notion_page_matches_constraints(page, remaining_constraints):
+                continue
+            if not body_clauses:
+                evidence = [block for block in segments if any(
+                    normalize_for_match(term) in normalize_for_match(str(block["text"])) for term in terms
+                )]
+                page["index_title_match"] = bool(terms) and all(
+                    normalize_for_match(term) in normalize_for_match(page.get("title", "")) for term in terms
+                )
+            page["matched_body_blocks"] = list({block["block_id"]: block for block in evidence}.values())[:10]
+            page["match_method"] = "notion_body_index"
+            page["matched_terms"] = terms
+            page["match_score"] = notion_page_match_score(page, terms) - 5
+            matched_pages.append(page)
+    return deduplicate_notion_pages_by_id(matched_pages)
+
+
 def execute_notion_search(
     query_text: str,
     limit: int = 5,
@@ -1186,9 +1394,17 @@ def execute_notion_search(
         extract_notion_constraints(query_text),
         constraints,
     )
-    temporal_field = notion_temporal_field(query_text)
+    _body_subject, body_clauses = split_notion_body_query(query_text)
+    if body_clauses:
+        # 원문으로 확인된 본문 조건은 플래너가 만든 제목/상태 조건보다 우선한다.
+        # 리터럴을 제거한 문장에서 다른 명시적 조건은 그대로 추출한다.
+        grounded_constraints = grounded_notion_body_constraints(query_text, constraints or {})
+        notion_constraints = merge_common_notion_constraints(extract_notion_constraints(query_text), grounded_constraints)
+    notion_constraints["body_filter_clauses"] = body_clauses
+    structural_query = notion_structural_query(query_text)
+    temporal_field = notion_temporal_field(structural_query)
     if temporal_field != "created_at":
-        date_text = remove_quoted_value(query_text)
+        date_text = structural_query
         date_range = extract_created_at_range(date_text) or extract_yearless_temporal_month_range(
             date_text, temporal_field,
         )
@@ -1199,8 +1415,29 @@ def execute_notion_search(
             clause = {"field": temporal_field, "operator": "between", "value": [date_range["from"], date_range["to"]]}
             if clause not in notion_constraints["common_filter_clauses"]:
                 notion_constraints["common_filter_clauses"].append(clause)
+    keyword_clauses = [
+        clause for clause in notion_constraints["common_filter_clauses"]
+        if clause["field"] == "keyword" and clause_supported("notion", clause)
+    ]
+    pre_body_constraints = {
+        **notion_constraints,
+        "common_filter_clauses": [
+            clause for clause in notion_constraints["common_filter_clauses"]
+            if clause["field"] != "keyword"
+        ],
+    }
     exact_title = notion_constraints.get("exact_title", "")
-    terms = list(dict.fromkeys(planned_terms or build_notion_terms(query_text, notion_constraints)))[:8]
+    subject_text, consumed_keyword_terms = notion_keyword_subject_text(query_text, notion_constraints)
+    terms = list(dict.fromkeys(
+        build_notion_terms(query_text, notion_constraints) if body_clauses
+        else planned_terms or build_notion_terms(subject_text, notion_constraints)
+    ))[:8]
+    terms = [
+        term for term in terms
+        if normalize_for_match(normalize_search_token(term)) not in consumed_keyword_terms
+        or normalize_for_match(normalize_search_token(term)) in normalize_for_match(subject_text)
+    ]
+    terms = ground_notion_terms(query_text, terms, notion_constraints)
     if not exact_title:
         terms = remove_structured_date_terms(terms, notion_constraints)
     database_target = normalize_for_match(notion_constraints.get("database_label", ""))
@@ -1307,6 +1544,8 @@ def execute_notion_search(
     body_scan_candidate_groups: List[Tuple[str, List[Dict[str, Any]]]] = []
     body_scan_candidates_truncated = False
     body_scan_attempted_count = 0
+    body_index_meta: Dict[str, Any] = {}
+    body_index_used = False
 
     indexed_exact_database_ids = indexed_exact_title_database_ids(exact_title, database_ids) if exact_title else []
     indexed_term_database_ids = (
@@ -1326,10 +1565,36 @@ def execute_notion_search(
 
     # 제목 검색은 모든 DB에서 먼저 끝낸다. 인덱스는 조회 순서에만
     # 사용하므로 인덱스 작성 뒤 다른 DB에 생긴 문서도 놓치지 않는다.
-    title_first = bool(title_terms and not exact_title)
+    # 본문 키워드 조건은 제목이나 속성 일치만으로 확정할 수 없다.
+    title_first = bool(title_terms and not exact_title and not keyword_clauses)
     title_search_complete = True
     title_search_only = False
     try:
+        positive_body_terms = [str(clause["value"]) for clause in body_clauses if clause["operator"] == "contains"]
+        index_terms = positive_body_terms or (terms if not body_clauses and not exact_title else [])
+        if index_terms and os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
+            indexed = find_indexed_body_candidates(database_ids, list(dict.fromkeys([*index_terms, *terms])),
+                                                   body_clauses=body_clauses)
+            if indexed is not None:
+                body_index_meta = {**indexed["coverage"], "candidate_count": indexed["candidate_count"],
+                                   "validation_complete": indexed["validation_complete"]}
+                pages = _indexed_body_matches(indexed, notion_constraints, pre_body_constraints,
+                                              body_clauses, keyword_clauses, terms, read_scope)
+                body_index_used = bool(pages)
+                # 현재 원문으로 확인된 결과라도 후보 발견은 저장본 시점 기준이다.
+                # 신규/변경 페이지의 미색인 키워드를 실시간 전체 건수로 확정하지 않는다.
+                if body_index_used or indexed["incomplete_reasons"]:
+                    search_complete = False
+                    candidate_count_complete = False
+                    incomplete_reasons.update(indexed["incomplete_reasons"])
+                if body_index_used:
+                    incomplete_reasons.add("body_index_snapshot")
+                    if not indexed["coverage"].get("complete"):
+                        incomplete_reasons.add("body_index_incomplete")
+                # 색인 결과가 없으면 아래 실시간 열거의 완전성을 독립적으로
+                # 판단한다. 완전히 읽은 음성 대조군까지 미확인으로 낮추지 않는다.
+                seen_page_ids.update(str(page["id"]) for page in pages)
+
         def scan_database(
             database_id: str,
             title_pass: bool,
@@ -1566,7 +1831,7 @@ def execute_notion_search(
                         page_id = page.get("id", "")
                         if page_id in seen_before:
                             continue
-                        if not notion_page_matches_and_enrich(page, notion_constraints):
+                        if not notion_page_matches_and_enrich(page, pre_body_constraints):
                             continue
                         page["match_score"] = (
                             notion_page_match_score(page, terms)
@@ -1575,7 +1840,7 @@ def execute_notion_search(
                         )
                         page["matched_terms"] = terms
                         page["match_method"] = "notion_exact_title_filter"
-                        scan.events.append(("match", page))
+                        scan.events.append(("candidate" if keyword_clauses else "match", page))
                     if not exact_data.get("has_more"):
                         break
                     next_cursor = exact_data.get("next_cursor")
@@ -1732,7 +1997,11 @@ def execute_notion_search(
                     page_id = page.get("id", "")
                     if page_id in seen_before:
                         continue
-                    if not notion_page_matches_and_enrich(page, notion_constraints):
+                    if not notion_page_matches_and_enrich(page, pre_body_constraints):
+                        continue
+                    if keyword_clauses:
+                        # 포함 조건의 본문 후보와 제외 조건의 숨은 일치를 모두 확인한다.
+                        scan.events.append(("candidate", page))
                         continue
                     match_score = notion_page_match_score(page, terms)
                     if notion_page_matches_terms(page, terms):
@@ -1746,6 +2015,14 @@ def execute_notion_search(
                         scan.events.append(("match", page))
                     elif terms:
                         scan.events.append(("candidate", page))
+                if (body_index_used and keyword_clauses and data.get("has_more")
+                        and sum(kind == "candidate" for kind, _page in scan.events) >= NOTION_BODY_SCAN_MAX_PER_REQUEST):
+                    # 병합 단계도 DB당 앞 30개 본문 후보만 사용한다. 같은 후보
+                    # 창을 확보한 뒤 더 읽는 속성 페이지는 재현율을 늘리지 못한다.
+                    scan.search_incomplete = True
+                    scan.candidate_count_incomplete = True
+                    scan.incomplete_reasons.add("body_candidate_window")
+                    break
                 if server_filtered_list_window or (
                     created_list_window and created_filter_applied and created_window_safe
                 ):
@@ -1806,7 +2083,7 @@ def execute_notion_search(
                     body_scan_candidates.append(page)
                 else:
                     body_scan_candidates_truncated = True
-            if terms and found_count < limit and body_scan_candidates:
+            if (terms or keyword_clauses) and (require_complete_scan or found_count < limit) and body_scan_candidates:
                 body_scan_candidate_groups.append((scan.database_id, body_scan_candidates))
             if scan.meta is not None:
                 # found_count는 중복 제거 뒤의 값이라 병합 단계에서 채운다.
@@ -1815,7 +2092,7 @@ def execute_notion_search(
 
         def title_results_suffice() -> bool:
             # 제목 검색이 누락 없이 끝났고 결과가 있으면 전체 검색을 이어가지 않는다.
-            return bool(title_search_complete and pages and not require_complete_scan)
+            return bool(title_search_complete and pages and not require_complete_scan and not body_index_used)
 
         # DB 조회는 단계 안에서만 미리 실행하고, 병합과 종료 판단은 원래 DB 순서를 따른다.
         workers = notion_search_max_workers()
@@ -1842,6 +2119,10 @@ def execute_notion_search(
         # DB 순서가 결과를 좌우하지 않도록 후보를 라운드로빈으로 읽되,
         # 실제 본문 요청은 DB 수와 관계없이 요청 전체 30회까지만 허용한다.
         body_match_counts: Dict[str, int] = {}
+        for indexed_page in pages:
+            if indexed_page.get("match_method") == "notion_body_index":
+                indexed_db = str(indexed_page.get("database_id") or "")
+                body_match_counts[indexed_db] = body_match_counts.get(indexed_db, 0) + 1
         max_candidates = max(
             (len(candidates) for _, candidates in body_scan_candidate_groups),
             default=0,
@@ -1850,11 +2131,22 @@ def execute_notion_search(
             len(candidates) for _, candidates in body_scan_candidate_groups
         )
         body_scan_budget_exhausted = False
+        # 색인 hit가 있어도 새 미색인 문서를 찾아 합친다. 검증된 오래된 결과가
+        # limit를 채웠다는 이유로 최근 원본 후보 확인을 생략하지 않는다.
+        require_body_scan = require_complete_scan or body_index_used
+        body_scan_deadline = time.monotonic() + 30 if body_index_used else float("inf")
+        active_budget = CURRENT_BUDGET.get()
+        if body_index_used and active_budget is not None:
+            body_scan_deadline = min(body_scan_deadline, active_budget.deadline - 5)
         for candidate_index in range(max_candidates):
             for database_id, candidates in body_scan_candidate_groups:
                 if candidate_index >= len(candidates):
                     continue
-                if not require_complete_scan and len(pages) >= limit:
+                if not require_body_scan and len(pages) >= limit:
+                    break
+                if time.monotonic() >= body_scan_deadline:
+                    body_scan_budget_exhausted = True
+                    incomplete_reasons.add("body_index_live_scan_limit")
                     break
                 if body_scan_attempted_count >= NOTION_BODY_SCAN_MAX_PER_REQUEST:
                     body_scan_budget_exhausted = True
@@ -1864,11 +2156,34 @@ def execute_notion_search(
                 if page_id in seen_page_ids:
                     continue
                 body_scan_attempted_count += 1
-                block_text = fetch_notion_page_blocks(page_id, max_blocks=20)
+                # 정확한 제목으로 한정된 후보는 결과 본문과 같은 범위까지
+                # 확인해야 앞의 20개 블록 뒤에 있는 표·코드도 찾을 수 있다.
+                if body_clauses:
+                    from backend.notion.client import fetch_notion_page_content
+
+                    body = fetch_notion_page_content(page_id, max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20)
+                    block_text = str(body["text"])
+                    own_segments = [
+                        segment for segment in body["segments"]
+                        if str(segment.get("owner_page_id") or "").replace("-", "") == str(page_id).replace("-", "")
+                    ]
+                else:
+                    block_text = fetch_notion_page_blocks(
+                        page_id,
+                        max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20,
+                    )
+                    own_segments = []
+                if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
+                    search_complete = False
+                    candidate_count_complete = False
+                    incomplete_reasons.add("body_disabled")
+                    page["content_incomplete"] = True
                 if NOTION_CONTENT_INCOMPLETE in block_text:
                     search_complete = False
+                    candidate_count_complete = False
                     incomplete_reasons.add("body_limit")
-                if not block_text:
+                    page["content_incomplete"] = True
+                if not block_text and not keyword_clauses:
                     continue
                 body_search_text = (
                     f"{page.get('search_text', '')}\n"
@@ -1879,10 +2194,42 @@ def execute_notion_search(
                     for term in terms
                 ):
                     continue
-                seen_page_ids.add(page_id)
                 page["content"] = "\n\n".join(
                     part for part in (page.get("properties_text", ""), block_text) if part
                 ).strip()
+                if keyword_clauses:
+                    # 읽지 못한 본문 뒤에 제외 키워드가 있을 수 있으므로 부정 조건을 확정하지 않는다.
+                    if page.get("content_incomplete") and any(
+                        clause["operator"] in {"not_contains", "not_equals", "not_in", "not_exists"}
+                        for clause in keyword_clauses
+                    ):
+                        continue
+                    body_matched = True
+                    matched_blocks = []
+                    for clause in body_clauses:
+                        candidates = [segment for segment in own_segments
+                                      if not clause["block_type"] or segment["type"] == clause["block_type"]]
+                        matching = [segment for segment in candidates
+                                    if normalize_for_match(str(clause["value"])) in normalize_for_match(str(segment["text"]))]
+                        if bool(matching) != (clause["operator"] == "contains"):
+                            body_matched = False
+                            break
+                        if matching:
+                            matched_blocks.extend(matching)
+                    if not body_matched:
+                        continue
+                    remaining_constraints = {
+                        **notion_constraints,
+                        "common_filter_clauses": [
+                            clause for clause in notion_constraints["common_filter_clauses"]
+                            if clause not in normalize_filter_clauses(body_clauses)
+                        ],
+                    }
+                    if not notion_page_matches_constraints(page, remaining_constraints):
+                        continue
+                    if matched_blocks:
+                        page["matched_body_blocks"] = list({block["block_id"]: block for block in matched_blocks}.values())[:10]
+                seen_page_ids.add(page_id)
                 page["match_score"] = notion_page_match_score(page, terms) - 5
                 page["matched_terms"] = [
                     term
@@ -1893,11 +2240,11 @@ def execute_notion_search(
                 pages.append(page)
                 body_match_counts[database_id] = body_match_counts.get(database_id, 0) + 1
             if body_scan_budget_exhausted or (
-                not require_complete_scan and len(pages) >= limit
+                not require_body_scan and len(pages) >= limit
             ):
                 break
         body_scan_stopped_at_limit = bool(
-            not require_complete_scan
+            not require_body_scan
             and len(pages) >= limit
             and body_scan_attempted_count < body_scan_candidate_count
         )
@@ -1905,7 +2252,7 @@ def execute_notion_search(
             body_scan_budget_exhausted
             or (
                 body_scan_candidates_truncated
-                and (require_complete_scan or len(pages) < limit)
+                and (require_body_scan or len(pages) < limit)
             )
         )
         if body_scan_result_incomplete:
@@ -1934,7 +2281,7 @@ def execute_notion_search(
 
     pages.sort(
         key=lambda page: (
-            bool(terms) and page.get("match_method") == "notion_title_filter",
+            bool(terms) and (page.get("match_method") == "notion_title_filter" or page.get("index_title_match", False)),
             notion_page_sort_key(page, created_at_filtered=created_at_filtered),
         ),
         reverse=True,
@@ -1946,8 +2293,19 @@ def execute_notion_search(
     ).lower() not in {"0", "false", "no"}
     if content_requested:
         for page in limited_pages:
-            # notion_body_scan 단계에서 이미 본문을 조회한 페이지는 재조회하지 않는다.
-            if page.get("match_method") == "notion_body_scan" and page.get("content"):
+            if page.get("content_incomplete"):
+                content_incomplete_page_ids.add(str(page.get("id") or ""))
+            if page.get("match_method") == "notion_body_index":
+                # 색인 후보는 이미 일반 결과(200블록)보다 큰 범위를 실시간
+                # 검증했다. 더 작은 한도로 다시 읽어 뒤쪽의 근거를 덮어쓰지 않는다.
+                continue
+            # 짧은 후보 스캔이 온전한 본문을 읽었으면 재사용하고, 일부만
+            # 읽은 일치 문서는 모델 답변에 필요한 결과 본문 한도로 보강한다.
+            if (
+                page.get("match_method") == "notion_body_scan"
+                and page.get("content")
+                and not page.get("content_incomplete")
+            ):
                 continue
             block_text = fetch_notion_page_blocks(
                 page.get("id", ""),
@@ -1956,6 +2314,9 @@ def execute_notion_search(
             if NOTION_CONTENT_INCOMPLETE in block_text:
                 page["content_incomplete"] = True
                 content_incomplete_page_ids.add(str(page.get("id") or ""))
+            elif block_text:
+                page.pop("content_incomplete", None)
+                content_incomplete_page_ids.discard(str(page.get("id") or ""))
             if block_text:
                 page["content"] = "\n\n".join(
                     part for part in (page.get("properties_text", ""), block_text) if part
@@ -1996,6 +2357,8 @@ def execute_notion_search(
             "scan_limit_per_database": max(database_page_limits or [max_pages]) * page_size,
             "body_scan_attempted_count": body_scan_attempted_count,
             "body_scan_limit": NOTION_BODY_SCAN_MAX_PER_REQUEST,
+            "body_index": body_index_meta,
+            "body_index_used": body_index_used,
             "terms": terms[:6],
             "constraints": notion_constraints,
             "database_ids": database_ids,

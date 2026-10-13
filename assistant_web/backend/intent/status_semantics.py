@@ -42,9 +42,12 @@ def is_structured_status_neutral_query(question: str, constraints: Dict[str, Any
     tokens = re.findall(r"[^\s,.?!]+", text)
     vocabulary = re.compile(
         r"(?:최근|최신|최신순으로|최신순|기준으로|총|전체|모든|몇|몇개야|몇건이야|"
-        r"개야|건이야|건인지|개인지|개|건|담당자|담당|화면번호|관련|들어온|등록된|접수된|"
-        r"보여줘|보여주세요|알려줘|알려주세요|빼고|제외하고|"
-        r"(?:이슈|목록|리스트)(?:에서|는|를|만)?|\d+\s*(?:건|개)(?:만)?)"
+        r"개야|건이야|건인지|개인지|(?:개|건)(?:만)?|담당자|담당|화면번호|관련|들어온|등록된|접수된|"
+        r"보여줘|보여주세요|보여줄래|알려줘|알려주세요|알려줄래|확인해줘|확인해주세요|"
+        r"Mantis|멘티스|있는지|빼고|제외하고|"
+        r"(?:이슈|목록|리스트)(?:에서|는|를|만|가|이)?|\d+\s*(?:건|개)(?:만)?|"
+        r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)(?:(?:건|개)(?:만)?)?)",
+        re.IGNORECASE,
     )
     return bool(tokens) and all(vocabulary.fullmatch(token) for token in tokens)
 

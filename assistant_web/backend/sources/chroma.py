@@ -26,6 +26,7 @@ from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR, STATUS_MATCH_ALIA
 from backend.sources.mantis import (
     fetch_mantis_issue_by_id,
     issue_matches_constraints,
+    issue_to_search_text,
     normalize_issue,
 )
 from backend.understanding import (
@@ -300,6 +301,7 @@ def execute_chroma_search(
 
     documents: List[Dict[str, Any]] = []
     refreshed_count = 0
+    refreshed_issue_ids: set[int] = set()
     skipped_after_refresh = 0
     live_refresh_failures = 0
     live_refresh_available = True
@@ -312,14 +314,29 @@ def execute_chroma_search(
         if live_refresh_available:
             try:
                 latest_issue = fetch_mantis_issue_by_id(issue_id)
-            except (HTTPException, requests.RequestException):
+            except (HTTPException, requests.RequestException) as exc:
+                if isinstance(exc, HTTPException) and exc.status_code < 500 and exc.status_code != 429:
+                    # 접근 거절/확인된 부재는 연결 장애의 오프라인 폴백과 다르다.
+                    refreshed_issue_ids.add(issue_id)
+                    skipped_after_refresh += 1
+                    continue
                 live_refresh_failures += 1
                 live_refresh_available = False
+            else:
+                refreshed_issue_ids.add(issue_id)
+                if latest_issue is None:
+                    skipped_after_refresh += 1
+                    continue
         if latest_issue:
             refreshed_count += 1
             if has_constraint(constraints) and not issue_matches_constraints(latest_issue, constraints):
                 skipped_after_refresh += 1
                 continue
+            if not semantic:
+                latest_text = issue_to_search_text(latest_issue).casefold()
+                if not all(term.casefold() in latest_text for term in terms[:4]):
+                    skipped_after_refresh += 1
+                    continue
             document["latest_issue"] = normalize_issue(latest_issue)
             document["latest_source"] = "mantis"
         else:
@@ -343,6 +360,8 @@ def execute_chroma_search(
             "displayed_count": len(documents),
             "candidate_count": ranking_meta.get("candidate_count", len(candidate_documents)),
             "mantis_refreshed_count": refreshed_count,
+            "scanned_issue_ids": sorted(refreshed_issue_ids),
+            "matched_issue_ids": [int(doc["issue_id"]) for doc in documents],
             "mantis_refresh_failures": live_refresh_failures,
             "skipped_after_refresh": skipped_after_refresh,
             "terms": terms[:4],

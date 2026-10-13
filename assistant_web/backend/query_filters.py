@@ -78,6 +78,7 @@ SOURCE_FILTER_FIELDS = {
         "platform",
         "status",
         "owner",
+        "reporter",
         "issue_id",
         "screen_number",
         "created_at",

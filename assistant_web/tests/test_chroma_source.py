@@ -88,7 +88,7 @@ class ChromaSourceTests(unittest.TestCase):
         self.assertEqual(meta["ranking"], "semantic_lexical_fallback")
         self.assertIn("Timeout", meta["ranking_fallback_reason"])
 
-    def test_execute_search_revalidates_live_issues_and_keeps_snapshot_fallback(self):
+    def test_execute_search_revalidates_live_issues_and_removes_missing_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
             database_path = Path(directory) / "chroma.sqlite3"
             create_chroma_database(
@@ -116,10 +116,11 @@ class ChromaSourceTests(unittest.TestCase):
                 )
 
         self.assertEqual(result["status"], "ok")
-        self.assertEqual([document["issue_id"] for document in result["documents"]], [101])
-        self.assertEqual(result["documents"][0]["latest_source"], "chroma_snapshot")
+        self.assertEqual(result["documents"], [])
         self.assertEqual(result["meta"]["mantis_refreshed_count"], 1)
-        self.assertEqual(result["meta"]["skipped_after_refresh"], 1)
+        self.assertEqual(result["meta"]["skipped_after_refresh"], 2)
+        self.assertEqual(result["meta"]["scanned_issue_ids"], [101, 202])
+        self.assertEqual(result["meta"]["matched_issue_ids"], [])
 
     def test_execute_search_keeps_snapshot_results_when_live_refresh_fails(self):
         with tempfile.TemporaryDirectory() as directory:
