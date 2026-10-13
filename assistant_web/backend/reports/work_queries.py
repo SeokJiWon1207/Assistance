@@ -17,6 +17,7 @@ from backend.sources.mantis_store import read_complete_store
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 from backend.common import display_mantis_status_label
 from backend.intent.search_terms import wants_all_results
+from backend.intent.scope_changes import has_scope_edit
 from backend.display import customer_name as _customer, korean_day as _day, korean_day_range as _day_range
 from backend.reports.issue_relevance import (
     IOS, CRASH, crash_issue, incident_kind, recurrence_candidates,
@@ -90,6 +91,8 @@ def work_operation(question: str, constraints: dict) -> str | None:
     if constraints.get("customer_key") and re.search(r"남은|남아|미처리", question):
         return "open"
     if constraints.get("customer_key") and re.search(r"만\s*보면|^아니.*말고|^(?:그럼|그러면).*지난달|그중.*팀", question):
+        return "list"
+    if constraints.get("inherited_from_audit_id") and has_scope_edit(question):
         return "list"
     return None
 

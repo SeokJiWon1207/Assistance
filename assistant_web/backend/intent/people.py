@@ -161,6 +161,11 @@ def grounded_model_people(
             continue
         if normalized in base_by_normalized:
             incoming.append(base_by_normalized[normalized])
+        elif normalized.endswith(("으로", "로")) and any(
+            normalized == base_name + suffix for base_name in base_by_normalized for suffix in ("으로", "로")
+        ):
+            # 모델이 변경 조사를 이름에 붙여도 규칙에서 확인한 담당자를 중복 추가하지 않는다.
+            continue
         elif plausible_explicit_person_name(name) and re.search(
             rf"(?:담당자|요청자)(?:가|는|를|도)?\s*[:=]?\s*{re.escape(name)}"
             rf"(?=[^가-힣A-Za-z0-9_.-]|$)",

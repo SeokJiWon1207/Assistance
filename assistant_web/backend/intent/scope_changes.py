@@ -44,6 +44,8 @@ def without_scope_clear_phrases(text: str) -> str:
 
 def has_scope_edit(text: str) -> bool:
     text = _unquoted(text)
+    if re.search(r"(?<![가-힣A-Za-z0-9_])(?:HTS|MTS|모바일|PC|iOS|Android)(?:으로|로)?\s*(?:바꿔(?!달라|야)|변경해|수정해)", text, re.I):
+        return True
     return bool(cleared_scope_fields(text) or re.search(
         r"(?:고객사|프로젝트|담당자?|플랫폼|매체(?:구분)?|기간)(?:은|는|을|를|만)?"
         r"[^.!?]{0,60}(?:바꿔(?!달라|야)|변경해|수정해)", text,

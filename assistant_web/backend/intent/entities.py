@@ -380,6 +380,8 @@ _EXPLICIT_HANDLER_PATTERN = re.compile(
     r"(?P<korean_possessive>[가-힣]{2,4}?)의(?=\s|$|[,.?!:;)\]}])"
     r"|(?P<korean_subject>[가-힣]{2,4}?)(?:이|가|은|는)"
     r"(?=\s+(?:맡은|담당|처리|할당|배정))"
+    r"|(?P<directional_name>[가-힣]{2,4}?|[A-Za-z][A-Za-z0-9_.-]{1,31})"
+    r"(?:으로|로)(?=\s*(?:바꿔|변경|수정))"
     r"|(?P<korean_name>[가-힣]{2,4})(?=\s|$|[,.?!:;)\]}])"
     r"|(?P<mixed_name>[A-Za-z][A-Za-z0-9_.-]*[가-힣]{1,8}?)(?:의|이|가|은|는)(?=\s|$|[,.?!:;)\]}])"
     r"|(?P<english_name>[A-Za-z][A-Za-z0-9_.-]{1,31})(?=(?:의|이|가|은|는)?(?:\s|$|[,.?!:;)\]}]))"
@@ -420,12 +422,17 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
             for group in (
                 "korean_possessive",
                 "korean_subject",
+                "directional_name",
                 "korean_name",
                 "mixed_name",
                 "english_name",
             )
             if explicit_handler.group(group)
         ).strip()
+        if explicit_handler.group("directional_name"):
+            # '로'로 끝나는 실제 명부 이름은 이름 전체를 우선한다.
+            name = next((known for known, origin in pairs
+                         if origin == "known" and known in {name + "로", name + "으로"}), name)
         korean_candidate = bool(re.fullmatch(r"[가-힣]{2,4}", name))
         mixed_candidate = bool(
             re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*[가-힣][가-힣A-Za-z0-9_.-]*", name)
