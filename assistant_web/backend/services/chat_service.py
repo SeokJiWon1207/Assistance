@@ -678,8 +678,15 @@ def prepare_chat_pipeline(
     from backend.intent.context import is_customer_only_refinement
     scoped_constraints.pop("list_scope_edit", None)
     scoped_constraints.pop("list_show_all", None)
+    list_display_edit = bool(inherited_constraints and (
+        inherited_constraints.get("list_cursor") or inherited_constraints.get("list_show_all")
+        or wants_all_results(str(prior_plan.get("grounding_text") or ""))
+    ) and (extract_requested_limit(latest_user_text) is not None
+           or list_continuation_mode(latest_user_text) or wants_all_results(latest_user_text))
+        and should_return_deterministic_issue_list(latest_user_text, latest_constraints))
     if inherited_constraints is not None and (
         has_scope_edit(latest_user_text) or is_customer_only_refinement(latest_user_text, latest_constraints)
+        or list_display_edit
     ):
         scoped_constraints["list_scope_edit"] = True
         if extract_requested_limit(latest_user_text) is None and (

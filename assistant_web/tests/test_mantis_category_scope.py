@@ -1,6 +1,7 @@
 """실제 분류 필터와 대화 상속을 원문 속성으로 검사한다."""
 
 import unittest
+from unittest.mock import patch
 
 from backend.answers import display_constraints
 from backend.evaluation.issue_facts import check_issue_fields, has_definite_scope_mismatch
@@ -13,6 +14,7 @@ from backend.reports.aggregate import format_issue_list_criteria
 from backend.sources.mantis import build_sources_from_issue_rows, normalize_issue, select_mantis_rows
 from backend.team_templates import load_team_templates
 from backend.template_questions import fill_template_question
+from backend.services import chat_service as chat
 import test_all_list_scope_followups as all_lists
 
 
@@ -122,6 +124,31 @@ class MantisCategoryScopeTests(unittest.TestCase):
                 self.assertTrue(context.query_constraints["list_scope_edit"])
                 self.assertTrue(context.query_constraints["list_show_all"])
                 self.assertEqual(build_keyword_terms(context.retrieval_text, context.query_constraints), [])
+
+    def test_list_display_followups_cannot_add_default_open_status(self):
+        helper = all_lists.AllListScopeFollowupTests()
+        for previous_marker in ({"list_show_all": True}, {"list_cursor": {"page_size": 1}}):
+            constraints = {**extract_query_constraints(BASE), **previous_marker}
+            plan = {"source": "mantis", "grounding_text": BASE, "terms": [], "resolved_constraints": constraints}
+            for question in ("그중 최근 1건만 보여줘", "더 보여줘", "나머지도 보여줘", "전부 보여줘"):
+                with self.subTest(question=question, previous_marker=previous_marker):
+                    request, context = helper.prepare(BASE, plan, question)
+                    with (patch("backend.reports.work_queries.build_work_query_report", side_effect=AssertionError("요청하지 않은 미종료 조건 금지")),
+                          patch.object(chat, "resolve_status_intent", return_value={"status_intent": None}),
+                          patch.object(chat, "_plan_chat_query", return_value=None)):
+                        self.assertIsNone(chat.plan_chat_query(request, context, None).response)
+                    self.assertEqual(context.query_constraints["statuses"], [])
+                    self.assertIn(CATEGORY, context.query_constraints["filter_clauses"])
+
+    def test_explicit_count_does_not_turn_analysis_into_a_list(self):
+        helper = all_lists.AllListScopeFollowupTests()
+        plan = {"source": "mantis", "grounding_text": BASE, "terms": [],
+                "resolved_constraints": {**extract_query_constraints(BASE), "list_show_all": True}}
+        for question in ("그중 최근 1건만 코드 분석해줘", "그중 최근 1건의 원인을 분석해줘"):
+            request, context = helper.prepare(BASE, plan, question)
+            self.assertFalse(context.query_constraints.get("list_scope_edit"))
+            context.intent_plan = {"source": "mantis"}
+            self.assertIsNone(chat.deterministic_retrieval_response(request, context, 1, None))
 
     def test_category_is_displayed_in_chip_and_answer(self):
         constraints = extract_query_constraints(BASE)
