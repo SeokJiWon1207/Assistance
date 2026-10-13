@@ -119,6 +119,13 @@ def remove_list_display_instruction(text: str) -> str:
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     text = remove_list_display_instruction(remove_list_continuation_request(text))
+    if (constraints or {}).get("mantis_team_scope") == "all":
+        # 전사 조회는 원문의 키워드가 아니라 담당자 범위 지정이다. 인용한 주제는 보존한다.
+        text = re.sub(
+            r'''["'“‘][^"'”’]*["'”’]|(?<![가-힣])(?:전사(?:\s*(?:전체|기준))?(?:으로|로|의|에서|만|는|은)?|전체\s*(?:팀|회사)|팀\s*(?:제한|범위)(?:을|를)?\s*(?:없이|해제(?:해줘)?|제거))(?![가-힣])''',
+            lambda match: match[0] if match[0][0] in "\"'“‘" else " ",
+            text,
+        )
     text = re.sub(r"\b(VB|자바)\s+스크립트", r"\1스크립트", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(VB|Java|J)\s+Script(?=\b|[가-힣])", r"\1Script", text, flags=re.IGNORECASE)
     scope_edit = has_scope_edit(text)
