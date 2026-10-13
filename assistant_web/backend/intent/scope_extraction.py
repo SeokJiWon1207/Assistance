@@ -10,7 +10,6 @@ from backend.common import (
 )
 from backend.config import PLATFORM_ALIASES, STATUS_ALIASES
 from backend.intent.constants import SOURCE_NAME_ALIASES
-from backend.intent.categories import extract_category_filter_clauses, remove_category_expressions
 from backend.intent.dates import extract_date_field_constraints, remove_date_field_phrases
 from backend.intent.entities import (
     expression_is_excluded,
@@ -214,8 +213,6 @@ def extract_status_scope(
 
 def extract_scope_constraints(text: str) -> Dict[str, Any]:
     keyword_text = text
-    category_clauses = extract_category_filter_clauses(text)
-    text = remove_category_expressions(text)
     if re.search(r"제목|본문|내용|키워드", text):
         text = re.sub(r'''["'“‘][^"'”’]+["'”’]''', " ", text)
     normalized_text = normalize_for_match(text)
@@ -229,7 +226,7 @@ def extract_scope_constraints(text: str) -> Dict[str, Any]:
     issue_ids = [issue_id for issue_id in extract_issue_ids(text) if issue_id not in excluded_issue_ids]
     screen_numbers = extract_screen_numbers(text)
     created_at = extract_created_at_range(text)
-    filter_clauses: List[Dict[str, Any]] = category_clauses
+    filter_clauses: List[Dict[str, Any]] = []
 
     if customer["customer_key"]:
         add_filter_clause(filter_clauses, "customer", "equals", customer["customer_key"])

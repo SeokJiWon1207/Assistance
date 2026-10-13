@@ -81,7 +81,6 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
         or constraints.get("created_at")
         or constraints.get("statuses")
         or constraints.get("date_fields")
-        or any(c.get("field") == "category" for c in constraints.get("filter_clauses") or [])
     )
     scoped_issue = scope_only and bool(re.search(r"이슈|버그", normalized))
     evidence: List[Dict[str, str]] = []

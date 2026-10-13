@@ -1,7 +1,6 @@
 """인증된 감사 기록의 확정 조건을 후속 질문 문맥으로 복원한다."""
 
 from backend.config import STATUS_ALIASES
-from backend.intent.categories import category_scope_text
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -90,7 +89,6 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
         "issue_id": ("issue_ids", "exclude_issue_ids", "max_issue_id_exclusive"),
         "screen_number": ("screen_numbers",),
         "created_at": ("created_at",),
-        "category": (),
     }
     replaced = set()
     new_topic = replacement_topic_terms(question, current)
@@ -117,8 +115,6 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
             explicit = bool((current.get("people") or {}).get("names") or current.get("unassigned_people"))
         if field == "status":
             explicit |= bool(ALL_STATUSES.search(question))
-        if field == "category":
-            explicit = any(c.get("field") == "category" for c in current.get("filter_clauses") or [])
         if explicit or field in cleared:
             replaced.add(field)
             if field == "owner":
@@ -145,7 +141,7 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
 
 
 def confirmed_scope_text(constraints: dict) -> str:
-    parts = [category_scope_text(constraints)] if category_scope_text(constraints) else []
+    parts = []
     if constraints.get("mantis_team_members"):
         parts.append("우리 팀")
     if constraints.get("customer_exact") or constraints.get("customer_key"):

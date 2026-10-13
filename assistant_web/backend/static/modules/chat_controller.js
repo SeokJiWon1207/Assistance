@@ -24,7 +24,7 @@ function controllerHook(name) {
   return hook;
 }
 
-async function sendChat(content, onEvent = () => {}, signal = undefined, contextMessages = null) {
+async function sendChat(content, onEvent = () => {}, signal = undefined) {
   await controllerHook("ensureModels")(signal);
   const model = controllerHook("selectedModel")();
   if (!model) throw new Error("사용 가능한 모델이 없습니다. 관리자에게 문의해 주세요.");
@@ -35,12 +35,11 @@ async function sendChat(content, onEvent = () => {}, signal = undefined, context
   // 대화가 길어져도 서버로 보내는 히스토리는 최근 N개로 제한한다(서버에서도 한 번 더 제한).
   // 현재 질문은 state.messages에 이미 push되어 있으므로 history에서는 제외하고,
   // 아래에서 현재 질문을 한 번만 명시적으로 붙인다.
-  const history = contextMessages ? [...contextMessages, { role: "user", content }] : state.messages;
-  const chatMessages = buildChatMessages(history, content, 20);
+  const chatMessages = buildChatMessages(state.messages, content, 20);
 
   // 직전 assistant 답변의 감사 ID. 서버가 "그중 3번째" 같은 서수 참조를
   // 실제로 보여준 결과 목록을 기준으로 해석하는 데 사용한다.
-  const lastAssistantWithAudit = [...history]
+  const lastAssistantWithAudit = [...state.messages]
     .reverse()
     .find((message) => message.role === "assistant" && message.auditId && !message.loading);
 
@@ -96,7 +95,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined, context
   return result;
 }
 
-async function requestAssistant(content, questionAskedAt = "", templateId = "", contextMessages = null) {
+async function requestAssistant(content, questionAskedAt = "", templateId = "") {
   state.messages.push({
     role: "assistant",
     content: "",
@@ -138,7 +137,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "", 
         assistant.content = `${assistant.content || ""}${streamEvent.content || ""}`;
       }
       renderMessages();
-    }, abortController.signal, contextMessages);
+    }, abortController.signal);
     state.messages[assistantIndex] = {
       role: "assistant",
       content: answer.content,

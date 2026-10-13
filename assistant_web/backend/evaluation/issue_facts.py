@@ -17,7 +17,6 @@ FIELD_LABELS = {
     "상태": "status", "현재상태": "status", "담당자": "handler",
     "등록일": "created_at", "접수일": "created_at", "최종수정일": "updated_at",
     "매체구분": "media_type", "플랫폼": "media_type",
-    "분류": "category", "카테고리": "category",
     "우선순위": "priority", "중요도": "priority", "심각도": "severity",
 }
 FIELD_LABELS.update({field: field for field in FIELD_LABELS.values()})
@@ -25,7 +24,7 @@ FIELD_LABELS.update({"issue_id": "id", "summary": "title"})
 EXPLICIT_ID = re.compile(r"(?:#|(?:이슈\s*(?:번호|ID)?|\bID)\s*[:：]?\s*)0*(\d{1,7})(?!\d|년|월|일|건)", re.I)
 LABELLED_FIELD = re.compile(
     r"(?P<label>최종수정일|현재상태|프로젝트|이슈\s*(?:번호|ID)|담당자|매체구분|우선순위|"
-    r"분류|카테고리|플랫폼|등록일|접수일|고객사|심각도|제목|상태|\bID)\s*[:：]\s*"
+    r"플랫폼|등록일|접수일|고객사|심각도|제목|상태|\bID)\s*[:：]\s*"
     r"(?P<value>.*?)(?=\s*\||$)", re.I,
 )
 UNKNOWN = {"", "-", "미상", "미지정", "담당자미지정", "확인불가", "확인되지않음", "미기재", "없음"}
@@ -180,13 +179,6 @@ def has_definite_scope_mismatch(source: dict[str, Any], constraints: dict[str, A
     if source.get("type") != "mantis":
         return False
     detail = source.get("detail") or {}
-    from backend.query_filters import matches_source_filters
-    category = source.get("category") or detail.get("category") or ""
-    if isinstance(category, dict):
-        category = category.get("name") or ""
-    category_clauses = [c for c in constraints.get("filter_clauses") or [] if c.get("field") == "category"]
-    if category_clauses and not matches_source_filters("mantis", {"category": category}, category_clauses):
-        return True
     project = source.get("project") or detail.get("project") or ""
     media = source.get("media_type") or detail.get("media_type") or ""
     created = source.get("created_at") or detail.get("created_at") or ""

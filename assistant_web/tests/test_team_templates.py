@@ -29,7 +29,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
         payload = load_team_templates()
 
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(len(payload["templates"]), 13)
+        self.assertEqual(len(payload["templates"]), 12)
         template_ids = {item["id"] for item in payload["templates"]}
         self.assertIn("customer-profile", template_ids)
         self.assertIn("monthly-customer-report", template_ids)
@@ -48,7 +48,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
         ]
         expected_options = customer_template_options()
 
-        self.assertEqual(len(customer_fields), 8)
+        self.assertEqual(len(customer_fields), 7)
         self.assertEqual(len(expected_options), 33)
         self.assertEqual(len(expected_options), len(set(expected_options)))
         for field in customer_fields:

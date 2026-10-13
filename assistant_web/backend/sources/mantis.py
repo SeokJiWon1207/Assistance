@@ -163,7 +163,6 @@ def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] 
         "id": issue.get("id"),
         "project": (issue.get("project") or {}).get("name", "미상"),
         "summary": issue.get("summary", "제목 없음"),
-        "category": mantis_enum_label(issue.get("category"), ""),
         "status": mantis_enum_label(issue.get("status"), "상태 미상"),
         "priority": mantis_enum_label(issue.get("priority"), ""),
         "severity": mantis_enum_label(issue.get("severity"), ""),
@@ -506,7 +505,6 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     if not text_matches_people(combined_text, constraints.get("people", {}), handler_text, reporter_text):
         return False
     return matches_source_filters("mantis", {
-        "category": mantis_enum_label(issue.get("category"), ""),
         "customer": project_name,
         "platform": get_issue_custom_field_value(issue, "매체구분") or combined_text,
         "status": status_text,
@@ -532,7 +530,6 @@ def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str
             "source": issue.get("source", ""),
             "issue_id": issue.get("id"),
             "title": issue.get("summary", "제목 없음"),
-            "category": issue.get("category", ""),
             "project": issue.get("project", "미상"),
             "status": issue.get("status", "상태 미상"),
             "priority": issue.get("priority", ""),

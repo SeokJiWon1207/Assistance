@@ -16,7 +16,6 @@ from fastapi import HTTPException
 
 from backend.display import korean_day, korean_time
 from backend.common import (
-    extract_chroma_category,
     compact_text,
     display_mantis_status_label,
     extract_chroma_date,
@@ -732,7 +731,6 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "id": issue_id,
                 "project": issue.get("project", "미상"),
                 "summary": issue.get("summary", "제목 없음"),
-                "category": issue.get("category", ""),
                 "status": issue.get("status", "상태 미상"),
                 "priority": issue.get("priority", ""),
                 "severity": issue.get("severity", ""),
@@ -756,7 +754,6 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                     "id": issue_id,
                     "project": latest_issue.get("project", "미상"),
                     "summary": latest_issue.get("summary", "제목 없음"),
-                    "category": latest_issue.get("category", ""),
                     "status": latest_issue.get("status", "상태 미상"),
                     "priority": latest_issue.get("priority", ""),
                     "severity": latest_issue.get("severity", ""),
@@ -777,7 +774,6 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "id": issue_id,
                 "project": extract_project_from_chroma_text(content),
                 "summary": extract_title_from_chroma_text(content),
-                "category": extract_chroma_category(content),
                 "status": extract_chroma_field(content, "현재 상태") or "상태 미상",
                 "priority": "",
                 "severity": "",

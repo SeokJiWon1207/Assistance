@@ -69,7 +69,6 @@ test('slash query matches title, description, and category ignoring spaces', asy
 
   assert.deepEqual(ids(templatePickerSections(templates, { query: '장애대응' }).rest), ['incident-triage']);
   assert.ok(ids(templatePickerSections(templates, { query: 'SLA' }).rest).includes('effort-sla'));
-  assert.ok(ids(templatePickerSections(templates, { query: '서버' }).rest).includes('server-condition-search'));
   const counts = templatePickerSections(templates, { query: '보고서' }).groupCounts;
   assert.equal(counts.all, counts.analysis + counts.report + counts.ops);
   assert.deepEqual(ids(templatePickerSections(templates, { query: '없는검색어' }).rest), []);

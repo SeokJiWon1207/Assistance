@@ -1,4 +1,4 @@
-"""13개 대화 템플릿의 선택 조합에 대해 실제 라우팅·리포트 빌더 계약을 검사한다.
+"""12개 대화 템플릿의 선택 조합에 대해 실제 라우팅·리포트 빌더 계약을 검사한다.
 
 외부 I/O만 고정한 테스트다. 모델이 직접 작성하는 문안의 품질 평가는 포함하지 않는다.
 """
@@ -62,10 +62,10 @@ def raw_issues():
 
 
 class TemplateContractTests(unittest.TestCase):
-    def test_all_template_variants_keep_scope_and_answer_mode(self):
+    def test_all_279_template_variants_keep_scope_and_answer_mode(self):
         cases = list(template_variants())
-        self.assertEqual(len(cases), 351)
-        self.assertEqual(len({item[0] for item in cases}), 13)
+        self.assertEqual(len(cases), 279)
+        self.assertEqual(len({item[0] for item in cases}), 12)
         raw = raw_issues()
         sample = normalize_issue(raw[0])
         retrieval = {"stages": [{"source": "mantis_page_scan", "status": "ok", "issues_list": [sample],
@@ -116,7 +116,7 @@ class TemplateContractTests(unittest.TestCase):
                     else:
                         self.assertIsNone(report)
                         deterministic = should_return_deterministic_issue_list(question, constraints)
-                        self.assertEqual(deterministic, template_id in {"daily-operations", "customer-analysis", "server-condition-search"})
+                        self.assertEqual(deterministic, template_id in {"daily-operations", "customer-analysis"})
                         if deterministic:
                             self.assertEqual(build_keyword_terms(question, constraints), [])
                             answer = format_deterministic_issue_answer(question, constraints, retrieval, 12)

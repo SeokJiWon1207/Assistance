@@ -662,10 +662,6 @@ def prepare_chat_pipeline(
                 inherited_constraints, extract_query_constraints(latest_user_text), latest_user_text,
             )
             scoped_constraints["inherited_from_audit_id"] = request.contextAuditId
-            from backend.intent.categories import category_scope_text, remove_category_expressions
-            retrieval_text = remove_category_expressions(retrieval_text).strip()
-            if category_text := category_scope_text(scoped_constraints):
-                retrieval_text = f"{category_text} {retrieval_text}"
             if list_continuation_mode(latest_user_text):
                 retrieval_text = remove_list_continuation_request(retrieval_text) + "이슈 보여줘"
             keyword_text = confirmed_keyword_text(scoped_constraints)
@@ -678,15 +674,8 @@ def prepare_chat_pipeline(
     from backend.intent.context import is_customer_only_refinement
     scoped_constraints.pop("list_scope_edit", None)
     scoped_constraints.pop("list_show_all", None)
-    list_display_edit = bool(inherited_constraints and (
-        inherited_constraints.get("list_cursor") or inherited_constraints.get("list_show_all")
-        or wants_all_results(str(prior_plan.get("grounding_text") or ""))
-    ) and (extract_requested_limit(latest_user_text) is not None
-           or list_continuation_mode(latest_user_text) or wants_all_results(latest_user_text))
-        and should_return_deterministic_issue_list(latest_user_text, latest_constraints))
     if inherited_constraints is not None and (
         has_scope_edit(latest_user_text) or is_customer_only_refinement(latest_user_text, latest_constraints)
-        or list_display_edit
     ):
         scoped_constraints["list_scope_edit"] = True
         if extract_requested_limit(latest_user_text) is None and (
@@ -820,8 +809,7 @@ def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: 
         return False
     if operation == "search" and not re.search(r"이슈|목록|리스트", text):
         return False
-    if not (constraints.get("customer_key") or constraints.get("mantis_team_members")
-            or any(c.get("field") == "category" for c in constraints.get("filter_clauses") or [])):
+    if not (constraints.get("customer_key") or constraints.get("mantis_team_members")):
         return False
     keyword_text = re.sub(r"(?:전체|모든)\s*상태(?:로는|로|만)?", " ", text)
     return not build_keyword_terms(keyword_text, constraints)

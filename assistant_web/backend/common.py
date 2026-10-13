@@ -264,13 +264,6 @@ def extract_chroma_field(text: str, field_name: str) -> str:
     return ""
 
 
-def extract_chroma_category(text: str) -> str:
-    # 구버전 벡터 원문의 제목/본문에 적힌 '분류:'를 메타데이터로 승격하지 않는다.
-    header = re.split(r"(?m)^\s*(?:\[제목\]|(?:-\s*)?제목\s*:)", text, maxsplit=1)[0]
-    match = re.search(r"(?m)^\s*(?:-\s*)?분류:[ \t]*([^\n\r]+)", header)
-    return match[1].strip() if match else ""
-
-
 def extract_chroma_date(text: str) -> str:
     match = re.search(r"등록일:\s*(\d{4}-\d{2}-\d{2}|미상)", text)
     if match:
@@ -424,7 +417,6 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
         "id": issue_id,
         "project": extract_project_from_chroma_text(text),
         "summary": extract_title_from_chroma_text(text),
-        "category": extract_chroma_category(text),
         "status": extract_chroma_field(text, "현재 상태") or "상태 미상",
         "media_type": extract_chroma_field(text, "매체구분") or "기타/미상",
         "screen_number": extract_chroma_field(text, "화면번호") or "미상",

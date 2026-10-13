@@ -6,10 +6,9 @@ import re
 SCOPE_FIELDS = {
     "customer": r"고객사|프로젝트", "owner": r"담당자|담당",
     "platform": r"플랫폼|매체구분|매체", "created_at": r"기간|등록일",
-    "category": r"분류|카테고리",
 }
 SCOPE_CONTROL_TERM = re.compile(
-    r"(?:고객사|프로젝트|담당자?|플랫폼|매체(?:구분)?|분류|카테고리|기간|등록일|조건|필터|제한|범위|나머지)"
+    r"(?:고객사|프로젝트|담당자?|플랫폼|매체(?:구분)?|기간|등록일|조건|필터|제한|범위|나머지)"
     r"(?:은|는|이|가|을|를|도|만|와|과)?"
 )
 
@@ -26,15 +25,6 @@ SCOPE_CLEAR_PATTERNS = {
         r"|(?:" + labels + r")(?:은|는)?\s*(?:무관|상관\s*없이)"
     ) for field, labels in SCOPE_FIELDS.items()
 }
-SCOPE_CLEAR_PATTERNS["category"] = re.compile(
-    SCOPE_CLEAR_PATTERNS["category"].pattern
-    + r"|(?:분류|카테고리)(?:은|는)?\s*[:=]?\s*전체(?:로|으로)?"
-    r"(?!\s*(?:바꾸|변경하|수정하)지)(?=\s|$|[.!?])"
-)
-SCOPE_KEEP_PATTERN = re.compile(
-    r"(?:분류|카테고리)(?:은|는)?\s*(?:(?:조건|필터)(?:은|는)?\s*)?"
-    r"(?:전체(?:로|으로)?\s*바꾸|해제하|제거하|변경하|수정하)지\s*말고"
-)
 
 
 def cleared_scope_fields(text: str) -> set[str]:
@@ -45,7 +35,7 @@ def cleared_scope_fields(text: str) -> set[str]:
 def without_scope_clear_phrases(text: str) -> str:
     # 명시적 제목/키워드의 부정 표현은 기존 검증에 남긴다.
     quoted_spans = [(m.start(), m.end()) for m in re.finditer(r'''["'“‘][^"'”’]*["'”’]''', text)]
-    spans = [(m.start(), m.end()) for pattern in [*SCOPE_CLEAR_PATTERNS.values(), SCOPE_KEEP_PATTERN] for m in pattern.finditer(text)
+    spans = [(m.start(), m.end()) for pattern in SCOPE_CLEAR_PATTERNS.values() for m in pattern.finditer(text)
              if not any(start <= m.start() < end for start, end in quoted_spans)]
     for start, end in sorted(spans, reverse=True):
         text = text[:start] + " " * (end - start) + text[end:]
@@ -62,7 +52,7 @@ def has_scope_edit(text: str) -> bool:
     if re.search(r"(?<![가-힣A-Za-z0-9_])(?:HTS|MTS|모바일|PC|iOS|Android)(?:으로|로)?\s*(?:바꿔(?!달라|야)|변경해|수정해)", text, re.I):
         return True
     return bool(cleared_scope_fields(text) or re.search(
-        r"(?:고객사|프로젝트|담당자?|플랫폼|매체(?:구분)?|분류|카테고리|기간)(?:은|는|을|를|만)?"
+        r"(?:고객사|프로젝트|담당자?|플랫폼|매체(?:구분)?|기간)(?:은|는|을|를|만)?"
         r"[^.!?]{0,60}(?:바꿔(?!달라|야)|변경해|수정해)", text,
     ))
 

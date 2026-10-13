@@ -5,42 +5,6 @@ const path = require('node:path');
 const vm = require('node:vm');
 const core = require('../backend/static/frontend_core.js');
 
-test('category removal on an older answer uses that answer history and audit', async () => {
-  let body;
-  const selected = [{ role: 'user', content: '10월 NH MTS 분류=조건검색 전체 목록' },
-    { role: 'assistant', content: '원문 목록', auditId: 'selected-audit' }];
-  const state = { messages: [...selected, { role: 'user', content: '9월 KB HTS 분류=차트 전체 목록' },
-    { role: 'assistant', content: '다른 목록', auditId: 'latest-audit' },
-    { role: 'user', content: '분류 조건 빼줘' }] };
-  const dependencies = {
-    './runtime.js': { state, els: { input: { focus() {} } }, buildChatMessages: core.buildChatMessages, parseSseBuffer: core.parseSseBuffer,
-      apiFetch: async (_url, options) => {
-        body = JSON.parse(options.body);
-        const frames = [new TextEncoder().encode('data: {"type":"result","data":{"content":"선택한 범위의 목록"}}\n\n')];
-        return { ok: true, body: { getReader: () => ({ read: async () => frames.length
-          ? { done: false, value: frames.shift() } : { done: true } }) } };
-      } },
-    './workspace.js': { persistConversations() {} },
-  };
-  const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
-  const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname,
-    '../backend/static/modules/chat_controller.js'), 'utf8'), { context });
-  await module.link((specifier) => {
-    const values = dependencies[specifier.replace(/\?v=.*$/, '')];
-    return new vm.SyntheticModule(Object.keys(values), function () {
-      for (const [name, value] of Object.entries(values)) this.setExport(name, value);
-    }, { context });
-  });
-  await module.evaluate();
-  module.namespace.configureChatController({ ensureModels: async () => {},
-    selectedModel: () => ({ id: 'fixture', status: 'active' }), statusLabel: String,
-    generationPayload: () => ({}), abComparisonEnabled: () => false,
-    sourceToolsPayload: () => ({}), renderMessages() {}, setBusy() {} });
-  await module.namespace.requestAssistant('분류 조건 빼줘', '', '', selected);
-  assert.equal(body.contextAuditId, 'selected-audit');
-  assert.deepEqual(body.messages.map(m => m.content), [...selected.map(m => m.content), '분류 조건 빼줘']);
-});
-
 test('stream reset removes failed model text before replacement deltas and final save', async () => {
   const state = { messages: [{ role: 'user', content: '질문' }] };
   const snapshots = [];

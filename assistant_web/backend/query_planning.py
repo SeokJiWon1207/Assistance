@@ -499,9 +499,6 @@ def build_query_plan(
             clause for clause in model_filter_clauses if clause["field"] != "customer"
         ]
     for clause in model_filter_clauses:
-        if clause["field"] == "category":
-            # 분류는 사용자가 명시했거나 인증된 이전 조건에서 상속한 값만 쓴다.
-            continue
         if clause["field"] == "created_at" and (
             detected_created_at
             or not question_has_temporal_expression(question)
@@ -645,15 +642,6 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
         "detail": f"소스={source or '미상'}",
     })
     clauses = normalize_filter_clauses(plan.get("filter_clauses") or [])
-    from backend.intent.categories import extract_category_filter_clauses
-    expected_categories = extract_category_filter_clauses(question)
-    if isinstance(resolved, dict) and resolved.get("inherited_from_audit_id"):
-        expected_categories = [c for c in resolved.get("filter_clauses") or [] if c.get("field") == "category"]
-    actual_categories = [c for c in clauses if c["field"] == "category"]
-    if expected_categories or actual_categories:
-        checks.append({"id": "category_intent", "label": "분류 조건 해석",
-                       "status": "pass" if expected_categories == actual_categories else "fail",
-                       "detail": "분류 조건이 요청과 일치" if expected_categories == actual_categories else "분류 조건이 누락되거나 변경됨"})
     if source in {"mantis", "both"}:
         from backend.intent.entities import extract_status_constraints
         expected_statuses = set(extract_status_constraints(question))
