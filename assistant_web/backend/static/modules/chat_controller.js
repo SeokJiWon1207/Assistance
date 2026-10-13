@@ -2,6 +2,7 @@ import { state, els, apiFetch, buildChatMessages, parseSseBuffer } from "./runti
 import { persistConversations } from "./workspace.js?v=20260911-6";
 
 const controllerHooks = {
+  ensureModels: null,
   selectedModel: null,
   statusLabel: null,
   generationPayload: null,
@@ -24,8 +25,9 @@ function controllerHook(name) {
 }
 
 async function sendChat(content, onEvent = () => {}, signal = undefined) {
+  await controllerHook("ensureModels")(signal);
   const model = controllerHook("selectedModel")();
-  if (!model) throw new Error("모델을 선택해 주세요.");
+  if (!model) throw new Error("사용 가능한 모델이 없습니다. 관리자에게 문의해 주세요.");
   if (model.status !== "active") {
     throw new Error(`현재 서비스가 ${controllerHook("statusLabel")(model.status)} 상태입니다.`);
   }
@@ -110,7 +112,8 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
   setBusy(true);
   const abortController = new AbortController();
   state.chatAbortController = abortController;
-  state.chatCanAbort = false;
+  state.chatCanAbort = true;
+  setBusy(true);
 
   try {
     const answer = await sendChat(content, (streamEvent) => {

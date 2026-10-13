@@ -15,6 +15,10 @@ function cancelMessageEdit() {
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.initializing) {
+    showToast("이전 대화를 불러오고 있습니다. 잠시 후 전송해 주세요.", "warning");
+    return;
+  }
   if (state.busy) {
     if (state.chatCanAbort) state.chatAbortController?.abort();
     return;

@@ -16,6 +16,9 @@ test('stream reset removes failed model text before replacement deltas and final
     { type: 'delta', content: '대체 모델 답변' },
     { type: 'result', data: { content: '대체 모델 답변', auditId: 'new-audit' } },
   ];
+  let releaseModels;
+  let modelsReady = false;
+  const modelPreparation = new Promise((resolve) => { releaseModels = () => { modelsReady = true; resolve(); }; });
   const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
   const apiFetch = async () => ({ ok: true, body: { getReader: () => ({
     read: async () => frames.length
@@ -37,12 +40,16 @@ test('stream reset removes failed model text before replacement deltas and final
   });
   await module.evaluate();
   module.namespace.configureChatController({
-    selectedModel: () => ({ id: 'test', status: 'active' }), statusLabel: String,
+    ensureModels: () => modelPreparation,
+    selectedModel: () => modelsReady ? ({ id: 'test', status: 'active' }) : null, statusLabel: String,
     generationPayload: () => ({}), abComparisonEnabled: () => false, sourceToolsPayload: () => ({}),
     renderMessages: () => snapshots.push({ ...state.messages.at(-1) }),
     setBusy: (busy) => { state.busy = busy; },
   });
-  await module.namespace.requestAssistant('질문');
+  const request = module.namespace.requestAssistant('질문');
+  assert.equal(state.messages.at(-1).loading, true);
+  releaseModels();
+  await request;
   const oldAnswerIndex = snapshots.findIndex((message) => message.content === '실패한 모델의 부분 답변');
   assert.ok(oldAnswerIndex >= 0);
   assert.equal(snapshots[oldAnswerIndex + 1].content, '');

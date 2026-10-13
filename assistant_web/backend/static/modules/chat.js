@@ -58,6 +58,7 @@ import {
 } from "./charts.js?v=20260911-6";
 import { renderEffortTrendChart } from "./trend_chart.js?v=20260911-6";
 import { renderAnswerScope } from "./answer_scope.js?v=20261007-1";
+import { createModelLoader } from "./model_loader.js?v=20261012-1";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -588,7 +589,7 @@ function setBusy(busy) {
   state.busy = busy;
   els.input.disabled = busy;
   if (els.templateToggleBtn) els.templateToggleBtn.disabled = busy;
-  // 첫 서버 응답 전에는 중복 submit이 최초 요청을 취소하지 못하게 한다.
+  // 모델 연결 대기 중에도 준비된 AbortController로 요청을 중지할 수 있다.
   const canStop = busy && state.chatCanAbort;
   els.sendBtn.disabled = busy && !canStop;
   els.sendBtn.classList.toggle("stop-mode", canStop);
@@ -668,13 +669,18 @@ function generationPayload() {
   return payload;
 }
 
-async function loadModels() {
-  const response = await apiFetch("/api/models");
-  if (!response.ok) throw new Error("모델 목록을 불러오지 못했습니다.");
-  const data = await response.json();
-  state.models = data.models || [];
-  renderModels();
-}
+const loadModels = createModelLoader({
+  fetch: apiFetch,
+  onLoaded(models) {
+    state.models = models;
+    renderModels();
+  },
+  onStatus(message) {
+    els.statusLine.textContent = message;
+    els.statusLine.className = "status-warning";
+    els.statusLine.hidden = false;
+  },
+});
 
 // 대화 머리의 '데이터 기준' 배지. Mantis는 질문마다 직접 조회하므로 Notion 연결과
 // 과거 이슈 검색 색인의 갱신일만 확인 대상으로 본다.
@@ -738,6 +744,7 @@ async function loadDataStatus() {
 }
 
 configureChatController({
+  ensureModels: loadModels,
   selectedModel,
   statusLabel,
   generationPayload,

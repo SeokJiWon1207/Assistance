@@ -32,8 +32,11 @@ async function bootstrapApplication(authState = {}) {
   const adminToolsVisible = canUseAdminTools(authState.enabled, state.currentUser);
   state.adminToolsVisible = adminToolsVisible;
   els.adminGenerationSettings.hidden = !adminToolsVisible;
+  // 템플릿·Notion 상태가 느리거나 실패해도 모델 준비는 바로 시작한다.
+  loadModels().catch(() => {});
+  // 이전 대화 복원은 새 질문의 메시지 배열을 교체하므로, 완료 전 제출만 막는다.
   await Promise.all([
-    loadConversations(),
+    loadConversations().then(() => { state.initializing = false; }),
     loadTeamTemplates().catch(() => {}),
     checkAppVersion().catch(() => {}),
   ]);
@@ -41,13 +44,7 @@ async function bootstrapApplication(authState = {}) {
     ? loadMyWorkspace().catch(() => {})
     : Promise.resolve();
   renderChatDataBadge({ loading: true });
-  loadDataStatus().catch(() => renderChatDataBadge({ failed: true })).finally(() => {
-    loadModels().catch((error) => {
-      els.statusLine.textContent = error.message;
-      els.statusLine.className = "status-danger";
-      els.statusLine.hidden = false;
-    });
-  });
+  loadDataStatus().catch(() => renderChatDataBadge({ failed: true }));
   loadTheme();
   setAbComparison(defaultOptions.abTest);
   renderMessages();

@@ -20,6 +20,7 @@ const {
 } = globalThis.AssistantFrontendCore;
 
 export const state = {
+  initializing: true,
   models: [],
   messages: [],
   busy: false,
