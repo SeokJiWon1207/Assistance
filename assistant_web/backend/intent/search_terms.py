@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.common import LOOKUP_REQUEST_PATTERN, extract_quoted_value, is_control_search_term, normalize_for_match, normalize_search_token
 from backend.intent.constants import TRIAGE_REQUEST_PATTERN
+from backend.intent.categories import remove_category_expressions
 from backend.config import (
     KOREAN_COUNT_WORDS,
     PENDING_WORK_QUERY_PATTERN,
@@ -14,7 +15,7 @@ from backend.config import (
 )
 from backend.intent.list_continuation import remove_list_continuation_request
 from backend.intent.entities import extract_mantis_keyword
-from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit
+from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit, without_scope_clear_phrases
 from backend.team_scope import remove_team_scope_phrase
 
 
@@ -118,7 +119,8 @@ def remove_list_display_instruction(text: str) -> str:
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
-    text = remove_list_display_instruction(remove_list_continuation_request(text))
+    text = remove_list_display_instruction(remove_list_continuation_request(
+        without_scope_clear_phrases(remove_category_expressions(text))))
     text = re.sub(r"\b(VB|자바)\s+스크립트", r"\1스크립트", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(VB|Java|J)\s+Script(?=\b|[가-힣])", r"\1Script", text, flags=re.IGNORECASE)
     scope_edit = has_scope_edit(text)
@@ -152,7 +154,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
         r"(?:이슈|업무)(?:를|을|가|은|는|도|만|의)?"
     )
     filter_control_terms = {
-        "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
+        "중", "제목", "본문", "내용", "키워드", "분류", "카테고리", "빼고", "제외", "제외하고",
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함", "포함된",
         "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
         "플랫폼별", "플랫폼마다", "매체별", "매체마다", "매체구분별", "매체구분마다",

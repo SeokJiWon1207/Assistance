@@ -14,6 +14,56 @@
       ]
     },
     {
+      "id": "server-condition-search",
+      "category": "운영 현황",
+      "title": "서버 이슈 조회(조건검색)",
+      "description": "Mantis 분류가 조건검색인 이슈를 조회합니다. 같은 분류의 화면 작업도 포함됩니다.",
+      "icon": "today",
+      "questionTemplate": "{period|이번 달} {customer} {platform?전체} {status?전체} Mantis 분류=조건검색 이슈 전체 목록을 표로 보여줘",
+      "fields": [
+        {
+          "name": "period",
+          "label": "기간",
+          "type": "select",
+          "value": "이번 달",
+          "options": [
+            "이번 주",
+            "이번 달",
+            "지난달",
+            "올해"
+          ]
+        },
+        {
+          "name": "customer",
+          "label": "고객사",
+          "type": "customer",
+          "placeholder": "전체 고객사"
+        },
+        {
+          "name": "platform",
+          "label": "플랫폼",
+          "type": "select",
+          "value": "전체",
+          "options": [
+            "전체",
+            "HTS",
+            "MTS"
+          ]
+        },
+        {
+          "name": "status",
+          "label": "상태",
+          "type": "select",
+          "value": "전체",
+          "options": [
+            "전체",
+            "미종료",
+            "종료"
+          ]
+        }
+      ]
+    },
+    {
       "id": "customer-analysis",
       "category": "고객사 분석",
       "title": "고객사별 이슈 분석",

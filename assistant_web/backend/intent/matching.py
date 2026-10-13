@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from backend.common import (
+    extract_chroma_category,
     extract_chroma_date,
     extract_chroma_field,
     extract_issue_id_from_text,
@@ -214,6 +215,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
     ):
         return False
     return matches_source_filters("chroma", {
+        "category": extract_chroma_category(text),
         "customer": extract_project_from_chroma_text(text),
         "platform": platform_source,
         "status": extract_chroma_field(text, "현재 상태"),

@@ -123,7 +123,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["version"], 1)
-        self.assertEqual(len(payload["templates"]), 12)
+        self.assertEqual(len(payload["templates"]), 13)
         template_ids = {item["id"] for item in payload["templates"]}
         self.assertIn("customer-profile", template_ids)
         self.assertIn("monthly-customer-report", template_ids)

@@ -77,6 +77,8 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
             constraints["unassigned_people"] = False
         elif field == "created_at":
             constraints["created_at"] = None
+        elif field == "category":
+            pass  # 분류는 아래 공통 조건식에서 해제한다.
         else:
             constraints[f"{field}_key"] = None
             constraints[f"{field}_aliases"] = []
@@ -117,6 +119,7 @@ def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:
         or constraints.get("screen_numbers")
         or constraints.get("people", {}).get("names")
         or constraints.get("created_at")
+        or any(c.get("field") == "category" for c in constraints.get("filter_clauses") or [])
     )
 
 
@@ -258,6 +261,9 @@ def merge_query_plan_constraints(
             )
             if not grounded_exclusion:
                 continue
+        if field == "category":
+            # 모델 조건으로 사용자 분류를 덮거나 새 분류를 만들어내지 않는다.
+            continue
         if (field == "customer" and merged.get("customer_key")) or (field == "platform" and merged.get("platform_key")):
             # The rule parser already expanded the customer's exact project and
             # aliases. A model-produced shorthand such as ``138Meritz`` must

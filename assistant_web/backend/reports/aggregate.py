@@ -769,7 +769,8 @@ def format_issue_list_criteria(
     constraints: Dict[str, Any],
     issues: List[Dict[str, Any]],
 ) -> str:
-    criteria = []
+    from backend.intent.categories import category_criteria
+    criteria = category_criteria(constraints)
     if constraints.get("mantis_team_members"):
         criteria.append(f"팀={constraints['mantis_team_label']} ({len(constraints['mantis_team_members'])}명)")
     if constraints.get("similar_base_issue_ids"):

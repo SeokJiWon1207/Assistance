@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""팀 템플릿 12개로 만든 질문의 답변 품질을 실제 Mantis 저장본과 대조해 채점한다.
+"""팀 템플릿 질문의 답변 품질을 실제 Mantis 저장본과 대조해 채점한다.
 
 조회형 정확도 점검(dynamic_accuracy_check.py)은 '찾아서 보여 줘' 질문만 다룬다.
 이 점검은 팀이 실제로 많이 쓰는 분석·보고서 템플릿 답변을 본다.
@@ -71,6 +71,7 @@ FAILURE_PHRASES = (
 REQUIRED_SECTIONS: Dict[str, List[tuple[str, ...]]] = {
     "daily-operations": [("고객사",)],
     "customer-analysis": [("|",)],
+    "server-condition-search": [("분류", "조건검색")],
     "customer-profile": [("고객사",)],
     "aging-issues": [("오래", "경과", "일째", "일 경과", "등록")],
     "monthly-customer-report": [("전월", "지난달", "비교"), ("공수",)],
@@ -94,6 +95,7 @@ class TemplateCase:
     customer: str = ""
     expected_statuses: List[str] = field(default_factory=list)
     expected_range: Optional[Dict[str, str]] = None
+    expected_category: str = ""
     expected_count: Optional[int] = None
     expected_issue_ids: List[int] = field(default_factory=list)
     base_issue_id: Optional[int] = None
@@ -150,6 +152,7 @@ def count_issues(
     end: date,
     customer: str = "",
     bucket: str = "",
+    category: str = "",
 ) -> int:
     total = 0
     for issue in issues:
@@ -159,6 +162,10 @@ def count_issues(
         if customer and issue_customer(issue) != customer:
             continue
         if bucket and issue_bucket(issue) != bucket:
+            continue
+        raw_category = issue.get("category") or {}
+        actual_category = raw_category.get("name", "") if isinstance(raw_category, Mapping) else str(raw_category)
+        if category and actual_category != category:
             continue
         total += 1
     return total
@@ -292,6 +299,9 @@ def build_cases(
         expected_count=count_issues(issues, start=this_week[0], end=this_week[1], bucket="open"))
 
     last_month = last_month_range(today)
+    add("server-condition-search", {"customer": customer, "period": "지난달"},
+        customer=customer, expected_range=as_range(*last_month), expected_category="조건검색",
+        expected_count=count_issues(issues, start=last_month[0], end=last_month[1], customer=customer, category="조건검색"))
     add("customer-analysis", {"customer": customer, "period": "지난달"},
         customer=customer, expected_range=as_range(*last_month),
         expected_count=count_issues(issues, start=last_month[0], end=last_month[1], customer=customer))
@@ -414,9 +424,11 @@ def count_mentioned(content: str, count: int, template_id: str = "") -> bool:
 
 
 def check_filter(case: TemplateCase, constraints: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-    if not (case.customer or case.expected_statuses or case.expected_range):
+    if not (case.customer or case.expected_statuses or case.expected_range or case.expected_category):
         return None
     problems: List[str] = []
+    if case.expected_category and {"field": "category", "operator": "equals", "value": case.expected_category} not in constraints.get("filter_clauses", []):
+        problems.append("분류 조건이 누락되거나 변경됨")
     if case.customer:
         actual = {normalize_text(alias) for alias in constraints.get("customer_aliases") or []}
         actual.add(normalize_text(constraints.get("customer_key")))

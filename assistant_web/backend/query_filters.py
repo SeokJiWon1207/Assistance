@@ -31,6 +31,7 @@ SUPPORTED_OPERATORS = {
 }
 
 SUPPORTED_FIELDS = {
+    "category",
     "customer",
     "platform",
     "status",
@@ -50,6 +51,7 @@ NEGATIVE_OPERATORS = {"not_equals", "not_in", "not_contains", "not_exists"}
 
 SOURCE_FILTER_FIELDS = {
     "mantis": {
+        "category",
         "customer",
         "platform",
         "status",
@@ -74,6 +76,7 @@ SOURCE_FILTER_FIELDS = {
         "database",
     },
     "chroma": {
+        "category",
         "customer",
         "platform",
         "status",
@@ -115,6 +118,8 @@ def clause_supported(source: str, clause: Dict[str, Any]) -> bool:
 
 
 def _canonical_filter_value(field: str, value: Any) -> str:
+    if field == "category":
+        return str(value or "").strip()
     normalized = normalize_for_match(str(value or ""))
     if field == "issue_id" and normalized.lstrip("#").isdigit():
         return str(int(normalized.lstrip("#")))
@@ -275,7 +280,7 @@ def filter_clause_label(clause: Dict[str, Any]) -> str:
     else:
         value_text = str(value) if value not in (None, "") else ""
     suffix = operator_labels.get(str(clause.get("operator")), str(clause.get("operator")))
-    field_label = {"due_at": "기한", "deployed_at": "운영반영일"}.get(str(clause.get("field")), str(clause.get("field")))
+    field_label = {"category": "분류", "due_at": "기한", "deployed_at": "운영반영일"}.get(str(clause.get("field")), str(clause.get("field")))
     return " ".join(part for part in (field_label, suffix, value_text) if part)
 
 

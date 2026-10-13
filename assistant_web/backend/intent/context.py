@@ -20,6 +20,7 @@ from backend.intent.constants import (
     KOREAN_ORDINAL_WORDS,
 )
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
+from backend.intent.categories import category_scope_text
 from backend.intent.list_continuation import list_continuation_mode
 from backend.intent.search_terms import wants_all_results
 from backend.intent.status_semantics import ALL_STATUSES
@@ -291,6 +292,7 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
     seen_date_fields = set((latest_constraints.get("date_fields") or {}).keys())
     seen_created_at = "created_at" in cleared or bool(latest_constraints.get("created_at"))
     seen_people = "owner" in cleared or bool(latest_constraints.get("people", {}).get("names") or latest_constraints.get("unassigned_people"))
+    seen_category = "category" in cleared or bool(category_scope_text(latest_constraints))
     seen_notion_db = bool(re.search(r"DB\d{2}_", latest, re.IGNORECASE))
     # "그중 4월 것만"처럼 연도 없이 월만 좁히는 후속 질문은 이전 턴의 연도를
     # 물려받아야 한다. 물려받지 못하면 모델이 임의의 연도를 채워 넣는다.
@@ -309,6 +311,12 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
 
     for prior in recent[1:]:
         prior_constraints = extract_query_constraints(prior)
+        if not seen_category:
+            if category := category_scope_text(prior_constraints):
+                inherited.append(category)
+                seen_category = True
+            elif "category" in cleared_scope_fields(prior):
+                seen_category = True
         for field, value in (prior_constraints.get("date_fields") or {}).items():
             if field not in seen_date_fields:
                 inherited.append(f"{field} {value}")
@@ -362,7 +370,7 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             elif prior_constraints.get("unassigned_people"):
                 inherited.append("담당자 미지정")
                 seen_people = True
-        if seen_customer and seen_platform and seen_status and seen_issue_ids and seen_screen_numbers:
+        if seen_customer and seen_platform and seen_status and seen_issue_ids and seen_screen_numbers and seen_category:
             break
 
     if not inherited and not excluded:

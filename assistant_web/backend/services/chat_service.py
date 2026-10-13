@@ -662,6 +662,10 @@ def prepare_chat_pipeline(
                 inherited_constraints, extract_query_constraints(latest_user_text), latest_user_text,
             )
             scoped_constraints["inherited_from_audit_id"] = request.contextAuditId
+            from backend.intent.categories import category_scope_text, remove_category_expressions
+            retrieval_text = remove_category_expressions(retrieval_text).strip()
+            if category_text := category_scope_text(scoped_constraints):
+                retrieval_text = f"{category_text} {retrieval_text}"
             if list_continuation_mode(latest_user_text):
                 retrieval_text = remove_list_continuation_request(retrieval_text) + "이슈 보여줘"
             keyword_text = confirmed_keyword_text(scoped_constraints)
@@ -809,7 +813,8 @@ def can_skip_general_planner(text: str, constraints: Dict[str, Any], rule_plan: 
         return False
     if operation == "search" and not re.search(r"이슈|목록|리스트", text):
         return False
-    if not (constraints.get("customer_key") or constraints.get("mantis_team_members")):
+    if not (constraints.get("customer_key") or constraints.get("mantis_team_members")
+            or any(c.get("field") == "category" for c in constraints.get("filter_clauses") or [])):
         return False
     keyword_text = re.sub(r"(?:전체|모든)\s*상태(?:로는|로|만)?", " ", text)
     return not build_keyword_terms(keyword_text, constraints)

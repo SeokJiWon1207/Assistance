@@ -366,6 +366,8 @@ function conditionId(condition = {}) {
   return {
     "고객사": "customer",
     "플랫폼": "platform",
+    "분류": "category",
+    "분류 제외": "category_exclude",
     "담당자/인물": "people",
     "상태": "status",
     "이슈 ID": "issue",
@@ -406,6 +408,7 @@ function escapeRegExp(value) {
 }
 
 function questionWithoutCondition(question, condition) {
+  if (["category", "category_exclude"].includes(conditionId(condition))) return "분류 조건 빼줘";
   let cleaned = String(question || "");
   const values = [...new Set([...(condition.values || []), condition.value].filter(Boolean))]
     .sort((a, b) => String(b).length - String(a).length);
@@ -441,10 +444,13 @@ async function rerunWithoutCondition(messageIndex, condition) {
   while (userIndex >= 0 && state.messages[userIndex].role !== "user") userIndex -= 1;
   if (userIndex < 0) return;
   const nextQuestion = questionWithoutCondition(state.messages[userIndex].content, condition);
+  // 과거 분류 칩도 선택한 답변의 감사 기록과 대화 조건에서 해제한다.
+  const contextMessages = ["category", "category_exclude"].includes(conditionId(condition))
+    ? state.messages.slice(0, messageIndex + 1) : null;
   const questionAskedAt = new Date().toISOString();
   state.messages.push({ role: "user", content: nextQuestion, createdAt: questionAskedAt });
   persistConversations();
-  await requestAssistant(nextQuestion, questionAskedAt);
+  await requestAssistant(nextQuestion, questionAskedAt, "", contextMessages);
 }
 
 function renderAbEvaluation(evaluation = {}) {

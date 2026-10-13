@@ -443,7 +443,7 @@ def render_document(raw: dict[str, Any]) -> str:
     issue = normalize_issue(raw)
     fields = {
         "이슈 ID": f"#{issue['id']}", "프로젝트(고객사)": issue['project'],
-        "매체구분": issue['media_type'], "화면번호": issue['screen_number'],
+        "분류": issue['category'], "매체구분": issue['media_type'], "화면번호": issue['screen_number'],
         "작업주체": issue['work_subject'], "현재 상태": issue['status'],
         "이슈 유형": issue['severity'], "우선순위": issue['priority'],
         "담당자": issue['handler'], "요청자": issue['reporter'],

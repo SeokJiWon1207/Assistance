@@ -227,6 +227,8 @@ def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
 
 
 def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any]) -> bool:
+    from backend.intent.categories import remove_category_expressions
+    text = remove_category_expressions(text)
     group_by = extract_group_by(text)
     normalized_text = normalize_for_match(text)
     if constraints.get("issue_ids") and any(
@@ -861,6 +863,13 @@ def format_model_timeout_fallback(
 
 def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
+    for clause in constraints.get("filter_clauses") or []:
+        if clause.get("field") == "category":
+            raw = clause.get("value")
+            values = raw if isinstance(raw, list) else [raw]
+            excluded = clause.get("operator", "").startswith("not_")
+            items.append({"id": "category_exclude" if excluded else "category", "label": "분류 제외" if excluded else "분류",
+                          "value": ", ".join(str(value) for value in values), "values": values})
     if constraints.get("customer_key"):
         items.append(
             {

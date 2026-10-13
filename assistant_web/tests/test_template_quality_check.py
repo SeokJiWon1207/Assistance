@@ -93,7 +93,7 @@ class TemplateQuestionTests(unittest.TestCase):
     def test_every_template_gets_one_case_with_inputs_from_the_store(self):
         cases = build_cases(load_team_templates()["templates"], ISSUES, today=TODAY, rng=random.Random(1))
 
-        self.assertEqual(len(cases), 12)
+        self.assertEqual(len(cases), 13)
         self.assertTrue(all("[" not in case.question and "{" not in case.question for case in cases))
         by_id = {case.template_id: case for case in cases}
         self.assertEqual(by_id["aging-issues"].customer, "미래에셋증권")
@@ -113,7 +113,7 @@ class TemplateQuestionTests(unittest.TestCase):
         cases = build_cases(load_team_templates()["templates"], ISSUES, today=TODAY,
                             rng=random.Random(1), include_variants=True)
         by_id = {case.id: case for case in cases}
-        self.assertEqual(len(cases), 15)
+        self.assertEqual(len(cases), 16)
         variant = by_id["template-customer-analysis-open-week"]
         self.assertEqual(variant.expected_count, 1)
         self.assertEqual(variant.expected_range, {"from": "2026-10-05", "to": "2026-10-11"})
