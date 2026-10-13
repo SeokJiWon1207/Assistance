@@ -270,6 +270,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
                 request = ChatRequest(
                     modelId="test-model",
+                    contextAuditId="a" * 32,
                     messages=[
                         {"role": "user", "content": "내 MTS 미종료 이슈 보여줘"},
                         {"role": "assistant", "content": "담당 이슈를 보여드렸습니다."},
@@ -277,6 +278,10 @@ class AuthenticatedIdentityTests(unittest.TestCase):
                     ],
                 )
                 with patch.object(
+                    chat_service_module, "load_audit_query_plan",
+                    return_value={"source": "mantis", "limit": 5, "resolved_constraints":
+                                  chat_service_module.extract_query_constraints("석지원 담당 MTS 미종료 이슈")},
+                ), patch.object(chat_service_module, "load_audit_sources", return_value=[]), patch.object(
                     chat_service_module,
                     "get_private_model",
                     return_value=model,

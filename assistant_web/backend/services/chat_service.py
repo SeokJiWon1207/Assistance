@@ -33,7 +33,7 @@ from backend.intent.status_semantics import (
 from backend.team_scope import has_mantis_team_scope
 from backend.execution import checkpoint, request_execution
 from backend.admission import CHAT_ADMISSION
-from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status, load_audit_query_plan
+from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status, load_audit_query_plan, load_audit_sources
 from backend.common import clamp_int
 from backend.llm import (
     build_generation_options,
@@ -45,6 +45,7 @@ from backend.llm import (
     is_ollama_model,
     post_model_chat,
 )
+from backend.intent.list_continuation import list_continuation_mode, confirmed_list_continuation, remove_list_continuation_request
 from backend.query_planning import build_query_plan, extract_group_by
 from backend.timing import TIMINGS, measured, request_timing
 from backend.intent.search_terms import build_keyword_terms
@@ -613,6 +614,8 @@ def prepare_chat_pipeline(
             retrieval_text = f"{notion_prefix} {detail}".strip()
             needs_follow_up_rewrite = False
 
+    if list_continuation_mode(latest_user_text):
+        needs_follow_up_rewrite = False
     if needs_follow_up_rewrite and api_key:
         rewritten = rewrite_follow_up_query_with_model(
             get_recent_user_texts(request.messages, limit=5),
@@ -659,9 +662,23 @@ def prepare_chat_pipeline(
                 inherited_constraints, extract_query_constraints(latest_user_text), latest_user_text,
             )
             scoped_constraints["inherited_from_audit_id"] = request.contextAuditId
+            if list_continuation_mode(latest_user_text):
+                retrieval_text = remove_list_continuation_request(retrieval_text) + "이슈 보여줘"
             keyword_text = confirmed_keyword_text(scoped_constraints)
             if keyword_text:
                 retrieval_text = f"{retrieval_text} {keyword_text}"
+    # 페이지 이력은 조건 변경·전체 요청으로 전파하지 않는다.
+    scoped_constraints.pop("list_continuation", None)
+    scoped_constraints.pop("list_cursor", None)
+    if list_continuation_mode(latest_user_text):
+        if inherited_constraints is not None:
+            scoped_constraints["list_continuation"] = confirmed_list_continuation(
+                latest_user_text, prior_plan, load_audit_sources(
+                    request.contextAuditId or "", str((user or {}).get("uid") or ""),
+                ),
+            )
+        else:
+            scoped_constraints["list_context_missing"] = True
     if inherited_resolution:
         inherited_resolution["grounding_text"] = retrieval_text
     enabled_tools = {"mantis": True, "vectorDb": True, "notion": True, **request.tools}
@@ -691,6 +708,10 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
 
 
 def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if context.query_constraints.get("list_context_missing"):
+        return {"modelId": request.modelId,
+                "content": "이어서 조회할 이전 검색 기록을 확인하지 못했습니다. 고객사·기간·담당자·플랫폼 등 원래 조회 조건으로 다시 검색해 주세요.",
+                "sources": [], "raw": {"mode": "list_context_clarification"}}
     if context.query_constraints.get("unconfirmed_search_terms"):
         terms = ", ".join(str(term) for term in context.query_constraints["unconfirmed_search_terms"])
         plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
@@ -874,6 +895,9 @@ def retrieval_limit(request: ChatRequest, context: ChatPipelineContext) -> tuple
     # 질문에 표시 개수가 적혀 있으면 플래너가 내놓은 숫자보다 우선한다. 플래너는
     # "하나만"처럼 한글로 쓴 개수를 놓치거나 다른 숫자를 지어내는 일이 있다.
     requested_limit = extract_requested_limit(context.latest_user_text)
+    continuation = context.query_constraints.get("list_continuation") or {}
+    if continuation:
+        return requested_limit or (200 if continuation["mode"] == "rest" else continuation["page_size"]), None
     if requested_limit is None:
         requested_limit = 200 if wants_all_results(context.latest_user_text) else (context.intent_plan or {}).get("limit")
     sidebar_limit = clamp_int(request.searchLimit, 1, 20)
@@ -932,15 +956,21 @@ def deterministic_retrieval_response(
             "retrieval": retrieval_result,
             "raw": {"mode": "deterministic_notion_list"},
         }
-    if (context.intent_plan or {}).get("source") != "notion" and should_return_deterministic_issue_list(
-        context.retrieval_text,
-        context.query_constraints,
+    if (context.intent_plan or {}).get("source") != "notion" and (
+        context.query_constraints.get("list_continuation") or should_return_deterministic_issue_list(
+            context.retrieval_text, context.query_constraints,
+        )
     ):
         deterministic_issues = select_grouped_issue_rows(
             collect_retrieved_issues(retrieval_result, None if group_by else limit),
             group_by,
         )[:limit]
         issue_sources = build_sources_from_issue_rows(deterministic_issues)
+        continuation = context.query_constraints.get("list_continuation") or {}
+        retrieval_result.setdefault("constraints", dict(context.query_constraints))["list_cursor"] = {
+            "previous_seen_ids": continuation.get("seen_ids", []),
+            "page_size": continuation.get("page_size") if continuation.get("mode") == "rest" else min(limit, 20),
+        }
         return {
             "modelId": request.modelId,
             "content": format_deterministic_issue_answer(

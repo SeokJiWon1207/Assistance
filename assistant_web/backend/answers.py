@@ -571,6 +571,7 @@ def format_deterministic_issue_answer(
     all_issues = collect_retrieved_issues(retrieval_result, None if group_by else limit)
     issues = select_grouped_issue_rows(all_issues, group_by)[:limit]
     found_count = count_retrieved_issues(retrieval_result)
+    continuation = constraints.get("list_continuation") or {}
     customer_group_counts: Dict[str, int] = {}
     if group_by == "customer":
         labels = {_customer_group_key(issue): _issue_group_value(issue, group_by) for issue in issues}
@@ -606,8 +607,13 @@ def format_deterministic_issue_answer(
         dependency_note = dependency_note or "조회한 범위에 일치하는 이슈가 없습니다. 전체 조회가 완료되지 않아 0건으로 확정할 수 없습니다."
     if incomplete and issues:
         snapshot_note = (snapshot_note + "\n" if snapshot_note else "") + "일부 범위의 결과입니다. 전체 건수와 최신순은 확정할 수 없습니다."
+    complete = any(stage.get("status") == "ok" and stage.get("meta", {}).get("search_complete") is True
+                   for stage in retrieval_result.get("stages", [])
+                   if str(stage.get("source") or "").startswith("mantis_"))
     if not issues and not customer_group_counts:
-        intro = dependency_note or build_issue_intro_line(display_constraints, issues, 0)
+        intro = ("같은 검색 조건의 이슈는 이미 모두 표시했습니다. 추가로 표시할 이슈가 없습니다."
+                 if continuation and complete and not incomplete else
+                 dependency_note or build_issue_intro_line(display_constraints, issues, 0))
         sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
         if status_note:
@@ -737,6 +743,11 @@ def format_deterministic_issue_answer(
             lines.append(f"대표 이슈는 {len(issues)}개 고객사까지 표시했습니다.")
     elif group_by == "platform":
         lines.extend(["", f"매체별 이슈를 합해 총 {len(issues)}건을 확인했습니다."])
+    elif continuation:
+        lines.extend(["", f"이전 검색 조건을 유지하고 이미 표시한 이슈를 제외했습니다. 이번에 {len(issues)}건을 추가로 표시했습니다."])
+        if complete and not incomplete:
+            remaining = max(0, found_count - len(issues))
+            lines.append(f"아직 표시하지 않은 이슈는 {remaining}건입니다." if remaining else "현재 조회 범위의 나머지 이슈를 모두 표시했습니다.")
     elif found_count and found_count > len(issues):
         lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건을 표시했습니다. 나머지도 보려면 질문 끝에 '모두 보여줘'를 붙여 주세요."])
     elif requested_limit and found_count and found_count < requested_limit:

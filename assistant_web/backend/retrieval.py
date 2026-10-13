@@ -27,6 +27,7 @@ from backend.common import (
     normalize_for_match,
     remove_quoted_value,
 )
+from backend.intent.list_continuation import continuation_execution_constraints
 from backend.query_filters import filter_audit_for_source
 from backend.notion.formatting import has_deterministic_notion_list_intent
 from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_structural_query, split_notion_body_query
@@ -177,6 +178,8 @@ def run_retrieval_pipeline(
     intent_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)
+    display_constraints = constraints
+    constraints = continuation_execution_constraints(constraints)
     stages = []
     plan_source = str((intent_plan or {}).get("source", ""))
     if plan_source not in {"notion", "mantis", "both", "general"}:
@@ -416,7 +419,7 @@ def run_retrieval_pipeline(
         )
         stage["meta"] = stage_meta
 
-    result_constraints = notion_constraints if literal_notion_title and notion_only else constraints
+    result_constraints = notion_constraints if literal_notion_title and notion_only else display_constraints
 
     return {
         "query": query_text,

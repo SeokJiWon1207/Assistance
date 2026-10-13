@@ -12,6 +12,7 @@ from backend.config import (
     STATUS_MATCH_ALIASES,
     STOPWORDS,
 )
+from backend.intent.list_continuation import remove_list_continuation_request
 from backend.intent.entities import extract_mantis_keyword
 from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit
 from backend.team_scope import remove_team_scope_phrase
@@ -104,6 +105,7 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    text = remove_list_continuation_request(text)
     text = re.sub(r"\b(VB|자바)\s+스크립트", r"\1스크립트", text, flags=re.IGNORECASE)
     text = re.sub(r"\b(VB|Java|J)\s+Script(?=\b|[가-힣])", r"\1Script", text, flags=re.IGNORECASE)
     scope_edit = has_scope_edit(text)
