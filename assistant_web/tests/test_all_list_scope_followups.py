@@ -83,3 +83,21 @@ class AllListScopeFollowupTests(unittest.TestCase):
         request,context=self.prepare(previous,plan,"HTS로 바꿔줘")
         self.assertFalse(context.query_constraints.get("list_show_all"))
         self.assertEqual(chat.retrieval_limit(request,context)[0],5)
+
+    def test_team_and_global_scope_changes_keep_the_entire_list(self):
+        plan = {"source": "mantis", "grounding_text": BASE, "terms": [],
+                "resolved_constraints": extract_query_constraints(BASE)}
+        previous = BASE
+        for question in ("그중 우리 팀 이슈 팀 범위 해제", "그중 전사 기준으로 보여줘", "그중 우리 팀만 보여줘"):
+            with self.subTest(question=question):
+                request, context = self.prepare(previous, plan, question)
+                self.assertTrue(context.query_constraints.get("list_show_all"))
+                self.assertEqual(chat.retrieval_limit(request, context)[0], 200)
+                self.assertEqual(context.query_constraints["platform_key"], "mts")
+                self.assertEqual(context.query_constraints["created_at"]["from"], "2026-10-01")
+                plan = {"source": "mantis", "grounding_text": question, "terms": [],
+                        "resolved_constraints": context.query_constraints}
+                previous = question
+        request, context = self.prepare(previous, plan, "그중 전사 기준으로 최근 3건만 보여줘")
+        self.assertFalse(context.query_constraints.get("list_show_all"))
+        self.assertEqual(chat.retrieval_limit(request, context)[0], 3)
