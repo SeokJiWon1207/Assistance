@@ -44,9 +44,11 @@ REMOTE="$EC2_USER@$EC2_HOST"
 REMOTE_RELEASE="$APP_ROOT/releases/$RELEASE_ID"
 REMOTE_SNAPSHOT="$APP_ROOT/snapshots/$RELEASE_ID"
 deployment_complete=0
+PACKAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/assistant-release.XXXXXX")"
 
 cleanup_failed_staging() {
   local exit_code=$?
+  rm -rf -- "$PACKAGE_DIR"
   if [[ "$deployment_complete" == "1" || "$exit_code" == "0" ]]; then
     return
   fi
@@ -61,6 +63,9 @@ fi
 REMOTE_CLEANUP
 }
 trap cleanup_failed_staging EXIT
+
+echo "Packaging application and release verification files..."
+bash "$ROOT_DIR/assistant_web/deploy/aws/package_release.sh" "$ROOT_DIR" "$PACKAGE_DIR"
 
 echo "Preparing immutable release: $RELEASE_ID"
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
@@ -111,24 +116,22 @@ REMOTE_BACKUP
 echo "Uploading application into $REMOTE_RELEASE..."
 rsync -az --delete \
   -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-  --exclude '.DS_Store' \
-  --exclude '__pycache__' \
-  --exclude '*.pyc' \
-  --exclude '*.pem' \
-  --exclude 'firebase-service-account*.json' \
-  --exclude '*service-account*.json' \
-  --exclude '.venv' \
-  --exclude '.pycache' \
-  --exclude 'artifacts' \
-  --exclude 'runtime/' \
-  --exclude '.env' \
-  "$ROOT_DIR/assistant_web/" \
+  "$PACKAGE_DIR/assistant_web/" \
   "$REMOTE:$REMOTE_RELEASE/assistant_web/"
 
 rsync -az \
   -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-  "$ROOT_DIR/scripts/make_vector_db.py" \
+  "$PACKAGE_DIR/scripts/make_vector_db.py" \
   "$REMOTE:$REMOTE_RELEASE/scripts/"
+
+rsync -az \
+  -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+  "$PACKAGE_DIR/.coveragerc" "$PACKAGE_DIR/.python-version" "$PACKAGE_DIR/pyproject.toml" \
+  "$REMOTE:$REMOTE_RELEASE/"
+rsync -az \
+  -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+  "$PACKAGE_DIR/.github/" \
+  "$REMOTE:$REMOTE_RELEASE/.github/"
 
 echo "Uploading versioned search snapshot..."
 rsync -az --delete \
@@ -180,5 +183,6 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" \
    bash '$REMOTE_RELEASE/assistant_web/deploy/aws/setup_server.sh'"
 
 deployment_complete=1
+rm -rf -- "$PACKAGE_DIR"
 trap - EXIT
 echo "Deployment finished: release=$RELEASE_ID https://$SERVER_NAME/"

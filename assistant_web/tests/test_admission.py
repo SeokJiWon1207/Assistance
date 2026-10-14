@@ -1,5 +1,7 @@
 import os
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -75,6 +77,51 @@ class ChatAdmissionTests(unittest.TestCase):
                     for _ in range(5)
                 ],
             )
+
+    def test_low_memory_rejects_before_consuming_slot_or_rate_limit(self):
+        with patch.dict(os.environ, {"CHAT_MIN_AVAILABLE_MEMORY_MB": "192", "CHAT_MEMORY_RESERVE_PER_REQUEST_MB": "128", "CHAT_RATE_LIMIT_PER_MINUTE": "1"}), \
+             patch("backend.admission.available_memory_bytes", side_effect=[319 * 1024 ** 2, 512 * 1024 ** 2]):
+            with self.assertRaises(HTTPException) as raised:
+                self.controller.acquire("user-1")
+            self.assertEqual(raised.exception.status_code, 429)
+            self.assertEqual(raised.exception.headers["Retry-After"], "5")
+            lease = self.controller.acquire("user-1")
+            lease.release()
+            with self.assertRaises(HTTPException) as rate_limited:
+                self.controller.acquire("user-1")
+            self.assertEqual(rate_limited.exception.status_code, 429)
+            self.assertNotEqual(rate_limited.exception.headers["Retry-After"], "5")
+
+    def test_concurrent_requests_reserve_memory_atomically(self):
+        barrier = Barrier(4)
+        def acquire(index):
+            barrier.wait()
+            try:
+                return self.controller.acquire(f"user-{index}")
+            except HTTPException as exc:
+                return exc.status_code
+        with patch.dict(os.environ, {"CHAT_MAX_CONCURRENT_TOTAL": "8", "CHAT_MIN_AVAILABLE_MEMORY_MB": "192", "CHAT_MEMORY_RESERVE_PER_REQUEST_MB": "128"}), \
+             patch("backend.admission.available_memory_bytes", return_value=448 * 1024 ** 2, create=True):
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                results = list(pool.map(acquire, range(4)))
+            accepted = [item for item in results if item != 429]
+            self.assertEqual(len(accepted), 2)
+            self.assertEqual(results.count(429), 2)
+            for lease in accepted:
+                lease.release()
+            with self.controller.admit("user-after-release"):
+                pass
+
+    def test_missing_memory_metrics_keeps_fixed_concurrency_limit(self):
+        with patch.dict(os.environ, {"CHAT_MAX_CONCURRENT_TOTAL": "2"}), \
+             patch("backend.admission.available_memory_bytes", return_value=None, create=True):
+            first = self.controller.acquire("first")
+            second = self.controller.acquire("second")
+            with self.assertRaises(HTTPException) as raised:
+                self.controller.acquire("third")
+            self.assertEqual(raised.exception.status_code, 429)
+            first.release()
+            second.release()
 
 
 if __name__ == "__main__":

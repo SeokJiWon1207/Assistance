@@ -16,6 +16,8 @@ import requests
 from fastapi import HTTPException
 
 from backend.execution import bounded_timeout
+from backend.timing import measured
+from backend.intent.search_terms import keyword_term_aliases, text_matches_keyword_terms
 from backend.common import (
     clamp_int,
     extract_issue_id_from_text,
@@ -90,8 +92,9 @@ def build_chroma_where(
 
     if include_terms:
         for term in terms[:4]:
-            where_parts.append("string_value LIKE ?")
-            params.append(f"%{term}%")
+            aliases = keyword_term_aliases(term)
+            where_parts.append("(" + " OR ".join("string_value LIKE ?" for _ in aliases) + ")")
+            params.extend(f"%{alias}%" for alias in aliases)
 
     return " AND ".join(where_parts), params
 
@@ -225,6 +228,7 @@ def rank_chroma_documents_semantically(
     return filtered, {**ranking_meta, "candidate_count": len(filtered)}
 
 
+@measured("chroma_search")
 def execute_chroma_search(
     search_keyword: str,
     limit: int = 5,
@@ -269,22 +273,6 @@ def execute_chroma_search(
             with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
                 rows = connection.execute(sql, params).fetchall()
                 candidate_scope_complete = len(rows) < 500
-                if not rows and has_constraint(constraints):
-                    relaxed_where, relaxed_params = build_chroma_where(terms, constraints, include_terms=False)
-                    rows = connection.execute(
-                        f"SELECT string_value FROM embedding_metadata WHERE {relaxed_where} LIMIT 800",
-                        relaxed_params,
-                    ).fetchall()
-                    candidate_scope_complete = len(rows) < 800
-                if not rows and len(terms) > 1 and not has_constraint(constraints):
-                    relaxed_where = "key = 'chroma:document' AND (" + " OR ".join(
-                        ["string_value LIKE ?" for _ in terms[:4]]
-                    ) + ")"
-                    rows = connection.execute(
-                        f"SELECT string_value FROM embedding_metadata WHERE {relaxed_where} LIMIT 160",
-                        [f"%{term}%" for term in terms[:4]],
-                    ).fetchall()
-                    candidate_scope_complete = len(rows) < 160
         except sqlite3.Error as exc:
             return {
                 "source": "chroma_db",
@@ -335,8 +323,7 @@ def execute_chroma_search(
                 skipped_after_refresh += 1
                 continue
             if not semantic:
-                latest_text = normalize_for_match(issue_to_search_text(latest_issue))
-                if not all(normalize_for_match(term) in latest_text for term in terms[:4]):
+                if not text_matches_keyword_terms(issue_to_search_text(latest_issue), terms):
                     skipped_after_refresh += 1
                     continue
             document["latest_issue"] = normalize_issue(latest_issue, search_terms=terms + constraint_evidence_terms(constraints))

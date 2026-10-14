@@ -15,3 +15,10 @@ class GlobalScopeSearchTermsTest(unittest.TestCase):
         self.assertEqual(build_keyword_terms("전사 VBScript 이슈 보여줘",{}),["전사","VBScript"])
     def test_quoted_topic_is_preserved_with_global_scope(self):
         self.assertEqual(build_keyword_terms('전사 "전사 오류" 이슈 보여줘',{"mantis_team_scope":"all"}),["전사","오류"])
+
+    def test_released_team_phrase_is_not_a_topic_but_quoted_team_titles_are(self):
+        constraints = {"mantis_team_scope": "all"}
+        for question in ("그중 우리 팀 이슈 팀 범위 해제", "우리 팀 전사 이슈 보여줘", "우리 팀 이슈 전사 기준으로 보여줘"):
+            with self.subTest(question=question):
+                self.assertEqual(build_keyword_terms(question, constraints), [])
+        self.assertEqual(build_keyword_terms('전사 "우리 팀 장애" 이슈 보여줘', constraints), ["우리", "팀", "장애"])

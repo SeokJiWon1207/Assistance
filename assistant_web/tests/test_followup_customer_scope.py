@@ -1,4 +1,5 @@
 """고객사 하나와 수량 하나가 함께 있는 후속 검색의 회귀 검사."""
+from contextlib import closing
 
 import json
 import sqlite3
@@ -95,7 +96,7 @@ class FollowUpCustomerScopeTests(unittest.TestCase):
         ])
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / "audit.sqlite3"
-            with sqlite3.connect(db) as connection:
+            with closing(sqlite3.connect(db)) as connection, connection:
                 connection.execute("CREATE TABLE validation_logs (id TEXT, user_uid TEXT, question TEXT, payload TEXT)")
                 connection.execute("INSERT INTO validation_logs VALUES (?, ?, ?, ?)",
                                    ("a" * 32, ACCURACY_USER_UID, previous, json.dumps({"queryPlan": plan})))

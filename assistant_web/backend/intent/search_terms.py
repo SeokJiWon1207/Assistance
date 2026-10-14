@@ -138,7 +138,7 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     if constraints and constraints.get("statuses") and PENDING_WORK_QUERY_PATTERN.search(text):
         text = PENDING_WORK_QUERY_PATTERN.sub(" ", text)
         text = re.sub(r"(?<![가-힣])(?:아직|거|것|건)(?:만|들|은|는|이|을|를)?(?=\s|$)", " ", text)
-    if constraints and constraints.get("mantis_team_members"):
+    if constraints and (constraints.get("mantis_team_members") or constraints.get("mantis_team_scope") == "all"):
         text = remove_team_scope_phrase(text)
     if TRIAGE_REQUEST_PATTERN.search(text) and (symptom := extract_quoted_value(text)):
         text = symptom

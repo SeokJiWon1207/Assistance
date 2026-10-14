@@ -8,6 +8,7 @@ import os
 import sqlite3
 from contextlib import closing
 from functools import lru_cache
+from itertools import islice
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
@@ -206,23 +207,24 @@ def scan_mantis_documents(
     and ``primary`` returns the structured result when it is healthy.
     """
     from backend.config import CHROMA_DB_PATH
-    from backend.sources.mantis_store import read_complete_store, read_store_metadata, render_document, start_store_refresh
-    stored = read_complete_store() if database_path == CHROMA_DB_PATH else None
-    if stored is not None:
-        selected = stored[:scan_limit] if scan_limit else stored
-        scanned_count = len(selected)
-        if use_raw_constraints and constraints is not None:
-            from backend.sources.mantis import select_mantis_rows
-            selected = select_mantis_rows(selected, constraints)
-        result = _scan_documents(
-            (render_document(raw) for raw in selected),
-            (lambda _text: True) if use_raw_constraints and constraints is not None else matches, normalize,
-            example_limit=example_limit, group_key=group_key, scanned_count=scanned_count,
-        )
-        result.update(stored.meta)
-        # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.
-        result["search_complete"] = not scan_limit or len(stored) <= scan_limit
-        return result
+    from backend.sources.mantis_store import stream_complete_store, read_store_metadata, render_document, start_store_refresh
+    if database_path == CHROMA_DB_PATH:
+        with stream_complete_store() as stored:
+            if stored is not None:
+                selected = islice(stored, scan_limit) if scan_limit else iter(stored)
+                scanned_count = min(len(stored), scan_limit) if scan_limit else len(stored)
+                if use_raw_constraints and constraints is not None:
+                    from backend.sources.mantis import issue_matches_constraints
+                    selected = (raw for raw in selected if issue_matches_constraints(raw, constraints))
+                result = _scan_documents(
+                    (render_document(raw) for raw in selected),
+                    (lambda _text: True) if use_raw_constraints and constraints is not None else matches, normalize,
+                    example_limit=example_limit, group_key=group_key, scanned_count=scanned_count,
+                )
+                result.update(stored.meta)
+                # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.
+                result["search_complete"] = not scan_limit or len(stored) <= scan_limit
+                return result
     if database_path == CHROMA_DB_PATH:
         metadata = read_store_metadata(allow_stale=True)
         if metadata and not metadata["search_complete"]:

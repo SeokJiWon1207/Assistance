@@ -64,12 +64,17 @@
     return "이전";
   }
 
+  function koreanClockLabel(date) {
+    const hour = date.getHours();
+    return `${hour < 12 ? "오전" : "오후"} ${hour % 12 || 12}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
   function conversationTimeLabel(conversation, now = new Date()) {
     const time = conversationTimestamp(conversation);
     if (!time) return "";
     const date = new Date(time);
     const group = conversationDateGroup(conversation, now);
-    if (group === "오늘") return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
+    if (group === "오늘") return koreanClockLabel(date);
     if (group === "어제") return "어제";
     if (date.getFullYear() === now.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()}`;
     return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
@@ -98,7 +103,7 @@
   function messageClockLabel(timestamp) {
     const date = new Date(timestamp || "");
     if (Number.isNaN(date.getTime())) return "";
-    return new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
+    return koreanClockLabel(date);
   }
 
   function byFavoriteThenRecent(a, b) {

@@ -3,7 +3,7 @@
 import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -55,7 +55,7 @@ class HistoricalKeywordTests(unittest.TestCase):
             stored = None
         else:
             stored = complete_batch(rows)
-        self.enterContext(patch.object(mantis_store, "read_complete_store", return_value=stored))
+        self.enterContext(patch.object(mantis_store, "stream_complete_store", side_effect=lambda: nullcontext(stored)))
         self.enterContext(patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
         self.enterContext(patch.object(retrieval, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
         self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id",
@@ -165,7 +165,8 @@ class ReporterRoleTests(unittest.TestCase):
         question = "홍길동이 요청한 이슈 보여줘"
         issue = raw_issue(30001, "요청", reporter={"real_name": "홍길동"}, handler={})
         with (patch("backend.intent.entities.load_known_people", return_value=([], ["홍길동"])),
-              patch.object(mantis_store, "read_complete_store", return_value=complete_batch([issue])),
+              patch.object(mantis_store, "stream_complete_store",
+                           side_effect=lambda: nullcontext(complete_batch([issue]))),
               patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12")):
             constraints = extract_query_constraints(question)
             stages = [mantis.execute_mantis_snapshot_search(2, constraints), {
@@ -207,7 +208,7 @@ class ChromaCurrentPayloadTests(unittest.TestCase):
     def test_current_lexical_mismatch_cannot_reappear_after_complete_scan_excluded_it(self):
         current = raw_issue(30001, "차트 색상 변경")
         stored = complete_batch([current])
-        with (patch.object(mantis_store, "read_complete_store", return_value=stored),
+        with (patch.object(mantis_store, "stream_complete_store", side_effect=lambda: nullcontext(stored)),
               patch.object(mantis, "read_complete_store", return_value=stored),
               patch.object(chroma, "fetch_mantis_issue_by_id", return_value=current)):
             result = retrieval.run_retrieval_pipeline("멘티스 로그인 오류 이슈 보여줘", 2,

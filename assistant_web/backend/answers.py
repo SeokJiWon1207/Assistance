@@ -589,6 +589,9 @@ def format_deterministic_issue_answer(
             "similar_base_issue_ids": similar_base_issue_ids,
         }
     criteria = format_issue_list_criteria(display_constraints, issues)
+    topic = str(retrieval_result.get("keyword") or "").strip() if not similar_base_issue_ids else ""
+    if topic:
+        criteria = f"{criteria}, 검색어={topic}"
     if group_by == "customer":
         criteria = f"{criteria}, 고객사별 최신 이슈 1건" if criteria != "요청 조건" else "고객사별 최신 이슈 1건"
     elif group_by == "platform":
@@ -614,6 +617,8 @@ def format_deterministic_issue_answer(
         intro = ("같은 검색 조건의 이슈는 이미 모두 표시했습니다. 추가로 표시할 이슈가 없습니다."
                  if continuation and complete and not incomplete else
                  dependency_note or build_issue_intro_line(display_constraints, issues, 0))
+        if topic and not dependency_note and not (continuation and complete and not incomplete):
+            intro = f"🔍 ‘{topic}’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요."
         sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
         if status_note:

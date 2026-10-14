@@ -3,7 +3,8 @@ export function formatUiDateTime(value, { compact = false, now = new Date() } = 
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  const time = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" }).format(date);
+  const hour = date.getHours();
+  const time = `${hour < 12 ? "오전" : "오후"} ${hour % 12 || 12}:${String(date.getMinutes()).padStart(2, "0")}`;
   const sameYear = date.getFullYear() === now.getFullYear();
   if (compact && date.toDateString() === now.toDateString()) return time;
   const day = compact ? `${date.getMonth() + 1}/${date.getDate()}` : `${date.getMonth() + 1}월 ${date.getDate()}일`;

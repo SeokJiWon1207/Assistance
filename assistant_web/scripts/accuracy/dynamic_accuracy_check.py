@@ -45,6 +45,7 @@ from backend.services.chat_service import chat_service
 from backend.sources import mantis
 from backend.sources.mantis_store import read_complete_store, read_store_metadata, refresh_in_progress, sync_complete_store
 from backend.understanding import extract_query_constraints
+from backend.team_scope import TEAM_MEMBERS
 
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
@@ -134,6 +135,11 @@ def exact_screen_numbers(issue: Dict[str, Any]) -> set[str]:
 
 def mantis_oracle_matches(issue: Dict[str, Any], filters: Dict[str, str]) -> bool:
     """사례 생성 시 고정한 원본 필드만 비교한다. 검색기의 조건 추출/매처는 쓰지 않는다."""
+    scope = filters.get("scope") or ("target" if filters.get("handler") else "team")
+    if scope == "team" and normalize((issue.get("handler") or {}).get("real_name")) not in {
+        normalize(name) for name in TEAM_MEMBERS
+    }:
+        return False
     if filters.get("project") and (issue.get("project") or {}).get("name") != filters["project"]:
         return False
     if filters.get("status") and status_name(issue) != filters["status"]:
@@ -358,7 +364,7 @@ def build_mantis_cases(
         if item.get("project", {}).get("name") == pair_project and status_name(item) == pair_status
     ]
     pair_question = f"{human_project_name(pair_project)}에서 상태가 {pair_status}인 최근 이슈 2개 보여줘"
-    pair_filters = {"project": pair_project, "status": pair_status}
+    pair_filters = {"project": pair_project, "status": pair_status, "scope": "all"}
     pair_expected = [int(item["id"]) for item in pair_issues[:2]]
     if augment_mutable_oracle:
         pair_expected = complete_mutable_mantis_ids(pair_filters, issues, 2)
@@ -383,7 +389,7 @@ def build_mantis_cases(
         platform_question = (
             f"{human_project_name(platform_project)} {platform} 최근 이슈 2개만 최신순으로 보여줘"
         )
-        platform_filters = {"project": platform_project, "platform": platform}
+        platform_filters = {"project": platform_project, "platform": platform, "scope": "all"}
         platform_expected = [
             int(item["id"])
             for item in issues
@@ -410,7 +416,7 @@ def build_mantis_cases(
         if not candidate_project:
             continue
         for excluded_platform in ("HTS", "MTS"):
-            exclusion_filters = {"project": candidate_project, "excluded_platform": excluded_platform}
+            exclusion_filters = {"project": candidate_project, "excluded_platform": excluded_platform, "scope": "all"}
             matching_ids = [
                 int(item["id"])
                 for item in issues
@@ -424,7 +430,7 @@ def build_mantis_cases(
             f"{human_project_name(excluded_project)} 이슈에서 {excluded_platform}는 빼고 "
             "최근 3개만 보여줘"
         )
-        exclusion_filters = {"project": excluded_project, "excluded_platform": excluded_platform}
+        exclusion_filters = {"project": excluded_project, "excluded_platform": excluded_platform, "scope": "all"}
         if augment_mutable_oracle:
             exclusion_expected = (
                 complete_mutable_mantis_ids(exclusion_filters, issues, 3)
@@ -447,7 +453,7 @@ def build_mantis_cases(
     if screen_groups:
         screen = rng.choice(sorted(screen_groups))
         screen_question = f"화면번호 {screen} 관련 이슈 3개 보여줘"
-        screen_filters = {"screen": screen}
+        screen_filters = {"screen": screen, "scope": "all"}
         screen_expected = sorted(
             (int(item["id"]) for item in screen_groups[screen]),
             reverse=True,
@@ -509,6 +515,11 @@ def build_mantis_cases(
         "no_results",
         [],
     ))
+    # 표본 전체에서 산정한 문항은 팀 기본값과 혼동하지 않도록 전사 범위를 명시한다.
+    # 정확 ID와 담당자 지정 문항은 원래의 명시 대상을 유지한다.
+    for case in cases:
+        if case.id not in {"mantis-exact-id", "mantis-handler"}:
+            case.question += " 전사 기준으로"
     return cases
 
 

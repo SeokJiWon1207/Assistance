@@ -1,4 +1,5 @@
 """전체 원본의 게시/격리/실패 보존과 실제 검색 경로 회귀."""
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -65,7 +66,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
 
     def test_stale_snapshot_keeps_original_time_and_is_not_complete(self):
         self.sync([{'id': 1}])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             meta['fetchedAt'] = '2020-01-01T00:00:00+00:00'
             db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
@@ -84,7 +85,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         return fetch
 
     def backdate(self, **fields):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             meta.update(fields)
             db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
@@ -337,7 +338,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
     def test_request_scope_reads_once_and_does_not_cache_across_requests(self):
         from backend import retrieval
         self.sync([{'id': 1, 'summary': 'HTS 조회', 'project': {'name': 'KB증권'}}])
-        with (patch.object(mantis_store, '_read_complete_store', wraps=mantis_store._read_complete_store) as read,
+        with (patch.object(mantis_store, '_open_store_stream', wraps=mantis_store._open_store_stream) as read,
               patch.object(retrieval, 'revalidate_mantis_snapshot_stage', side_effect=lambda stage, constraints: stage),
               patch.object(retrieval, 'execute_mantis_filter_search', return_value={'source':'mantis_filter', 'status':'skipped'})):
             for expected in (1, 2):

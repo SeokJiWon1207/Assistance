@@ -676,6 +676,7 @@ def prepare_chat_pipeline(
     scoped_constraints.pop("list_show_all", None)
     if inherited_constraints is not None and (
         has_scope_edit(latest_user_text) or is_customer_only_refinement(latest_user_text, latest_constraints)
+        or latest_constraints.get("mantis_team_scope") in {"team", "all"}
     ):
         scoped_constraints["list_scope_edit"] = True
         if extract_requested_limit(latest_user_text) is None and (
