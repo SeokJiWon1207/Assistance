@@ -557,11 +557,26 @@ def prepare_chat_pipeline(
         r"\s*(?:미종료|전체\s*상태|모든\s*상태|상태\s*무관)(?:로|만|으로)?"
         r"\s*(?:보여줘|조회해줘|알려줘)?[.!?]?\s*", latest_user_text,
     ))
-    prior_questions = get_recent_user_texts(request.messages, limit=2)
+    prior_questions = get_recent_user_texts(request.messages, limit=20)
+    prior_question = prior_questions[1] if len(prior_questions) > 1 else ""
+    # 재시도·새로 고침 뒤 미완료 질문이 남아도 감사 ID가 붙은 완료 답변의 질문을 사용한다.
+    for index in range(len(request.messages) - 2, -1, -1):
+        if request.messages[index].role == "assistant":
+            prior_question = next((message.content for message in reversed(request.messages[:index])
+                                   if message.role == "user"), "")
+            break
     prior_plan = load_audit_query_plan(
         request.contextAuditId or "", str((user or {}).get("uid") or ""),
-        prior_questions[1] if len(prior_questions) > 1 else "",
+        prior_question,
     ) if (status_choice or lookup_reply or is_follow_up_question(latest_user_text)) else {}
+    if not prior_plan and request.contextAuditId and (status_choice or lookup_reply or is_follow_up_question(latest_user_text)):
+        # 큰 답변이 전송 문맥에서 제외된 경우에도 대화에 실제로 남은 질문만 감사 원문과 대조한다.
+        for candidate in dict.fromkeys(prior_questions[1:]):
+            if candidate == prior_question:
+                continue
+            prior_plan = load_audit_query_plan(request.contextAuditId, str((user or {}).get("uid") or ""), candidate)
+            if prior_plan:
+                break
     prior_resolution = prior_plan.get("status_resolution") or {}
     lookup_continuation = lookup_reply and bool((prior_plan.get("resolved_constraints") or {}).get("work_lookup"))
     if (prior_plan.get("source") == "mantis" and prior_plan.get("resolved_constraints")
