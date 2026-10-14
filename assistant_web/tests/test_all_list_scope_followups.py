@@ -15,6 +15,36 @@ BASE = "2026년 10월에 등록된 MTS 이슈 전체 목록을 보여줘. 이슈
 
 
 class AllListScopeFollowupTests(unittest.TestCase):
+    def test_retry_after_unanswered_question_inherits_last_completed_answer_scope(self):
+        previous = "담당자 조건 해제해줘"
+        question = "기간 조건 없이 보여줘"
+        scope = {**extract_query_constraints("2026년 10월 전사 MTS 이슈 전체 목록 보여줘"), "list_show_all": True}
+        plan = {"source": "mantis", "grounding_text": previous, "terms": [], "resolved_constraints": scope}
+        completed = [ChatMessage(role="user", content=previous), ChatMessage(role="assistant", content="원문 목록")]
+        older = [ChatMessage(role="user", content="NH증권 MTS 담당자 이영희 이슈 보여줘"),
+                 ChatMessage(role="assistant", content="이전 원문 목록")]
+        retry = ChatMessage(role="user", content=question)
+        for history in (completed + [retry],
+                        completed + [retry, ChatMessage(role="assistant", content="오류: 요청 중지")],
+                        older + [ChatMessage(role="user", content=previous), retry]):
+            with self.subTest(history=[message.role for message in history]):
+                request = ChatRequest(modelId="fixture", contextAuditId="a" * 32, messages=[*history, retry])
+                with (
+                    patch.object(chat, "get_private_model", return_value={"id":"fixture", "status":"active"}),
+                    patch.object(chat, "get_model_api_key", return_value="fixture-key"),
+                    patch.object(chat, "load_audit_query_plan", side_effect=lambda aid, uid, expected: plan if expected == previous else {}) as load,
+                    patch.object(chat, "resolve_reference_from_context", return_value=None),
+                    patch.object(chat, "rewrite_follow_up_query_with_model", return_value=question),
+                ):
+                    context = chat.prepare_chat_pipeline(request, question, {"uid":"fixture-user"})
+                self.assertEqual(load.call_args.args, ("a" * 32, "fixture-user", previous))
+                self.assertEqual(context.query_constraints["platform_key"], "mts")
+                self.assertIsNone(context.query_constraints.get("created_at"))
+                self.assertFalse(context.query_constraints.get("customer_key"))
+                self.assertFalse((context.query_constraints.get("people") or {}).get("names"))
+                self.assertTrue(context.query_constraints["list_show_all"])
+                self.assertEqual(context.query_constraints["inherited_from_audit_id"], "a" * 32)
+
     def test_clearing_three_filters_keeps_other_scope_and_full_list_without_keywords(self):
         previous = "2026년 10월 전사 NH증권 MTS 담당자 이영희 이슈 전체 목록 보여줘"
         plan = {"source": "mantis", "grounding_text": previous, "terms": [],
