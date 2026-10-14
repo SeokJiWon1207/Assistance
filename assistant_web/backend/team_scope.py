@@ -33,7 +33,12 @@ def has_mantis_team_scope(text: str) -> bool:
 
 
 def remove_team_scope_phrase(text: str) -> str:
-    return _TEAM_PHRASE.sub(" ", text)
+    # 인용한 이슈 제목은 조회 범위 지시로 지우지 않는다.
+    return re.sub(
+        r'"[^"]*"|\'[^\']*\'|“[^”]*”|‘[^’]*’|[^"\'“”‘’]+',
+        lambda match: match[0] if match[0][0] in "\"'“‘" else _TEAM_PHRASE.sub(" ", match[0]),
+        text,
+    )
 
 
 def apply_default_team_scope(text: str, constraints: dict, source: str) -> dict:
