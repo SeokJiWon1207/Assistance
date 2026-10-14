@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import sqlite3
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -74,6 +75,23 @@ class NotionBodyIndexTests(unittest.TestCase):
         self.assertEqual(status["unsupported_subtype_unknown_page_count"], 1)
         self.assertEqual(status["supported_collected_page_count"], 0)
 
+    def test_status_memory_does_not_scale_with_raw_page_payloads(self):
+        self.add_complete()
+        expected = self.index.status(["db-1"])
+        raw = page()
+        raw["large_property"] = "x" * (12 * 1024 * 1024)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("UPDATE pages SET raw_page=?", (json.dumps(raw),))
+        del raw
+        tracemalloc.start()
+        try:
+            actual = self.index.status(["db-1"])
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(actual, expected)
+        self.assertLess(peak, 4 * 1024 * 1024)
+
     def test_changed_revision_does_not_reuse_supported_coverage(self):
         raw = page()
         self.index.upsert_catalog("db-1", [raw], complete=True)
@@ -99,7 +117,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_changed_collection_policy_requires_revalidation_without_losing_candidates(self):
         from backend.notion import body_index
         self.add_complete()
-        with patch.object(body_index, "CONTENT_POLICY_VERSION", 2, create=True):
+        with patch.object(body_index, "CONTENT_POLICY_VERSION", body_index.CONTENT_POLICY_VERSION + 1, create=True):
             self.assertFalse(self.index.read_page("page-1")["trusted"])
             status = self.index.status(["db-1"])
             self.assertEqual(status["indexed_page_count"], 0)

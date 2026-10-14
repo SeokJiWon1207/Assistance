@@ -1320,6 +1320,8 @@ def _indexed_body_matches(
                 labels[database_id] = label
             page = normalize_notion_page(candidate["raw_page"], include_blocks=False,
                                          database_id=database_id, database_label=labels[database_id])
+            if "snapshot_property_text" in candidate:
+                page["search_text"] = candidate["snapshot_property_text"]
             if not notion_page_matches_and_enrich(page, pre_body_constraints):
                 continue
         except (HTTPException, requests.RequestException):
@@ -1508,6 +1510,15 @@ def execute_notion_search(
     database_ids, selected_database_role = select_notion_database_ids(
         database_ids, query_text, terms, notion_constraints,
     )
+    if scope_complete and os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
+        from backend.notion.complete_snapshot import search_complete_snapshot
+        snapshot_result = search_complete_snapshot(
+            database_ids, terms=terms, read_scope=read_scope, constraints=notion_constraints,
+            pre_body_constraints=pre_body_constraints, body_clauses=body_clauses,
+            keyword_clauses=keyword_clauses, limit=limit)
+        if snapshot_result is not None:
+            snapshot_result["meta"]["selected_database_role"] = selected_database_role
+            return snapshot_result
     target_database_label = notion_constraints.get("database_label", "")
     pages: List[Dict[str, Any]] = []
     scanned_count = 0

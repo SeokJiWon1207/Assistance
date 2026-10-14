@@ -94,6 +94,11 @@ def notion_property_to_text(prop: Dict[str, Any]) -> str:
         return "" if rollup_value is None else str(rollup_value)
     if prop_type == "relation":
         return ", ".join(item.get("id", "") for item in value or [])
+    if prop_type == "files":
+        return ", ".join(item.get("name", "") for item in value or [])
+    if prop_type == "unique_id":
+        return "-".join(str(part) for part in ((value or {}).get("prefix"), (value or {}).get("number"))
+                        if part is not None and part != "")
     if isinstance(value, str):
         return value
     return ""
@@ -312,25 +317,18 @@ def notion_properties_to_search_text(properties: Dict[str, Dict[str, Any]]) -> s
 def notion_block_text(block: Dict[str, Any]) -> str:
     block_type = block.get("type")
     value = block.get(block_type or "", {})
-    if block_type in {
-        "paragraph",
-        "heading_1",
-        "heading_2",
-        "heading_3",
-        "bulleted_list_item",
-        "numbered_list_item",
-        "to_do",
-        "toggle",
-        "quote",
-        "callout",
-        "code",
-    }:
-        return notion_rich_text_to_plain(value.get("rich_text", []))
     if block_type == "table_row":
         return " | ".join(notion_rich_text_to_plain(cell) for cell in value.get("cells", []))
     if block_type == "child_page":
         return value.get("title", "")
-    return ""
+    # 본문뿐 아니라 API가 제공하는 첨부 설명과 수식도 검색 대상이다.
+    parts = [notion_rich_text_to_plain(value.get("rich_text", [])),
+             notion_rich_text_to_plain(value.get("caption", []))]
+    if block_type == "equation":
+        parts.append(str(value.get("expression") or ""))
+    if block_type == "file":
+        parts.append(str(value.get("name") or ""))
+    return "\n".join(part for part in parts if part)
 
 
 def normalize_notion_page(

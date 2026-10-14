@@ -156,6 +156,9 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
     block_count = 0
     unsupported_elements: list[dict[str, str]] = []
     reference_copies: dict[str, dict[str, Any]] = {}
+    walk_failures: set[str] = set()
+    source_exclusions: set[str] = set()
+    verified_synced_references: list[dict[str, str]] = []
 
     def walk(identifier: str, depth: int, projection: dict[str, str] | None = None) -> None:
         nonlocal block_count
@@ -180,6 +183,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
                 data = _request(f"blocks/{identifier}/children", budget, payload=payload)
             except _ReadFailure as exc:
                 reasons.add(str(exc))
+                walk_failures.add(str(exc))
                 return
             rows = data.get("results")
             if not isinstance(rows, list):
@@ -259,6 +263,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
             cursor = next_cursor
 
     walk(page_id, 0)
+    own_failures = reasons - {"unsupported_block"}
     # 같은 페이지의 검증된 소유 트리에서 원본을 읽었다면 복제 위치를 다시
     # 따라갈 필요가 없다. 원본 순서와 무관하며, 원본 순회의 실패는 그대로 남는다.
     for source_id in sorted(synced_references - owned_synced_originals):
@@ -292,15 +297,22 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
                     or not any(page_belongs_to_database(current_copy, db, copy_parents)
                                for db in allowed_database_ids)):
                 raise _ReadFailure("synced_copy_moved")
+            verified_synced_references.append({"source_id": source_id, "database_id": database_id})
         except _ReadFailure as exc:
             del segments[segment_start:]
             del unsupported_elements[unsupported_start:]
             reasons.update({"foreign_synced_block", str(exc)})
+            if str(exc) in {"http_403", "http_404", "synced_source_outside_scope"}:
+                source_exclusions.update({"foreign_synced_block", str(exc)})
     return {"text": "\n".join(segment["text"] for segment in segments), "segments": segments,
             "complete": not reasons, "incomplete_reasons": sorted(reasons),
             "supported_content_complete": not (reasons - {"unsupported_block"}),
             "unsupported_elements": unsupported_elements,
+            "synced_reference_ids": sorted(synced_references - owned_synced_originals),
+            "verified_synced_references": verified_synced_references,
             "unsupported_child_page_ids": sorted(unsupported_children),
+            "accessible_incomplete_reasons": sorted(
+                (reasons - source_exclusions - {"unsupported_block"}) | own_failures | walk_failures),
             "child_database_ids": sorted(child_databases), "block_count": block_count}
 
 
@@ -372,7 +384,8 @@ def _valid_page(raw: dict[str, Any], page_id: str, database_id: str,
 
 def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[str], *,
                              index: BodyIndex | None = None, deadline: float | None = None,
-                             limits: CrawlLimits | None = None) -> dict[str, Any] | None:
+                             limits: CrawlLimits | None = None,
+                             catalog_page: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """접근·소속·수정본을 확인한 원문만 검색 결과로 반환한다.
 
     접근 거부, 삭제, 다른 DB로의 이동은 None이다. 수정 시각이 같아도
@@ -387,7 +400,17 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
     end = min(deadline, time.monotonic() + limits.max_seconds) if deadline is not None else time.monotonic() + limits.max_seconds
     budget = _Budget(end, max(6, limits.max_requests))
     try:
-        before = _request(f"pages/{page_id}", budget)
+        before = None
+        if catalog_page and (catalog_page.get("parent") or {}).get("type") in {"database_id", "data_source_id"}:
+            try:
+                edited = datetime.fromisoformat(str(catalog_page.get("last_edited_time", "")).replace("Z", "+00:00"))
+                old_enough = (datetime.now(timezone.utc) - edited).total_seconds() > 60
+            except (ValueError, TypeError):
+                old_enough = False
+            if old_enough and _valid_page(catalog_page, page_id, database_id, allowed):
+                before = catalog_page
+        if before is None:
+            before = _request(f"pages/{page_id}", budget)
         before_parents = _page_ancestors(before, budget)
     except _ReadFailure as exc:
         if index is not None:
@@ -398,6 +421,13 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             index.record_failure(page_id, "page_unavailable_or_moved")
         return None
     revision = str(before["last_edited_time"])
+    from backend.notion.property_snapshot import read_full_properties
+    try:
+        expanded = read_full_properties(before, budget)
+    except _ReadFailure as exc:
+        if index is not None:
+            index.record_failure(page_id, str(exc))
+        return None
     content = crawl_notion_page_content(page_id, limits=limits, deadline=end, allowed_database_ids=allowed)
     reasons = set(content["incomplete_reasons"])
     try:
@@ -417,6 +447,8 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             index.upsert_page(database_id, after, parent_pages=after_parents)
             index.record_failure(page_id, "page_changed_during_read")
         return None
+    after = {**after, "properties": expanded["properties"],
+             "_body_index_full_property_revision": revision}
     if index is not None and content["unsupported_child_page_ids"]:
         parents = {**after_parents, _id(page_id): after}
         registered = True
@@ -436,11 +468,19 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             # 자식 본문은 부모 증거에 합치지 않는다. 별도 pending 페이지로 수집한다.
             reasons.discard("unsupported_child_pages")
     complete = not reasons
+    accessible_reasons = set(content.get("accessible_incomplete_reasons", reasons))
+    if "unsupported_child_pages" not in reasons:
+        accessible_reasons.discard("unsupported_child_pages")
+    accessible_complete = not accessible_reasons and not (reasons - {
+        "unsupported_block", "foreign_synced_block", "http_403", "http_404", "synced_source_outside_scope"})
     if index is not None:
         index.upsert_page(database_id, after, parent_pages=after_parents)
         if not index.replace_content(page_id, content["segments"], complete=complete,
                                      expected_edited_time=revision,
                                      coverage={"supported_content_complete": not (reasons - {"unsupported_block"}),
+                                               "accessible_content_complete": accessible_complete,
+                                               "synced_reference_ids": content["synced_reference_ids"],
+                                               "verified_synced_references": content["verified_synced_references"],
                                                "unsupported_elements": content["unsupported_elements"],
                                                "incomplete_reasons": sorted(reasons)}):
             reasons.add("page_changed_during_read")
@@ -451,6 +491,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             "segments": content["segments"], "complete": complete, "incomplete_reasons": sorted(reasons),
             "supported_content_complete": not (reasons - {"unsupported_block"}),
             "unsupported_elements": content["unsupported_elements"],
+            "accessible_content_complete": accessible_complete,
             "unsupported_child_page_ids": content["unsupported_child_page_ids"]}
 
 

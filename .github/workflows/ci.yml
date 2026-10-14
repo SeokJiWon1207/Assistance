@@ -33,29 +33,21 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --disable-pip-version-check -r assistant_web/requirements-dev.lock
 
+      # 검증 명령의 단일 기준은 assistant_web/scripts/check.sh이며 단계별로 나눠 로그를 남긴다.
       - name: Run deterministic test suite
-        env:
-          PYTHONWARNINGS: error::ResourceWarning
-        run: coverage run assistant_web/tests/run_test_suite.py
-
-      - name: Report coverage
-        run: coverage report
+        run: bash assistant_web/scripts/check.sh tests
 
       - name: Compile Python sources
-        run: python -m compileall -q assistant_web/backend assistant_web/scripts assistant_web/tests
+        run: bash assistant_web/scripts/check.sh compile
 
       - name: Validate deployment shell scripts
-        run: |
-          for script in assistant_web/scripts/commands/*.command; do bash -n "$script"; done
-          bash -n assistant_web/deploy/aws/deploy_to_ec2.sh
-          bash -n assistant_web/deploy/aws/setup_server.sh
-          bash -n assistant_web/deploy/aws/rollback_release.sh
+        run: bash assistant_web/scripts/check.sh shell
 
       - name: Ruff
-        run: ruff check assistant_web/backend assistant_web/tests scripts
+        run: bash assistant_web/scripts/check.sh ruff
 
       - name: mypy
-        run: mypy
+        run: bash assistant_web/scripts/check.sh mypy
 
       - name: Dependency audit
-        run: python assistant_web/scripts/check_dependency_audit.py
+        run: bash assistant_web/scripts/check.sh audit
