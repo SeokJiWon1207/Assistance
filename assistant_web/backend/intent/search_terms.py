@@ -42,6 +42,7 @@ def text_matches_keyword_terms(text: str, terms: List[str]) -> bool:
 
 
 def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bool:
+    from backend.intent.identifiers import COMPOUND_IDENTIFIER
     aliases = [
         constraints.get("customer_key") or "",
         constraints.get("customer_exact") or "",
@@ -97,8 +98,10 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
         return True
     return any(
         normalized_term == normalize_for_match(alias)
-        or normalized_term in normalize_for_match(alias)
-        or normalize_for_match(alias) in normalized_term
+        or (not COMPOUND_IDENTIFIER.fullmatch(term) and (
+            normalized_term in normalize_for_match(alias)
+            or normalize_for_match(alias) in normalized_term
+        ))
         for alias in aliases
         if alias
     )

@@ -23,6 +23,7 @@ from backend.intent.entities import (
     get_customer_alias_groups,
 )
 from backend.intent.people import drop_people, empty_people
+from backend.intent.identifiers import COMPOUND_IDENTIFIER
 from backend.query_filters import add_filter_clause
 from backend.query_planning import extract_created_at_range, extract_group_by
 
@@ -59,7 +60,13 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
     for aliases in get_customer_alias_groups():
         for alias in aliases:
             normalized_alias = normalize_for_match(alias)
-            if normalized_alias and text_matches_customer_aliases(alias_text, [alias]):
+            # 코드 식별자의 일부인 고객사 이름은 범위가 아니다. 별도로 쓴
+            # 고객사와 식별자 전체가 실제 프로젝트 별칭인 경우는 유지한다.
+            def mask_identifier(match: re.Match[str], expected: str = normalized_alias) -> str:
+                return match.group() if normalize_for_match(match.group()) == expected else " "
+
+            alias_context = COMPOUND_IDENTIFIER.sub(mask_identifier, alias_text)
+            if normalized_alias and text_matches_customer_aliases(alias_context, [alias]):
                 target = excluded_matches if expression_is_excluded(alias_text, alias) else customer_matches
                 target.append((len(normalized_alias), alias, aliases))
 

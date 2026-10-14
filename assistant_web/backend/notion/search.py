@@ -1484,12 +1484,17 @@ def execute_notion_search(
         structured_field_terms.update({"고객사", "고객", "customer", "client"})
     if "platform" in structured_fields:
         structured_field_terms.update({"매체", "플랫폼", "media", "platform"})
+    from backend.intent.identifiers import COMPOUND_IDENTIFIER
+
     terms = [
         term
         for term in terms
         if normalize_for_match(term) not in structured_field_terms
         and not any(
-            normalize_for_match(term) in value or value in normalize_for_match(term)
+            normalize_for_match(term) == value
+            or (not COMPOUND_IDENTIFIER.fullmatch(term) and (
+                normalize_for_match(term) in value or value in normalize_for_match(term)
+            ))
             for value in structured_values
         )
     ]
