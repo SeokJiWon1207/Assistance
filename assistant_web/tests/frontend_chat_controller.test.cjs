@@ -101,3 +101,53 @@ test('stream reset removes failed model text before replacement deltas and final
   assert.equal(saved[0].at(-1).auditId, 'new-audit');
   assert.equal(state.busy, false);
 });
+
+test('evidence found before generation is shown until the final answer replaces it', async () => {
+  const state = { messages: [{ role: 'user', content: '원인 분석해줘' }] };
+  const snapshots = [];
+  const evidence = [{ type: 'mantis', issue_id: 31585, title: 'UI 개선' }];
+  const frames = [
+    { type: 'status', message: '자료를 찾고 있습니다', stage: 'retrieval' },
+    { type: 'evidence', sources: evidence },
+    { type: 'status', message: '답변을 생성하고 있습니다', stage: 'generation' },
+    { type: 'reset' },
+    { type: 'result', data: { content: '최종 답변', sources: evidence, auditId: 'audit' } },
+  ];
+  const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
+  const apiFetch = async () => ({ ok: true, body: { getReader: () => ({
+    read: async () => frames.length
+      ? { done: false, value: new TextEncoder().encode(`data: ${JSON.stringify(frames.shift())}\n\n`) }
+      : { done: true },
+  }) } });
+  const dependencies = {
+    './runtime.js': { state, els: { input: { focus() {} } }, apiFetch,
+      buildChatMessages: core.buildChatMessages, parseSseBuffer: core.parseSseBuffer },
+    './workspace.js': { persistConversations() {} },
+  };
+  const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/chat_controller.js'), 'utf8');
+  const module = new vm.SourceTextModule(source, { context });
+  await module.link((specifier) => {
+    const exports = dependencies[specifier.replace(/\?v=.*$/, '')];
+    return new vm.SyntheticModule(Object.keys(exports), function () {
+      for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
+    }, { context });
+  });
+  await module.evaluate();
+  module.namespace.configureChatController({
+    ensureModels: async () => {}, selectedModel: () => ({ id: 'test', status: 'active' }), statusLabel: String,
+    generationPayload: () => ({}), abComparisonEnabled: () => false, sourceToolsPayload: () => ({}),
+    renderMessages: () => snapshots.push(JSON.parse(JSON.stringify(state.messages.at(-1)))),
+    setBusy() {},
+  });
+  await module.namespace.requestAssistant('원인 분석해줘');
+  const generating = snapshots.find((message) => message.stage === 'generation');
+  assert.equal(generating.loading, true);
+  assert.deepEqual(generating.evidenceSources, evidence);
+  // 모델 재연결 뒤에도 같은 검색 근거를 계속 보여준다.
+  assert.ok(snapshots.filter((message) => message.progress === '응답 연결을 다시 확인하고 있습니다')
+    .every((message) => message.evidenceSources?.length === 1));
+  const final = state.messages.at(-1);
+  assert.equal(final.content, '최종 답변');
+  assert.deepEqual(final.sources, evidence);
+  assert.equal(final.evidenceSources, undefined);
+});

@@ -9,7 +9,10 @@ from backend.evaluation.delivery import decide_delivery
 from backend.evaluation.verification import build_verification_report
 from backend.evaluation import finalization
 from backend.audit import CHAT_STREAM_CONTEXT
-from backend.retrieval import build_model_retrieval_context, build_sources, collect_retrieved_issues, count_retrieved_issues
+from backend.retrieval import (
+    build_model_evidence_sources, build_model_retrieval_context, build_sources, collect_retrieved_issues,
+    count_retrieved_issues,
+)
 from backend.schemas import ChatRequest
 from backend.services.chat_service import retrieve_chat_evidence
 from backend.services import chat_service
@@ -157,6 +160,42 @@ class AnswerGroundingTests(unittest.TestCase):
         self.assertIsNotNone(result.response)
         self.assertEqual(result.response["raw"]["mode"], "evidence_unavailable")
         self.assertIn("조회", result.response["content"])
+
+    def run_retrieval_stage(self, show_sources=True, deterministic=None):
+        question = "MTS 화면 UI 개선 원인 분석해줘"
+        request = ChatRequest(modelId="test", showSources=show_sources,
+                              messages=[{"role": "user", "content": question}])
+        context = ChatPipelineContext(
+            latest_user_text=question, retrieval_text=question, model={"id": "test"}, api_key="",
+            messages=[], system_notes=[], enabled_tools={"mantis": True, "notion": True, "vectorDb": True},
+            query_constraints=extract_query_constraints(question), active_limit=5, intent_plan={"source": "mantis"},
+        )
+        events = []
+        CHAT_STREAM_CONTEXT.emitter = events.append
+        try:
+            with patch.object(chat_service, "should_retrieve_chat_evidence", return_value=True), \
+                    patch.object(chat_service, "retrieval_limit", return_value=(5, None)), \
+                    patch.object(chat_service, "run_retrieval_pipeline", return_value=retrieval()), \
+                    patch.object(chat_service, "deterministic_retrieval_response", return_value=deterministic):
+                result = retrieve_chat_evidence(request, context)
+        finally:
+            CHAT_STREAM_CONTEXT.emitter = None
+        return result, context, [event for event in events if event["type"] == "evidence"]
+
+    def test_model_answer_streams_its_evidence_before_generation(self):
+        result, context, evidence = self.run_retrieval_stage()
+        self.assertIsNone(result.response)
+        self.assertEqual(len(evidence), 1)
+        # 먼저 보여준 근거는 최종 응답이 출처로 쓰는 목록과 같아야 한다.
+        self.assertEqual(evidence[0]["sources"], build_model_evidence_sources(context.retrieval_result, 5))
+        self.assertEqual(evidence[0]["sources"][0]["issue_id"], ISSUE["id"])
+
+    def test_early_evidence_respects_hidden_sources_and_skips_deterministic_answers(self):
+        self.assertEqual(self.run_retrieval_stage(show_sources=False)[2], [])
+        deterministic = {"modelId": "test", "content": "목록", "sources": [], "raw": {"mode": "deterministic_issue_list"}}
+        result, _context, evidence = self.run_retrieval_stage(deterministic=deterministic)
+        self.assertIs(result.response, deterministic)
+        self.assertEqual(evidence, [])
 
     def test_normalized_platform_and_date_mismatch_are_definite_failures(self):
         for row in ({**ISSUE, "media_type": "HTS", "description": "MTS와 비교"},

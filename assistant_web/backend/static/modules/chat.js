@@ -258,9 +258,12 @@ function renderMessages() {
           <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         </span>
       `;
+      // 답변을 쓰는 동안에는 이미 찾은 근거를 먼저 보여준다. 최종 답변이 오면 그 출처로 바뀐다.
       // 자료를 찾거나 정리하는 단계에서는 결과 카드 자리에 뼈대(스켈레톤)를
       // 보여줘 "곧 목록이 채워진다"는 걸 형태로 미리 알린다.
-      if (message.stage === "retrieval" || message.stage === "filtering") {
+      if (message.evidenceSources?.length) {
+        bubble.appendChild(renderSourceList(message.evidenceSources, messageIndex, "evidence"));
+      } else if (message.stage === "retrieval" || message.stage === "filtering") {
         bubble.appendChild(renderIssueListSkeleton());
       }
     } else if (message.role === "assistant") {
