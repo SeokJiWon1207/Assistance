@@ -42,6 +42,9 @@ def normalized_text(value: str) -> str:
 
 def infer_operation(question: str) -> str:
     normalized = normalized_text(question)
+    request_text = re.sub(r'''["'“‘][^"'”’]*["'”’]''', " ", question)
+    if re.search(r"공수(?:는|가|를|은|이)?\s*어떻게\s*(?:돼|되|됐)", request_text):
+        return "aggregate"
     if "공수" in normalized and any(marker in normalized for marker in ("알고", "얼마", "집계", "합", "총")):
         return "aggregate"
     if any(marker in normalized for marker in SUM_MARKERS):
