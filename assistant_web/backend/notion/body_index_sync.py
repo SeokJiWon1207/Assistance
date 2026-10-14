@@ -208,6 +208,12 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
                         reasons.add("unsupported_child_content")
                     unsupported_elements.append({"block_id": block_id,
                         "block_type": str((block.get("unsupported") or {}).get("block_type") or "unknown")})
+                    # API의 leaf alias는 연결 대상의 parent를 반환할 수 있다.
+                    # 원문/자식을 읽지 않는 미지원 참조를 지원 본문 실패로
+                    # 중복 집계하지 않는다. 알 수 없는 유형은 아래 검증을 유지한다.
+                    if ((block.get("unsupported") or {}).get("block_type") == "alias"
+                            and block.get("has_children") is False):
+                        continue
                 # 반환된 parent 정보가 있으면 현재 조회 컨테이너와 일치해야 한다.
                 parent = block.get("parent") or {}
                 parent_kind = parent.get("type")

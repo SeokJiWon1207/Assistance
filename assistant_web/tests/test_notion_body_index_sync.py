@@ -342,6 +342,21 @@ class BodyIndexSyncTests(unittest.TestCase):
         self.assertEqual(content["text"], "known text")
         self.assertFalse(content["complete"])
 
+    def test_unsupported_leaf_alias_parent_is_not_a_supported_body_failure(self):
+        self.blocks["page"] = [paragraph("own", "known text"), {
+            "id": "alias", "object": "block", "type": "unsupported",
+            "parent": {"type": "page_id", "page_id": "other"},
+            "has_children": False, "unsupported": {"block_type": "alias"},
+        }]
+        content = sync.crawl_notion_page_content("page")
+        self.assertTrue(content["supported_content_complete"])
+        self.assertFalse(content["complete"])
+        self.assertEqual(content["incomplete_reasons"], ["unsupported_block"])
+        self.assertEqual(content["text"], "known text")
+        self.assertNotIn("blocks/other/children", self.events)
+        self.blocks["page"][1]["has_children"] = True
+        self.assertFalse(sync.crawl_notion_page_content("page")["supported_content_complete"])
+
     def test_unsupported_moved_block_keeps_both_incomplete_reasons(self):
         self.blocks["page"] = [{
             "id": "opaque", "object": "block", "type": "unsupported",
