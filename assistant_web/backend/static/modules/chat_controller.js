@@ -10,6 +10,7 @@ const controllerHooks = {
   sourceToolsPayload: null,
   renderMessages: null,
   setBusy: null,
+  refreshDataStatus: null,
 };
 
 function configureChatController(hooks = {}) {
@@ -190,6 +191,8 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
     persistConversations();
     renderMessages();
     els.input.focus();
+    // 동기화 완료 후 로그인 때의 오래된 배지를 남기지 않는다. 답변 완료는 지연하지 않는다.
+    Promise.resolve().then(() => controllerHooks.refreshDataStatus?.()).catch(() => {});
   }
 }
 

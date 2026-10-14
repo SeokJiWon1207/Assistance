@@ -151,3 +151,45 @@ test('evidence found before generation is shown until the final answer replaces 
   assert.deepEqual(final.sources, evidence);
   assert.equal(final.evidenceSources, undefined);
 });
+
+test('completed answers refresh stale data status without blocking or replacing the answer on refresh failure', async () => {
+  for (const fails of [false, true]) {
+    const state = { messages: [{ role: 'user', content: '9월 공수' }] };
+    let badge = 'stale';
+    let release;
+    const ready = new Promise(resolve => { release = resolve; });
+    const frames = [{ type: 'result', data: { content: '6건 · 2.35', auditId: 'audit' } }];
+    const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
+    const dependencies = {
+      './runtime.js': { state, els: { input: { focus() {} } },
+        buildChatMessages: core.buildChatMessages, parseSseBuffer: core.parseSseBuffer,
+        apiFetch: async () => ({ ok: true, body: { getReader: () => ({
+          read: async () => frames.length
+            ? { done: false, value: new TextEncoder().encode(`data: ${JSON.stringify(frames.shift())}\n\n`) }
+            : { done: true },
+        }) } }) },
+      './workspace.js': { persistConversations() {} },
+    };
+    const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/chat_controller.js'), 'utf8'), { context });
+    await module.link(specifier => {
+      const exports = dependencies[specifier.replace(/\?v=.*$/, '')];
+      return new vm.SyntheticModule(Object.keys(exports), function () {
+        for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
+      }, { context });
+    });
+    await module.evaluate();
+    module.namespace.configureChatController({
+      ensureModels: async () => {}, selectedModel: () => ({ id: 'test', status: 'active' }),
+      generationPayload: () => ({}), abComparisonEnabled: () => false, sourceToolsPayload: () => ({}),
+      renderMessages() {}, setBusy: busy => { state.busy = busy; },
+      refreshDataStatus: async () => { await ready; if (fails) throw new Error('offline'); badge = 'fresh'; },
+    });
+    await module.namespace.requestAssistant('9월 공수');
+    assert.equal(state.messages.at(-1).content, '6건 · 2.35');
+    assert.equal(state.busy, false);
+    release();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(badge, fails ? 'stale' : 'fresh');
+    assert.equal(state.messages.at(-1).content, '6건 · 2.35');
+  }
+});
