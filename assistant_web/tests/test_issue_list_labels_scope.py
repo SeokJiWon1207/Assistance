@@ -2,6 +2,7 @@
 
 import unittest
 from contextlib import nullcontext
+from datetime import date
 from unittest.mock import patch
 
 from backend.common import normalize_chroma_issue_document
@@ -29,6 +30,15 @@ def raw_issue(handler="석지원"):
 
 
 class IssueListLabelsScopeTests(unittest.TestCase):
+    def test_exact_yearless_month_question_keeps_date_and_team_filters(self):
+        with patch("backend.query_planning.date", wraps=date) as clock:
+            clock.today.return_value = date(2026, 10, 14)
+            constraints = extract_query_constraints("10월 MTS 이슈 전체 목록 보여줘")
+        self.assertEqual(constraints.get("created_at"),
+                         {"from": "2026-10-01", "to": "2026-10-31", "precision": "month"})
+        self.assertTrue(issue_matches_constraints(raw_issue(), constraints))
+        self.assertFalse(issue_matches_constraints(dict(raw_issue(), created_at="2026-09-30"), constraints))
+        self.assertFalse(issue_matches_constraints(raw_issue("강민성"), constraints))
 
     def test_monthly_all_list_and_count_use_same_team_rows_and_labels(self):
         rows = [dict(raw_issue(name), id=31582 + i) for i, name in enumerate(("석지원", "강민성", "이영희"))]

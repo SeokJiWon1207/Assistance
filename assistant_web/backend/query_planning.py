@@ -210,13 +210,17 @@ def extract_created_at_range(question: str) -> Optional[Dict[str, str]]:
         }
 
     # 연도를 생략한 "9월 등록된 항목"도 현재 연도의 해당 월로 해석한다.
-    # 날짜와 무관한 숫자까지 잡지 않도록 월 표기와 시간 의미 동사가 함께
-    # 있는 경우에만 적용한다.
+    # 질문 앞의 "10월 MTS 이슈"도 등록 월을 뜻한다. 배포일 등 다른 날짜
+    # 필드나 제목 안의 월 표현을 등록일 조건으로 바꾸지는 않는다.
     relative_month = extract_yearless_month_range(question)
-    if relative_month and re.search(
+    month_issue_request = re.search(
+        r"^\s*(?:(?:MTS|HTS)\s*)?(?:1[0-2]|0?[1-9])\s*월\s*"
+        r"(?:(?:MTS|HTS)\s*)?이슈", question, re.IGNORECASE,
+    )
+    if relative_month and (month_issue_request or re.search(
         r"등록일|접수일|생성일|작성일|등록(?:된|한|했|되)|접수(?:된|한|했|되)|"
         r"생성(?:된|한|했|되)|작성(?:된|한|했|되)|만든", question,
-    ):
+    )):
         return relative_month
 
     year_match = re.search(r"(?<!\d)(20\d{2})\s*년", question)
