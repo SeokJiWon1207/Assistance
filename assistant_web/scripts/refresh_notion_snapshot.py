@@ -61,10 +61,9 @@ def main():
                     raise RuntimeError('read_scope_refresh_incomplete')
         proof = coverage(index, list(scope))
         if not args.status:
-            from backend.notion.complete_snapshot import _time
-            age = datetime.now(timezone.utc).timestamp() - _time(proof.get('snapshot_as_of', ''))
+            # 새 문서·속성 변경은 전체 목록으로만 드러나므로 매 실행 목록부터 갱신한다.
             proof = refresh_snapshot(index, list(scope), max_seconds=args.max_seconds, max_pages=args.max_pages,
-                                     refresh_catalog=not proof.get('catalog_complete') or age > 43200)
+                                     refresh_catalog=True)
         proof['complete'] = bool(complete and proof['complete'])
         summary = {key: value for key, value in proof.items() if key != 'pending_page_ids'}
         print(json.dumps(summary, ensure_ascii=False))

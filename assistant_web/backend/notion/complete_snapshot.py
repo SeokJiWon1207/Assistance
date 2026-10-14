@@ -2,6 +2,7 @@
 from collections import Counter
 from datetime import datetime, timezone
 import json
+import os
 from typing import Any
 
 from backend.common import normalize_for_match
@@ -11,7 +12,16 @@ from backend.notion.mapping import notion_property_to_text
 
 API_EXCLUSIONS = frozenset({'unsupported_block', 'foreign_synced_block',
                             'synced_source_outside_scope', 'http_403', 'http_404'})
-CATALOG_TTL_SECONDS = 86400
+# 읽기 범위(하위 DB 구성)는 드물게 바뀌므로 하루 동안 재사용한다.
+READ_SCOPE_TTL_SECONDS = 86400
+
+
+def catalog_max_age_seconds() -> int:
+    """전체 목록이 이보다 오래되면 새 문서·속성 변경을 놓칠 수 있어 전수 검색으로 쓰지 않는다."""
+    try:
+        return max(600, min(int(os.getenv("NOTION_SNAPSHOT_CATALOG_MAX_AGE_SECONDS", "7200")), 86400))
+    except ValueError:
+        return 7200
 
 
 def _time(value: str) -> float:
@@ -63,8 +73,9 @@ def _state(index: BodyIndex, db, database_ids: list[str], page_ids=None, allowed
     has_exclusions = db.execute("SELECT 1 FROM sqlite_master WHERE name='page_exclusions'").fetchone()
     exclusions = {r['page_id']: dict(r) for r in db.execute(
         'SELECT * FROM page_exclusions WHERE fingerprint=?', [index.fingerprint])} if has_exclusions else {}
+    catalog_max_age = catalog_max_age_seconds()
     catalog_complete = len(catalogs) == len(params) - 1 and all(
-        r['complete'] and 0 <= now - _time(r['updated_at']) < CATALOG_TTL_SECONDS for r in catalogs.values())
+        r['complete'] and 0 <= now - _time(r['updated_at']) < catalog_max_age for r in catalogs.values())
     pending = []
     types: Counter[str] = Counter()
     excluded_pages = 0
@@ -218,7 +229,7 @@ def _scope_current(read_scope):
         saved = json.loads((RUNTIME_DIR / 'notion_read_scope.json').read_text())
         age = datetime.now(timezone.utc).timestamp() - _time(saved.get('generated_at', ''))
         return (saved.get('scope_complete') is True and saved.get('read_scope') == read_scope
-                and 0 <= age < CATALOG_TTL_SECONDS)
+                and 0 <= age < READ_SCOPE_TTL_SECONDS)
     except (OSError, ValueError):
         return False
 

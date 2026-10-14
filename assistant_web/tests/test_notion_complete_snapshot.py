@@ -305,3 +305,53 @@ class CompleteSnapshotTests(unittest.TestCase):
                                    expected_edited_time=page()['last_edited_time'])
         self.assertTrue(self.snapshot().coverage(self.index, ['db1'])['complete'])
         self.assertEqual(len(self.snapshot().records(self.index, ['db1'], ['needle'])), 1)
+
+    def test_catalog_older_than_refresh_window_cannot_certify_snapshot(self):
+        import os
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        self.add()
+        self.assertTrue(self.snapshot().coverage(self.index, ['db-1'])['complete'])
+        three_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        with closing(sqlite3.connect(self.index.path)) as db, db:
+            db.execute("UPDATE catalogs SET updated_at=?", [three_hours_ago])
+        # 매시간 목록 갱신이 두 번 빠지면 새 문서를 놓쳤을 수 있으므로 전수 판정을 내리지 않는다.
+        self.assertFalse(self.snapshot().coverage(self.index, ['db-1'])['complete'])
+        self.assertIsNone(self.snapshot().read_complete(self.index, ['db-1'], ['needle']))
+        with patch.dict(os.environ, {'NOTION_SNAPSHOT_CATALOG_MAX_AGE_SECONDS': '14400'}):
+            self.assertTrue(self.snapshot().coverage(self.index, ['db-1'])['complete'])
+
+    def test_read_scope_freshness_is_independent_of_catalog_window(self):
+        import json
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        root = Path(self.directory.name)
+        saved = {'scope_complete': True, 'read_scope': {'db1': 'db1'},
+                 'generated_at': (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()}
+        with patch('backend.config.RUNTIME_DIR', root), patch(
+                'backend.notion.read_scope.child_database_search_enabled', return_value=True):
+            (root / 'notion_read_scope.json').write_text(json.dumps(saved))
+            self.assertTrue(self.snapshot()._scope_current({'db1': 'db1'}))
+
+    def test_scheduled_refresh_rereads_catalog_even_when_recent(self):
+        import json
+        import sys
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+        # 스크립트는 import 시 .env를 읽으므로 로컬 설정이 다른 테스트로 새지 않게 막는다.
+        with patch('backend.environment.load_dotenv'):
+            from scripts import refresh_notion_snapshot as script
+        root = Path(self.directory.name)
+        now = datetime.now(timezone.utc).isoformat()
+        proof = {'complete': True, 'catalog_complete': True, 'snapshot_as_of': now, 'pending_page_ids': []}
+        (root / 'notion_read_scope.json').write_text(json.dumps({'generated_at': now}))
+        with patch.object(script, 'RUNTIME_DIR', root), \
+                patch.object(script, 'get_notion_settings', return_value={'database_ids': ['db1'], 'token': 't'}), \
+                patch.object(script, 'resolve_notion_read_scope', return_value=({'db1': 'db1'}, True)), \
+                patch.object(script, 'open_body_index', return_value=self.index), \
+                patch.object(script, 'coverage', return_value=proof), \
+                patch.object(script, 'refresh_snapshot', return_value=proof) as refresh, \
+                patch.object(sys, 'argv', ['refresh_notion_snapshot.py']), \
+                patch('builtins.print'):
+            self.assertEqual(script.main(), 0)
+        self.assertIs(refresh.call_args.kwargs['refresh_catalog'], True)
