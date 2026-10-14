@@ -138,7 +138,7 @@ class MantisCollectionTests(unittest.TestCase):
 
         def fetch(params, **kwargs):
             return [
-                {**row, "summary": "차트 오류", "project": {"name": "112KBStar(KB증권)"},
+                {**row, "summary": "차트 오류", "handler": {"real_name": "석지원"}, "project": {"name": "112KBStar(KB증권)"},
                  "custom_fields": [{"field": {"name": "매체구분"}, "value": "HTS"}]}
                 for row in self.page(params)
             ]

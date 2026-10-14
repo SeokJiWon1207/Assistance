@@ -120,7 +120,7 @@ class SearchRegressionTests(unittest.TestCase):
             "group_counts": {"오래된 값": 999},
             "reason": "",
         }
-        question = "2026년 KB증권 이슈 최신 150건 기준 담당자별 몇 건이야?"
+        question = "전사 2026년 KB증권 이슈 최신 150건 기준 담당자별 몇 건이야?"
         plan = build_query_plan(
             question,
             {"source": "mantis"},

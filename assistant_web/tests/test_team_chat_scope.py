@@ -30,8 +30,8 @@ class TeamChatScopeTest(unittest.TestCase):
                 self.assertEqual(build_keyword_terms(text, constraints), [])
                 self.assertTrue(has_constraint(constraints))
 
-    def test_personal_general_and_notion_queries_remain_unscoped(self):
-        for text in ("내 미종료 이슈", "전체 미종료 이슈", "우리선물 이슈", "석지원 담당 이슈", "노션 이번 달 문서", "우리 팀 노션 문서", "작업주체 CS팀 이슈", "프로젝트 컨텐츠서비스팀 이슈"):
+    def test_personal_and_notion_queries_remain_unscoped(self):
+        for text in ("내 미종료 이슈", "석지원 담당 이슈", "노션 이번 달 문서", "우리 팀 노션 문서", "작업주체 CS팀 이슈", "프로젝트 컨텐츠서비스팀 이슈"):
             with self.subTest(text=text):
                 self.assertNotIn("mantis_team_members", extract_query_constraints(text))
 
@@ -64,12 +64,17 @@ class TeamChatScopeTest(unittest.TestCase):
         self.assertEqual(build_keyword_terms(text, constraints), [])
 
     def test_scope_does_not_cross_new_question_or_explicit_reset(self):
-        for texts in (("우리 팀 이슈", "전체 이슈 보여줘"), ("우리 팀 이슈", "그중 전사 기준으로 보여줘"),
-                      ("우리 팀 이슈", "노션 문서 보여줘", "그중 최근 것만"),
-                      ("우리 팀 이슈", "신한 이슈 보여줘", "그중 미종료만")):
+        for texts in (("우리 팀 이슈", "그중 전사 기준으로 보여줘"),
+                      ("우리 팀 이슈", "노션 문서 보여줘", "그중 최근 것만")):
             with self.subTest(texts=texts):
                 text, _ = build_contextual_retrieval_text(messages(*texts))
                 self.assertNotIn("mantis_team_members", extract_query_constraints(text))
+
+    def test_all_results_keeps_default_team_scope(self):
+        for texts in (("이슈 보여줘", "전체 이슈 보여줘"), ("우리선물 이슈", "모두 보여줘"),
+                      ("우리 팀 이슈", "신한 이슈 보여줘", "그중 미종료만")):
+            text, _ = build_contextual_retrieval_text(messages(*texts))
+            self.assertEqual(extract_query_constraints(text)["mantis_team_members"], list(TEAM_MEMBERS))
 
     def test_planner_cannot_remove_team_constraint(self):
         constraints = merge_query_plan_constraints(extract_query_constraints("우리 팀 미종료 이슈"), {"filters": {"statuses": ["open"]}})

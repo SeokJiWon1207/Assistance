@@ -207,7 +207,7 @@ def should_scope_to_authenticated_mantis_user(text: str) -> bool:
     if any(marker in normalized for marker in ("notion", "노션", "노선")):
         return False
     constraints = extract_query_constraints(text)
-    if constraints.get("mantis_team_members"):
+    if constraints.get("mantis_team_members") and constraints.get("mantis_team_scope") != "default":
         return False
     explicit_names = {
         str(name or "").strip().casefold()

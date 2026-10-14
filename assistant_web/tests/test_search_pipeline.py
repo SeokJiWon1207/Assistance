@@ -559,6 +559,7 @@ class EffortIntentTests(unittest.TestCase):
             "id": issue_id,
             "project": {"name": project},
             "summary": f"공수 테스트 {issue_id}",
+            "handler": {"real_name": "석지원"},
             "status": {"name": "closed"},
             "created_at": created_at,
             "custom_fields": [
@@ -857,7 +858,7 @@ class LiveStatusRevalidationTests(unittest.TestCase):
         }
         replacement = {
             "id": 21718, "project": {"name": "138Meritz(메리츠)"},
-            "status": {"name": "assigned"}, "summary": "할당됨",
+            "status": {"name": "assigned"}, "summary": "할당됨", "handler": {"real_name": "석지원"},
         }
         with patch(
             "backend.sources.mantis.fetch_mantis_issue_by_id",
@@ -932,7 +933,7 @@ class TopCustomersTests(unittest.TestCase):
         # 기준이 빠진 질문에 임의 기준으로 조용히 답하면 안 된다.
         from backend.sources.mantis_collection import IssueBatch
         rows = IssueBatch([{'id': 1, 'project': {'name': '테스트 고객사'},
-                            'status': {'name': 'assigned'}}],
+                            'status': {'name': 'assigned'}, 'handler': {'real_name': '석지원'}}],
                           {'search_complete': True, 'fetchedAt': '2026-10-04T00:00:00+00:00'})
         with patch('backend.sources.mantis_store.read_complete_store', return_value=rows):
             report = answers.build_top_customers_report("요즘 문제 많은 고객사가 어디야?")

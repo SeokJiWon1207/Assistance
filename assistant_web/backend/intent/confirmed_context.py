@@ -123,9 +123,18 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
                 result.pop(key, None)
                 if key in current:
                     result[key] = deepcopy(current[key])
-    for key in ("mantis_team_members", "mantis_team_label"):
-        if current.get(key):
-            result[key] = deepcopy(current[key])
+    scope_keys = ("mantis_team_members", "mantis_team_label", "mantis_team_scope")
+    if current.get("mantis_team_scope") == "all":
+        for key in scope_keys:
+            result.pop(key, None)
+        result["mantis_team_scope"] = "all"
+    elif current.get("mantis_team_scope") == "team" or previous.get("mantis_team_scope") not in {"team", "all"}:
+        if current.get("mantis_team_scope") == "target":
+            result.pop("mantis_team_members", None)
+            result.pop("mantis_team_label", None)
+        for key in scope_keys:
+            if current.get(key):
+                result[key] = deepcopy(current[key])
     if current.get("date_fields"):
         result["date_fields"] = {**result.get("date_fields", {}), **deepcopy(current["date_fields"])}
     clauses = [deepcopy(c) for c in previous.get("filter_clauses") or [] if c["field"] not in replaced]
@@ -142,7 +151,11 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
 
 def confirmed_scope_text(constraints: dict) -> str:
     parts = []
-    if constraints.get("mantis_team_members"):
+    if constraints.get("mantis_team_scope") == "default":
+        parts.append("이슈")
+    elif constraints.get("mantis_team_scope") == "all":
+        parts.append("전사 이슈")
+    elif constraints.get("mantis_team_members"):
         parts.append("우리 팀")
     if constraints.get("customer_exact") or constraints.get("customer_key"):
         parts.append(constraints.get("customer_exact") or constraints["customer_key"])

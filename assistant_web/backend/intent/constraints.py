@@ -55,7 +55,7 @@ from backend.query_filters import add_filter_clause, normalize_filter_clauses
 from backend.query_planning import infer_operation
 from backend.intent.request_scope import AUTHENTICATED_OWNER
 from backend.intent.scope_changes import cleared_scope_fields
-from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase
+from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase, apply_default_team_scope
 
 
 def extract_query_constraints(text: str) -> Dict[str, Any]:
@@ -95,13 +95,15 @@ def extract_query_constraints(text: str) -> Dict[str, Any]:
     if team_scope:
         constraints["mantis_team_members"] = list(TEAM_MEMBERS)
         constraints["mantis_team_label"] = TEAM_SCOPE_LABEL
+        constraints["mantis_team_scope"] = "team"
     owner = AUTHENTICATED_OWNER.get()
     if owner:
         constraints["people"] = {"names": [owner], "role": "handler", "name_origins": {owner: "known"}, "candidates": []}
         constraints["filter_clauses"] = [item for item in constraints.get("filter_clauses", []) if item["field"] != "owner"]
         add_filter_clause(constraints["filter_clauses"], "owner", "equals", owner)
     from backend.intent.status_semantics import apply_status_resolution
-    return apply_status_resolution(text, constraints)
+    constraints = apply_status_resolution(text, constraints)
+    return apply_default_team_scope(text, constraints, rule_based_search_intent(text, constraints)["source"])
 
 
 def has_targeting_constraint(constraints: Dict[str, Any]) -> bool:
@@ -372,6 +374,9 @@ def merge_query_plan_constraints(
             for operator, values in (("in", merged["statuses"]), ("not_in", merged["excluded_statuses"])):
                 if values:
                     merged["filter_clauses"].append({"field": "status", "operator": operator, "value": values})
+    plan = query_plan or {}
+    if plan.get("source"):
+        apply_default_team_scope(str(plan.get("grounding_text") or ""), merged, plan["source"])
     return merged
 
 

@@ -273,7 +273,7 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
             def today(cls):
                 return cls(2026, 9, 18)
         raw = [
-            {"id": i, "summary": title, "project": {"name": "고객A"}, "status": {"name": "assigned"},
+            {"id": i, "summary": title, "handler": {"real_name": "석지원"}, "project": {"name": "고객A"}, "status": {"name": "assigned"},
              "created_at": created, "updated_at": created}
             for i, title, created in ((101, "7월 제외", "2026-07-01"), (102, "8월 포함", "2026-08-01"),
                                       (103, "8월 경과일 미달", "2026-08-25"), (104, "9월 제외", "2026-09-01"))
@@ -290,7 +290,7 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
             self.assertNotIn("적체 분석에 적용하지 않았습니다", report["content"])
 
     def test_effort_is_not_lost_when_no_issue_has_closed(self):
-        raw = [{"id": 221, "summary": "진행 중", "status": {"name": "assigned"}, "project": {"name": "고객A"},
+        raw = [{"id": 221, "summary": "진행 중", "handler": {"real_name": "석지원"}, "status": {"name": "assigned"}, "project": {"name": "고객A"},
                 "created_at": "2026-08-01", "updated_at": "2026-08-05",
                 "custom_fields": [{"field": {"name": "3PC공수"}, "value": "김담당(2.5)"}]}]
         for q in ("2026년 8월 고객사별 공수와 평균 처리시간을 표로 보여줘", "2026년 8월 공수와 평균 처리시간을 표로 보여줘"):

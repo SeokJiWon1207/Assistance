@@ -57,7 +57,7 @@ class AccuracyPerformanceTests(unittest.TestCase):
 
     def test_raw_count_and_list_share_exact_ids_and_keep_callback_contract(self):
         rows = [{"id": i, "project": {"name": "120NH(NH증권)"}, "summary": "MTS 차트 문의",
-                 "status": {"name": s}, "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
+                 "handler": {"real_name": "석지원"}, "status": {"name": s}, "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
                 for i, (s, media) in enumerate((("assigned", ""), ("closed", "MTS"),
                                                ("developed", "MTS"), ("new", "HTS")), 1)]
         for q, expected in (("NH MTS 미종료 이슈", {1, 3}), ("NH 종료 이슈", {2}),

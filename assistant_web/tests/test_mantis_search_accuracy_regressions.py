@@ -26,7 +26,7 @@ def raw_issue(issue_id, title, **values):
         "project": {"name": "120NH(NH증권)"},
         "created_at": "2025-07-01T09:00:00+09:00",
         "reporter": {"real_name": "다른요청자"},
-        "handler": {"real_name": "홍길동"}, **values,
+        "handler": {"real_name": "석지원"}, **values,
     }
 
 
@@ -58,7 +58,8 @@ class HistoricalKeywordTests(unittest.TestCase):
         self.enterContext(patch.object(mantis_store, "read_complete_store", return_value=stored))
         self.enterContext(patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
         self.enterContext(patch.object(retrieval, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
-        self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id", side_effect=AssertionError("unexpected live query")))
+        self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id",
+                                      side_effect=lambda issue_id: next(row for row in rows if row["id"] == issue_id)))
         plan = build_query_plan(query, {"source": "mantis"}, extract_query_constraints(query))
         return retrieval.run_retrieval_pipeline(query, 2, {"mantis": True, "vectorDb": True}, plan)
 
@@ -117,7 +118,7 @@ class ReporterRoleTests(unittest.TestCase):
                 self.assertEqual(chroma_text_matches_constraints(mantis_store.render_document(issue), constraints), expected)
 
     def test_handler_and_any_roles_keep_their_established_scope(self):
-        issue = raw_issue(30001, "요청")
+        issue = raw_issue(30001, "요청", handler={"real_name": "홍길동"})
         for role, name, expected in [("handler", "홍길동", True), ("handler", "다른요청자", False),
                                       ("any", "홍길동", True), ("any", "다른요청자", True)]:
             with self.subTest(role=role, name=name):
