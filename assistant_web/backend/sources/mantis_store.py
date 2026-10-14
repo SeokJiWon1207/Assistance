@@ -24,6 +24,7 @@ from backend.config import RUNTIME_DIR, get_mantis_settings
 from backend.sources.mantis_collection import IssueBatch, iter_pages_in_order
 from backend.timing import measured
 from backend.sources.immutable import freeze
+from backend.sources.mantis_store_storage import check_working_space, cleanup_temporary_store, store_write_guard
 
 LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
@@ -203,6 +204,7 @@ def _collect_pass(db, fetch, *, page_size: int, max_pages: int, workers: int, st
     pages = iter_pages_in_order(fetch, max_pages=max_pages, workers=workers)
     try:
         for _, batch in pages:
+            check_working_space(store_path())
             if time.monotonic() - started > 900:
                 raise RuntimeError("Mantis 전체 동기화 시간 한도 초과")
             for issue in batch:
@@ -232,11 +234,9 @@ def sync_complete_store(
     from backend.sources.mantis import fetch_mantis_issues
     path = store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_suffix(".lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return {"status": "running"}
+    with store_write_guard(path) as storage:
+        if storage["status"] != "ready":
+            return storage
         identity = connection_key()
         fetch = fetch_page or (lambda page: fetch_mantis_issues(
             {"page": page, "page_size": page_size}, timeout=12, attempts=2,
@@ -275,9 +275,10 @@ def sync_complete_store(
                 if identity != connection_key():
                     raise RuntimeError("수집 중 Mantis 연결 설정이 변경되었습니다.")
                 db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
+            check_working_space(path)
             os.replace(temporary, path)
         finally:
-            Path(temporary).unlink(missing_ok=True)
+            cleanup_temporary_store(temporary)
     return {"status": "complete", "count": meta["count"], "fetchedAt": meta["fetchedAt"], "passes": meta["passes"]}
 
 
@@ -339,11 +340,9 @@ def refresh_changed_issues(
     """
     from backend.sources.mantis import fetch_mantis_issues
     path = store_path()
-    with path.with_suffix(".lock").open("a") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return {"status": "running"}
+    with store_write_guard(path) as storage:
+        if storage["status"] != "ready":
+            return storage
         saved = _saved_metadata()
         if saved is None:
             return {"status": "needs_full", "reason": "no_store"}
@@ -365,7 +364,7 @@ def refresh_changed_issues(
         try:
             with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source, \
                     closing(sqlite3.connect(temporary)) as db:
-                source.backup(db)
+                source.backup(db, pages=256, progress=lambda *_: check_working_space(path))
                 with db:
                     for issue_id, issue in changed.items():
                         payload = json.dumps(issue, ensure_ascii=False, sort_keys=True)
@@ -376,9 +375,10 @@ def refresh_changed_issues(
                             "consistency": "incremental", "changed": len(changed)}
                     db.execute("DELETE FROM metadata")
                     db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
+            check_working_space(path)
             os.replace(temporary, path)
         finally:
-            Path(temporary).unlink(missing_ok=True)
+            cleanup_temporary_store(temporary)
     return {"status": "complete", "mode": "incremental", "count": count, "changed": len(changed),
             "fetchedAt": meta["fetchedAt"]}
 
