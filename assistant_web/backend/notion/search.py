@@ -1579,7 +1579,8 @@ def execute_notion_search(
         index_terms = positive_body_terms or (terms if not body_clauses and not exact_title else [])
         if index_terms and os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
             indexed = find_indexed_body_candidates(database_ids, list(dict.fromkeys([*index_terms, *terms])),
-                                                   body_clauses=body_clauses)
+                                                   body_clauses=body_clauses, exact_title=exact_title,
+                                                   allowed_database_ids=scoped_database_ids)
             if indexed is not None:
                 body_index_meta = {**indexed["coverage"], "candidate_count": indexed["candidate_count"],
                                    "validation_complete": indexed["validation_complete"]}

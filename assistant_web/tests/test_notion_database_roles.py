@@ -34,6 +34,22 @@ def response(data, status=200):
 
 
 class DatabaseRoleTests(unittest.TestCase):
+    def test_literal_body_keyword_and_exact_title_do_not_narrow_database_roles(self):
+        ids = ["a" * 32, "b" * 32]
+        catalog = {ids[0]: {"roles": ["issue"], "source": "configured"},
+                   ids[1]: {"roles": ["document"], "source": "configured"}}
+        clause = {"field": "keyword", "operator": "contains", "value": "이슈진행", "block_type": ""}
+        from backend.notion.database_roles import select_notion_database_ids
+        with patch("backend.notion.database_roles.load_notion_database_roles", return_value=catalog):
+            for constraints in (
+                {"body_filter_clauses": [clause], "common_filter_clauses": [clause]},
+                {"exact_title": "주간 이슈 보고", "status": "진행 중"},
+            ):
+                with self.subTest(constraints=constraints):
+                    selected, role = select_notion_database_ids(ids, '노션 이슈진행 문서 찾아줘', [], constraints)
+                    self.assertEqual(selected, ids)
+                    self.assertEqual(role, "")
+
     def test_condition_only_issue_query_uses_issue_and_unknown_databases(self):
         known_issue, known_document, unknown = "a" * 32, "b" * 32, "c" * 32
         catalog = {

@@ -112,7 +112,8 @@ def select_notion_database_ids(
 
     카탈로그에 없는 DB는 항상 포함하므로 새 DB 때문에 거짓 0건을 만들지 않는다.
     """
-    if terms or constraints.get("database_label") or "이슈" not in normalize_for_match(query_text):
+    if (terms or constraints.get("database_label") or constraints.get("exact_title")
+            or constraints.get("body_filter_clauses") or "이슈" not in normalize_for_match(query_text)):
         return database_ids, ""
     has_condition = bool(
         constraints.get("status")

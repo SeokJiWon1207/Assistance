@@ -2,13 +2,13 @@
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
 import test_notion_accuracy_regressions as fixtures
 
-from backend.notion import search
+from backend.notion import body_index_search, search
 
 
 def indexed_candidate(identifier, text="needle", *, kind="paragraph", owner=None,
@@ -47,6 +47,31 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
     def setUp(self):
         fixtures.NotionAccuracyRegressionTests.setUp(self)
 
+    def test_query_database_filter_preserves_allowed_synced_source_scope(self):
+        index = Mock()
+        index.search.return_value = [{"page_id": "copy-page", "database_id": "db", "segments": []}]
+        index.status.return_value = {}
+        candidate = indexed_candidate("copy-page")
+        with patch.object(body_index_search, "open_body_index", return_value=index), patch.object(
+            body_index_search, "validate_index_candidate", return_value=candidate,
+        ) as validate:
+            result = body_index_search.find_indexed_body_candidates(
+                ["db"], ["needle"], allowed_database_ids=["db", "source-db"],
+            )
+        index.search.assert_called_once_with(["db"], ["needle"])
+        self.assertEqual(validate.call_args.args[1], ["db", "source-db"])
+        self.assertEqual(result["candidates"], [candidate])
+
+    def test_search_passes_read_scope_before_role_narrowing_to_body_validation(self):
+        lookup = self.install_index(indexed_candidate("copy-page"))
+        with patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db", "source-db": "source-db"}, True)), patch.object(
+            search, "select_notion_database_ids", return_value=(["db"], "issue"),
+        ):
+            result = search.execute_notion_search('노션 본문에 "needle" 포함된 문서 찾아줘', include_blocks=False)
+        self.assertEqual(lookup.call_args.args[0], ["db"])
+        self.assertEqual(lookup.call_args.kwargs["allowed_database_ids"], ["db", "source-db"])
+        self.assertEqual([page["id"] for page in result["notion_pages"]], ["copy-page"])
+
     def install_index(self, *candidates, rows=None, blocks=None, **metadata):
         self.search_fixture(rows or [], blocks or {})
         mocked = patch.object(search, "find_indexed_body_candidates",
@@ -54,6 +79,34 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
         lookup = mocked.start()
         self.addCleanup(mocked.stop)
         return lookup
+
+    def test_exact_title_body_target_precedes_recent_unrelated_index_candidates(self):
+        self.search_fixture([], {})
+        recent = [indexed_candidate(f"recent-{i}", title="다른 문서", edited="2026-10-01T00:00:00Z")
+                  for i in range(30)]
+        target = indexed_candidate("old-target", title="주간보고", edited="2025-01-01T00:00:00Z")
+        index = Mock()
+        index.search.return_value = [{**r, "page_id": r["raw_page"]["id"]} for r in [*recent, target]]
+        index.status.return_value = {"complete": True}
+        with patch.object(body_index_search, "open_body_index", return_value=index), \
+                patch.object(body_index_search, "validate_index_candidate", side_effect=lambda row, *_a, **_kw: row):
+            result = search.execute_notion_search('노션 "주간보고" 문서에서 본문에 "needle" 포함된 문서 찾아줘',
+                                                  include_blocks=False)
+        self.assertEqual([p["id"] for p in result["notion_pages"]], ["old-target"])
+        self.assertFalse(result["meta"]["body_index"]["validation_complete"])
+
+    def test_exact_title_priority_does_not_exclude_a_renamed_page_from_live_validation(self):
+        self.search_fixture([], {})
+        old = indexed_candidate("renamed", title="옛 제목")
+        index = Mock()
+        index.search.return_value = [{**old, "page_id": "renamed"}]
+        index.status.return_value = {"complete": True}
+        with patch.object(body_index_search, "open_body_index", return_value=index), \
+                patch.object(body_index_search, "validate_index_candidate",
+                             return_value=indexed_candidate("renamed", title="주간보고")):
+            result = search.execute_notion_search('노션 "주간보고" 문서에서 본문에 "needle" 포함된 문서 찾아줘',
+                                                  include_blocks=False)
+        self.assertEqual([p["id"] for p in result["notion_pages"]], ["renamed"])
 
     def test_body_table_and_code_find_old_page_outside_latest_scan_window(self):
         rows = [fixtures.page(f"recent-{i}") for i in range(31)]

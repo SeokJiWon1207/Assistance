@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from backend.common import normalize_for_match
 from backend.execution import CURRENT_BUDGET, checkpoint
 from backend.notion.body_index import BodyIndexError, segment_belongs_to_page
+from backend.notion.mapping import notion_title
 
 
 def open_body_index():
@@ -23,7 +24,9 @@ def validate_index_candidate(record, database_ids, *, index, deadline):
 
 
 def find_indexed_body_candidates(database_ids: list[str], terms: list[str], *,
-                                 body_clauses: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
+                                 body_clauses: list[dict[str, Any]] | None = None,
+                                 exact_title: str = "",
+                                 allowed_database_ids: list[str] | None = None) -> dict[str, Any] | None:
     try:
         index = open_body_index()
         if index is None:
@@ -44,10 +47,13 @@ def find_indexed_body_candidates(database_ids: list[str], terms: list[str], *,
             and normalize_for_match(str(clause["value"])) in normalize_for_match(str(block.get("text", "")))
             for block in row.get("segments", [])
         ) for clause in positive_clauses)
-        return typed_match, str((row.get("raw_page") or {}).get("last_edited_time", ""))
+        raw = row.get("raw_page") or {}
+        title_match = bool(exact_title) and normalize_for_match(notion_title(raw.get("properties") or {})) == normalize_for_match(exact_title)
+        return title_match, typed_match, str(raw.get("last_edited_time", ""))
 
     # 유형이 다른 최신 본문 30개가 뒤쪽 코드·표의 알려진 후보를 밀어내지 않게 한다.
-    # 나머지 후보도 버리지 않는다. 수집 후 유형/본문이 바뀌었을 수 있다.
+    # 제목이 명시되면 해당 후보를 먼저 검증한다. 나머지 후보도 버리지
+    # 않는다. 수집 후 제목/유형/본문이 바뀌었을 수 있다.
     records.sort(key=priority, reverse=True)
     reasons: set[str] = set()
     candidates = []
@@ -61,7 +67,10 @@ def find_indexed_body_candidates(database_ids: list[str], terms: list[str], *,
             reasons.add("body_index_validation_limit")
             break
         try:
-            current = validate_index_candidate(record, database_ids, index=index, deadline=deadline)
+            # 질의의 DB 필터는 후보에만 적용한다. 동기화 원본의 접근 권한은
+            # 설정된 읽기 범위로 검증하여 허용된 원본을 범위 밖으로 기록하지 않는다.
+            read_scope = database_ids if allowed_database_ids is None else allowed_database_ids
+            current = validate_index_candidate(record, read_scope, index=index, deadline=deadline)
         except (BodyIndexError, requests.RequestException, HTTPException, ValueError, sqlite3.Error, OSError):
             reasons.add("body_index_validation_error")
             continue
