@@ -165,7 +165,7 @@ def check_issue_fields(claims: list[tuple[int, str, str]], sources: list[dict[st
             continue  # 없는 ID는 issue_ids 검사에서 차단한다.
         detail = source.get("detail") or {}
         actual = source.get(field, detail.get("summary" if field == "title" else field, ""))
-        label = detail.get(f"{field}_label") if field in {"priority", "severity"} else None
+        label = (source.get(f"{field}_label") or detail.get(f"{field}_label")) if field in {"status", "priority", "severity"} else None
         if not _matches(field, value, actual) and not (label and _matches(field, value, label)):
             mismatches.append(f"#{issue_id} {field}")
     return {"id": "issue_fields", "label": "이슈 속성 일치",

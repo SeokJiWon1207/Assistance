@@ -258,7 +258,7 @@ def derive_customer_aliases_from_project(project_name: str) -> List[str]:
 
 
 def extract_chroma_field(text: str, field_name: str) -> str:
-    match = re.search(rf"{re.escape(field_name)}:\s*([^\n\r]+)", text)
+    match = re.search(rf"{re.escape(field_name)}:[ \t]*([^\n\r]*)", text)
     if match:
         return match.group(1).strip()
     return ""
@@ -418,6 +418,11 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
         "project": extract_project_from_chroma_text(text),
         "summary": extract_title_from_chroma_text(text),
         "status": extract_chroma_field(text, "현재 상태") or "상태 미상",
+        "status_label": extract_chroma_field(text, "상태 표시명"),
+        "priority": extract_chroma_field(text, "우선순위"),
+        "priority_label": extract_chroma_field(text, "우선순위 표시명"),
+        "severity": extract_chroma_field(text, "이슈 유형"),
+        "severity_label": extract_chroma_field(text, "이슈 유형 표시명"),
         "media_type": extract_chroma_field(text, "매체구분") or "기타/미상",
         "screen_number": extract_chroma_field(text, "화면번호") or "미상",
         "work_subject": extract_chroma_field(text, "작업주체") or "미상",
