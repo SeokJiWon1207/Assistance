@@ -755,6 +755,7 @@ configureChatController({
   sourceToolsPayload,
   renderMessages,
   setBusy,
+  refreshDataStatus: () => loadDataStatus().catch(() => renderChatDataBadge({ failed: true })),
 });
 configureChatFeedback({ renderMessages });
 
