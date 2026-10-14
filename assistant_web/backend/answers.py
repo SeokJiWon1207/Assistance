@@ -754,7 +754,7 @@ def format_deterministic_issue_answer(
             remaining = max(0, found_count - len(issues))
             lines.append(f"아직 표시하지 않은 이슈는 {remaining}건입니다." if remaining else "현재 조회 범위의 나머지 이슈를 모두 표시했습니다.")
     elif found_count and found_count > len(issues):
-        lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건을 표시했습니다. 나머지도 보려면 질문 끝에 '모두 보여줘'를 붙여 주세요."])
+        lines.extend(["", f"조건에 맞는 이슈는 총 {found_count}건이며, 이 중 {len(issues)}건을 표시했습니다. 나머지는 '나머지도 보여줘'라고 질문해 이어서 조회할 수 있습니다."])
     elif requested_limit and found_count and found_count < requested_limit:
         lines.extend(["", f"요청한 {requested_limit}건 중 현재 조회 가능한 결과는 {len(issues)}건입니다."])
     if status_note:
