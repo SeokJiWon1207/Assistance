@@ -26,6 +26,69 @@ def result(*pages, complete=True):
 
 
 class NotionBodyOracleTests(unittest.TestCase):
+    def test_oracle_separates_api_leaf_and_child_database_from_supported_content(self):
+        blocks = [
+            {"id": "button", "type": "unsupported", "has_children": False,
+             "unsupported": {"block_type": "button"}},
+            {"id": "database", "type": "child_database", "has_children": True},
+            raw_page("own", "문서", "paragraph", "owned text")["blocks"][0],
+        ]
+        with patch("requests.get", side_effect=[Mock(json=lambda: {"properties": {}}),
+                   Mock(json=lambda: {"results": blocks})]), patch("backend.config.notion_request_slot"), \
+                patch("backend.config.get_notion_headers", return_value={}):
+            source = accuracy.fetch_oracle_page("page")
+        self.assertFalse(source["complete"])
+        self.assertTrue(source["supported_content_complete"])
+        self.assertEqual(source["incomplete_reasons"], ["child_database_separate_scope", "unsupported_api_leaf"])
+        self.assertEqual(source["child_database_ids"], ["database"])
+        self.assertEqual(source["unsupported_elements"], [{"block_id": "button", "block_type": "button"}])
+
+    def test_oracle_keeps_unread_content_and_malformed_pagination_incomplete(self):
+        examples = [
+            ({"results": [{"id": "unknown", "type": "unsupported", "has_children": False}]}, "unsupported_content_unknown"),
+            ({"results": [{"id": "button", "type": "unsupported", "has_children": True,
+                           "unsupported": {"block_type": "button"}}]}, "unsupported_content_unknown"),
+            ({"results": [{"id": "child", "type": "child_page"}]}, "child_page_not_followed"),
+            ({"results": [], "has_more": True}, "invalid_pagination"),
+            ({"results": None}, "invalid_response"),
+        ]
+        for payload, reason in examples:
+            with self.subTest(reason=reason), patch("requests.get", side_effect=[
+                    Mock(json=lambda: {"properties": {}}), Mock(json=lambda value=payload: value)]), \
+                    patch("backend.config.notion_request_slot"), patch("backend.config.get_notion_headers", return_value={}):
+                source = accuracy.fetch_oracle_page("page")
+                self.assertFalse(source["complete"])
+                self.assertFalse(source["supported_content_complete"])
+                self.assertIn(reason, source["incomplete_reasons"])
+
+    def test_text_evidence_distinguishes_boundary_formatting_from_content_loss(self):
+        cases = [
+            ("paragraph", "release marker", "release marker", "exact"),
+            ("paragraph", "release marker  ", "release marker", "boundary_whitespace_only"),
+            ("code", "\nframe_one()\n  frame_two() \n\n", "frame_one()\n  frame_two()",
+             "boundary_whitespace_only"),
+            ("code", "\n    indented()\n", "indented()", "mismatch"),
+            ("code", "a()\n    b()", "a()\nb()", "mismatch"),
+            ("code", "foo bar", "foobar", "mismatch"),
+            ("paragraph", "release marker", "release", "mismatch"),
+            ("paragraph", "marker", "", "mismatch"),
+        ]
+        for kind, raw, claim, expected in cases:
+            with self.subTest(kind=kind, raw=raw, claim=claim):
+                block = raw_page("one", "문서", kind, raw)["blocks"][0]
+                self.assertEqual(accuracy.classify_block_text_evidence(block, claim), expected)
+                self.assertEqual(accuracy.raw_block_text(block), raw)
+
+    def test_table_evidence_preserves_cell_order_boundaries_and_internal_spaces(self):
+        block = {"type": "table_row", "table_row": {"cells": [
+            [{"plain_text": " alpha beta  "}], [{"plain_text": "\ngamma\n"}], []]}}
+        self.assertEqual(accuracy.classify_block_text_evidence(block, "alpha beta | gamma | "),
+                         "boundary_whitespace_only")
+        for claim in ("alphabeta | gamma | ", "gamma | alpha beta | ", "alpha beta | gamma",
+                      "alpha beta gamma |  | "):
+            with self.subTest(claim=claim):
+                self.assertEqual(accuracy.classify_block_text_evidence(block, claim), "mismatch")
+
     def test_korean_spacing_equivalence_is_independent_positive_evidence(self):
         target = raw_page("one", "문서", "paragraph", "주간이슈")
         spaced = raw_page("two", "다른 문서", "paragraph", "주간 이슈 관리", complete=False)
@@ -58,6 +121,17 @@ class NotionBodyOracleTests(unittest.TestCase):
         cases = accuracy.build_cases(evidence(source), per_kind=1)
         plain = next(case for case in cases if case.category == "plain_keyword")
         self.assertEqual(plain.terms, ["로봇"])
+
+    def test_plain_probe_avoids_observed_conjunction_and_locative_particles(self):
+        for text in ("운영소스와", "단기간에"):
+            with self.subTest(text=text):
+                self.assertFalse(accuracy.suitable_plain_probe_token(text))
+                page = raw_page("one", "문서", "paragraph", text + " zxyq")
+                cases = accuracy.build_cases(evidence(page), per_kind=1)
+                plain = next(case for case in cases if case.category == "plain_keyword")
+                self.assertEqual(plain.terms, ["zxyq"])
+        for noun in ("사과", "결과", "과제"):
+            self.assertTrue(accuracy.suitable_plain_probe_token(noun))
 
     def test_plain_probe_does_not_select_a_korean_word_with_attached_particle(self):
         source = raw_page("one", "문서", "code", "인터넷테스트에서 zxyq")

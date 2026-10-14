@@ -68,6 +68,29 @@ def raw_block_text(block: dict[str, Any]) -> str:
         (item.get("text") or {}).get("content") or "") for item in group) for group in groups)
 
 
+def classify_block_text_evidence(block: dict[str, Any], claimed_text: str) -> str:
+    """Distinguish search-text boundary formatting from exact source fidelity.
+
+    Keep the raw oracle untouched. Never collapse internal whitespace, join
+    code identifiers, or strip indentation from the first nonblank code line.
+    A formatting-only result is not a byte-for-byte source equality claim.
+    """
+    raw = raw_block_text(block)
+    if raw == claimed_text:
+        return "exact"
+    kind = block.get("type")
+    if kind == "table_row":
+        cells = (block.get("table_row") or {}).get("cells") or []
+        normalized = " | ".join(raw_block_text({"type": "paragraph", "paragraph": {"rich_text": cell}}).strip()
+                                for cell in cells)
+    elif kind == "code":
+        # Only remove complete leading blank lines; retain first-line indentation.
+        normalized = re.sub(r"\A(?:[^\S\r\n]*(?:\r\n|\n|\r))+", "", raw).rstrip()
+    else:
+        normalized = raw.strip()
+    return "boundary_whitespace_only" if normalized == claimed_text else "mismatch"
+
+
 def verified_segments(page: dict[str, Any]) -> list[dict[str, Any]]:
     raw = {normalize_id(block.get("id")): block for block in page.get("blocks") or []}
     verified = []
@@ -144,8 +167,12 @@ def suitable_plain_probe_token(token: str) -> bool:
     생산 검색기의 형태소 정제를 정답 생성에 빌리지 않고 모호한 표본을 제외한다.
     인용문에서의 리터럴 검색은 별도 명시적 사례로 검증할 수 있다.
     """
-    return not (re.fullmatch(r"[가-힣]+", token) and
-                token.endswith(("에서", "에서는", "으로", "으로는", "에게", "에게는", "까지", "부터", "하는")))
+    return not (re.fullmatch(r"[가-힣]+", token) and (
+        token.endswith(("에서", "에서는", "으로", "으로는", "에게", "에게는", "까지", "부터", "하는"))
+        # 일반 질의의 조사 해석과 리터럴 정답이 충돌한 실제 표본을 피한다.
+        # 후보 선정만 보수적으로 제한하며, 검색어 해석이나 원문은 바꾸지 않는다.
+        or (len(token) >= 4 and token.endswith(("와", "과", "에")))
+    ))
 
 
 def build_cases(evidence: dict[str, Any], per_kind: int = 3) -> list[BodyCase]:
@@ -292,7 +319,13 @@ def fetch_oracle_page(page_id: str) -> dict[str, Any]:
     """Independent bounded REST traversal; skipped/failed children stay incomplete."""
     import requests
     from backend.config import NOTION_API_BASE, get_notion_headers, notion_request_slot
-    page: dict[str, Any] = {"page_id": page_id, "segments": [], "blocks": [], "complete": True, "errors": []}
+    page: dict[str, Any] = {"page_id": page_id, "segments": [], "blocks": [], "complete": True, "errors": [],
+                            "unsupported_elements": [], "child_database_ids": []}
+    reasons: set[str] = set()
+
+    def incomplete(reason: str) -> None:
+        page["complete"] = False
+        reasons.add(reason)
     # 검증용 원문은 대화 검색의 지연 한도와 독립적으로 깊고 큰 문서도 읽는다.
     # 한도에 도달하면 여전히 미완료이며, 이를 확정 음성으로 사용하지 않는다.
     deadline = time.monotonic() + 300
@@ -313,20 +346,26 @@ def fetch_oracle_page(page_id: str) -> dict[str, Any]:
 
     def walk(block_id: str, path: list[str]) -> None:
         if len(path) > 96:
-            page["complete"] = False
+            incomplete("depth_limit")
             return
         cursor = None
         cursors: set[str] = set()
         while True:
             params = {"page_size": 100, **({"start_cursor": cursor} if cursor else {})}
             data = read(f"blocks/{block_id}/children", params)
-            for block in data.get("results") or []:
+            if not isinstance(data.get("results"), list):
+                incomplete("invalid_response")
+                return
+            for block in data["results"]:
+                if not isinstance(block, dict) or not block.get("id"):
+                    incomplete("invalid_block")
+                    continue
                 page["blocks"].append(block)
                 parent = block.get("parent") or {}
                 parent_kind = parent.get("type")
                 if parent_kind and (parent_kind not in {"page_id", "block_id"} or
                                     normalize_id(parent.get(parent_kind)) != normalize_id(block_id)):
-                    page["complete"] = False
+                    incomplete("block_parent_mismatch")
                     continue
                 kind = block.get("type")
                 text = raw_block_text(block)
@@ -338,15 +377,24 @@ def fetch_oracle_page(page_id: str) -> dict[str, Any]:
                         references.add(normalize_id(reference.get("block_id")))
                         continue
                     originals.add(normalize_id(block["id"]))
-                if kind in {"child_page", "child_database", "unsupported"}:
-                    page["complete"] = False
+                if kind == "child_database":
+                    page["child_database_ids"].append(normalize_id(block["id"]))
+                    incomplete("child_database_separate_scope")
+                elif kind == "child_page":
+                    incomplete("child_page_not_followed")
+                elif kind == "unsupported":
+                    subtype = str((block.get("unsupported") or {}).get("block_type") or "unknown")
+                    page["unsupported_elements"].append({"block_id": block["id"], "block_type": subtype})
+                    known_leaf = (subtype in {"button", "alias", "copy_indicator", "drive", "link_to_page"}
+                                  and block.get("has_children") is False)
+                    incomplete("unsupported_api_leaf" if known_leaf else "unsupported_content_unknown")
                 elif block.get("has_children"):
                     walk(block["id"], [*path, block["id"]])
             if not data.get("has_more"):
                 return
             cursor = data.get("next_cursor")
             if not cursor or cursor in cursors:
-                page["complete"] = False
+                incomplete("invalid_pagination")
                 return
             cursors.add(cursor)
 
@@ -357,11 +405,15 @@ def fetch_oracle_page(page_id: str) -> dict[str, Any]:
             for prop in page["properties"].values() if prop.get("type") == "title" for item in prop.get("title") or [])
         walk(page_id, [page_id])
         if references - originals:
-            page["complete"] = False
+            incomplete("synced_source_not_read")
     except (requests.RequestException, ValueError, TimeoutError) as exc:
-        page["complete"] = False
+        incomplete("request_failed")
         # Never persist request headers or full dependency exception strings.
         page["errors"].append(type(exc).__name__)
+    # 전체 complete는 유지하고 API가 공개하는 해당 페이지의 본문은 따로 집계한다.
+    # 자식 DB는 별도 검색 범위다. 미조회 자식 페이지/동기화 원본/알 수 없는 요소는 미완료로 남긴다.
+    page["incomplete_reasons"] = sorted(reasons)
+    page["supported_content_complete"] = not (reasons - {"unsupported_api_leaf", "child_database_separate_scope"})
     return page
 
 
