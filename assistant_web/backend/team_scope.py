@@ -43,9 +43,11 @@ def remove_team_scope_phrase(text: str) -> str:
 
 def apply_default_team_scope(text: str, constraints: dict, source: str) -> dict:
     """일반 Mantis 조회에 팀 기본값을 적용하되 명시한 조회 대상은 유지한다."""
+    from backend.intent.scope_changes import has_team_scope_edit
     # 인용된 제목/키워드는 검색 대상이며 담당자 범위를 해제하는 지시가 아니다.
     scope_text = re.sub(r'"[^"]*"|\'[^\']*\'|“[^”]*”|‘[^’]*’', " ", text)
-    all_teams = bool(re.search(r"전사|전체\s*(?:팀|회사)|팀\s*(?:제한|범위).*해제", scope_text))
+    all_teams = bool(re.search(r"전사|전체\s*(?:팀|회사)|팀\s*(?:제한|범위).*해제", scope_text)
+                     or has_team_scope_edit(scope_text))
     if all_teams:
         # 원문에 팀 표현이 남아 있어도 명시한 전사 조회/범위 해제가 우선한다.
         constraints.pop("mantis_team_members", None)

@@ -3,6 +3,8 @@ import unittest
 from unittest.mock import patch
 
 from backend.intent.constraints import extract_query_constraints
+from backend.intent.context import is_follow_up_question
+from backend.intent.search_terms import build_keyword_terms
 from backend.intent.scope_changes import has_scope_edit
 from backend.schemas import ChatMessage, ChatRequest
 from backend.services import chat_service as chat
@@ -12,6 +14,41 @@ BASE = "2026년 10월에 등록된 MTS 이슈 전체 목록을 보여줘. 이슈
 
 
 class AllListScopeFollowupTests(unittest.TestCase):
+    def test_plain_team_scope_changes_keep_the_confirmed_period_and_entire_list(self):
+        plan = {"source": "mantis", "grounding_text": BASE, "terms": [],
+                "resolved_constraints": extract_query_constraints(BASE)}
+        for question in ("팀 범위 해제하고 전사 전체로 보여줘", "팀 범위 해제해줘",
+                         "팀 범위 제거해줘", "팀 제한 제거해주세요",
+                         "팀 범위 해제해 주세요", "팀 범위 해제해 줘",
+                         "전사 기준으로 보여줘", "전사 전체로 보여줘", "전체 팀으로 보여줘"):
+            with self.subTest(question=question):
+                self.assertTrue(is_follow_up_question(question))
+                request, context = self.prepare(BASE, plan, question)
+                self.assertEqual(context.query_constraints["platform_key"], "mts")
+                self.assertEqual(context.query_constraints["created_at"]["from"], "2026-10-01")
+                self.assertEqual(context.query_constraints.get("mantis_team_scope"), "all")
+                self.assertTrue(context.query_constraints.get("list_show_all"))
+                self.assertEqual(chat.retrieval_limit(request, context)[0], 200)
+                self.assertEqual(build_keyword_terms(context.retrieval_text, context.query_constraints), [])
+                next_plan = {"source": "mantis", "grounding_text": question, "terms": [],
+                             "resolved_constraints": context.query_constraints}
+                _, next_context = self.prepare(question, next_plan, "HTS로 바꿔줘")
+                self.assertEqual(next_context.query_constraints["platform_key"], "hts")
+                self.assertEqual(next_context.query_constraints["created_at"]["from"], "2026-10-01")
+                self.assertTrue(next_context.query_constraints.get("list_show_all"))
+
+    def test_team_scope_topics_are_not_scope_edits(self):
+        for question in ('제목에 "팀 범위 해제하고 전사 전체로 보여줘" 포함된 이슈',
+                         '제목에 "팀 범위 제거해줘" 포함된 이슈',
+                         "팀 범위 해제 요청이 들어온 이슈 있었어?"):
+            with self.subTest(question=question):
+                self.assertFalse(has_scope_edit(question))
+
+    def test_unquoted_team_removal_topic_keeps_the_default_team(self):
+        question = "팀 범위 제거 요청이 들어온 이슈 보여줘"
+        self.assertFalse(has_scope_edit(question))
+        self.assertEqual(extract_query_constraints(question).get("mantis_team_scope"), "default")
+
     def test_month_only_change_is_a_scope_edit(self):
         self.assertTrue(has_scope_edit("9월로 바꿔줘"))
         self.assertTrue(has_scope_edit("2025년 9월로 변경해줘"))

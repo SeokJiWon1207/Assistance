@@ -22,3 +22,7 @@ class GlobalScopeSearchTermsTest(unittest.TestCase):
             with self.subTest(question=question):
                 self.assertEqual(build_keyword_terms(question, constraints), [])
         self.assertEqual(build_keyword_terms('전사 "우리 팀 장애" 이슈 보여줘', constraints), ["우리", "팀", "장애"])
+
+    def test_team_release_conjunction_is_not_an_issue_keyword(self):
+        self.assertEqual(build_keyword_terms("팀 범위 해제하고 전사 전체로 보여줘",
+                                            {"mantis_team_scope": "all"}), [])

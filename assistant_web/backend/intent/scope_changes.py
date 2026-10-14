@@ -42,8 +42,22 @@ def without_scope_clear_phrases(text: str) -> str:
     return text
 
 
+def has_team_scope_edit(text: str) -> bool:
+    # 대상을 생략한 팀 범위 변경도 직전 조회의 기간·매체·전체 목록을 유지한다.
+    # 제목이나 변경 요청 이슈를 찾는 문장과 구분하기 위해 명령 전체를 확인한다.
+    return bool(re.fullmatch(
+        r"\s*(?:팀\s*(?:제한|범위)(?:을|를)?\s*(?:해제|제거)"
+        r"(?:해\s*(?:줘|주세요)|하고\s*(?:전사|전체\s*팀)(?:\s*(?:전체|기준))?"
+        r"(?:으로|로)?\s*(?:보여|조회해)(?:줘|주세요))"
+        r"|(?:전사|전체\s*팀)(?:\s*(?:전체|기준))?(?:으로|로)\s*"
+        r"(?:보여|조회해|바꿔|변경해)(?:줘|주세요))[.!?]*\s*", text,
+    ))
+
+
 def has_scope_edit(text: str) -> bool:
     text = _unquoted(text)
+    if has_team_scope_edit(text):
+        return True
     if re.fullmatch(
         r"\s*(?:20\d{2}\s*년\s*)?(?:1[0-2]|0?[1-9])\s*월(?:으로|로)?\s*"
         r"(?:바꿔|변경해|수정해)(?:줘|주세요)[.!?]*\s*", text,
