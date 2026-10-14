@@ -3,7 +3,7 @@
 import sqlite3
 import tempfile
 import unittest
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,7 +26,7 @@ def raw_issue(issue_id, title, **values):
         "project": {"name": "120NH(NH증권)"},
         "created_at": "2025-07-01T09:00:00+09:00",
         "reporter": {"real_name": "다른요청자"},
-        "handler": {"real_name": "홍길동"}, **values,
+        "handler": {"real_name": "석지원"}, **values,
     }
 
 
@@ -55,10 +55,11 @@ class HistoricalKeywordTests(unittest.TestCase):
             stored = None
         else:
             stored = complete_batch(rows)
-        self.enterContext(patch.object(mantis_store, "read_complete_store", return_value=stored))
+        self.enterContext(patch.object(mantis_store, "stream_complete_store", side_effect=lambda: nullcontext(stored)))
         self.enterContext(patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
         self.enterContext(patch.object(retrieval, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
-        self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id", side_effect=AssertionError("unexpected live query")))
+        self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id",
+                                      side_effect=lambda issue_id: next(row for row in rows if row["id"] == issue_id)))
         plan = build_query_plan(query, {"source": "mantis"}, extract_query_constraints(query))
         return retrieval.run_retrieval_pipeline(query, 2, {"mantis": True, "vectorDb": True}, plan)
 
@@ -117,7 +118,7 @@ class ReporterRoleTests(unittest.TestCase):
                 self.assertEqual(chroma_text_matches_constraints(mantis_store.render_document(issue), constraints), expected)
 
     def test_handler_and_any_roles_keep_their_established_scope(self):
-        issue = raw_issue(30001, "요청")
+        issue = raw_issue(30001, "요청", handler={"real_name": "홍길동"})
         for role, name, expected in [("handler", "홍길동", True), ("handler", "다른요청자", False),
                                       ("any", "홍길동", True), ("any", "다른요청자", True)]:
             with self.subTest(role=role, name=name):
@@ -164,7 +165,8 @@ class ReporterRoleTests(unittest.TestCase):
         question = "홍길동이 요청한 이슈 보여줘"
         issue = raw_issue(30001, "요청", reporter={"real_name": "홍길동"}, handler={})
         with (patch("backend.intent.entities.load_known_people", return_value=([], ["홍길동"])),
-              patch.object(mantis_store, "read_complete_store", return_value=complete_batch([issue])),
+              patch.object(mantis_store, "stream_complete_store",
+                           side_effect=lambda: nullcontext(complete_batch([issue]))),
               patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12")):
             constraints = extract_query_constraints(question)
             stages = [mantis.execute_mantis_snapshot_search(2, constraints), {
@@ -206,7 +208,7 @@ class ChromaCurrentPayloadTests(unittest.TestCase):
     def test_current_lexical_mismatch_cannot_reappear_after_complete_scan_excluded_it(self):
         current = raw_issue(30001, "차트 색상 변경")
         stored = complete_batch([current])
-        with (patch.object(mantis_store, "read_complete_store", return_value=stored),
+        with (patch.object(mantis_store, "stream_complete_store", side_effect=lambda: nullcontext(stored)),
               patch.object(mantis, "read_complete_store", return_value=stored),
               patch.object(chroma, "fetch_mantis_issue_by_id", return_value=current)):
             result = retrieval.run_retrieval_pipeline("멘티스 로그인 오류 이슈 보여줘", 2,

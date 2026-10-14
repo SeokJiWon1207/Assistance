@@ -1,6 +1,7 @@
 """해석 안전성, 빠른 경로, 조회 일치 및 확정 조건 상속 회귀."""
 
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
 from backend.intent.constraints import extract_query_constraints
@@ -57,7 +58,7 @@ class AccuracyPerformanceTests(unittest.TestCase):
 
     def test_raw_count_and_list_share_exact_ids_and_keep_callback_contract(self):
         rows = [{"id": i, "project": {"name": "120NH(NH증권)"}, "summary": "MTS 차트 문의",
-                 "status": {"name": s}, "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
+                 "handler": {"real_name": "석지원"}, "status": {"name": s}, "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
                 for i, (s, media) in enumerate((("assigned", ""), ("closed", "MTS"),
                                                ("developed", "MTS"), ("new", "HTS")), 1)]
         for q, expected in (("NH MTS 미종료 이슈", {1, 3}), ("NH 종료 이슈", {2}),
@@ -66,7 +67,8 @@ class AccuracyPerformanceTests(unittest.TestCase):
             self.assertEqual({r["id"] for r in select_mantis_rows(rows, c)}, expected)
             legacy = {r["id"] for r in rows if chroma_text_matches_constraints(render_document(r), c)}
             self.assertEqual(expected, legacy, q)
-            with patch("backend.sources.mantis_store.read_complete_store", return_value=IssueBatch(rows, {})):
+            with patch("backend.sources.mantis_store.stream_complete_store",
+                       side_effect=lambda: nullcontext(IssueBatch(rows, {}))):
                 result = scan_mantis_documents(CHROMA_DB_PATH, lambda _: False, normalize_chroma_issue_document,
                     constraints=c, use_raw_constraints=True)
                 original = scan_mantis_documents(CHROMA_DB_PATH, lambda _: False, normalize_chroma_issue_document, constraints=c)

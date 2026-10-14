@@ -337,7 +337,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
     def test_request_scope_reads_once_and_does_not_cache_across_requests(self):
         from backend import retrieval
         self.sync([{'id': 1, 'summary': 'HTS 조회', 'project': {'name': 'KB증권'}}])
-        with (patch.object(mantis_store, '_read_complete_store', wraps=mantis_store._read_complete_store) as read,
+        with (patch.object(mantis_store, '_open_store_stream', wraps=mantis_store._open_store_stream) as read,
               patch.object(retrieval, 'revalidate_mantis_snapshot_stage', side_effect=lambda stage, constraints: stage),
               patch.object(retrieval, 'execute_mantis_filter_search', return_value={'source':'mantis_filter', 'status':'skipped'})):
             for expected in (1, 2):

@@ -37,10 +37,11 @@ from backend.config import (
 )
 from backend.query_planning import plan_created_at_matches
 from backend.intent.matching import extract_reporter_names
+from backend.intent.search_terms import text_matches_keyword_terms
 from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
-from backend.sources.mantis_store import read_complete_store, read_store_metadata
+from backend.sources.mantis_store import read_complete_store, read_store_metadata, stream_complete_store
 from backend.sources.mantis_evidence import constraint_evidence_terms, matching_issue_evidence
 from backend.timing import measured
 from backend.understanding import (
@@ -73,7 +74,9 @@ def issue_matches_created_at(issue: Dict[str, Any], created_at: Optional[Dict[st
     return plan_created_at_matches(str(issue.get("created_at") or ""), created_at)
 
 
-def issue_matches_platform(issue: Dict[str, Any], platform_aliases: List[str]) -> bool:
+def issue_matches_platform(
+    issue: Dict[str, Any], platform_aliases: List[str], *, search_text: Optional[str] = None,
+) -> bool:
     """플랫폼(HTS/MTS) 조건은 신뢰 가능한 '매체구분' 커스텀 필드를 우선 사용한다.
 
     본문에는 "HTS에서는 안 되는데 MTS에서는 됩니다"처럼 상대 플랫폼이 비교/언급되는
@@ -85,7 +88,7 @@ def issue_matches_platform(issue: Dict[str, Any], platform_aliases: List[str]) -
     media_type = get_issue_custom_field_value(issue, "매체구분")
     if media_type:
         return text_matches_any_alias(media_type, platform_aliases)
-    return text_matches_any_alias(issue_to_search_text(issue), platform_aliases)
+    return text_matches_any_alias(search_text if search_text is not None else issue_to_search_text(issue), platform_aliases)
 
 
 def mantis_date_search_variants(value: Any) -> str:
@@ -439,7 +442,9 @@ def issue_matches_screen_numbers(issue: Dict[str, Any], screen_numbers: List[str
     )
 
 
-def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]) -> bool:
+def issue_matches_constraints(
+    issue: Dict[str, Any], constraints: Dict[str, Any], *, search_text: Optional[str] = None,
+) -> bool:
     from backend.team_scope import matches_team_constraint
 
     if not matches_team_constraint(str((issue.get("handler") or {}).get("real_name") or ""), constraints):
@@ -467,14 +472,16 @@ def issue_matches_constraints(issue: Dict[str, Any], constraints: Dict[str, Any]
     if constraints.get("platform_aliases") and not issue_matches_platform(
         issue,
         constraints["platform_aliases"],
+        search_text=search_text,
     ):
         return False
     if constraints.get("excluded_platform_aliases") and issue_matches_platform(
         issue,
         constraints["excluded_platform_aliases"],
+        search_text=search_text,
     ):
         return False
-    combined_text = issue_to_search_text(issue)
+    combined_text = search_text if search_text is not None else issue_to_search_text(issue)
     status_text = str((issue.get("status") or {}).get("name") or (issue.get("status") or {}).get("label", ""))
     if not text_matches_status(
         status_text,
@@ -969,13 +976,17 @@ def revalidate_mantis_snapshot_stage(
     }
 
 
+@measured("mantis_page_scan")
 def execute_mantis_page_scan(
     search_keyword: str,
     limit: int = 5,
     constraints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    keywords = [normalize_for_match(kw) for kw in search_keyword.split() if kw.strip()]
+    keywords = [kw.strip().casefold() for kw in search_keyword.split() if kw.strip()]
     filtered_issues: List[Dict[str, Any]] = []
+    matched_ids: list[int] = []
+    matched_groups: Dict[int, str] = {}
+    found_count = 0
     scanned_issue_ids: set[int] = set()
     status_excluded_count = 0
     page_size = 50
@@ -984,43 +995,51 @@ def execute_mantis_page_scan(
     try:
         # 기존과 같은 50건 × 16페이지를 전부 읽은 뒤 조건을 적용한다.
         # API 정렬이 보장되지 않으므로 표시 건수를 채워도 조기 종료하지 않는다.
-        stored = read_complete_store()
-        raw_issues = stored if stored is not None else _fetch_mantis_raw_issues(
-            max_pages * page_size, page_size, MANTIS_PAGE_SCAN_TIMEOUT_SECONDS,
-        )
-        for issue in raw_issues:
-            issue_id = int(issue.get("id") or 0)
-            if issue_id:
-                scanned_issue_ids.add(issue_id)
-            combined_text = issue_to_search_text(issue)
-            normalized_text = normalize_for_match(combined_text)
-            if constraints and has_constraint(constraints) and not issue_matches_constraints(
-                issue,
-                constraints,
-            ):
-                # 상태만 달라 탈락한 항목 수를 유지해 조건 안내에 사용한다.
-                if constraints.get("statuses") and issue_matches_constraints(
+        with stream_complete_store() as stored:
+            raw_issues = stored if stored is not None else _fetch_mantis_raw_issues(
+                max_pages * page_size, page_size, MANTIS_PAGE_SCAN_TIMEOUT_SECONDS,
+            )
+            candidates = raw_issues
+            if (stored is not None and getattr(stored, "has_search_projection", False)
+                    and keywords and not (constraints or {}).get("statuses")):
+                # 상태 제외 안내는 키워드와 무관한 건수이므로 상태 질의는 기존 전체 검사를 유지한다.
+                scanned_issue_ids.update(issue_id for issue_id in stored.all_issue_ids() if issue_id)
+                candidates = stored.keyword_candidates(keywords)
+            for issue in candidates:
+                issue_id = int(issue.get("id") or 0)
+                if issue_id:
+                    scanned_issue_ids.add(issue_id)
+                combined_text = issue_to_search_text(issue)
+                if constraints and has_constraint(constraints) and not issue_matches_constraints(
                     issue,
-                    {**constraints, "statuses": []},
+                    constraints,
+                    search_text=combined_text,
                 ):
-                    status_excluded_count += 1
-                continue
-            if not keywords or all(keyword in normalized_text for keyword in keywords):
-                filtered_issues.append({**issue, "_assistant_match_score": mantis_keyword_match_score(issue, keywords)})
+                    # 상태만 달라 탈락한 항목 수를 유지해 조건 안내에 사용한다.
+                    if constraints.get("statuses") and issue_matches_constraints(
+                        issue,
+                        {**constraints, "statuses": []},
+                        search_text=combined_text,
+                    ):
+                        status_excluded_count += 1
+                    continue
+                if text_matches_keyword_terms(combined_text, keywords):
+                    found_count += 1
+                    if issue_id:
+                        matched_ids.append(issue_id)
+                        matched_groups[issue_id] = (issue.get("project") or {}).get("name") or "미상"
+                    scored = {**issue, "_assistant_match_score": mantis_keyword_match_score(issue, keywords)}
+                    filtered_issues.append(scored)
+                    filtered_issues.sort(
+                        key=lambda row: (row.get("_assistant_match_score", 0), row.get("id", 0)), reverse=True,
+                    )
+                    del filtered_issues[limit:]
+            source_meta = collection_metadata(raw_issues)
+            searched_pages = 0 if stored is not None else min(len(raw_issues) // page_size + 1, max_pages)
     except HTTPException:
         raise
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Mantis connection failed: {exc}") from exc
-
-    if not filtered_issues and len(keywords) > 1 and not (constraints and has_constraint(constraints)):
-        fallback_keyword = keywords[0]
-        # 폴백은 기존처럼 첫 페이지에서만 찾되 같은 수집 세대의 원본을 재사용한다.
-        filtered_issues = [
-            issue
-            for issue in raw_issues[:page_size]
-            if fallback_keyword
-            in f"{issue.get('project', {}).get('name', '')} {issue.get('summary', '')}".lower()
-        ]
 
     filtered_issues.sort(
         key=lambda issue: (issue.get("_assistant_match_score", 0), issue.get("id", 0)),
@@ -1033,20 +1052,13 @@ def execute_mantis_page_scan(
         "status": "ok",
         "meta": {
             "search_keyword": search_keyword,
-            "found_count": len(filtered_issues),
-            "matched_customer_groups": {
-                issue["id"]: (issue.get("project") or {}).get("name") or "미상"
-                for issue in filtered_issues if issue.get("id")
-            },
+            "found_count": found_count,
+            "matched_customer_groups": matched_groups,
             "displayed_count": len(target_batch),
-            "matched_issue_ids": sorted(
-                int(issue.get("id") or 0)
-                for issue in filtered_issues
-                if issue.get("id")
-            ),
+            "matched_issue_ids": sorted(matched_ids),
             "scanned_issue_ids": sorted(scanned_issue_ids),
-            **collection_metadata(raw_issues),
-            "searched_pages": 0 if stored is not None else min(len(raw_issues) // page_size + 1, max_pages),
+            **source_meta,
+            "searched_pages": searched_pages,
             "status_excluded_count": status_excluded_count,
         },
         "issues_list": [normalize_issue(issue, search_terms=keywords + constraint_evidence_terms(constraints or {}))

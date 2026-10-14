@@ -151,23 +151,10 @@ def grounded_mantis_terms(
     constraints: Dict[str, Any],
     planned_terms: Optional[List[str]] = None,
 ) -> List[str]:
-    """질문에 실제로 남는 Mantis 키워드만 플래너 결과에서 허용한다."""
-    deterministic_terms = source_specific_terms(query_text, "mantis", constraints)
-    if not planned_terms or not deterministic_terms:
-        return deterministic_terms
-
-    grounded = []
-    normalized_deterministic = [normalize_for_match(term) for term in deterministic_terms]
-    for term in planned_terms:
-        normalized = normalize_for_match(str(term))
-        if normalized and any(
-            normalized == candidate
-            or normalized in candidate
-            or candidate in normalized
-            for candidate in normalized_deterministic
-        ):
-            grounded.append(str(term))
-    return list(dict.fromkeys(grounded or deterministic_terms))[:6]
+    """플래너가 일부만 골라도 질문에 명시된 모든 Mantis 주제를 보존한다."""
+    # 플래너의 부분 문자열/요약으로 필수 주제를 대체하지 않는다.
+    # 검증된 동의어는 소스의 keyword_term_aliases 매칭에서 확장한다.
+    return source_specific_terms(query_text, "mantis", constraints)
 
 
 @with_store_scope
@@ -225,6 +212,7 @@ def run_retrieval_pipeline(
     similar_issue_search = wants_similar_issue_search(query_text, constraints)
     exact_issue_lookup = bool(constraints.get("issue_ids")) and not similar_issue_search and plan_source != "both"
     historical_snapshot_used = False
+    complete_raw_search_used = False
     structured_snapshot_eligible = bool(
         has_constraint(constraints)
         and (
@@ -356,7 +344,7 @@ def run_retrieval_pipeline(
         if not exact_issue_lookup and not similar_issue_search and (not historical_snapshot_used or not snapshot_covers_range):
             # 저장 필터는 화면번호를 부분 문자열이나 별도 조건으로 해석할 수 있다.
             # 화면번호 질의에서는 정확 일치를 보장하는 스냅샷/페이지 스캔만 사용한다.
-            if not constraints.get("screen_numbers"):
+            if not constraints.get("screen_numbers") and not keyword:
                 try:
                     stages.append(execute_mantis_filter_search(query_text, limit, constraints))
                 except (HTTPException, requests.RequestException) as exc:
@@ -376,7 +364,15 @@ def run_retrieval_pipeline(
                     )
 
             try:
-                stages.append(execute_mantis_page_scan(keyword, limit, constraints))
+                page_stage = execute_mantis_page_scan(keyword, limit, constraints)
+                stages.append(page_stage)
+                page_meta = page_stage.get("meta") or {}
+                complete_raw_search_used = bool(
+                    page_stage.get("status") == "ok"
+                    and page_meta.get("status") == "snapshot"
+                    and page_meta.get("snapshot_complete") is True
+                    and page_meta.get("search_complete") is True
+                )
             except HTTPException as exc:
                 stages.append(
                     {
@@ -395,6 +391,7 @@ def run_retrieval_pipeline(
         and not exact_issue_lookup
         and not similar_issue_search
         and not historical_snapshot_used
+        and not complete_raw_search_used
     ):
         stages.append(execute_chroma_search(query_text, limit, constraints))
 

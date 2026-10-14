@@ -1,7 +1,7 @@
 """Mantis 원본 전체 세대. 외부 모델 없이 수집하고 SQLite를 원자 교체한다."""
 from __future__ import annotations
 
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, suppress
 from contextvars import ContextVar
 from functools import wraps
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
-from threading import Event, Thread, Lock
+from threading import Event, Thread, Lock, RLock
 import time
 from typing import Any, Callable
 
@@ -21,14 +21,19 @@ import requests
 from fastapi import HTTPException
 
 from backend.config import RUNTIME_DIR, get_mantis_settings
+from backend.execution import checkpoint, execution_slot, RequestStopped
 from backend.sources.mantis_collection import IssueBatch, iter_pages_in_order
 from backend.timing import measured
 from backend.sources.immutable import freeze
 from backend.sources.mantis_store_storage import check_working_space, cleanup_temporary_store, store_write_guard
+from backend.sources.mantis_search_projection import (
+    SEARCH_PAYLOAD_SQL, SEARCH_PROJECTION_VERSION, build_projection, projection_ready, update_projection,
+)
 
 LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
 _request_store: ContextVar[dict | None] = ContextVar("mantis_request_store", default=None)
+_request_streams: ContextVar[dict | None] = ContextVar("mantis_request_streams", default=None)
 _generation_lock = Lock()
 _generation_cache: dict[tuple, tuple] = {}
 _refresh_lock = Lock()
@@ -53,10 +58,15 @@ def store_request_scope():
         yield
         return
     token = _request_store.set({})
+    streams: dict[tuple, _StoreStream] = {}
+    stream_token = _request_streams.set(streams)
     try:
         yield
     finally:
         _request_store.reset(token)
+        _request_streams.reset(stream_token)
+        for stream in streams.values():
+            stream.close()
 
 
 def with_store_scope(function):
@@ -98,6 +108,136 @@ def read_store_metadata(*, allow_stale: bool = False) -> dict[str, Any] | None:
         }
     except (OSError, sqlite3.Error, ValueError, KeyError, TypeError, HTTPException):
         return None
+
+
+class _StoreStream:
+    """본문을 보관하지 않고 고정된 SQLite 세대를 재순회한다."""
+
+    def __init__(self, db, saved, fresh):
+        self.db = db
+        self._query_lock = RLock()
+        self.count = saved["count"]
+        self.has_search_projection = projection_ready(db, saved)
+        db.set_progress_handler(self._check_query_budget, 1000)
+        self.meta = {
+            "status": "snapshot", "fetchedAt": saved["fetchedAt"],
+            "search_complete": fresh, "snapshot_complete": True,
+            "incomplete_reasons": [] if fresh else ["stale_snapshot"],
+            "reason": "" if fresh else "저장 데이터의 갱신이 지연되었습니다.",
+        }
+
+    def __len__(self):
+        return self.count
+
+    @staticmethod
+    def _check_query_budget():
+        try:
+            checkpoint()
+            return 0
+        except RequestStopped:
+            return 1
+
+    def all_issue_ids(self):
+        with execution_slot(self._query_lock):
+            checkpoint()
+            cursor = None
+            try:
+                cursor = self.db.execute("SELECT id FROM issues ORDER BY id DESC")
+                for (issue_id,) in cursor:
+                    checkpoint()
+                    yield issue_id
+            except sqlite3.OperationalError:
+                checkpoint()
+                raise
+            finally:
+                if cursor is not None:
+                    with suppress(sqlite3.ProgrammingError):
+                        cursor.close()
+
+    def keyword_candidates(self, keywords):
+        from backend.common import normalize_for_match
+        from backend.intent.search_terms import keyword_term_aliases
+
+        clauses, values = [], []
+        for keyword in keywords:
+            aliases = list(dict.fromkeys(normalize_for_match(alias) for alias in keyword_term_aliases(keyword)))
+            clauses.append("(" + " OR ".join("instr(s.normalized_text, ?) > 0" for _ in aliases) + ")")
+            values.extend(aliases)
+        # s를 먼저 순회해 후보가 아닌 큰 원본 JSON은 읽지 않는다.
+        sql = ("SELECT " + SEARCH_PAYLOAD_SQL + " FROM search_projection AS s "
+               "CROSS JOIN issues AS i ON i.id=s.id WHERE " + " AND ".join(clauses) + " ORDER BY s.id DESC")
+        return self._iter_query(sql, values)
+
+    def __iter__(self):
+        return self._iter_query(f"SELECT {SEARCH_PAYLOAD_SQL} FROM issues ORDER BY id DESC")
+
+    def _iter_query(self, sql, values=()):
+        with execution_slot(self._query_lock):
+            checkpoint()
+            cursor = None
+            try:
+                cursor = self.db.execute(sql, values)
+                for (payload,) in cursor:
+                    checkpoint()
+                    yield json.loads(payload)
+            except sqlite3.OperationalError:
+                checkpoint()  # SQLite가 중단한 쿼리도 원래 취소/시간초과 사유를 전달한다.
+                raise
+            finally:
+                if cursor is not None:
+                    with suppress(sqlite3.ProgrammingError):
+                        cursor.close()
+
+    def close(self):
+        with self._query_lock:
+            self.db.close()
+
+
+def _open_store_stream(path, identity, allow_stale):
+    db = None
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+        db.execute("BEGIN")
+        saved = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
+        if saved["connection"] != identity:
+            return None
+        age = time.time() - datetime.fromisoformat(saved["fetchedAt"]).timestamp()
+        fresh = 0 <= age < MAX_AGE_SECONDS
+        if not fresh and not allow_stale:
+            return None
+        if db.execute("SELECT count(*) FROM issues").fetchone()[0] != saved["count"]:
+            return None
+        stream = _StoreStream(db, saved, fresh)
+        db = None  # 호출자 또는 요청 범위가 연결 수명을 소유한다.
+        return stream
+    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
+        return None
+    finally:
+        if db is not None:
+            db.close()
+
+
+@contextmanager
+def stream_complete_store(*, allow_stale=False):
+    """전체 검색은 행 단위로 읽고 한 요청 안에서는 같은 트랜잭션을 유지한다."""
+    scope = _request_streams.get()
+    stream = None
+    try:
+        path, identity = store_path(), connection_key()
+        key = (str(path), identity, allow_stale)
+        with execution_slot(_generation_lock):
+            stream = scope.get(key) if scope is not None else None
+            if stream is None:
+                stream = _open_store_stream(path, identity, allow_stale)
+                if stream is not None and scope is not None:
+                    scope[key] = stream
+    except HTTPException:
+        pass
+    try:
+        yield stream
+    finally:
+        if stream is not None and scope is None:
+            stream.close()
 
 
 @measured("store_read")
@@ -274,6 +414,8 @@ def sync_complete_store(
                     raise RuntimeError("Mantis 페이지가 계속 변경되어 전체 범위를 확정하지 못했습니다.")
                 if identity != connection_key():
                     raise RuntimeError("수집 중 Mantis 연결 설정이 변경되었습니다.")
+                build_projection(db)
+                meta["searchProjectionVersion"] = SEARCH_PROJECTION_VERSION
                 db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
             check_working_space(path)
             os.replace(temporary, path)
@@ -366,13 +508,19 @@ def refresh_changed_issues(
                     closing(sqlite3.connect(temporary)) as db:
                 source.backup(db, pages=256, progress=lambda *_: check_working_space(path))
                 with db:
+                    projection_valid = projection_ready(db, saved)
                     for issue_id, issue in changed.items():
                         payload = json.dumps(issue, ensure_ascii=False, sort_keys=True)
                         db.execute("INSERT OR REPLACE INTO issues VALUES (?, ?)", (issue_id, payload))
+                    if projection_valid:
+                        update_projection(db, changed.values())
+                    else:
+                        build_projection(db)
                     count = db.execute("SELECT COUNT(*) FROM issues").fetchone()[0]
                     meta = {**saved, "connection": identity, "fetchedAt": fetched_at.isoformat(), "count": count,
                             "fullSyncAt": saved.get("fullSyncAt") or saved["fetchedAt"],
-                            "consistency": "incremental", "changed": len(changed)}
+                            "consistency": "incremental", "changed": len(changed),
+                            "searchProjectionVersion": SEARCH_PROJECTION_VERSION}
                     db.execute("DELETE FROM metadata")
                     db.execute("INSERT INTO metadata VALUES (?)", (json.dumps(meta),))
             check_working_space(path)
@@ -381,6 +529,36 @@ def refresh_changed_issues(
             cleanup_temporary_store(temporary)
     return {"status": "complete", "mode": "incremental", "count": count, "changed": len(changed),
             "fetchedAt": meta["fetchedAt"]}
+
+
+def upgrade_search_projection() -> dict[str, Any]:
+    """기존 저장본의 수집 시각을 보존하며 배포 전에 검색문을 원자적으로 준비한다."""
+    path = store_path()
+    with store_write_guard(path) as storage:
+        if storage["status"] != "ready":
+            return storage
+        saved = _saved_metadata()
+        if saved is None:
+            return {"status": "needs_full"}
+        fd, temporary = tempfile.mkstemp(prefix="mantis-complete-", suffix=".sqlite3", dir=path.parent)
+        os.close(fd)
+        try:
+            with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source, \
+                    closing(sqlite3.connect(temporary)) as db:
+                source.backup(db, pages=256, progress=lambda *_: check_working_space(path))
+                with db:
+                    if db.execute("SELECT count(*) FROM issues").fetchone()[0] != saved['count']:
+                        raise ValueError("전체 저장본의 이슈 수가 일치하지 않습니다.")
+                    build_projection(db)
+                    saved["searchProjectionVersion"] = SEARCH_PROJECTION_VERSION
+                    db.execute("UPDATE metadata SET value=?", (json.dumps(saved),))
+            if saved['connection'] != connection_key():
+                raise RuntimeError("검색문 준비 중 Mantis 연결 설정이 변경되었습니다.")
+            check_working_space(path)
+            os.replace(temporary, path)
+        finally:
+            cleanup_temporary_store(temporary)
+    return {"status": "complete", "count": saved['count'], "fetchedAt": saved['fetchedAt']}
 
 
 def refresh_store(fetch_page: Callable[[int], list[dict[str, Any]]] | None = None) -> dict[str, Any]:

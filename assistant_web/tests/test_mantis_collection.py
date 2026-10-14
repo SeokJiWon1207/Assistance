@@ -114,7 +114,7 @@ class MantisCollectionTests(unittest.TestCase):
         self.assertEqual(len(first["meta"]["matched_customer_groups"]), 400)
         self.assertTrue(all("_assistant_match_score" not in row for row in raw))
 
-    def test_keyword_fallback_reuses_only_first_api_page_not_highest_ids(self):
+    def test_missing_keyword_cannot_relax_the_topic_and_reuses_api_pages(self):
         def fetch(params, **kwargs):
             page = params["page"]
             if page == 1:
@@ -129,8 +129,8 @@ class MantisCollectionTests(unittest.TestCase):
             repeated = mantis.execute_mantis_page_scan("차트 없는검색어", 5, {})
         self.assertEqual(api.call_count, before)
         self.assertEqual(stage, repeated)
-        self.assertEqual([row["id"] for row in stage["issues_list"]], [50, 49, 48, 47, 46])
-        self.assertEqual(stage["meta"]["found_count"], 50)
+        self.assertEqual(stage["issues_list"], [])
+        self.assertEqual(stage["meta"]["found_count"], 0)
         self.assertEqual(stage["meta"]["searched_pages"], 2)
 
     def test_retrieval_pipeline_uses_shared_page_cache_for_followup_limit(self):
@@ -138,7 +138,7 @@ class MantisCollectionTests(unittest.TestCase):
 
         def fetch(params, **kwargs):
             return [
-                {**row, "summary": "차트 오류", "project": {"name": "112KBStar(KB증권)"},
+                {**row, "summary": "차트 오류", "handler": {"real_name": "석지원"}, "project": {"name": "112KBStar(KB증권)"},
                  "custom_fields": [{"field": {"name": "매체구분"}, "value": "HTS"}]}
                 for row in self.page(params)
             ]
