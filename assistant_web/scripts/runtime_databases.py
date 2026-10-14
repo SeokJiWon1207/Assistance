@@ -36,6 +36,9 @@ def backup_runtime(state: Path, backup: Path) -> None:
     backup.mkdir(parents=True, exist_ok=False, mode=0o700)
     names = []
     for database in sorted(state.glob("*.sqlite3")):
+        # 원자 게시 전 수집 파일은 hot journal이 남아 있을 수 있으며 복구 대상이 아니다.
+        if database.name.startswith("mantis-complete-"):
+            continue
         copy_database(database, backup / database.name)
         names.append(database.name)
     # 완료 manifest 이전에 실패한 백업은 복구에 사용하지 않는다.
@@ -101,7 +104,9 @@ def main() -> None:
     elif args.mode == "initialize" and args.app:
         initialize_runtime(args.app, args.state)
     elif args.mode == "check" and args.app:
-        with tempfile.TemporaryDirectory(prefix="assistant-preflight-") as temporary:
+        # 큰 DB의 검사 사본은 운영 DB와 같은 디스크에 두어 /tmp tmpfs를 사용하지 않는다.
+        args.state.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with tempfile.TemporaryDirectory(prefix="assistant-preflight-", dir=args.state) as temporary:
             copied = Path(temporary) / "state"
             backup_runtime(args.state, copied)
             if args.legacy:
