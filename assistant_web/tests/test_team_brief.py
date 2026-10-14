@@ -1,4 +1,5 @@
 """주간 팀 브리핑 기준본과 확인 상태 테스트."""
+from contextlib import closing
 
 import json
 import os
@@ -85,7 +86,7 @@ class TeamBriefTests(unittest.TestCase):
             os.environ, {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")}
         ):
             team_brief.init_workspace_db()
-            with sqlite3.connect(team_brief.workspace_db_path()) as connection, connection:
+            with closing(sqlite3.connect(team_brief.workspace_db_path())) as connection, connection:
                 connection.execute(
                     "INSERT INTO weekly_team_briefs (week_start, payload_json, generated_at) VALUES (?, ?, ?)",
                     ("2026-08-10", json.dumps(old_payload, ensure_ascii=False), old_payload["generatedAt"]),

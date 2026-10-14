@@ -1,4 +1,5 @@
 """본문 색인의 영속성, 연결 격리와 갱신 실패 경계를 검증한다."""
+from contextlib import closing
 
 import importlib.util
 import json
@@ -91,7 +92,7 @@ class NotionBodyIndexTests(unittest.TestCase):
         self.index.record_failure(raw["id"], "unsupported_block")
         self.assertEqual(self.index.status(["db-1"])["supported_collected_page_count"], 1)
         # 이미 실행 중인 구버전 수집기는 선택적 진단 테이블을 모른다.
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE pages SET last_error='http_429', failure_count=failure_count+1")
         self.assertEqual(self.index.status(["db-1"])["supported_collected_page_count"], 0)
 
@@ -113,14 +114,14 @@ class NotionBodyIndexTests(unittest.TestCase):
         import sqlite3
         from backend.notion import body_index
         self.add_complete()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("DROP TABLE content_policies")
         old = body_index.BodyIndex(self.path, fingerprint="connection-a", create=False)
         self.assertFalse(old.read_page("page-1")["content_complete"])
         self.assertEqual(old.status(["db-1"])["policy_pending_page_count"], 1)
         self.assertEqual(len(old.pending_pages(["db-1"])), 1)
         self.assertEqual(len(old.search(["db-1"], ["본문"])), 1)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='content_policies'").fetchone())
         old.upsert_catalog("db-1", [page()], complete=True)
         self.assertEqual(old.status(["db-1"])["policy_pending_page_count"], 1)
@@ -257,7 +258,7 @@ class NotionBodyIndexTests(unittest.TestCase):
                                    expected_edited_time=page()["last_edited_time"])
         self.assertEqual(self.index.search(["db-1"], ["oldword", "newword"]), [])
         self.assertTrue(self.index.search(["db-1"], ["finalword"])[0]["trusted"])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM partial_blocks").fetchone()[0], 0)
 
     def test_page_pruning_cascades_partial_blocks_and_connection_filters_still_apply(self):
@@ -270,19 +271,19 @@ class NotionBodyIndexTests(unittest.TestCase):
         self.assertEqual(BodyIndex(self.path, fingerprint="connection-b").search(["db-1"], ["private"]), [])
         self.index.upsert_catalog("db-1", [], complete=True)
         self.assertEqual(self.index.search(["db-1"], ["private"]), [])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM partial_blocks").fetchone()[0], 0)
 
     def test_existing_schema_without_partial_table_reads_without_migration_then_upgrades_on_write(self):
         from backend.notion.body_index import open_body_index
         self.add_complete()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("DROP TABLE IF EXISTS partial_blocks")
         reopened = open_body_index(self.path, fingerprint="connection-a")
         self.assertIsNotNone(reopened)
         self.assertEqual(len(reopened.search(["db-1"], ["본문"])), 1)
         self.assertEqual(reopened.read_page("page-1")["content"], "본문 증거")
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertIsNone(db.execute("SELECT name FROM sqlite_master WHERE name='partial_blocks'").fetchone())
         reopened.replace_content("page-1", [segment("newword")], complete=False,
                                  expected_edited_time=page()["last_edited_time"])
@@ -294,7 +295,7 @@ class NotionBodyIndexTests(unittest.TestCase):
         self.index.replace_content("page-1", [segment("partialword")], complete=False,
                                    expected_edited_time=page()["last_edited_time"])
         self.assertEqual(len(self.index.search(["db-1"], ["partialword"])), 1)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER reject_partial BEFORE INSERT ON partial_blocks "
                        "WHEN NEW.text = 'bad' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
         with self.assertRaises(BodyIndexError):
@@ -340,7 +341,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_failed_block_transaction_rolls_back_without_losing_prior_content(self):
         from backend.notion.body_index import BodyIndexError
         self.add_complete()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER reject_block BEFORE INSERT ON blocks "
                        "WHEN NEW.text = 'bad' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
         with self.assertRaises(BodyIndexError):
@@ -372,7 +373,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_corrupt_file_and_corrupt_payload_raise_safe_error(self):
         from backend.notion.body_index import BodyIndex, BodyIndexError
         self.add_complete()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE pages SET raw_page = ?", ("not json",))
         with self.assertRaises(BodyIndexError):
             self.index.read_page("page-1")

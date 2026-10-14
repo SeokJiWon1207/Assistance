@@ -1,3 +1,4 @@
+from contextlib import closing
 import json
 import os
 import sqlite3
@@ -21,7 +22,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
         self.database = self.root / "chroma.sqlite3"
         self.runtime = self.root / "runtime"
         self.runtime.mkdir()
-        with sqlite3.connect(self.database) as connection:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute("CREATE TABLE embedding_metadata(key TEXT, string_value TEXT)")
             connection.execute("INSERT INTO embedding_metadata VALUES ('chroma:document', ?)", (self.document(),))
         self.enterContext(patch.object(entities, "CHROMA_DB_PATH", self.database))
@@ -43,7 +44,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
                 function.cache_clear()
 
     def change_handler(self, handler="박철수"):
-        with sqlite3.connect(self.database) as connection:
+        with closing(sqlite3.connect(self.database)) as connection, connection:
             connection.execute("UPDATE embedding_metadata SET string_value=?", (self.document(handler),))
 
     def assert_people(self, handler="홍길동"):
@@ -56,7 +57,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
 
     def test_explicit_warm_path_persists_without_changing_configured_source(self):
         other = self.root / "other.sqlite3"
-        with sqlite3.connect(other) as connection:
+        with closing(sqlite3.connect(other)) as connection, connection:
             connection.execute("CREATE TABLE embedding_metadata(key TEXT, string_value TEXT)")
             connection.execute("INSERT INTO embedding_metadata VALUES ('chroma:document', ?)", (self.document("박철수"),))
         self.assertTrue(entities.warm_entity_catalog(other))
@@ -92,7 +93,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
         self.assert_people()
         previous = self.database.stat()
         replacement = self.root / "replacement.sqlite3"
-        with sqlite3.connect(replacement) as connection:
+        with closing(sqlite3.connect(replacement)) as connection, connection:
             connection.execute("CREATE TABLE embedding_metadata(key TEXT, string_value TEXT)")
             connection.execute("INSERT INTO embedding_metadata VALUES ('chroma:document', ?)", (self.document("박철수"),))
         self.assertEqual(replacement.stat().st_size, previous.st_size)
@@ -101,7 +102,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
         self.assert_people("박철수")
 
     def test_wal_commit_invalidates_catalog_without_main_database_change(self):
-        with sqlite3.connect(self.database) as writer:
+        with closing(sqlite3.connect(self.database)) as writer, writer:
             writer.execute("PRAGMA journal_mode=WAL")
             writer.execute("PRAGMA wal_autocheckpoint=0")
             self.assert_people()
@@ -169,7 +170,7 @@ class EntityCatalogLatencyTests(unittest.TestCase):
     def test_generation_change_during_scan_retries_before_caching(self):
         original = entities._distinct_chroma_header_values
         changed = False
-        with sqlite3.connect(self.database) as writer:
+        with closing(sqlite3.connect(self.database)) as writer, writer:
             writer.execute("PRAGMA journal_mode=WAL")
             writer.execute("PRAGMA wal_autocheckpoint=0")
 

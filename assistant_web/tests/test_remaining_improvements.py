@@ -1,4 +1,5 @@
 """세대 캐시·구조화 후속 조건·빠른 조회·운영 지연 통계 회귀."""
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
@@ -65,7 +66,7 @@ class GenerationCacheTests(unittest.TestCase):
 
     def test_in_place_change_invalidates(self):
         store.read_complete_store()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("UPDATE issues SET payload=?", (json.dumps({"id": 1, "summary": "수정"}),))
         self.assertEqual(store.read_complete_store()[0]["summary"], "수정")
 
@@ -237,7 +238,7 @@ class LatencySummaryTests(unittest.TestCase):
         from backend.api import quality
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.sqlite3"
-            with sqlite3.connect(path) as db:
+            with closing(sqlite3.connect(path)) as db, db:
                 db.execute("CREATE TABLE validation_logs (id, created_at, question, model_id, mode, score, status, failed_checks_json, payload)")
                 db.execute("INSERT INTO validation_logs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     ("1", "2026-10-01", "검증 질문", "test", "count", 100, "pass", "[]",

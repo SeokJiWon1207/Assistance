@@ -1,3 +1,4 @@
+from contextlib import closing
 import json
 import sqlite3
 import tempfile
@@ -35,7 +36,7 @@ class SearchLatencyTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.raw = self.root / "raw.sqlite3"
         self.index = self.root / "chroma.sqlite3"
-        with sqlite3.connect(self.index) as db:
+        with closing(sqlite3.connect(self.index)) as db, db:
             db.execute("CREATE TABLE embedding_metadata(key TEXT, string_value TEXT)")
             db.execute("INSERT INTO embedding_metadata VALUES ('chroma:document', ?)", (
                 "[Mantis 이슈 정보]\n- 이슈 ID: #99\n- 프로젝트(고객사): 112KBStar(KB증권)\n"
@@ -49,7 +50,7 @@ class SearchLatencyTests(unittest.TestCase):
             self.addCleanup(mock.stop)
 
     def write_store(self, rows):
-        with sqlite3.connect(self.raw) as db:
+        with closing(sqlite3.connect(self.raw)) as db, db:
             db.execute("CREATE TABLE issues(id INTEGER PRIMARY KEY,payload TEXT)")
             db.execute("CREATE TABLE metadata(value TEXT)")
             db.execute("INSERT INTO metadata VALUES (?)", (json.dumps({
@@ -113,7 +114,7 @@ class SearchLatencyTests(unittest.TestCase):
     def test_header_catalog_preserves_empty_and_whitespace_and_last_line_rules(self):
         values = ["- 담당자: 홍길동\n본문", "- 담당자:  김영희  ", "- 담당자: \n본문", "다른 헤더",
                   "- 담당자:\t팀장\r\n본문", "- 담당자: 첫째\n- 담당자: 둘째", "- 담당자: 홍길동\n중복"]
-        with sqlite3.connect(":memory:") as db:
+        with closing(sqlite3.connect(":memory:")) as db, db:
             db.execute("CREATE TABLE embedding_metadata(key TEXT,string_value TEXT)")
             db.executemany("INSERT INTO embedding_metadata VALUES ('chroma:document',?)", [(value,) for value in values])
             self.assertEqual(set(_distinct_chroma_header_values(db, "담당자")), {"홍길동", "김영희", "팀장", "첫째"})

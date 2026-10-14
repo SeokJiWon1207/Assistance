@@ -1,4 +1,5 @@
 """전체 원본의 게시/격리/실패 보존과 실제 검색 경로 회귀."""
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -65,7 +66,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
 
     def test_stale_snapshot_keeps_original_time_and_is_not_complete(self):
         self.sync([{'id': 1}])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             meta['fetchedAt'] = '2020-01-01T00:00:00+00:00'
             db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
@@ -84,7 +85,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         return fetch
 
     def backdate(self, **fields):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             meta.update(fields)
             db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))

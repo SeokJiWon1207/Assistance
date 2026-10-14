@@ -1,4 +1,5 @@
 """고정 플래너 응답, 장애 경로, 실제 보고서 및 상태 상속 계약."""
+from contextlib import closing
 
 import json
 import os
@@ -281,7 +282,7 @@ class AuditStatusOwnershipTests(unittest.TestCase):
     def test_plan_load_requires_owner_and_matching_previous_question(self):
         with tempfile.TemporaryDirectory() as directory:
             db = Path(directory) / "audit.sqlite3"
-            with sqlite3.connect(db) as c:
+            with closing(sqlite3.connect(db)) as c, c:
                 c.execute("CREATE TABLE validation_logs (id TEXT, user_uid TEXT, question TEXT, payload TEXT)")
                 c.execute("INSERT INTO validation_logs VALUES (?, ?, ?, ?)",
                           ("a" * 32, "owner", "직전 질문", json.dumps({"queryPlan": {"source": "mantis"}})))

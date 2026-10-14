@@ -18,7 +18,7 @@ class RuntimeDatabaseBackupTests(unittest.TestCase):
             state, backup = root / 'state', root / 'backup'
             state.mkdir()
             for name in ('users.sqlite3', 'mantis_complete.sqlite3'):
-                with sqlite3.connect(state / name) as db:
+                with closing(sqlite3.connect(state / name)) as db, db:
                     db.execute('CREATE TABLE evidence(value TEXT)')
                     db.execute('INSERT INTO evidence VALUES (?)', (name,))
             # 원자 게시 전의 수집 파일은 정식 DB가 아니며 hot journal을 가질 수 있다.
@@ -27,7 +27,7 @@ class RuntimeDatabaseBackupTests(unittest.TestCase):
             self.assertEqual(json.loads((backup / 'manifest.json').read_text()), ['mantis_complete.sqlite3', 'users.sqlite3'])
             self.assertFalse((backup / 'mantis-complete-in-progress.sqlite3').exists())
             for name in ('users.sqlite3', 'mantis_complete.sqlite3'):
-                with sqlite3.connect(backup / name) as db:
+                with closing(sqlite3.connect(backup / name)) as db, db:
                     self.assertEqual(db.execute('SELECT value FROM evidence').fetchone(), (name,))
 
     def test_preflight_uses_private_state_disk_and_removes_copies_on_success_and_failure(self):

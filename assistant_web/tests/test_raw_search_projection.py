@@ -1,4 +1,5 @@
 """원본과 같은 세대의 검색문이 누락·별칭·동시성·메모리 회귀를 만들지 않는다."""
+from contextlib import closing
 import json
 import sqlite3
 import tempfile
@@ -77,19 +78,19 @@ class RawSearchProjectionTests(unittest.TestCase):
 
     def test_partial_projection_falls_back_without_losing_a_result(self):
         self.sync([row(1, 'HTS VBScript JavaScript 교체'), row(2, '일반')])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DELETE FROM search_projection WHERE id=1')
         self.assertEqual(self.search()['meta']['matched_issue_ids'], [1])
 
     def test_external_payload_update_invalidates_projection(self):
         self.sync([row(1, '일반')])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE issues SET payload=? WHERE id=1', (json.dumps(row(1, 'HTS VBScript JavaScript 교체')),))
         self.assertEqual(self.search()['meta']['matched_issue_ids'], [1])
 
     def test_old_projection_version_falls_back(self):
         self.sync([row(1, 'HTS VBScript JavaScript 교체')])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             meta['searchProjectionVersion'] = -1
             db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
@@ -129,7 +130,7 @@ class RawSearchProjectionTests(unittest.TestCase):
 
     def test_deployment_upgrade_preserves_source_time_and_failure_keeps_old_file(self):
         self.sync([row(1, 'HTS VBScript JavaScript 교체')])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             before = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             before.pop('searchProjectionVersion')
             db.execute('UPDATE metadata SET value=?', (json.dumps(before),))
