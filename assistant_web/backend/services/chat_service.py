@@ -1130,6 +1130,9 @@ def _retrieve_chat_evidence(
                 "content": f"질문 조건에 맞는 원문 근거를 확보하지 못했습니다. {guidance}",
                 "sources": [], "retrieval": context.retrieval_result, "raw": {"mode": "empty_evidence"}}
     append_retrieval_system_note(context, limit)
+    if request.showSources:
+        # 모델이 답변을 쓰는 동안 같은 근거를 먼저 보여준다. 최종 응답의 출처가 이 목록을 대체한다.
+        emit_chat_event("evidence", sources=build_model_evidence_sources(context.retrieval_result, limit))
     return None
 
 
