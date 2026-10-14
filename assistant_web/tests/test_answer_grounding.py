@@ -42,6 +42,42 @@ def verification(content, rows=None, mode="model"):
 
 
 class AnswerGroundingTests(unittest.TestCase):
+    def test_table_unknown_columns_and_malformed_rows_cannot_hide_fabricated_ids(self):
+        for table in (
+            f"| ID | 제목 | 설명 |\n|---|---|---|\n|31585|{ISSUE['summary']}|추가 이슈 #99999도 있습니다.|",
+            "| ID | 담당자 |\n|---|---|\n|확인 불가|추가 이슈 #99999도 있습니다.|",
+            "| ID | 담당자 |\n|---|---|\n|31585|석지원|추가 이슈 #99999도 있습니다.|",
+            "| ID | 담당자 |추가 이슈 #99999|\n|---|---|---|\n|31585|석지원|설명|",
+            f"| ID | 제목 | 이슈 번호 |\n|---|---|---|\n|31585|{ISSUE['summary']}|#99999|",
+            f"| ID | 제목 | ID |\n|---|---|---|\n|31585|{ISSUE['summary']}|99999|",
+        ):
+            with self.subTest(table=table):
+                self.assertIn('issue_ids', decide_delivery(verification(table)).blocked_checks)
+
+    def test_special_title_characters_round_trip_without_false_issue_claims(self):
+        titles = [
+            '연결 에러 확인\r\n[0314] 테스트 완료',
+            '문자 | \x1c 저장 확인 및 ID: 3 참고',
+            '**강조** `코드` <문자> C:\\temp "따옴표"',
+            '첫 줄\u0085다음 줄\u2028마지막 줄',
+        ]
+        for title in titles:
+            for query in ('MTS 이슈 전체 목록 보여줘', 'MTS 이슈 전체를 표로 보여줘'):
+                with self.subTest(title=repr(title), query=query):
+                    row = {**ISSUE, 'summary': title}
+                    content = format_deterministic_issue_answer(query, {}, retrieval([row]), 5)
+                    report = verification(content, [row], 'deterministic_issue_list')
+                    self.assertTrue(decide_delivery(report).allowed, report['checks'])
+
+    def test_quoted_title_encoding_does_not_allow_fabricated_fields_or_references(self):
+        row = {**ISSUE, 'summary': '원문\r\n문자 | ID: 3'}
+        content = format_deterministic_issue_answer('MTS 이슈 전체 보여줘', {}, retrieval([row]), 5)
+        for altered in (content.replace('원문', '거짓 제목'),
+                        content.replace('**담당자**: 석지원', '**담당자**: 거짓 담당자'),
+                        content + '\n추가 이슈 #99999도 있습니다.'):
+            with self.subTest(altered=altered):
+                self.assertFalse(decide_delivery(verification(altered, [row], 'deterministic_issue_list')).allowed)
+
     def test_list_and_basic_summary_never_require_model_facts(self):
         for question in ("최근 이슈 보여줘", "10월 MTS 접수 이슈 전체 정리해줘",
                          "10월 MTS 이슈를 표로 요약해줘", "#31585 담당자 누구야"):

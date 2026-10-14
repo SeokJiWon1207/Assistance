@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from backend.display import customer_name
+from backend.issue_text import encode_issue_field
 from backend.common import compact_text, normalize_for_match
 from backend.config import STATUS_ALIASES, STATUS_MATCH_ALIASES
 from backend.intent.entities import extract_issue_ids
@@ -699,11 +700,11 @@ def format_deterministic_issue_answer(
             ]
         )
         for issue in issues:
-            title = str(issue["summary"]).replace("|", "\\|")
+            title = encode_issue_field(issue["summary"])
             lines.append(
-                f"| {issue['id']} | {customer_name(issue['project'])} | {title} | "
-                f"{display_status_label(issue.get('status_label') or issue['status'])} | {issue['handler']} | "
-                f"{issue['created_at'] or '미상'} |"
+                f"| {issue['id']} | {encode_issue_field(customer_name(issue['project']))} | {title} | "
+                f"{encode_issue_field(display_status_label(issue.get('status_label') or issue['status']))} | {encode_issue_field(issue['handler'])} | "
+                f"{encode_issue_field(issue['created_at'] or '미상')} |"
             )
     else:
         group_counts: Dict[str, int] = {}
@@ -725,11 +726,11 @@ def format_deterministic_issue_answer(
                     lines.extend(["", f"**{heading} · {group_counts[label]}건**", ""])
             lines.append(
                 f"{index}. **ID**: {issue['id']} | "
-                f"**프로젝트**: {customer_name(issue['project'])} | "
-                f"**제목**: {issue['summary']} | "
-                f"**상태**: {display_status_label(issue.get('status_label') or issue['status'])} | "
-                f"**담당자**: {issue['handler']} | "
-                f"**등록일**: {issue['created_at'] or '미상'}"
+                f"**프로젝트**: {encode_issue_field(customer_name(issue['project']))} | "
+                f"**제목**: {encode_issue_field(issue['summary'])} | "
+                f"**상태**: {encode_issue_field(display_status_label(issue.get('status_label') or issue['status']))} | "
+                f"**담당자**: {encode_issue_field(issue['handler'])} | "
+                f"**등록일**: {encode_issue_field(issue['created_at'] or '미상')}"
             )
             if answer_style == "detailed":
                 preview = compact_text(issue.get("preview", ""), 220)

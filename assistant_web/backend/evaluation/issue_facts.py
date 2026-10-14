@@ -8,6 +8,7 @@ from typing import Any
 from backend.common import display_mantis_status_label, normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
 from backend.config import CUSTOMER_ALIASES
 from backend.display import customer_name
+from backend.issue_text import decode_issue_field
 from backend.query_planning import plan_created_at_matches
 
 
@@ -89,14 +90,29 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
             in_source = True
         if in_source:
             continue
-        line_ids = {int(v) for v in EXPLICIT_ID.findall(line)}
-        ids.update(line_ids)
+        # 목록 필드 안의 ID 표기는 원문 제목의 일부다. 행의 ID와 속성을 각각 검증한다.
+        item = re.match(r"^\s*\d+\.\s*(?:\*\*)?ID(?:\*\*)?\s*:\s*#?(\d{1,7})\s*\|", raw_line, re.I)
+        if item:
+            issue_id = int(item[1])
+            ids.add(issue_id)
+            current_id = issue_id
+            headers = []
+            for part in re.split(r"(?<!\\)\|", raw_line)[1:]:
+                label, separator, value = part.partition(":")
+                field = FIELD_LABELS.get(normalize_for_match(plain_text(label)), "")
+                if separator and field and field != "id":
+                    claims.append((issue_id, field, decode_issue_field(value.strip())))
+                else:
+                    ids.update(int(v) for v in EXPLICIT_ID.findall(plain_text(part)))
+            continue
         if "|" in raw_line:
-            cells = [plain_text(cell) for cell in re.split(r"(?<!\\)\|", raw_line.strip().strip("|"))]
+            cells = [plain_text(decode_issue_field(cell.strip())) for cell in re.split(r"(?<!\\)\|", raw_line.strip().strip("|"))]
             fields = [FIELD_LABELS.get(normalize_for_match(cell), "") for cell in cells]
             if "id" in fields and any(field and field != "id" for field in fields):
                 headers = fields
                 current_id = None
+                ids.update(int(v) for key, cell in zip(fields, cells, strict=True) if not key
+                           for v in EXPLICIT_ID.findall(cell))
                 continue
             if all(re.fullmatch(r"[-:\s]+", cell) for cell in cells):
                 continue
@@ -108,8 +124,18 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                     ids.add(issue_id)
                     claims.extend((issue_id, key, value) for key, value in zip(headers, cells, strict=True)
                                   if key and key != "id")
+                    for key, cell in zip(headers, cells, strict=True):
+                        if key == "id" and re.fullmatch(r"#?\s*\d{1,7}", cell):
+                            ids.add(int(cell.lstrip("#").strip()))
+                        elif not key or key == "id":
+                            ids.update(int(v) for v in EXPLICIT_ID.findall(cell))
+                    continue
             if headers:
+                # 검증 가능한 속성 행이 아닌 경우에도 명시된 이슈 참조는 검사한다.
+                ids.update(int(v) for v in EXPLICIT_ID.findall(line))
                 continue
+        line_ids = {int(v) for v in EXPLICIT_ID.findall(line)}
+        ids.update(line_ids)
         headers = []
         if len(line_ids) == 1:
             current_id = next(iter(line_ids))

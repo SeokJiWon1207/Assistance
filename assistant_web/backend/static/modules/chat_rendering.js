@@ -1,6 +1,7 @@
 import { icon } from "./icons.js?v=20260911-6";
 import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
+import { parseIssueListLine } from "./issue_text.js?v=20261014-1";
 import {
   isMarkdownTableRow,
   isMarkdownTableSeparatorRow,
@@ -527,29 +528,7 @@ function cleanMarkdown(value) {
 }
 
 function parseIssueSummaryLine(line) {
-  const trimmed = String(line || "").trim();
-  if (!/^\d+\.\s/.test(trimmed) || !/\*?\*?ID\*?\*?\s*:/.test(trimmed)) {
-    return null;
-  }
-
-  const withoutNumber = trimmed.replace(/^\d+\.\s*/, "");
-  const parts = cleanMarkdown(withoutNumber).split("|");
-  const issue = {};
-
-  parts.forEach((part) => {
-    const [rawLabel, ...rawValue] = part.split(":");
-    if (!rawLabel || rawValue.length === 0) return;
-    const label = rawLabel.trim();
-    const value = rawValue.join(":").trim();
-    if (label === "ID") issue.id = value.replace(/^#/, "");
-    if (label === "프로젝트") issue.project = value;
-    if (label === "제목") issue.title = value;
-    if (label === "상태") issue.status = value;
-    if (label === "담당자") issue.handler = value;
-    if (label === "등록일") issue.createdAt = value;
-  });
-
-  return issue.id && issue.title ? issue : null;
+  return parseIssueListLine(line);
 }
 
 function renderIssueListSkeleton(rows = 3) {

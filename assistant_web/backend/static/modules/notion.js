@@ -1,4 +1,5 @@
 import { state } from "./runtime.js?v=20260911-6";
+import { decodeIssueField } from "./issue_text.js?v=20261014-1";
 import { statusToneClass, renderCriteriaChips, appendAnswerParagraph, cleanMarkdown, escapeHtml } from "./chat_rendering.js?v=20260911-6";
 
 function isMarkdownTableRow(line) {
@@ -18,7 +19,7 @@ function splitMarkdownTableRow(line) {
   let trimmed = String(line || "").trim();
   if (trimmed.startsWith("|")) trimmed = trimmed.slice(1);
   if (trimmed.endsWith("|")) trimmed = trimmed.slice(0, -1);
-  return trimmed.split("|").map((cell) => cleanMarkdown(cell).trim());
+  return trimmed.split("|").map((cell) => decodeIssueField(cleanMarkdown(cell).trim()));
 }
 
 function renderMarkdownTable(headerCells, bodyRows) {
