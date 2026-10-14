@@ -29,6 +29,8 @@ def restore_confirmed_constraints(plan: dict) -> dict:
         constraints["unconfirmed_search_terms"] = deepcopy(terms)
     if not resolution.get("needs_clarification"):
         terms = plan.get("terms") or terms
+    from backend.intent.search_terms import without_report_request_terms
+    terms = without_report_request_terms(terms, str(plan.get("grounding_text") or ""))
     # 확인 질문의 terms에는 '아직 손봐야 할' 같은 미확정 상태 표현도 있다.
     # 이전 검색에서 이미 확정된 검색어와 명시적 keyword/title 절은 그대로
     # 보존하되, 이번에 해석하지 못한 표현을 keyword 필터로 만들지는 않는다.

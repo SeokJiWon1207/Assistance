@@ -1,5 +1,6 @@
 """실제 임시 DB·잠금으로 자동 정리와 공간 부족 시 이전 세대 보존을 검증한다."""
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 import fcntl
@@ -97,7 +98,8 @@ class MantisStorageGuardTests(unittest.TestCase):
         self.free = 1
         self.assertEqual(store.refresh_store(lambda _: [])['status'], 'deferred')
         self.free = 10 * 1024**3
-        result = store.refresh_store(lambda _: [{'id': 2, 'updated_at': '2026-10-14T23:00:00+00:00'}])
+        updated_at = datetime.now(timezone.utc).isoformat()
+        result = store.refresh_store(lambda _: [{'id': 2, 'updated_at': updated_at}])
         self.assertEqual(result['status'], 'complete')
         with closing(sqlite3.connect(self.path)) as db:
             self.assertEqual(db.execute('SELECT id FROM issues ORDER BY id').fetchall(), [(1,), (2,)])

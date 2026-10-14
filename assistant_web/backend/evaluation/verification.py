@@ -417,9 +417,11 @@ def build_verification_report(
         }
     )
 
-    if mode == "deterministic_effort_report":
+    if mode in {"deterministic_effort_report", "deterministic_filtered_effort_report"}:
+        filtered_effort = mode == "deterministic_filtered_effort_report"
+        effort_source = "mantis_effort_filtered" if filtered_effort else "mantis_effort"
         effort_stage: Dict[str, Any] = next(
-            (stage for stage in (retrieval_result or {}).get("stages", []) if stage.get("source") == "mantis_effort"),
+            (stage for stage in (retrieval_result or {}).get("stages", []) if stage.get("source") == effort_source),
             {},
         )
         effort_meta = effort_stage.get("meta", {})
@@ -430,7 +432,7 @@ def build_verification_report(
                 if field_name not in recomputed_totals:
                     continue
                 for effort_person, amount in parse_effort_field_value(value):
-                    if normalize_for_match(effort_person) == normalize_for_match(person):
+                    if filtered_effort or normalize_for_match(effort_person) == normalize_for_match(person):
                         recomputed_totals[field_name] += amount
         recomputed_total = round(sum(recomputed_totals.values()), 4)
         stored_totals = effort_meta.get("totals", {})
@@ -541,7 +543,7 @@ def build_verification_report(
                     "detail": "표시 제목이 원문과 일치" if not missing_titles else f"답변에 없는 제목 {len(missing_titles)}건",
                 }
             )
-        elif mode == "deterministic_effort_report":
+        elif mode in {"deterministic_effort_report", "deterministic_filtered_effort_report"}:
             content_checks.append(
                 {
                     "id": "effort_content",

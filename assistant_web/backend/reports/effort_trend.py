@@ -67,14 +67,16 @@ def mentions_non_issue_subject(text: str) -> bool:
 
 def mentions_multiple_periods(text: str) -> bool:
     """여러 달에 걸친 비교를 요구하는 표현인지 본다."""
-    return any(hint in str(text or "") for hint in _MULTI_PERIOD_HINTS)
+    request = re.sub(r'''["'“‘][^"'”’]*["'”’]''', " ", str(text or ""))
+    return any(hint in request for hint in _MULTI_PERIOD_HINTS)
 
 
 def wants_effort_trend(text: str) -> bool:
     """월별 유형 추이 질문인지 판별한다."""
     if not text:
         return False
-    lowered = str(text)
+    # 제목·키워드에 들어 있는 '월간'은 여러 달을 비교하라는 요청이 아니다.
+    lowered = re.sub(r'''["'“‘][^"'”’]*["'”’]''', " ", str(text))
     if not any(keyword in lowered for keyword in _TREND_KEYWORDS):
         return False
     # "처리 건수"처럼 띄어 쓴 표현도 같게 보도록 공백을 지우고 맞춘다.

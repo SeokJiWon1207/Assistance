@@ -120,9 +120,32 @@ def remove_list_display_instruction(text: str) -> str:
     )
 
 
+_REPORT_REQUEST = re.compile(
+    r'''["'“‘][^"'”’]*["'”’]|'''
+    r"(?<![가-힣])(?:(?:월간|주간|일간|연간)\s*)?(?:고객사\s*)?"
+    r"(?:리포트|보고서)(?:를|을)?\s*(?:만들어|작성해|생성해)\s*(?:줘|주세요)(?![가-힣])|"
+    r"(?<![가-힣])공수(?:는|가|를|은|이)?\s*어떻게\s*(?:돼요?|되나요|되니|됐어)(?![가-힣])"
+)
+
+
+def remove_report_request(text: str) -> str:
+    """보고서 작성 지시는 검색 주제가 아니다. 인용된 원문 검색어는 보존한다."""
+    return _REPORT_REQUEST.sub(lambda match: match[0] if match[0][0] in "\"'“‘" else " ", text)
+
+
+def without_report_request_terms(terms: List[str], text: str) -> List[str]:
+    """이전 버전에서 저장한 보고서 명령어도 후속 검색 조건으로 승격하지 않는다."""
+    cleaned = remove_report_request(text)
+    if cleaned == text:
+        return list(terms)
+    removed = " ".join(match[0] for match in _REPORT_REQUEST.finditer(text) if match[0][0] not in "\"'“‘")
+    return [term for term in terms if normalize_for_match(term) not in normalize_for_match(removed)
+            or normalize_for_match(term) in normalize_for_match(cleaned)]
+
+
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     # 조건 해제 명령은 원문 검색 주제가 아니다. 인용한 제목·키워드는 보존한다.
-    text = without_scope_clear_phrases(text)
+    text = remove_report_request(without_scope_clear_phrases(text))
     text = remove_list_display_instruction(remove_list_continuation_request(text))
     if (constraints or {}).get("mantis_team_scope") == "all":
         # 전사 조회는 원문의 키워드가 아니라 담당자 범위 지정이다. 인용한 주제는 보존한다.
