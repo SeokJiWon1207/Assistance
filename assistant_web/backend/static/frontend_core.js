@@ -2,7 +2,7 @@
   "use strict";
 
   function storageSafeMessages(messages) {
-    return messages
+    const stored = messages
       .filter((message) => !message.loading && !message.streaming)
       .slice(-60)
       .map((message) => ({
@@ -30,6 +30,36 @@
         createdAt: message.createdAt || "",
         questionAskedAt: message.questionAskedAt || "",
       }));
+    // 원문 목록과 감사 ID는 남기고, 중복 근거 자료부터 줄여 서버의 1MB 제한을 지킨다.
+    // 요청의 제목·시각과 서버 정규화 필드에 사용할 여유 공간도 확보한다.
+    const byteSize = (value) => {
+      const json = JSON.stringify(value);
+      // 서버 json.dumps의 구분자 공백까지 보수적으로 센다(문자열 안의 기호도 포함).
+      return new TextEncoder().encode(json).length + (json.match(/[:,]/g) || []).length;
+    };
+    // 서버 모델이 빈 필드에 붙이는 기본값의 크기도 포함한다.
+    const sourceOverhead = (sources) => sources.reduce((total, source) => total + 700 + (source.detail ? 500 : 0), 0);
+    const messageOverhead = (message) => 512 + sourceOverhead(message.sources);
+    let size = byteSize(stored) + stored.reduce((total, message) => total + messageOverhead(message), 0);
+    for (const message of stored) {
+      if (size <= 900000) break;
+      size -= byteSize(message.sources) + sourceOverhead(message.sources) - 2;
+      message.sources = [];
+    }
+    while (size > 900000 && stored.length > 1) {
+      const removed = stored.shift();
+      size -= byteSize(removed) + messageOverhead(removed) + 2;
+    }
+    // 마지막 답변 하나의 선택 자료가 큰 경우에도 답변 본문과 감사 ID를 지킨다.
+    if (size > 900000) {
+      for (const field of ["verification", "abTest", "effortChart", "effortRanking", "effortTrend", "playbookCandidate"]) {
+        const message = stored[0];
+        size -= byteSize(message[field]) - 4;
+        message[field] = null;
+        if (size <= 900000) break;
+      }
+    }
+    return stored;
   }
 
   function deriveConversationTitle(messages) {
@@ -156,13 +186,22 @@
   }
 
   function buildChatMessages(messages, currentContent, historyLimit = 20) {
-    const safeLimit = Math.max(1, Number(historyLimit) || 20);
+    const safeLimit = Math.min(79, Math.max(1, Number(historyLimit) || 20));
     const history = messages
       .filter((message) => !message.loading && !message.streaming)
       .slice(0, -1)
       .map((message) => ({ role: message.role, content: message.content, ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
       .slice(-safeLimit);
-    return [...history, { role: "user", content: currentContent }];
+    const bounded = [];
+    let size = currentContent.length;
+    for (const message of history.reverse()) {
+      // 과거 답변은 잘라서 사실을 바꾸지 않는다. 표시된 대화는 그대로 유지한다.
+      if (message.content.length > 30000) continue;
+      if (size + message.content.length > 120000) break;
+      bounded.unshift(message);
+      size += message.content.length;
+    }
+    return [...bounded, { role: "user", content: currentContent }];
   }
 
   function mergeConversations(localItems, serverItems, makeId = () => globalScope.crypto.randomUUID()) {

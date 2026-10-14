@@ -93,6 +93,71 @@ test("buildChatMessages caps history and includes the current question once", ()
   assert.equal(payload.filter((message) => message.content === "current").length, 1);
 });
 
+test("long list follow-ups send a complete recent suffix within the server character budget", () => {
+  const messages = Array.from({ length: 8 }, (_, index) => [
+    { role: "user", content: `나머지도 보여줘 ${index}` },
+    { role: "assistant", content: "가".repeat(28000), notionActionId: `action-${index}` },
+  ]).flat();
+  messages.push({ role: "user", content: "더 보여줘" }, { role: "assistant", loading: true });
+  const original = JSON.stringify(messages);
+  const sent = buildChatMessages(messages, "더 보여줘");
+  assert.ok(sent.reduce((size, message) => size + [...message.content].length, 0) <= 120000);
+  assert.equal(sent.at(-1).content, "더 보여줘");
+  assert.equal(sent.at(-3).content, "나머지도 보여줘 7");
+  assert.equal(sent.at(-2).content.length, 28000);
+  assert.equal(sent.at(-2).notionActionId, "action-7");
+  assert.equal(JSON.stringify(messages), original);
+});
+
+test("oversized old answers are omitted from model context without changing the visible answer", () => {
+  const messages = [
+    { role: "user", content: "기간 조건 없이 보여줘" },
+    { role: "assistant", content: "가".repeat(30001) },
+    { role: "user", content: "나머지도 보여줘" },
+  ];
+  const sent = buildChatMessages(messages, "나머지도 보여줘", 100);
+  assert.deepEqual(sent.map((message) => message.content), ["기간 조건 없이 보여줘", "나머지도 보여줘"]);
+  assert.equal(messages[1].content.length, 30001);
+});
+
+test("saved pagination retains all answer tables and audit IDs while bounding duplicate source bytes", () => {
+  const messages = Array.from({ length: 10 }, (_, page) => ({
+    role: "assistant", content: `페이지 ${page}\n${"가abc".repeat(6750)}`, auditId: `audit-${page}`,
+    sources: Array.from({ length: 20 }, (_, index) => ({
+      issue_id: page * 200 + index, content: "나".repeat(3000),
+      detail: { description: "다".repeat(3000) },
+    })),
+  }));
+  const original = JSON.stringify(messages);
+  const stored = storageSafeMessages(messages);
+  assert.ok(Buffer.byteLength(JSON.stringify(stored), "utf8") <= 900000);
+  assert.deepEqual(stored.map(({ content, auditId }) => ({ content, auditId })),
+    messages.map(({ content, auditId }) => ({ content, auditId })));
+  assert.equal(stored.at(-1).sources.length, 20);
+  assert.equal(JSON.stringify(messages), original);
+  assert.deepEqual(storageSafeMessages(stored), stored);
+});
+
+test("a large optional chart cannot make a single saved answer exceed the request budget", () => {
+  const message = { role: "assistant", content: "원문 답변", auditId: "audit-1",
+    effortChart: { points: "가".repeat(340000) } };
+  const stored = storageSafeMessages([message]);
+  assert.ok(Buffer.byteLength(JSON.stringify(stored), "utf8") <= 900000);
+  assert.equal(stored[0].content, message.content);
+  assert.equal(stored[0].auditId, message.auditId);
+  assert.equal(message.effortChart.points.length, 340000);
+});
+
+test("saved size includes the server JSON separator spaces for large arrays", () => {
+  const message = { role: "assistant", content: "원문 답변", auditId: "audit-1",
+    effortChart: { points: Array(400000).fill(0) } };
+  const stored = storageSafeMessages([message]);
+  assert.equal(stored[0].effortChart, null);
+  assert.equal(stored[0].content, message.content);
+  assert.equal(stored[0].auditId, message.auditId);
+  assert.equal(message.effortChart.points.length, 400000);
+});
+
 const now = new Date(2026, 8, 30, 15, 0);
 const daysAgo = (days, hour = 10) => new Date(2026, 8, 30 - days, hour, 0).toISOString();
 
