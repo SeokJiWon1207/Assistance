@@ -138,3 +138,14 @@ test('dialog close restores a usable fallback when rendering replaced its opener
   api.closeDialogFocus(h.dialog);
   assert.equal(h.document.activeElement, fallback);
 });
+
+
+test('UI clocks stay Korean across ICU day-period differences and midnight/noon', async () => {
+  const { formatUiDateTime } = await load('ui_format', { Intl: { DateTimeFormat: class {
+    format() { return 'AM 9:07'; }
+  } } });
+  for (const [hour, expected] of [[0, '오전 12:07'], [9, '오전 9:07'], [12, '오후 12:07'], [23, '오후 11:07']]) {
+    const now = new Date(2026, 9, 6, hour, 7);
+    assert.equal(formatUiDateTime(now, { now, compact: true }), expected);
+  }
+});

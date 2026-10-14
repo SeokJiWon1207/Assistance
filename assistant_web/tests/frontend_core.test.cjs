@@ -361,3 +361,17 @@ test("conversationContentChanged ignores streaming placeholders", () => {
   const streaming = [...stored, { role: "assistant", content: "", loading: true }];
   assert.equal(conversationContentChanged(stored, streaming), false);
 });
+
+
+test("message and sidebar clocks stay Korean when ICU returns English periods", () => {
+  const vm = require("node:vm");
+  const sandbox = { module: { exports: {} }, Intl: { DateTimeFormat: class {
+    format() { return "AM 9:07"; }
+  } } };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../backend/static/frontend_core.js"), "utf8"), sandbox);
+  for (const [hour, expected] of [[0, "오전 12:07"], [9, "오전 9:07"], [12, "오후 12:07"], [23, "오후 11:07"]]) {
+    const date = new Date(2026, 9, 6, hour, 7);
+    assert.equal(sandbox.module.exports.messageClockLabel(date.toISOString()), expected);
+    assert.equal(sandbox.module.exports.conversationTimeLabel({ updatedAt: date.toISOString() }, date), expected);
+  }
+});
