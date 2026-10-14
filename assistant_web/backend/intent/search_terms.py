@@ -14,7 +14,7 @@ from backend.config import (
 )
 from backend.intent.list_continuation import remove_list_continuation_request
 from backend.intent.entities import extract_mantis_keyword
-from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit
+from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit, without_scope_clear_phrases
 from backend.team_scope import remove_team_scope_phrase
 
 
@@ -121,6 +121,8 @@ def remove_list_display_instruction(text: str) -> str:
 
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    # 조건 해제 명령은 원문 검색 주제가 아니다. 인용한 제목·키워드는 보존한다.
+    text = without_scope_clear_phrases(text)
     text = remove_list_display_instruction(remove_list_continuation_request(text))
     if (constraints or {}).get("mantis_team_scope") == "all":
         # 전사 조회는 원문의 키워드가 아니라 담당자 범위 지정이다. 인용한 주제는 보존한다.

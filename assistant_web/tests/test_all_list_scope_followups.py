@@ -8,12 +8,58 @@ from backend.intent.search_terms import build_keyword_terms
 from backend.intent.scope_changes import has_scope_edit
 from backend.schemas import ChatMessage, ChatRequest
 from backend.services import chat_service as chat
+from backend.sources.mantis import select_mantis_rows
 
 
 BASE = "2026년 10월에 등록된 MTS 이슈 전체 목록을 보여줘. 이슈 번호, 제목, 담당자, 등록일을 모두 표시해줘."
 
 
 class AllListScopeFollowupTests(unittest.TestCase):
+    def test_clearing_three_filters_keeps_other_scope_and_full_list_without_keywords(self):
+        previous = "2026년 10월 전사 NH증권 MTS 담당자 이영희 이슈 전체 목록 보여줘"
+        plan = {"source": "mantis", "grounding_text": previous, "terms": [],
+                "resolved_constraints": {**extract_query_constraints(previous), "list_show_all": True}}
+        rows = [{"id": i, "summary": "차트 조회", "project": {"name": customer},
+                 "handler": {"real_name": owner}, "created_at": date,
+                 "custom_fields": [{"field": {"name": "매체구분"}, "value": platform}]}
+                for i, customer, owner, date, platform in (
+                    (1, "120NH(NH증권)", "이영희", "2026-10-08", "MTS"),
+                    (2, "112KBStar(KB증권)", "이영희", "2026-10-08", "MTS"),
+                    (3, "120NH(NH증권)", "우동헌", "2026-10-08", "MTS"),
+                    (4, "120NH(NH증권)", "이영희", "2026-09-08", "MTS"),
+                    (5, "120NH(NH증권)", "이영희", "2026-10-08", "HTS"))]
+        for question, expected in (("고객사 조건 빼줘", [1, 2]),
+                                   ("담당자 조건 해제해줘", [1, 2, 3]),
+                                   ("기간 조건 없이 보여줘", [1, 2, 3, 4])):
+            with self.subTest(question=question):
+                request, context = self.prepare(previous, plan, question)
+                constraints = context.query_constraints
+                self.assertEqual([row["id"] for row in select_mantis_rows(rows, constraints)], expected)
+                self.assertEqual(constraints["platform_key"], "mts")
+                self.assertEqual(constraints.get("mantis_team_scope"), "all")
+                self.assertTrue(constraints.get("list_show_all"))
+                self.assertEqual(chat.retrieval_limit(request, context)[0], 200)
+                self.assertEqual(build_keyword_terms(context.retrieval_text, constraints), [])
+                self.assertFalse(any(c["field"] == "keyword" for c in constraints.get("filter_clauses", [])))
+                plan = {"source": "mantis", "grounding_text": question, "terms": [],
+                        "resolved_constraints": constraints}
+                previous = question
+
+    def test_clear_instruction_preserves_a_confirmed_issue_topic(self):
+        previous = "2026년 10월 전사 NH증권 MTS MACD 이슈 전체 목록 보여줘"
+        constraints = {**extract_query_constraints(previous), "list_show_all": True}
+        plan = {"source": "mantis", "grounding_text": previous, "terms": ["MACD"],
+                "resolved_constraints": constraints}
+        _, context = self.prepare(previous, plan, "고객사 조건 빼줘")
+        self.assertEqual(build_keyword_terms(context.retrieval_text, context.query_constraints), ["MACD"])
+
+    def test_quoted_clear_instruction_is_still_an_issue_search_term(self):
+        question = '제목에 "고객사 조건 빼줘" 포함된 이슈 보여줘'
+        constraints = extract_query_constraints(question)
+        self.assertIn("빼줘", build_keyword_terms(question, constraints))
+        self.assertTrue(any(c["field"] == "title" and c["value"] == "고객사 조건 빼줘"
+                            for c in constraints.get("filter_clauses", [])))
+
     def test_plain_team_scope_changes_keep_the_confirmed_period_and_entire_list(self):
         plan = {"source": "mantis", "grounding_text": BASE, "terms": [],
                 "resolved_constraints": extract_query_constraints(BASE)}
