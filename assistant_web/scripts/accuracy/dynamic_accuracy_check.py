@@ -151,11 +151,7 @@ def mantis_oracle_matches(issue: Dict[str, Any], filters: Dict[str, str]) -> boo
     if filters.get("screen") and filters["screen"] not in exact_screen_numbers(issue):
         return False
     media = custom_field(issue, "매체구분")
-    text = normalize(media or " ".join([
-        str(issue.get("summary") or ""), str(issue.get("description") or ""),
-        str(issue.get("steps_to_reproduce") or ""),
-        *(str(note.get("text") or "") for note in issue.get("notes") or []),
-    ]))
+    text = normalize(media)
     for key in ("platform", "excluded_platform"):
         platform = filters.get(key)
         if not platform:

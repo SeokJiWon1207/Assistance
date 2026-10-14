@@ -24,6 +24,13 @@ from backend.intent.constraints import extract_query_constraints
 
 
 class IndependentAccuracyOracleTests(unittest.TestCase):
+    def test_platform_oracle_uses_only_the_original_media_field(self):
+        row = {"id": 29242, "summary": "MTS 공용 작업", "description": "HTS와 MTS 작업",
+               "project": {"name": "공용"}, "custom_fields": []}
+        self.assertFalse(accuracy.mantis_oracle_matches(row, {"platform": "MTS", "scope": "all"}))
+        self.assertTrue(accuracy.mantis_oracle_matches(row, {"excluded_platform": "MTS", "scope": "all"}))
+        self.assertTrue(accuracy.mantis_oracle_matches(row, {"scope": "all"}))
+
     def test_independent_oracle_defaults_to_exact_team_handlers(self):
         for handler, expected in (("석지원", True), ("타팀담당", False),
                                   ("석지원_보조", False), ("", False)):

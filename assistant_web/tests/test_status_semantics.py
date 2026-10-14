@@ -32,8 +32,8 @@ CASES = json.loads((Path(__file__).parent / "fixtures/status_semantic_cases.json
 
 
 class StatusDefinitionTests(unittest.TestCase):
-    def test_count_document_and_raw_list_keep_same_missing_media_fallback(self):
-        for media, expected in (("", True), ("MTS", True), ("HTS", False)):
+    def test_count_document_and_raw_list_require_the_same_media_field(self):
+        for media, expected in (("", False), ("MTS", True), ("HTS", False)):
             issue = {"id": 21371, "project": {"name": "120NH(NH증권)"},
                      "summary": "MTS 차트 문의", "handler": {"real_name": "석지원"}, "status": {"name": "assigned"},
                      "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}

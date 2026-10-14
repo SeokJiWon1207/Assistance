@@ -23,10 +23,10 @@ HTS = {"platform_key": "hts", "platform_aliases": ["HTS"],
        "filter_clauses": [{"field": "platform", "operator": "equals", "value": "hts"}]}
 
 
-def issue(number, text):
+def issue(number, text, media="HTS"):
     return {"id": number, "summary": "스크립트 문의", "description": text,
             "project": {"name": "112KBStar(KB증권)"}, "status": {"name": "confirmed"}, "handler": {"real_name": "석지원"},
-            "created_at": "2025-01-01", "custom_fields": [], "notes": []}
+            "created_at": "2025-01-01", "custom_fields": [{"field": {"name": "매체구분"}, "value": media}], "notes": []}
 
 
 class SearchLatencyTests(unittest.TestCase):
@@ -62,8 +62,8 @@ class SearchLatencyTests(unittest.TestCase):
         with patch.object(chroma, "fetch_mantis_issue_by_id", side_effect=HTTPException(status_code=503, detail="오프라인 검증")):
             return retrieval.run_retrieval_pipeline(QUESTION, 5, {"mantis": True, "vectorDb": True}, {"source": "mantis"})
 
-    def test_each_body_is_built_once_without_changing_notes_or_legacy_platform_matching(self):
-        rows = [issue(1, ""), issue(2, "HTS VBScript"), issue(3, "MTS VBScript JavaScript 교체")]
+    def test_each_body_is_built_once_without_changing_notes_or_platform_field_matching(self):
+        rows = [issue(1, ""), issue(2, "HTS VBScript"), issue(3, "MTS VBScript JavaScript 교체", "MTS")]
         rows[0]["notes"] = [{"text": "HTS VB Script를 JScript로 교체"}]
         self.write_store(rows)
         builds = Counter()
@@ -106,7 +106,7 @@ class SearchLatencyTests(unittest.TestCase):
             self.assertIn("2025년 1월 1일", variants)
             self.assertIn("20250101", variants)
         row = issue(1, "HTS")
-        row["custom_fields"] = [{"field": {"name": "고객사요청일"}, "value": 1735689600000}]
+        row["custom_fields"].append({"field": {"name": "고객사요청일"}, "value": 1735689600000})
         self.write_store([row])
         result = mantis.execute_mantis_page_scan("2025년 1월", 5, HTS)
         self.assertEqual(result["meta"]["matched_issue_ids"], [1])

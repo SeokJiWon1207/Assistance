@@ -173,12 +173,10 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
     ):
         return False
     media_type = extract_chroma_field(text, "매체구분")
-    platform_source = media_type if media_type and media_type != "기타/미상" else text
+    platform_source = media_type
     if constraints.get("platform_aliases"):
-        # 재구축된 스냅샷 문서에는 '매체구분' 헤더가 있다. 있으면 그 값으로만 판정해
-        # 본문의 "MTS에서는 됩니다" 같은 비교 언급 오탐을 막는다(라이브 검색의
-        # issue_matches_platform과 동일한 규칙). 구버전 문서(필드 없음)는 기존처럼
-        # 전문 검색으로 폴백한다.
+        # 라이브 원문과 동일하게 매체구분 헤더로만 판정한다.
+        # 헤더가 없거나 매체 미지정이면 본문 언급으로 플랫폼을 추측하지 않는다.
         if not text_matches_any_alias(platform_source, constraints["platform_aliases"]):
             return False
     if constraints.get("excluded_platform_aliases"):

@@ -19,10 +19,11 @@ HTS = {"platform_key": "hts", "platform_aliases": ["HTS"],
        "filter_clauses": [{"field": "platform", "operator": "equals", "value": "hts"}]}
 
 
-def row(number, text="", *, status="confirmed"):
+def row(number, text="", *, status="confirmed", media="HTS"):
     return {"id": number, "summary": "문의", "description": text,
             "project": {"name": "KB증권"}, "status": {"name": status}, "notes": [],
-            "updated_at": datetime.now(timezone.utc).isoformat(), "custom_fields": []}
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
 
 
 class RawSearchProjectionTests(unittest.TestCase):
@@ -50,8 +51,8 @@ class RawSearchProjectionTests(unittest.TestCase):
         self.assertEqual(build.call_count, 0, '검색과 무관한 원본은 재조립하지 않는다')
         self.assertTrue(result['meta']['search_complete'])
 
-    def test_notes_aliases_whitespace_casefold_and_legacy_platform_are_preserved(self):
-        rows = [row(1), row(2, 'HTS VBScript만 존재'), row(3, 'MTS VBScript JavaScript 교체'),
+    def test_notes_aliases_whitespace_casefold_and_platform_fields_are_preserved(self):
+        rows = [row(1), row(2, 'HTS VBScript만 존재'), row(3, 'MTS VBScript JavaScript 교체', media='MTS'),
                 row(4, 'HTS VB\tScript JAVASCRIPT 교체'), row(5, 'HTS Straße')]
         rows[0]['notes'] = [{'text': 'HTS VB Script JScript 교체'}]
         rows.append(row(6, 'HTS'))
@@ -62,9 +63,9 @@ class RawSearchProjectionTests(unittest.TestCase):
         self.assertEqual(self.search('VB스크립트 자바스크립트 없는단어')['meta']['found_count'], 0)
 
     def test_date_search_forms_and_structured_constraints_keep_same_matches(self):
-        rows = [row(1, 'HTS'), row(2, 'MTS')]
+        rows = [row(1, 'HTS'), row(2, 'MTS', media='MTS')]
         for item in rows:
-            item['custom_fields'] = [{'field': {'name': '고객사요청일'}, 'value': 1735689600000}]
+            item['custom_fields'].append({'field': {'name': '고객사요청일'}, 'value': 1735689600000})
         self.sync(rows)
         self.assertEqual(self.search('2025년 1월')['meta']['matched_issue_ids'], [1])
         self.assertEqual(self.search('20250101')['meta']['matched_issue_ids'], [1])

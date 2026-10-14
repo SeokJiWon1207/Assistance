@@ -83,7 +83,7 @@ class FollowupTopicScopeTests(unittest.TestCase):
         self.assertEqual(next_context.query_constraints["inherited_terms"], ["VBScript"])
         self.assertNotIn("자바", next_context.retrieval_text)
 
-    def test_full_followup_retrieval_finds_note_aliases_and_legacy_hts_evidence(self):
+    def test_full_followup_retrieval_finds_note_aliases_only_with_matching_platform_fields(self):
         rows = [issue(901, "IBK투자증권", "NXT 맵차트 호출 VB Scripts를 전송드립니다."),
                 issue(902, "SK증권", "VBScript event Fire 중 포인터 NULL 확인"),
                 issue(903, "하이투자증권", "VBScript에서 GetSelectCode 호출"),
@@ -103,8 +103,8 @@ class FollowupTopicScopeTests(unittest.TestCase):
               confirmed_constraints_scope(context.retrieval_text, context.query_constraints)):
             plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
             result = retrieval.run_retrieval_pipeline(context.retrieval_text, 10, {"mantis": True}, plan)
-        self.assertEqual({row["id"] for row in retrieval.collect_retrieved_issues(result, None)}, {901, 902, 903, 904})
-        self.assertEqual(retrieval.count_retrieved_issues(result), 4)
+        self.assertEqual({row["id"] for row in retrieval.collect_retrieved_issues(result, None)}, {901, 902, 903})
+        self.assertEqual(retrieval.count_retrieved_issues(result), 3)
         grounding = retrieval.build_model_retrieval_context(result, 10)
         for row in grounding["issues"]:
             self.assertTrue(row.get("matching_evidence"), row["id"])

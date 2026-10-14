@@ -806,6 +806,7 @@ class LiveStatusRevalidationTests(unittest.TestCase):
             "project": {"name": "112KBStar(KB증권)"},
             "summary": "[MTS] 차트 매입평균가 표시 기능 추가 요청",
             "handler": {"real_name": "하영훈"},
+            "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}],
         }
         with patch("backend.sources.mantis.fetch_mantis_issue_by_id", return_value=live_issue):
             refreshed = mantis.revalidate_mantis_snapshot_stage(stage, constraints)

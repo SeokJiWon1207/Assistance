@@ -61,8 +61,8 @@ class AccuracyPerformanceTests(unittest.TestCase):
                  "handler": {"real_name": "석지원"}, "status": {"name": s}, "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
                 for i, (s, media) in enumerate((("assigned", ""), ("closed", "MTS"),
                                                ("developed", "MTS"), ("new", "HTS")), 1)]
-        for q, expected in (("NH MTS 미종료 이슈", {1, 3}), ("NH 종료 이슈", {2}),
-                            ("NH HTS 이슈", {4}), ("NH MTS 제외 이슈", {4})):
+        for q, expected in (("NH MTS 미종료 이슈", {3}), ("NH 종료 이슈", {2}),
+                            ("NH HTS 이슈", {4}), ("NH MTS 제외 이슈", {1, 4})):
             c = extract_query_constraints(q)
             self.assertEqual({r["id"] for r in select_mantis_rows(rows, c)}, expected)
             legacy = {r["id"] for r in rows if chroma_text_matches_constraints(render_document(r), c)}

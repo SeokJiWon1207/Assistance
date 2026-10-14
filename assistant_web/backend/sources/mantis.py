@@ -77,18 +77,15 @@ def issue_matches_created_at(issue: Dict[str, Any], created_at: Optional[Dict[st
 def issue_matches_platform(
     issue: Dict[str, Any], platform_aliases: List[str], *, search_text: Optional[str] = None,
 ) -> bool:
-    """플랫폼(HTS/MTS) 조건은 신뢰 가능한 '매체구분' 커스텀 필드를 우선 사용한다.
+    """플랫폼 조건은 원문의 '매체구분' 필드로만 판정한다.
 
-    본문에는 "HTS에서는 안 되는데 MTS에서는 됩니다"처럼 상대 플랫폼이 비교/언급되는
-    경우가 흔해서, 본문 전체를 fuzzy하게 검색하면 실제로는 매체구분=HTS인 이슈가
-    MTS 조건에도 잘못 걸리는 오탐이 난다. '매체구분' 필드가 채워진 이슈는 그 값으로만
-    판정하고, 필드가 비어 있는 과거 이슈에 한해서만 본문 전체 검색으로 폴백한다."""
+    제목·본문의 비교 언급으로 매체 미지정 이슈의 플랫폼을 추측하지 않는다.
+    매체 미지정 이슈도 플랫폼 제한이 없는 검색에서는 계속 조회할 수 있다.
+    """
     if not platform_aliases:
         return True
     media_type = get_issue_custom_field_value(issue, "매체구분")
-    if media_type:
-        return text_matches_any_alias(media_type, platform_aliases)
-    return text_matches_any_alias(search_text if search_text is not None else issue_to_search_text(issue), platform_aliases)
+    return text_matches_any_alias(media_type, platform_aliases)
 
 
 def mantis_date_search_variants(value: Any) -> str:
@@ -514,7 +511,7 @@ def issue_matches_constraints(
         return False
     return matches_source_filters("mantis", {
         "customer": project_name,
-        "platform": get_issue_custom_field_value(issue, "매체구분") or combined_text,
+        "platform": get_issue_custom_field_value(issue, "매체구분"),
         "status": status_text,
         "issue_id": str(issue.get("id") or ""),
         "screen_number": screen_filter_values(get_issue_custom_field_value(issue, "화면번호"), str(issue.get("summary") or "")),
