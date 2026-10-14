@@ -488,7 +488,11 @@ class BodyIndex:
         with self._database() as db:
             catalogs = db.execute(f"SELECT * FROM catalogs WHERE fingerprint=? AND database_id IN ({placeholders})",
                                   params).fetchall() if placeholders else []
-            rows = db.execute(f"SELECT *, {self._current_policy_predicate(db)} AS policy_current FROM pages "
+            # 상태 집계에는 원문 속성이 필요 없다. 대용량 raw_page를 모두 읽으면
+            # 검색 요청마다 수백 MB를 할당해 운영 프로세스가 종료될 수 있다.
+            rows = db.execute("SELECT page_id, last_edited_time, indexed_edited_time, content_complete, "
+                              "needs_refresh, failure_count, last_error, updated_at, indexed_at, "
+                              f"{self._current_policy_predicate(db)} AS policy_current FROM pages "
                               f"WHERE fingerprint=? AND database_id IN ({placeholders})",
                               params).fetchall() if placeholders else []
             diagnostics = {}
