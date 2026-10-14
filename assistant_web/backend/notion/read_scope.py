@@ -136,12 +136,12 @@ def preserve_legacy_notion_read_scope(roots: list[str]) -> None:
 
 
 @lru_cache(maxsize=16)
-def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int) -> tuple[Dict[str, str], bool]:
+def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int, max_seconds: float = 45) -> tuple[Dict[str, str], bool]:
     scope = {identifier: identifier for identifier in roots}
     parents: Dict[str, Dict[str, Any]] = {}
     complete = True
-    deadline = time.monotonic() + 45
-    budget = 160
+    deadline = time.monotonic() + max_seconds
+    budget = 160 if max_seconds <= 45 else 1000
 
     def request(path: str, payload: Dict[str, Any], post: bool = False) -> Dict[str, Any]:
         nonlocal budget, complete
@@ -230,7 +230,7 @@ def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int) -> tuple[Dict
 def refresh_notion_read_scope(roots: list[str], token: str) -> tuple[Dict[str, str], bool]:
     """Discover descendants for an explicit maintenance/index refresh."""
     normalized = tuple(_id(root) for root in roots)
-    scope, complete = _scope_cached(normalized, token, int(time.monotonic() // 300))
+    scope, complete = _scope_cached(normalized, token, int(time.monotonic() // 300), 600)
     return dict(scope), complete
 
 

@@ -168,6 +168,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         self.assertFalse(result["complete"])
         self.assertNotIn("synced_unique_token", result["content"])
         self.assertNotIn("blocks/source/children", self.events)
+        self.assertTrue(result["accessible_content_complete"])
 
     def test_synced_source_moved_or_changed_during_read_is_discarded(self):
         self._synced_source()
@@ -201,6 +202,7 @@ class BodyIndexSyncTests(unittest.TestCase):
             result = sync.validate_index_candidate({"page_id": "page", "database_id": "db"}, ["db"])
         self.assertIn("http_404", result["incomplete_reasons"])
         self.assertEqual(result["content"], "local_token")
+        self.assertTrue(result["accessible_content_complete"])
         self.assertFalse(result["supported_content_complete"])
 
     def test_copy_container_moved_without_copy_parent_change_is_rejected(self):
@@ -701,6 +703,34 @@ class BodyIndexSyncTests(unittest.TestCase):
         content = sync.crawl_notion_page_content("page")
         self.assertFalse(content["complete"])
         self.assertIn("http_403", content["incomplete_reasons"])
+
+    def test_verified_catalog_avoids_duplicate_before_get_but_checks_after_body(self):
+        self.index.upsert_catalog('db', self.rows, complete=True)
+        result = sync.validate_index_candidate({'page_id': 'page', 'database_id': 'db'}, ['db'],
+                                               index=self.index, catalog_page=self.rows[0])
+        self.assertTrue(result['complete'])
+        self.assertEqual(self.events.count('pages/page'), 1)
+        self.assertLess(self.events.index('blocks/page/children'), self.events.index('pages/page'))
+
+    def test_api_captions_and_equations_are_collected(self):
+        self.blocks['page'] = [
+            {'id': 'image', 'type': 'image', 'image': {'caption': [{'plain_text': 'image-caption'}]}},
+            {'id': 'file', 'type': 'file', 'file': {'caption': [{'plain_text': 'file-caption'}], 'name': 'manual.pdf'}},
+            {'id': 'eq', 'type': 'equation', 'equation': {'expression': 'x=y+1'}},
+            {'id': 'code', 'type': 'code', 'code': {'rich_text': [{'plain_text': 'print(x)'}],
+                                                  'caption': [{'plain_text': 'code-caption'}]}},
+        ]
+        result = sync.crawl_notion_page_content('page')
+        for text in ['image-caption', 'file-caption', 'manual.pdf', 'x=y+1', 'code-caption', 'print(x)']:
+            self.assertIn(text, result['text'])
+
+    def test_empty_synced_source_keeps_a_dependency_without_text_segments(self):
+        self._synced_source()
+        self.blocks['source'] = []
+        result = sync.crawl_notion_page_content('page', allowed_database_ids={'db'})
+        self.assertTrue(result['complete'])
+        self.assertEqual(result['segments'], [])
+        self.assertEqual(result['synced_reference_ids'], ['source'])
 
 
 if __name__ == "__main__":

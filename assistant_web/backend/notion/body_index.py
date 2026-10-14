@@ -21,7 +21,7 @@ from backend.config import NOTION_API_BASE, RUNTIME_DIR, get_notion_settings
 
 SCHEMA_VERSION = "1"
 # 완료 판정 규칙이 달라지면 이전 본문을 보존하면서 다시 검증한다.
-CONTENT_POLICY_VERSION = 1
+CONTENT_POLICY_VERSION = 2
 
 
 class BodyIndexError(RuntimeError):
@@ -170,6 +170,11 @@ class BodyIndex:
     @staticmethod
     def _ensure_partial_schema(db: sqlite3.Connection) -> None:
         # v1 파일의 선택적 확장이다. 읽기 전용 검색은 기존 파일을 변경하지 않는다.
+        db.execute("""CREATE TABLE IF NOT EXISTS page_exclusions (
+            fingerprint TEXT NOT NULL, page_id TEXT NOT NULL, reason TEXT NOT NULL, observed_at TEXT NOT NULL,
+            PRIMARY KEY (fingerprint, page_id),
+            FOREIGN KEY (fingerprint, page_id) REFERENCES pages(fingerprint, page_id) ON DELETE CASCADE
+        )""")
         db.execute("""CREATE TABLE IF NOT EXISTS partial_blocks (
             fingerprint TEXT NOT NULL, page_id TEXT NOT NULL, block_id TEXT NOT NULL,
             owner_page_id TEXT NOT NULL, ordinal INTEGER NOT NULL,
@@ -331,7 +336,12 @@ class BodyIndex:
             # 선택적 진단 확장: 기존 순회 프로세스와 공존하고 정책 전수 무효화를 하지 않는다.
             projected = [item for item in segments if _id(item.get("owner_page_id")) != page_id
                          and segment_belongs_to_page(item, page_id)]
-            if complete or segments:
+            readable_complete = bool(coverage and (coverage.get("supported_content_complete")
+                                                    or coverage.get("accessible_content_complete")))
+            if complete or readable_complete:
+                db.execute("DELETE FROM page_exclusions WHERE fingerprint=? AND page_id=?",
+                           (self.fingerprint, page_id))
+            if complete or segments or readable_complete:
                 db.execute("DELETE FROM synced_segments WHERE fingerprint=? AND page_id=?",
                            (self.fingerprint, page_id))
                 db.executemany("INSERT INTO synced_segments VALUES (?, ?, ?, ?, ?)",
@@ -351,7 +361,7 @@ class BodyIndex:
             # 마지막 완전본과 새 부분 근거를 별도로 보존해야 수정/추가된
             # 코드·표를 다음 검색에서도 발견할 수 있다. 빈 실패는 둘 다 보존한다.
             if not complete and (saved["content_complete"] or not own):
-                if own:
+                if own or readable_complete:
                     db.execute("DELETE FROM partial_blocks WHERE fingerprint=? AND page_id=?",
                                (self.fingerprint, page_id))
                     db.executemany("INSERT INTO partial_blocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -373,6 +383,17 @@ class BodyIndex:
                        (expected_edited_time, int(complete), int(not complete), stamp, stamp,
                         "" if complete else "incomplete_body", self.fingerprint, page_id))
             return True
+
+    def exclude_page(self, page_id: str, reason: str) -> None:
+        """접근 불가·삭제·범위 밖 판정을 현재 목록에만 적용하고 다음 갱신 때 재확인한다."""
+        if reason not in {"http_403", "http_404", "archived", "outside_scope"}:
+            raise ValueError("확인되지 않은 제외 사유입니다.")
+        with self._database(write=True) as db:
+            stamp = _now()
+            db.execute("INSERT OR REPLACE INTO page_exclusions VALUES (?, ?, ?, ?)",
+                       (self.fingerprint, _id(page_id), reason, stamp))
+            db.execute("UPDATE pages SET needs_refresh=1, last_error='api_page_excluded' "
+                       "WHERE fingerprint=? AND page_id=?", (self.fingerprint, _id(page_id)))
 
     def record_failure(self, page_id: str, reason: str = "fetch_failed") -> None:
         with self._database(write=True) as db:

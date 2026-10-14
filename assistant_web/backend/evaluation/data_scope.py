@@ -29,6 +29,13 @@ def build_answer_data_scope(retrieval: dict[str, Any] | None) -> list[dict[str, 
         if unapplied:
             coverage = "부분 조회"
         notes = []
+        if meta.get("coverage_basis") == "api_readable":
+            notes.append("Notion API로 읽을 수 있는 제목·속성·본문 전체를 검색했습니다.")
+            excluded = meta.get("excluded_element_count", 0)
+            if excluded:
+                notes.append("API 미지원 요소와 접근 불가 연결 원본은 검색 범위에서 제외됩니다.")
+            if meta.get("excluded_document_count"):
+                notes.append("삭제·이동되었거나 API 접근이 불가능한 문서는 검색 범위에서 제외됩니다.")
         if coverage == "부분 조회":
             notes.append("표시한 건수는 확인된 범위 기준입니다.")
         if meta.get("content_complete") is False:

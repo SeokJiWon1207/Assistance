@@ -35,3 +35,15 @@ class AnswerDataScopeTests(unittest.TestCase):
         }}]})
         self.assertEqual(rows[0]["coverage"], "부분 조회")
         self.assertIn("일부 검색 조건을 적용하지 못했습니다.", rows[0]["notes"])
+
+    def test_complete_api_snapshot_shows_explicit_exclusions_without_partial_badge(self):
+        rows = build_answer_data_scope({'stages': [{'source': 'notion', 'status': 'ok', 'meta': {
+            'status': 'snapshot', 'snapshot_as_of': '2026-10-14T06:00:00Z',
+            'search_complete': True, 'content_complete': True, 'coverage_basis': 'api_readable',
+            'excluded_element_count': 25,
+        }}]})
+        self.assertFalse(rows[0]['warning'])
+        self.assertEqual(rows[0]['coverage'], '선택 범위 조회 완료')
+        self.assertEqual(rows[0]['basis'], '저장본')
+        self.assertIn('접근 불가 연결 원본', rows[0]['notes'][1])
+        self.assertIn('제외', rows[0]['notes'][1])

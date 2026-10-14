@@ -117,7 +117,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_changed_collection_policy_requires_revalidation_without_losing_candidates(self):
         from backend.notion import body_index
         self.add_complete()
-        with patch.object(body_index, "CONTENT_POLICY_VERSION", 2, create=True):
+        with patch.object(body_index, "CONTENT_POLICY_VERSION", body_index.CONTENT_POLICY_VERSION + 1, create=True):
             self.assertFalse(self.index.read_page("page-1")["trusted"])
             status = self.index.status(["db-1"])
             self.assertEqual(status["indexed_page_count"], 0)
