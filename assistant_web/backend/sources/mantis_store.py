@@ -446,6 +446,8 @@ def render_document(raw: dict[str, Any]) -> str:
         "매체구분": issue['media_type'], "화면번호": issue['screen_number'],
         "작업주체": issue['work_subject'], "현재 상태": issue['status'],
         "이슈 유형": issue['severity'], "우선순위": issue['priority'],
+        "상태 표시명": issue['status_label'], "우선순위 표시명": issue['priority_label'],
+        "이슈 유형 표시명": issue['severity_label'],
         "담당자": issue['handler'], "요청자": issue['reporter'],
         "등록일": issue['created_at'], "최종수정일": issue['updated_at'],
     }

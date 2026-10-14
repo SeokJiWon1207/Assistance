@@ -654,7 +654,7 @@ def format_deterministic_issue_answer(
                     f"**#{issue['id']} {issue['summary']}**",
                     "",
                     f"- 프로젝트: {customer_name(issue['project'])}",
-                    f"- 상태: {display_status_label(issue['status'])}",
+                    f"- 상태: {display_status_label(issue.get('status_label') or issue['status'])}",
                     f"- 담당자: {issue['handler']}",
                     f"- 등록일: {issue['created_at'] or '미상'}",
                     f"- 최종수정일: {detail.get('updated_at') or '미상'}",
@@ -697,7 +697,7 @@ def format_deterministic_issue_answer(
             title = str(issue["summary"]).replace("|", "\\|")
             lines.append(
                 f"| {issue['id']} | {customer_name(issue['project'])} | {title} | "
-                f"{display_status_label(issue['status'])} | {issue['handler']} | "
+                f"{display_status_label(issue.get('status_label') or issue['status'])} | {issue['handler']} | "
                 f"{issue['created_at'] or '미상'} |"
             )
     else:
@@ -722,7 +722,7 @@ def format_deterministic_issue_answer(
                 f"{index}. **ID**: {issue['id']} | "
                 f"**프로젝트**: {customer_name(issue['project'])} | "
                 f"**제목**: {issue['summary']} | "
-                f"**상태**: {display_status_label(issue['status'])} | "
+                f"**상태**: {display_status_label(issue.get('status_label') or issue['status'])} | "
                 f"**담당자**: {issue['handler']} | "
                 f"**등록일**: {issue['created_at'] or '미상'}"
             )
@@ -847,7 +847,7 @@ def format_model_timeout_fallback(
     for index, issue in enumerate(issues, start=1):
         lines.append(
             f"{index}. #{issue['id']} {issue['summary']} "
-            f"- {issue['project']} / {display_status_label(issue['status'])} / "
+            f"- {issue['project']} / {display_status_label(issue.get('status_label') or issue['status'])} / "
             f"담당자 {issue['handler']} / 등록일 {issue['created_at'] or '미상'}"
         )
     lines.extend(

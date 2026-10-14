@@ -572,17 +572,15 @@ function issueValue(issue, source, key, fallback = "") {
   const localValue = issue?.[key];
   return sourceValue || localValue || fallback;
 }
-
 function issuePriorityLabel(issue, source) {
-  return (
-    issueValue(issue, source, "priority") ||
-    issueValue(issue, source, "severity") ||
-    issueValue(issue?.detail || {}, source?.detail || {}, "priority") ||
-    issueValue(issue?.detail || {}, source?.detail || {}, "severity") ||
-    "-"
-  );
+  const label = issueValue(issue, source, "priority_label") ||
+    issueValue(issue?.detail || {}, source?.detail || {}, "priority_label");
+  if (label) return label;
+  const value = issueValue(issue, source, "priority") ||
+    issueValue(issue?.detail || {}, source?.detail || {}, "priority");
+  const labels = { none: "없음", low: "낮음", normal: "보통", high: "높음", urgent: "긴급", immediate: "즉시" };
+  return labels[String(value).toLowerCase()] || value || "-";
 }
-
 function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
   const wrapper = document.createElement("div");
   wrapper.className = "issue-table-wrap";
@@ -629,7 +627,9 @@ function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
     titleCell.textContent = issueValue(issue, source, "title") || issue.summary || "제목 없음";
 
     const statusCell = document.createElement("td");
-    const statusValue = issueValue(issue, source, "status", "상태 미상");
+    const statusValue = issueValue(issue, source, "status_label") ||
+      issueValue(issue?.detail || {}, source?.detail || {}, "status_label") ||
+      displayIssueStatus(issueValue(issue, source, "status", "상태 미상"));
     if (statusValue) {
       const status = document.createElement("span");
       status.className = `status-badge ${statusToneClass(statusValue)}`;
