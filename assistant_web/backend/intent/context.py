@@ -277,6 +277,10 @@ def build_contextual_retrieval_text(messages: List[ChatMessage]) -> Tuple[str, b
             if has_mantis_team_scope(prior):
                 inherited.append("우리 팀")
                 break
+            prior_scope = extract_query_constraints(prior).get("mantis_team_scope")
+            if prior_scope in {"default", "all"}:
+                inherited.append("이슈" if prior_scope == "default" else "전사 이슈")
+                break
             if not is_follow_up_question(prior):
                 break
     # 제외 표현은 바로 뒤 단어를 제외 대상으로 삼으므로 항상 맨 뒤에 모아 붙인다.

@@ -30,8 +30,8 @@ class TeamChatScopeTest(unittest.TestCase):
                 self.assertEqual(build_keyword_terms(text, constraints), [])
                 self.assertTrue(has_constraint(constraints))
 
-    def test_personal_general_and_notion_queries_remain_unscoped(self):
-        for text in ("내 미종료 이슈", "전체 미종료 이슈", "우리선물 이슈", "석지원 담당 이슈", "노션 이번 달 문서", "우리 팀 노션 문서", "작업주체 CS팀 이슈", "프로젝트 컨텐츠서비스팀 이슈"):
+    def test_personal_and_notion_queries_remain_unscoped(self):
+        for text in ("내 미종료 이슈", "석지원 담당 이슈", "노션 이번 달 문서", "우리 팀 노션 문서", "작업주체 CS팀 이슈", "프로젝트 컨텐츠서비스팀 이슈"):
             with self.subTest(text=text):
                 self.assertNotIn("mantis_team_members", extract_query_constraints(text))
 
@@ -64,12 +64,60 @@ class TeamChatScopeTest(unittest.TestCase):
         self.assertEqual(build_keyword_terms(text, constraints), [])
 
     def test_scope_does_not_cross_new_question_or_explicit_reset(self):
-        for texts in (("우리 팀 이슈", "전체 이슈 보여줘"), ("우리 팀 이슈", "그중 전사 기준으로 보여줘"),
-                      ("우리 팀 이슈", "노션 문서 보여줘", "그중 최근 것만"),
-                      ("우리 팀 이슈", "신한 이슈 보여줘", "그중 미종료만")):
+        for texts in (("우리 팀 이슈", "그중 전사 기준으로 보여줘"),
+                      ("우리 팀 이슈", "노션 문서 보여줘", "그중 최근 것만")):
             with self.subTest(texts=texts):
                 text, _ = build_contextual_retrieval_text(messages(*texts))
                 self.assertNotIn("mantis_team_members", extract_query_constraints(text))
+
+    def test_all_results_keeps_default_team_scope(self):
+        for texts in (("이슈 보여줘", "전체 이슈 보여줘"), ("우리선물 이슈", "모두 보여줘"),
+                      ("우리 팀 이슈", "신한 이슈 보여줘", "그중 미종료만")):
+            text, _ = build_contextual_retrieval_text(messages(*texts))
+            self.assertEqual(extract_query_constraints(text)["mantis_team_members"], list(TEAM_MEMBERS))
+
+    def test_explicit_global_reset_overrides_team_phrase_in_live_and_snapshot(self):
+        for question in ("우리 팀 이슈 팀 범위 해제", "우리 팀 전사 이슈 보여줘",
+                         "우리 팀 이슈 전체 팀 기준으로 보여줘"):
+            with self.subTest(question=question):
+                constraints = extract_query_constraints(question)
+                self.assertEqual(constraints.get("mantis_team_scope"), "all")
+                self.assertNotIn("mantis_team_members", constraints)
+                issue = {"id": 12345, "handler": {"real_name": "타팀담당"}}
+                self.assertTrue(issue_matches_constraints(issue, constraints))
+                self.assertTrue(chroma_text_matches_constraints(
+                    "- 이슈 ID: #12345\n- 담당자: 타팀담당", constraints))
+
+    def test_quoted_topics_do_not_release_default_team_scope(self):
+        for question in ('제목에 "전사 장애" 포함된 이슈 보여줘',
+                         '제목에 "팀 범위 해제" 포함된 이슈 보여줘',
+                         '제목에 “전사 장애” 포함된 이슈 보여줘'):
+            with self.subTest(question=question):
+                constraints = extract_query_constraints(question)
+                self.assertEqual(constraints.get("mantis_team_scope"), "default")
+                self.assertEqual(constraints.get("mantis_team_members"), list(TEAM_MEMBERS))
+                issue = {"id": 12345, "summary": "전사 장애 팀 범위 해제",
+                         "handler": {"real_name": "타팀담당"}}
+                self.assertFalse(issue_matches_constraints(issue, constraints))
+                self.assertFalse(chroma_text_matches_constraints(
+                    '- 이슈 ID: #12345\n- 담당자: 타팀담당\n[제목]\n전사 장애 팀 범위 해제', constraints))
+
+    def test_model_resolved_keyword_query_keeps_quoted_topic_in_default_team_scope(self):
+        question = '키워드 "전사" 포함된 이슈'
+        extracted = extract_query_constraints(question)
+        self.assertNotEqual(extracted.get("mantis_team_scope"), "all")
+        constraints = merge_query_plan_constraints(extracted, {"source": "mantis", "grounding_text": question})
+        self.assertEqual(constraints.get("mantis_team_scope"), "default")
+        self.assertEqual(constraints.get("mantis_team_members"), list(TEAM_MEMBERS))
+        self.assertFalse(issue_matches_constraints(
+            {"id": 12345, "summary": "전사 장애", "handler": {"real_name": "타팀담당"}}, constraints))
+
+    def test_global_scope_outside_quoted_topic_still_releases_team_scope(self):
+        constraints = extract_query_constraints('전사 기준으로 제목에 "전사 장애" 포함된 이슈 보여줘')
+        self.assertEqual(constraints.get("mantis_team_scope"), "all")
+        self.assertNotIn("mantis_team_members", constraints)
+        issue = {"id": 12345, "summary": "전사 장애", "handler": {"real_name": "타팀담당"}}
+        self.assertTrue(issue_matches_constraints(issue, constraints))
 
     def test_planner_cannot_remove_team_constraint(self):
         constraints = merge_query_plan_constraints(extract_query_constraints("우리 팀 미종료 이슈"), {"filters": {"statuses": ["open"]}})

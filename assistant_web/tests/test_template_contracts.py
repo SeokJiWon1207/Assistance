@@ -54,7 +54,7 @@ def raw_issues():
     rows = []
     for month, day, platform, status in product((1, 8, 9), (1, 8, 15, 18), ("HTS", "MTS"), ("assigned", "closed")):
         rows.append({"id": 31000 + len(rows), "summary": "차트 표시 점검", "project": {"name": "147MiraeAsset(미래에셋증권)"},
-                     "status": {"name": status}, "handler": {"name": "김담당"}, "description": "기록된 증상과 확인 사항",
+                     "status": {"name": status}, "handler": {"name": "김담당", "real_name": "석지원"}, "description": "기록된 증상과 확인 사항",
                      "created_at": f"2026-{month:02d}-{day:02d}", "updated_at": f"2026-{month:02d}-{day + 1:02d}",
                      "custom_fields": [{"field": {"name": "매체구분"}, "value": platform},
                                        {"field": {"name": "3PC공수"}, "value": "김담당(1.5)"}]})

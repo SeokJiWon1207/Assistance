@@ -23,7 +23,7 @@ FOLLOWUP = "그럼 VBScript 관련해서 들어온 곳은?"
 
 
 def issue(identifier, project, note, media="HTS", **fields):
-    return {"id": identifier, "summary": "화면 확인 요청", "description": "일반 설명",
+    return {"id": identifier, "summary": "화면 확인 요청", "description": "일반 설명", "handler": {"real_name": "석지원"},
             "project": {"name": project}, "notes": [{"id": identifier * 10, "text": note}],
             "custom_fields": [{"field": {"name": "매체구분"}, "value": media}], **fields}
 

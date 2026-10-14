@@ -89,6 +89,7 @@ class EffortDateRangeTests(unittest.TestCase):
                 "project": {"name": "147MiraeAsset(미래에셋증권)"},
                 "summary": f"공수 테스트 {issue_id}",
                 "status": {"name": "assigned"},
+                "handler": {"real_name": "석지원"},
                 "created_at": created_at,
                 "custom_fields": [
                     {"field": {"name": "1문의공수"}, "value": f"석지원({effort})"}

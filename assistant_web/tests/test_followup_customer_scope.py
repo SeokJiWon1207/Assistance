@@ -76,8 +76,8 @@ class FollowUpCustomerScopeTests(unittest.TestCase):
         ):
             context = chat.prepare_chat_pipeline(request, question, None)
         rows = [
-            {"id": 31583, "summary": "차트 문의", "project": {"name": "112KBStar(KB증권)"}, "status": {"name": "closed"}},
-            {"id": 31571, "summary": "서버 점검", "project": {"name": "134Hanaw(하나금융)"}, "status": {"name": "closed"}},
+            {"id": 31583, "summary": "차트 문의", "handler": {"real_name": "석지원"}, "project": {"name": "112KBStar(KB증권)"}, "status": {"name": "closed"}},
+            {"id": 31571, "summary": "서버 점검", "handler": {"real_name": "석지원"}, "project": {"name": "134Hanaw(하나금융)"}, "status": {"name": "closed"}},
         ]
         self.assertEqual(context.query_constraints["customer_key"], "하나금융")
         self.assertEqual([row["id"] for row in select_mantis_rows(rows, context.query_constraints)], [31571])

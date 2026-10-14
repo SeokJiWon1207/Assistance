@@ -28,8 +28,8 @@ class CustomerAliasFilterTests(unittest.TestCase):
                 self.assertEqual(extract_query_constraints(question)["customer_key"], expected)
 
     def test_live_and_snapshot_filters_accept_current_and_legacy_names(self):
-        issue = {"id": 42, "summary": "차트 오류", "project": {"name": "101PopcornRenewal(동부증권)"}}
-        document = "이슈 ID: #42\n프로젝트(고객사): 101PopcornRenewal(동부증권)\n[제목]\n차트 오류\n\n"
+        issue = {"id": 42, "summary": "차트 오류", "handler": {"real_name": "석지원"}, "project": {"name": "101PopcornRenewal(동부증권)"}}
+        document = "이슈 ID: #42\n프로젝트(고객사): 101PopcornRenewal(동부증권)\n담당자: 석지원\n[제목]\n차트 오류\n\n"
         for customer in ("DB증권", "DB금융투자", "동부증권", "디비증권"):
             with self.subTest(customer=customer):
                 constraints = extract_query_constraints(f"{customer} 최근 이슈 보여줘")
@@ -74,8 +74,8 @@ class RenamedCustomerFilterTests(unittest.TestCase):
             self.assertNotIn("114Solomon", constraints["customer_aliases"])
             for project, expected in ((self.current_project, True), (self.legacy_project, False)):
                 with self.subTest(name=name, project=project):
-                    issue = {"id": 42, "summary": "차트 오류", "project": {"name": project}}
-                    document = f"이슈 ID: #42\n프로젝트(고객사): {project}\n[제목]\n차트 오류\n\n"
+                    issue = {"id": 42, "summary": "차트 오류", "handler": {"real_name": "석지원"}, "project": {"name": project}}
+                    document = f"이슈 ID: #42\n프로젝트(고객사): {project}\n담당자: 석지원\n[제목]\n차트 오류\n\n"
                     self.assertEqual(mantis.issue_matches_constraints(issue, constraints), expected)
                     self.assertEqual(chroma_text_matches_constraints(document, constraints), expected)
 
@@ -87,10 +87,10 @@ class RenamedCustomerFilterTests(unittest.TestCase):
                     with self.subTest(name=name, groups=groups):
                         constraints = extract_query_constraints(f"{name} 이슈 보여줘")
                         self.assertTrue(mantis.issue_matches_constraints(
-                            {"project": {"name": self.legacy_project}}, constraints,
+                            {"handler": {"real_name": "석지원"}, "project": {"name": self.legacy_project}}, constraints,
                         ))
                         self.assertFalse(mantis.issue_matches_constraints(
-                            {"project": {"name": self.current_project}}, constraints,
+                            {"handler": {"real_name": "석지원"}, "project": {"name": self.current_project}}, constraints,
                         ))
 
     def test_current_customer_filter_operators_do_not_include_legacy_project(self):
@@ -104,5 +104,5 @@ class RenamedCustomerFilterTests(unittest.TestCase):
 
     def test_excluding_current_customer_keeps_legacy_project(self):
         constraints = extract_query_constraints("아이엠증권 제외하고 이슈 보여줘")
-        self.assertFalse(mantis.issue_matches_constraints({"project": {"name": self.current_project}}, constraints))
-        self.assertTrue(mantis.issue_matches_constraints({"project": {"name": self.legacy_project}}, constraints))
+        self.assertFalse(mantis.issue_matches_constraints({"handler": {"real_name": "석지원"}, "project": {"name": self.current_project}}, constraints))
+        self.assertTrue(mantis.issue_matches_constraints({"handler": {"real_name": "석지원"}, "project": {"name": self.legacy_project}}, constraints))

@@ -34,7 +34,7 @@ class StatusDefinitionTests(unittest.TestCase):
     def test_count_document_and_raw_list_keep_same_missing_media_fallback(self):
         for media, expected in (("", True), ("MTS", True), ("HTS", False)):
             issue = {"id": 21371, "project": {"name": "120NH(NH증권)"},
-                     "summary": "MTS 차트 문의", "status": {"name": "assigned"},
+                     "summary": "MTS 차트 문의", "handler": {"real_name": "석지원"}, "status": {"name": "assigned"},
                      "custom_fields": [{"field": {"name": "매체구분"}, "value": media}]}
             constraints = extract_query_constraints("NH MTS 미종료 이슈")
             self.assertEqual(issue_matches_constraints(issue, constraints), expected)
@@ -196,7 +196,7 @@ class StatusSemanticTests(unittest.TestCase):
         context = chat.ChatPipelineContext(q, {"id": "chosen-answer-model"}, "key", [], q,
             {"mantis": True}, [], extract_query_constraints(q), 5)
         rows = [{"id": i, "summary": "점검", "project": {"name": "120NH(NH증권)"},
-                 "status": {"name": status}, "created_at": "2025-01-01"}
+                 "handler": {"real_name": "석지원"}, "status": {"name": status}, "created_at": "2025-01-01"}
                 for i, status in enumerate(("assigned", "resolved", "closed", "new"), 1)]
         with patch.object(chat, "resolve_status_intent", return_value=resolution), \
              patch.object(sla, "read_complete_store", return_value=IssueBatch(rows, {"search_complete": True})):

@@ -54,8 +54,8 @@ def check_native_notion_options_do_not_intersect_mantis_status(question, status,
 
 class WeeklyAccuracyRegressionTests(unittest.TestCase):
     def test_explicit_api_window_cannot_be_replaced_with_id_sorted_store(self):
-        current = {"id": 31584, "project": {"name": "140Kyobo(교보증권)"}, "created_at": "2026-10-02"}
-        older = {"id": 29691, "project": {"name": "140Kyobo(교보증권)"}, "created_at": "2025-07-17"}
+        current = {"id": 31584, "project": {"name": "140Kyobo(교보증권)"}, "handler": {"real_name": "석지원"}, "created_at": "2026-10-02"}
+        older = {"id": 29691, "project": {"name": "140Kyobo(교보증권)"}, "handler": {"real_name": "석지원"}, "created_at": "2025-07-17"}
         stored = IssueBatch([current, older], {"fetchedAt": "2026-10-02T11:00:00+00:00"})
         constraints = extract_query_constraints("2025년 7월 교보증권 이슈")
         with patch.object(mantis, "read_complete_store", return_value=stored) as read, \

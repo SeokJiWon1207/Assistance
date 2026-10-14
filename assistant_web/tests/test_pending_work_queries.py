@@ -53,7 +53,7 @@ class PendingWorkQueryTests(unittest.TestCase):
     def test_closed_and_resolved_rows_are_excluded_from_count_candidates(self):
         c = extract_query_constraints("지금 NH에서 MTS 이슈 남은거 몇개야")
         for status in ("assigned", "confirmed", "developed", "closed", "resolved"):
-            row = {"project": {"name": "120NH(NH증권)"}, "status": {"name": status},
+            row = {"handler": {"real_name": "석지원"}, "project": {"name": "120NH(NH증권)"}, "status": {"name": status},
                    "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}]}
             self.assertEqual(issue_matches_constraints(row, c), status not in {"closed", "resolved"})
 

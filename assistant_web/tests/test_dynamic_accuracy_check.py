@@ -24,6 +24,41 @@ from backend.intent.constraints import extract_query_constraints
 
 
 class IndependentAccuracyOracleTests(unittest.TestCase):
+    def test_independent_oracle_defaults_to_exact_team_handlers(self):
+        for handler, expected in (("석지원", True), ("타팀담당", False),
+                                  ("석지원_보조", False), ("", False)):
+            row = self.issue(1, "고객A", "HTS")
+            row["handler"]["real_name"] = handler
+            with self.subTest(handler=handler):
+                self.assertEqual(accuracy.mantis_oracle_matches(row, {"project": "고객A"}), expected)
+                self.assertTrue(accuracy.mantis_oracle_matches(row, {"project": "고객A", "scope": "all"}))
+        external = self.issue(2, "고객A", "HTS")
+        external["handler"]["real_name"] = "타팀담당"
+        self.assertTrue(accuracy.mantis_oracle_matches(external, {"handler": "타팀담당"}))
+
+    def test_mutable_oracle_keeps_default_team_scope_after_live_revalidation(self):
+        rows = [self.issue(i, "고객A", "HTS") for i in (4, 3, 2, 1)]
+        for row, name in zip(rows, ("타팀담당", "석지원", "석지원", "이영희"), strict=True):
+            row["handler"]["real_name"] = name
+        latest = {row["id"]: row for row in rows}
+        latest[3] = {**rows[1], "handler": {"real_name": "타팀담당"}}
+        with (patch.object(accuracy, "read_complete_store", return_value=rows),
+              patch.object(accuracy.mantis, "fetch_mantis_issue_by_id", side_effect=latest.get)):
+            self.assertEqual(complete_mutable_mantis_ids({"project": "고객A"}, [], 2), [2, 1])
+            self.assertEqual(complete_mutable_mantis_ids({"project": "고객A", "scope": "all"}, [], 2), [4, 3])
+
+    def test_generated_structural_cases_explicitly_request_their_company_oracle_scope(self):
+        rows = [self.issue(i, "고객A", "HTS" if i % 2 else "MTS") for i in range(8, 0, -1)]
+        cases = {case.id: case for case in build_mantis_cases(rows, random.Random(42))}
+        for case_id in ("mantis-project-latest", "mantis-project-status", "mantis-project-platform",
+                        "mantis-project-platform-exclusion", "mantis-screen", "mantis-month-count",
+                        "mantis-screen-no-result"):
+            with self.subTest(case_id=case_id):
+                case = cases[case_id]
+                self.assertEqual(extract_query_constraints(case.question).get("mantis_team_scope"), "all")
+                if case.mutable_oracle:
+                    self.assertEqual(case.oracle_filters.get("scope"), "all")
+
     def test_oracle_collection_failure_is_reported_as_incomplete(self):
         with (
             patch.dict(accuracy.os.environ),
@@ -96,7 +131,7 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
             patch("scripts.accuracy.dynamic_accuracy_check.mantis.fetch_mantis_issue_by_id",
                   side_effect=latest.get),
         ):
-            self.assertEqual(complete_mutable_mantis_ids({"project": "고객A", "platform": "HTS"}, live, 2),
+            self.assertEqual(complete_mutable_mantis_ids({"project": "고객A", "platform": "HTS", "scope": "all"}, live, 2),
                              [100, 90])
 
 

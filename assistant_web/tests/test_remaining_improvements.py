@@ -120,7 +120,7 @@ class StructuredFollowupTests(unittest.TestCase):
         self.assertIn(clause, prior["filter_clauses"])
         current = merge_confirmed_constraints(prior, extract_query_constraints("그중 MTS만"), "그중 MTS만")
         rows = [{"id": i, "summary": title, "description": "차트", "project": {"name": "120NH(NH증권)"},
-                 "status": {"name": "assigned"}, "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}]}
+                 "handler": {"real_name": "석지원"}, "status": {"name": "assigned"}, "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}]}
                 for i, title in enumerate(("차트 표시 오류", "로그인 오류"), 1)]
         self.assertEqual([row["id"] for row in select_mantis_rows(rows, current)], [1])
         self.assertEqual(build_keyword_terms('NH 제목에 "차트" 포함된 미종료 이슈 2개 보여줘', prior), [])
