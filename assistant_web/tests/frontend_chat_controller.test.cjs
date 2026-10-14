@@ -5,6 +5,46 @@ const path = require('node:path');
 const vm = require('node:vm');
 const core = require('../backend/static/frontend_core.js');
 
+test('HTTP validation errors display messages without coercing objects or echoing submitted input', async () => {
+  for (const [status, detail, expected] of [
+    [422, [{ msg: '메시지 전체 길이는 120,000자를 넘을 수 없습니다.', input: 'private issue body' }], '메시지 전체 길이는 120,000자를 넘을 수 없습니다.'],
+    [422, { msg: '잘못된 요청입니다.', input: 'private issue body' }, '잘못된 요청입니다.'],
+    [429, '요청이 너무 많습니다.', '요청이 너무 많습니다. (5초 후 다시 시도)'],
+    [500, { unexpected: 'private issue body' }, '모델 응답 중 오류가 발생했습니다.'],
+  ]) {
+    const state = { messages: [{ role: 'user', content: '나머지도 보여줘' }, { role: 'assistant', auditId: 'previous-page', content: '원문 목록' }] };
+    const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
+    let sent;
+    const dependencies = {
+      './runtime.js': { state, els: {}, buildChatMessages: core.buildChatMessages, parseSseBuffer: core.parseSseBuffer,
+        apiFetch: async (_url, options) => {
+          sent = JSON.parse(options.body);
+          return { ok: false, status, headers: { get: () => '5' }, json: async () => ({ detail }) };
+        } },
+      './workspace.js': { persistConversations() {} },
+    };
+    const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/chat_controller.js'), 'utf8'), { context });
+    await module.link((specifier) => {
+      const exports = dependencies[specifier.replace(/\?v=.*$/, '')];
+      return new vm.SyntheticModule(Object.keys(exports), function () {
+        for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
+      }, { context });
+    });
+    await module.evaluate();
+    module.namespace.configureChatController({
+      ensureModels: async () => {}, selectedModel: () => ({ id: 'test', status: 'active' }),
+      generationPayload: () => ({}), abComparisonEnabled: () => false, sourceToolsPayload: () => ({}),
+    });
+    await assert.rejects(module.namespace.sendChat('나머지도 보여줘', () => {}), (error) => {
+      assert.equal(error.message, expected);
+      assert.equal(error.status, status);
+      assert.ok(!error.message.includes('private issue body'));
+      return true;
+    });
+    assert.equal(sent.contextAuditId, 'previous-page');
+  }
+});
+
 test('stream reset removes failed model text before replacement deltas and final save', async () => {
   const state = { messages: [{ role: 'user', content: '질문' }] };
   const snapshots = [];

@@ -64,7 +64,12 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
     const suffix = response.status === 429 && retryAfter
       ? ` (${retryAfter}초 후 다시 시도)`
       : "";
-    const error = new Error(`${data.detail || "모델 응답 중 오류가 발생했습니다."}${suffix}`);
+    const details = Array.isArray(data.detail) ? data.detail : [data.detail];
+    const description = details.map((detail) => {
+      if (typeof detail === "string") return detail;
+      return typeof detail?.msg === "string" ? detail.msg : "";
+    }).filter(Boolean).join("\n") || "모델 응답 중 오류가 발생했습니다.";
+    const error = new Error(`${description}${suffix}`);
     error.status = response.status;
     error.retryAfter = retryAfter;
     throw error;
