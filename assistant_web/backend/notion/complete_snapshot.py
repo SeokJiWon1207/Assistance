@@ -3,6 +3,8 @@ from collections import Counter
 from datetime import datetime, timezone
 import json
 import os
+import threading
+import time
 from typing import Any
 
 from backend.common import normalize_for_match
@@ -22,6 +24,28 @@ def catalog_max_age_seconds() -> int:
         return max(600, min(int(os.getenv("NOTION_SNAPSHOT_CATALOG_MAX_AGE_SECONDS", "7200")), 86400))
     except ValueError:
         return 7200
+
+
+# 요청 안에서 다시 읽을 보류 페이지 수와 시간. 넘으면 기존처럼 실시간 검색에 맡긴다.
+def inline_refresh_max_pages() -> int:
+    try:
+        return max(0, min(int(os.getenv("NOTION_SNAPSHOT_INLINE_REFRESH_MAX_PAGES", "5")), 20))
+    except ValueError:
+        return 5
+
+
+def inline_refresh_seconds() -> float:
+    try:
+        return max(1.0, min(float(os.getenv("NOTION_SNAPSHOT_INLINE_REFRESH_SECONDS", "10")), 30.0))
+    except ValueError:
+        return 10.0
+
+
+# 다시 읽지 못한 페이지는 잠시 건너뛰어 같은 실패 비용을 매 요청 반복하지 않는다.
+INLINE_REFRESH_COOLDOWN_SECONDS = 600
+_inline_refresh_failures: dict[str, float] = {}
+_inline_refresh_failures_lock = threading.Lock()
+_STALE = object()
 
 
 def _time(value: str) -> float:
@@ -187,7 +211,7 @@ def read_complete(index: BodyIndex, database_ids: list[str], terms: list[str]):
 
 
 def _current_results(index, pages, candidates, allowed):
-    """표시 직전에 접근·소속·수정본을 확인한다. 변경되면 실시간 검색으로 돌아간다."""
+    """표시 직전에 접근·소속·수정본을 확인한다. 변경된 페이지는 보류로 표시하고 False를 돌려준다."""
     import time
     from backend.execution import CURRENT_BUDGET
     from backend.notion.body_index_sync import _Budget, _ReadFailure, _request, _page_ancestors, _valid_page, _synced_source
@@ -234,58 +258,120 @@ def _scope_current(read_scope):
         return False
 
 
+def _refresh_pending_inline(index, database_ids, allowed):
+    """보류 페이지가 몇 건뿐이면 요청 안에서 다시 읽어 저장본 전체를 실시간 검색으로 넘기지 않는다.
+
+    다시 읽은 페이지 수를 돌려준다. 하나라도 확정하지 못하면 None이다."""
+    import fcntl
+    from backend.config import RUNTIME_DIR
+    from backend.execution import CURRENT_BUDGET
+    from backend.notion.body_index_sync import CrawlLimits
+    from backend.notion.snapshot_maintenance import refresh_page
+    with index._database() as db:
+        proof = _state(index, db, database_ids, allowed_database_ids=allowed)[3]
+    pending = proof['pending_page_ids']
+    if not proof['catalog_complete'] or not pending or len(pending) > inline_refresh_max_pages():
+        return None
+    started = time.monotonic()
+    with _inline_refresh_failures_lock:
+        if any(started - _inline_refresh_failures.get(identifier, float('-inf')) < INLINE_REFRESH_COOLDOWN_SECONDS
+               for identifier in pending):
+            return None
+    deadline = started + inline_refresh_seconds()
+    active = CURRENT_BUDGET.get()
+    if active is not None:
+        # 실패하면 실시간 검색을 이어가야 하므로 요청 예산을 모두 쓰지 않는다.
+        deadline = min(deadline, active.deadline - 10)
+    # 매시간 갱신과 같은 잠금을 써서 저장본을 동시에 고치지 않는다. 사용 중이면 기다리지 않는다.
+    with (RUNTIME_DIR / 'notion-snapshot.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return None
+        for identifier in pending:
+            remaining = deadline - time.monotonic()
+            limits = CrawlLimits(max_requests=60, max_seconds=max(1.0, remaining))
+            if remaining <= 0 or not refresh_page(index, identifier, allowed, deadline, limits=limits):
+                with _inline_refresh_failures_lock:
+                    _inline_refresh_failures[identifier] = time.monotonic()
+                return None
+    return len(pending)
+
+
 def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
                              pre_body_constraints, body_clauses, keyword_clauses, limit):
-    """전수 대조된 저장본만 사용하고, 불확실하면 기존 API 검색에 맡긴다."""
+    """전수 대조된 저장본만 사용하고, 불확실하면 기존 API 검색에 맡긴다.
+
+    보류·변경 페이지가 몇 건뿐이면 그 페이지만 다시 읽고 한 번 더 검색한다."""
     import sqlite3
     import requests
     from fastapi import HTTPException
-    from backend.notion.search import _indexed_body_matches, notion_page_sort_key
     try:
         index = open_body_index()
         if index is None or not _scope_current(read_scope):
             return None
-        positive = [str(clause['value']) for clause in body_clauses if clause['operator'] == 'contains']
-        discovery_terms = list(dict.fromkeys([*positive, *terms]))
-        from itertools import batched
-        created = any(c.get('field') == 'created_at' for c in constraints.get('common_filter_clauses', []))
-        def rank(p):
-            return (bool(terms) and p.get('index_title_match', False),
-                    notion_page_sort_key(p, created_at_filtered=created))
-        shown: list[dict[str, Any]] = []
-        selected_records = {}
-        total = 0
-        with index._database() as db:
-            _, diagnostics, _, proof = _state(index, db, database_ids, allowed_database_ids=list(read_scope))
-            if not proof['complete']:
+        refreshed = 0
+        for attempt in range(2):
+            outcome = _search_snapshot_once(
+                index, database_ids, terms=terms, read_scope=read_scope, constraints=constraints,
+                pre_body_constraints=pre_body_constraints, body_clauses=body_clauses,
+                keyword_clauses=keyword_clauses, limit=limit)
+            if outcome is not _STALE:
+                if outcome is not None and refreshed:
+                    outcome['meta']['inline_refreshed_page_count'] = refreshed
+                return outcome
+            healed = None if attempt else _refresh_pending_inline(index, database_ids, list(read_scope))
+            if not healed:
                 return None
-            # 전수 판정·검색은 같은 읽기 트랜잭션에서 수행한다. 전체 원문을
-            # 메모리에 쌓지 않고 표시할 상위 문서만 보존하며 총수는 끝까지 센다.
-            for chunk in batched(_records(index, db, database_ids, discovery_terms, diagnostics), 100):
-                from backend.execution import checkpoint
-                checkpoint()
-                indexed = {'candidates': chunk, 'incomplete_reasons': []}
-                pages = _indexed_body_matches(indexed, constraints, pre_body_constraints,
-                                              body_clauses, keyword_clauses, terms, read_scope)
-                if indexed['incomplete_reasons']:
-                    return None
-                total += len(pages)
-                shown = sorted([*shown, *pages], key=rank, reverse=True)[:limit]
-                selected_records.update({str(r['raw_page']['id']).replace('-', ''): r for r in chunk})
-                keep = {str(p['id']).replace('-', '') for p in shown}
-                selected_records = {key: r for key, r in selected_records.items() if key in keep}
-        if not _current_results(index, shown, list(selected_records.values()), list(read_scope)):
-            return None
-        return {'source': 'notion', 'status': 'ok', 'notion_pages': shown, 'meta': {
-            'status': 'snapshot', 'tool': 'notion_complete_snapshot',
-            'snapshot_as_of': proof['snapshot_as_of'], 'queriedAt': datetime.now(timezone.utc).isoformat(),
-            'coverage_basis': 'api_readable', 'search_complete': True, 'candidate_count_complete': True,
-            'content_complete': True, 'incomplete_reasons': [], 'displayed_count': len(shown),
-            'candidate_count': total, 'scanned_count': proof['page_count'], 'body_index': proof,
-            'body_index_used': True, 'constraints': constraints, 'terms': terms,
-            'database_ids': database_ids, 'scoped_database_ids': list(read_scope), 'errors': [],
-            'excluded_element_count': proof['excluded_element_count'],
-            'excluded_document_count': proof['excluded_document_count'],
-            'excluded_element_types': proof['excluded_element_types']}}
+            refreshed = healed
+        return None
     except (BodyIndexError, sqlite3.Error, OSError, ValueError, HTTPException, requests.RequestException):
         return None
+
+
+def _search_snapshot_once(index, database_ids, *, terms, read_scope, constraints,
+                          pre_body_constraints, body_clauses, keyword_clauses, limit):
+    """완전한 저장본으로 한 번 검색한다. 보류·변경 페이지가 있으면 _STALE이다."""
+    from backend.notion.search import _indexed_body_matches, notion_page_sort_key
+    positive = [str(clause['value']) for clause in body_clauses if clause['operator'] == 'contains']
+    discovery_terms = list(dict.fromkeys([*positive, *terms]))
+    from itertools import batched
+    created = any(c.get('field') == 'created_at' for c in constraints.get('common_filter_clauses', []))
+    def rank(p):
+        return (bool(terms) and p.get('index_title_match', False),
+                notion_page_sort_key(p, created_at_filtered=created))
+    shown: list[dict[str, Any]] = []
+    selected_records = {}
+    total = 0
+    with index._database() as db:
+        _, diagnostics, _, proof = _state(index, db, database_ids, allowed_database_ids=list(read_scope))
+        if not proof['complete']:
+            return _STALE
+        # 전수 판정·검색은 같은 읽기 트랜잭션에서 수행한다. 전체 원문을
+        # 메모리에 쌓지 않고 표시할 상위 문서만 보존하며 총수는 끝까지 센다.
+        for chunk in batched(_records(index, db, database_ids, discovery_terms, diagnostics), 100):
+            from backend.execution import checkpoint
+            checkpoint()
+            indexed = {'candidates': chunk, 'incomplete_reasons': []}
+            pages = _indexed_body_matches(indexed, constraints, pre_body_constraints,
+                                          body_clauses, keyword_clauses, terms, read_scope)
+            if indexed['incomplete_reasons']:
+                return None
+            total += len(pages)
+            shown = sorted([*shown, *pages], key=rank, reverse=True)[:limit]
+            selected_records.update({str(r['raw_page']['id']).replace('-', ''): r for r in chunk})
+            keep = {str(p['id']).replace('-', '') for p in shown}
+            selected_records = {key: r for key, r in selected_records.items() if key in keep}
+    if not _current_results(index, shown, list(selected_records.values()), list(read_scope)):
+        return _STALE
+    return {'source': 'notion', 'status': 'ok', 'notion_pages': shown, 'meta': {
+        'status': 'snapshot', 'tool': 'notion_complete_snapshot',
+        'snapshot_as_of': proof['snapshot_as_of'], 'queriedAt': datetime.now(timezone.utc).isoformat(),
+        'coverage_basis': 'api_readable', 'search_complete': True, 'candidate_count_complete': True,
+        'content_complete': True, 'incomplete_reasons': [], 'displayed_count': len(shown),
+        'candidate_count': total, 'scanned_count': proof['page_count'], 'body_index': proof,
+        'body_index_used': True, 'constraints': constraints, 'terms': terms,
+        'database_ids': database_ids, 'scoped_database_ids': list(read_scope), 'errors': [],
+        'excluded_element_count': proof['excluded_element_count'],
+        'excluded_document_count': proof['excluded_document_count'],
+        'excluded_element_types': proof['excluded_element_types']}}

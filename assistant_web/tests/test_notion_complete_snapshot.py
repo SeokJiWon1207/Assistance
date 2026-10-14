@@ -355,3 +355,92 @@ class CompleteSnapshotTests(unittest.TestCase):
                 patch('builtins.print'):
             self.assertEqual(script.main(), 0)
         self.assertIs(refresh.call_args.kwargs['refresh_catalog'], True)
+
+    def fresh_inline_state(self):
+        snapshot = self.snapshot()
+        snapshot._inline_refresh_failures.clear()
+        self.addCleanup(snapshot._inline_refresh_failures.clear)
+        return Path(self.directory.name)
+
+    def inline_search(self, root, current_results, refresh):
+        from unittest.mock import patch
+        snapshot = self.snapshot()
+        candidates = [{'id': 'page-1', 'match_score': 1, 'last_edited_time': ''}]
+        with patch.object(snapshot, 'open_body_index', return_value=self.index), \
+                patch.object(snapshot, '_current_results', side_effect=current_results), \
+                patch('backend.notion.search._indexed_body_matches', return_value=candidates), \
+                patch('backend.notion.snapshot_maintenance.refresh_page', side_effect=refresh) as refresh_mock, \
+                patch('backend.config.RUNTIME_DIR', root):
+            result = snapshot.search_complete_snapshot(
+                ['db-1'], terms=['needle'], read_scope={'db-1': ''}, constraints={},
+                pre_body_constraints={}, body_clauses=[], keyword_clauses=[], limit=5)
+        return result, refresh_mock
+
+    def reindex(self, *_args, **_kwargs):
+        self.add()
+        return True
+
+    def test_changed_result_is_reread_inline_instead_of_dropping_the_snapshot(self):
+        root = self.fresh_inline_state()
+        self.add()
+        checks = []
+
+        def current(index, shown, records, allowed):
+            checks.append(1)
+            if len(checks) == 1:
+                index.record_failure('page-1', 'snapshot_changed_or_unavailable')
+                return False
+            return True
+
+        result, refresh = self.inline_search(root, current, self.reindex)
+        self.assertIsNotNone(result)
+        self.assertTrue(result['meta']['search_complete'])
+        self.assertEqual(result['meta']['inline_refreshed_page_count'], 1)
+        self.assertEqual(refresh.call_args.args[1], 'page1')
+        self.assertLessEqual(refresh.call_args.kwargs['limits'].max_requests, 60)
+        self.assertEqual(len(checks), 2)
+
+    def test_page_changing_again_after_inline_read_falls_back_without_looping(self):
+        root = self.fresh_inline_state()
+        self.add()
+
+        def always_changed(index, shown, records, allowed):
+            index.record_failure('page-1', 'snapshot_changed_or_unavailable')
+            return False
+
+        result, refresh = self.inline_search(root, always_changed, self.reindex)
+        self.assertIsNone(result)
+        self.assertEqual(refresh.call_count, 1)
+
+    def test_pending_pages_over_inline_limit_fall_back_without_reads(self):
+        import os
+        from unittest.mock import patch
+        root = self.fresh_inline_state()
+        self.add()
+        self.index.record_failure('page-1', 'fetch_failed')
+        with patch.dict(os.environ, {'NOTION_SNAPSHOT_INLINE_REFRESH_MAX_PAGES': '0'}):
+            result, refresh = self.inline_search(root, lambda *args: True, self.reindex)
+        self.assertIsNone(result)
+        refresh.assert_not_called()
+
+    def test_failed_inline_read_falls_back_and_is_not_retried_immediately(self):
+        root = self.fresh_inline_state()
+        self.add()
+        self.index.record_failure('page-1', 'fetch_failed')
+        result, refresh = self.inline_search(root, lambda *args: True, lambda *args, **kwargs: False)
+        self.assertIsNone(result)
+        self.assertEqual(refresh.call_count, 1)
+        result, refresh = self.inline_search(root, lambda *args: True, self.reindex)
+        self.assertIsNone(result)
+        refresh.assert_not_called()
+
+    def test_inline_read_waits_for_nothing_while_scheduled_refresh_holds_lock(self):
+        import fcntl
+        root = self.fresh_inline_state()
+        self.add()
+        self.index.record_failure('page-1', 'fetch_failed')
+        with (root / 'notion-snapshot.lock').open('a') as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            result, refresh = self.inline_search(root, lambda *args: True, self.reindex)
+        self.assertIsNone(result)
+        refresh.assert_not_called()

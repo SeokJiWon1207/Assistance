@@ -9,7 +9,7 @@ from backend.notion.complete_snapshot import coverage, _state
 from backend.notion.body_index import page_belongs_to_database
 
 
-def refresh_page(index, identifier, database_ids, deadline):
+def refresh_page(index, identifier, database_ids, deadline, *, limits=None):
     with index._database() as db:
         row = db.execute('SELECT page_id, database_id, raw_page FROM pages WHERE fingerprint=? AND page_id=?',
                          [index.fingerprint, identifier]).fetchone()
@@ -53,7 +53,7 @@ def refresh_page(index, identifier, database_ids, deadline):
             index.record_failure(identifier, str(exc))
             return False
     result = validate_index_candidate(record, database_ids, index=index, deadline=deadline,
-                                      limits=CrawlLimits.configured(), catalog_page=json.loads(record["raw_page"]))
+                                      limits=limits or CrawlLimits.configured(), catalog_page=json.loads(record["raw_page"]))
     return bool(result and result.get('accessible_content_complete'))
 
 
