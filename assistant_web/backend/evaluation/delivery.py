@@ -11,6 +11,7 @@ BLOCKING_CHECKS = frozenset({
     "count_result", "count_filters", "answer_count", "effort_recalculation", "effort_breakdown",
     "effort_display", "effort_issue_count", "work_intent", "work_scope",
     "work_evidence", "work_answer_count",
+    "followup_effort_result",
 })
 
 

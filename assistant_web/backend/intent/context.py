@@ -81,7 +81,25 @@ def is_customer_only_refinement(text: str, direct: Optional[Dict[str, Any]] = No
     })
 
 
+def is_dimension_only_followup(text: str) -> bool:
+    """작업을 새로 지정하지 않고 월·고객사·매체 하나만 교체하는 생략형 질문."""
+    value = re.sub(r"^(?:그럼|그러면)\s*", "", text.strip())
+    value = re.sub(r"[?!.]+$", "", value).strip()
+    value = re.sub(r"(?:은|는)(?:요)?$", "", value).strip()
+    if re.fullmatch(r"(?:20\d{2}\s*년\s*)?(?:1[0-2]|0?[1-9])\s*월", value):
+        return True
+    direct = extract_query_constraints(value)
+    aliases = [direct.get("customer_key"), direct.get("customer_exact"),
+               *(direct.get("customer_aliases") or []), direct.get("platform_key"),
+               *(direct.get("platform_aliases") or [])]
+    return bool(value and normalize_for_match(value) in {
+        normalize_for_match(str(alias)) for alias in aliases if alias
+    })
+
+
 def is_follow_up_question(text: str) -> bool:
+    if is_dimension_only_followup(text):
+        return True
     if list_continuation_mode(text):
         return True
     if is_affirmative_read_follow_up(text):

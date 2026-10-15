@@ -6,6 +6,7 @@ from unittest.mock import patch
 from backend.notion.search import build_notion_terms, extract_notion_constraints
 from backend.notion.formatting import has_deterministic_notion_list_intent
 from backend.answers import should_return_deterministic_issue_list
+from backend.intent.context import is_follow_up_question
 
 from backend.understanding import (
     extract_query_constraints,
@@ -90,6 +91,8 @@ class RoutingFixtureTest(unittest.TestCase):
                     self.assertEqual(plan["source"], case["source"])
                     self.assertEqual(plan["authority"], case["authority"])
                     self.assertNotIn("needs_model", plan)
+                    if "follow_up" in case:
+                        self.assertEqual(is_follow_up_question(case["q"]), case["follow_up"])
                     if "notion_terms" in case:
                         self.assertEqual(build_notion_terms(case["q"]), case["notion_terms"])
                     if "notion_deterministic" in case:

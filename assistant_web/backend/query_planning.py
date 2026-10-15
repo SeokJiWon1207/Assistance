@@ -572,6 +572,7 @@ def build_query_plan(
         "version": 2,
         "grounding_text": question,
         "status_resolution": constraints.get("status_resolution"),
+        "followup_effort": constraints.get("followup_effort"),
         "operation": operation,
         "source": source,
         "filters": filters,
@@ -631,7 +632,7 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
             ),
         })
 
-    expected_operation = infer_operation(question)
+    expected_operation = "aggregate" if plan.get("followup_effort") else infer_operation(question)
     operation_passed = plan.get("operation") == expected_operation
     checks.append({
         "id": "operation_intent",
