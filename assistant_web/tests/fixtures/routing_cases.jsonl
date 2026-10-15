@@ -123,3 +123,5 @@
 {"q":"그럼 8월은?","source":"general","authority":"abstain","follow_up":true,"people":[],"candidate_people":[]}
 {"q":"NH증권은?","source":"general","authority":"abstain","follow_up":true,"customer_key":"NH증권","people":[],"candidate_people":[]}
 {"q":"NH MTS 몇 건이야","source":"general","authority":"abstain","follow_up":false,"people":[],"candidate_people":[]}
+{"q":"노션에서 DB02_ 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"customer_key":null,"notion_terms":["DB02_"]}
+{"q":"노션에서 db02_ 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"customer_key":null,"notion_terms":["db02_"]}

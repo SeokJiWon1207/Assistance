@@ -44,8 +44,8 @@ def empty_query_constraints() -> Dict[str, Any]:
 
 
 def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
-    # DB03_작업 같은 Notion DB 식별자를 DB금융투자의 약칭으로 해석하지 않는다.
-    customer_text = re.sub(r"(?<![A-Za-z0-9_])DB\d{2}_[가-힣A-Za-z0-9_]+", " ", text, flags=re.IGNORECASE)
+    # DB03_작업이나 DB02_ 같은 접두 검색을 DB금융투자의 약칭으로 해석하지 않는다.
+    customer_text = re.sub(r"(?<![A-Za-z0-9_])DB\d{2}_[가-힣A-Za-z0-9_]*", " ", text, flags=re.IGNORECASE)
     if customer_text != text:
         text, normalized_text = customer_text, normalize_for_match(customer_text)
     # 수량에 쓰인 위치만 지운 뒤 별칭을 찾는다. 문장에 '이슈 하나만'이
