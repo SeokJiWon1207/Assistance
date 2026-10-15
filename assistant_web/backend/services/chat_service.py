@@ -682,6 +682,19 @@ def prepare_chat_pipeline(
             keyword_text = confirmed_keyword_text(scoped_constraints)
             if keyword_text:
                 retrieval_text = f"{retrieval_text} {keyword_text}"
+    # 공수 요청의 생략형은 인증된 직전 계획에서 작업까지 이어받는다.
+    # 명시적인 목록/건수 요청에는 이전 작업 증거를 남기지 않는다.
+    from backend.intent.context import is_dimension_only_followup
+    scoped_constraints.pop("followup_effort", None)
+    if (inherited_constraints is not None and is_dimension_only_followup(latest_user_text)
+            and prior_plan.get("operation") == "aggregate"
+            and "공수" in str(prior_plan.get("grounding_text") or "")):
+        scoped_constraints["followup_effort"] = {
+            "parent_audit_id": request.contextAuditId,
+            "parent_question": prior_plan["grounding_text"],
+            "question": latest_user_text,
+        }
+        retrieval_text += " 공수 집계"
     # 페이지 이력은 조건 변경·전체 요청으로 전파하지 않는다.
     scoped_constraints.pop("list_continuation", None)
     scoped_constraints.pop("list_cursor", None)

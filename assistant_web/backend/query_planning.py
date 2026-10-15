@@ -572,6 +572,7 @@ def build_query_plan(
         "version": 2,
         "grounding_text": question,
         "status_resolution": constraints.get("status_resolution"),
+        "followup_effort": constraints.get("followup_effort"),
         "operation": operation,
         "source": source,
         "filters": filters,
