@@ -205,10 +205,11 @@ function openEditDrawer(uid, trigger) {
 
 function openInviteDrawer(trigger) {
   drawerOriginal = null;
-  openDrawer("사용자 초대", "계정을 만들고 비밀번호 설정 링크를 발급합니다.", `
+  openDrawer("사용자 계정 만들기", "이메일과 임시 비밀번호를 전달하면 로그인할 수 있습니다. 첫 로그인 시 비밀번호를 변경해야 합니다.", `
     <input type="hidden" name="mode" value="invite" />
     <div class="admin-drawer-body" data-admin-invite-fields>
       <label class="admin-field"><span>이메일 <small>필수</small></span><input name="email" type="email" required maxlength="320" placeholder="name@회사도메인" /></label>
+      <label class="admin-field"><span>임시 비밀번호 <small>필수 · 8~128자</small></span><input name="temporaryPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="128" /></label>
       <label class="admin-field"><span>이름 <small>선택</small></span><input name="displayName" type="text" maxlength="100" /></label>
       <fieldset class="admin-field"><legend>권한</legend>${roleRadios("member", false)}</fieldset>
       <label class="admin-field"><span>Mantis 담당자명 <small>선택 · 나중에 넣어도 돼요</small></span><input name="mantisUsername" type="text" maxlength="100" /></label>
@@ -216,23 +217,22 @@ function openInviteDrawer(trigger) {
       <p class="admin-form-error" role="alert" hidden></p>
     </div>
     <footer class="admin-drawer-foot is-end">
-      <button type="button" class="admin-secondary" data-admin-drawer-close>취소</button><button type="submit" class="admin-primary">초대 링크 만들기</button></footer>`, trigger);
+      <button type="button" class="admin-secondary" data-admin-drawer-close>취소</button><button type="submit" class="admin-primary">계정 만들기</button></footer>`, trigger);
 }
 
-function showInviteResult(email, setupUrl) {
+function showInviteResult(email) {
   els.adminDrawerForm.innerHTML = `
     <input type="hidden" name="mode" value="invited" />
     <div class="admin-drawer-body">
       <div class="admin-invite-done" role="status">
-        <strong><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>${escapeHtml(email)} 초대 준비 완료</strong>
-        <p>아래 링크로 비밀번호를 정하면 바로 로그인할 수 있어요. 메신저로 직접 전달해 주세요.</p>
-        <div><input type="text" readonly value="${escapeHtml(setupUrl)}" aria-label="비밀번호 설정 링크" /><button type="button" class="admin-primary" data-admin-copy-invite>복사</button></div>
+        <strong><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>${escapeHtml(email)} 계정 생성 완료</strong>
+        <p>로그인 주소, 위 이메일과 직접 지정한 임시 비밀번호를 사용자에게 전달해 주세요. 첫 로그인 시 새 비밀번호로 변경해야 서비스를 이용할 수 있습니다.</p>
       </div>
       <p class="admin-muted">초대한 사람은 목록에 ‘승인됨’으로 추가됩니다.</p>
     </div>
     <footer class="admin-drawer-foot is-end">
       <button type="button" class="admin-secondary" data-admin-invite-again>한 명 더 초대</button><button type="button" class="admin-primary" data-admin-drawer-close>완료</button></footer>`;
-  els.adminDrawerForm.querySelector("[data-admin-copy-invite]").focus();
+  els.adminDrawerForm.querySelector("[data-admin-drawer-close]").focus();
 }
 
 function replaceUser(user) {
@@ -284,11 +284,13 @@ async function submitDrawer(event) {
     }
     const email = form.elements.email.value.trim();
     if (!form.elements.email.checkValidity() || !email) throw new Error("이메일 주소를 확인해 주세요.");
+    if (!form.elements.temporaryPassword.checkValidity()) throw new Error("임시 비밀번호는 8~128자로 입력해 주세요.");
     const response = await apiFetch("/api/auth/users/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
+        temporaryPassword: form.elements.temporaryPassword.value,
         displayName: form.elements.displayName.value.trim(),
         role: form.querySelector('input[name="role"]:checked')?.value || "member",
         mantisUsername: form.elements.mantisUsername.value.trim(),
@@ -296,26 +298,16 @@ async function submitDrawer(event) {
       }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail || "초대 링크를 만들지 못했습니다.");
+    if (!response.ok) throw new Error(data.detail || "계정을 만들지 못했습니다.");
+    form.elements.temporaryPassword.value = "";
     if (data.user) replaceUser(data.user);
     notifyChange();
-    showInviteResult(email, data.setupUrl || "");
+    showInviteResult(email);
   } catch (error) {
     showFormError(error.message);
     submit.disabled = false;
     if (mode === "edit") syncEditDrawer();
   }
-}
-
-async function copyInviteLink(button) {
-  const input = els.adminDrawerForm.querySelector("input[readonly]");
-  try {
-    await navigator.clipboard.writeText(input.value);
-  } catch {
-    input.select();
-    document.execCommand("copy");
-  }
-  button.textContent = "복사됨";
 }
 
 async function approveUser(uid, button) {
@@ -371,8 +363,6 @@ function initAdminUsers({ onChange } = {}) {
   els.adminDrawerForm.addEventListener("change", syncEditDrawer);
   els.adminDrawerForm.addEventListener("click", (event) => {
     if (event.target.closest("[data-admin-drawer-close]")) return closeDrawer();
-    const copy = event.target.closest("[data-admin-copy-invite]");
-    if (copy) return copyInviteLink(copy);
     if (event.target.closest("[data-admin-invite-again]")) openInviteDrawer(drawerTrigger);
   });
   els.adminDrawerClose.addEventListener("click", closeDrawer);

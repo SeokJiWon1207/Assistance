@@ -93,6 +93,7 @@
 
   function showLogin() {
     document.querySelector("#authChecking").hidden = true;
+    document.querySelector("#passwordChangeForm").hidden = true;
     document.querySelector("#loginForm").hidden = false;
     document.querySelector("#loginEmail")?.focus();
   }
@@ -152,8 +153,72 @@
     });
   }
 
-  function waitForLogin() {
-    showLogin();
+  function showPasswordChange(user) {
+    document.querySelector("#authChecking").hidden = true;
+    document.querySelector("#loginForm").hidden = true;
+    document.querySelector("#loginEmail").value = user.email;
+    document.querySelector("#loginPassword").value = "";
+    document.querySelector("#passwordChangeForm").hidden = false;
+    document.querySelector("#currentPassword").focus();
+  }
+
+  function setupPasswordChange() {
+    const form = document.querySelector("#passwordChangeForm");
+    const submit = document.querySelector("#passwordChangeSubmit");
+    const error = document.querySelector("#passwordChangeError");
+    const back = document.querySelector("#passwordChangeLogout");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      error.hidden = true;
+      const current = document.querySelector("#currentPassword");
+      const next = document.querySelector("#newPassword");
+      const confirm = document.querySelector("#confirmPassword");
+      if (next.value !== confirm.value || next.value === current.value || next.value.length < 8 || next.value.length > 128) {
+        error.textContent = "현재 비밀번호와 다른 8~128자의 새 비밀번호를 두 칸에 동일하게 입력해 주세요.";
+        error.hidden = false;
+        return;
+      }
+      submit.disabled = true;
+      back.disabled = true;
+      submit.textContent = "변경 중…";
+      try {
+        const response = await apiFetch("/api/auth/change-password", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentPassword: current.value, newPassword: next.value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "비밀번호를 변경하지 못했습니다.");
+        current.value = next.value = confirm.value = "";
+        showLogin();
+        setLoginError("비밀번호를 변경했습니다. 새 비밀번호로 다시 로그인해 주세요.", true);
+      } catch (changeError) {
+        error.textContent = changeError.message;
+        error.hidden = false;
+      } finally {
+        submit.disabled = false;
+        back.disabled = false;
+        submit.textContent = "비밀번호 변경";
+      }
+    });
+    back.addEventListener("click", async () => {
+      back.disabled = true;
+      try {
+        const response = await apiFetch("/api/auth/logout", { method: "POST" });
+        if (!response.ok) throw new Error("로그아웃하지 못했습니다. 다시 시도해 주세요.");
+        globalScope.location.reload();
+      } catch (logoutError) {
+        error.textContent = logoutError.message;
+        error.hidden = false;
+        back.disabled = false;
+      }
+    });
+  }
+
+  function waitForLogin(pendingUser = null) {
+    if (pendingUser) showPasswordChange(pendingUser);
+    else showLogin();
+    setupPasswordChange();
     return new Promise((resolve) => {
       const form = document.querySelector("#loginForm");
       const submit = document.querySelector("#loginSubmit");
@@ -173,6 +238,11 @@
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.detail || "로그인 세션을 만들지 못했습니다.");
+          if (data.user?.passwordChangeRequired) {
+            showPasswordChange(data.user);
+            return;
+          }
+          document.querySelector("#loginPassword").value = "";
           resolve(finishAuthentication(data.user));
         } catch (error) {
           setLoginError(error.message);
@@ -213,6 +283,7 @@
       const meResponse = await rawFetch("/api/auth/me", { credentials: "same-origin" });
       if (meResponse.ok) {
         const data = await meResponse.json();
+        if (data.user?.passwordChangeRequired) return waitForLogin(data.user);
         return finishAuthentication(data.user);
       }
       return waitForLogin();
