@@ -9,7 +9,15 @@ from typing import Any, Dict, Literal, Optional
 
 import requests
 from fastapi import APIRouter, Header, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, Field, SecretStr
+
+from backend.auth_passwords import (
+    create_temporary_password_user,
+    change_temporary_password,
+    discard_temporary_password_user,
+)
 
 from backend.auth import (
     VALID_ROLES,
@@ -28,10 +36,27 @@ from backend.auth import (
     update_user_access,
     upsert_invited_user,
     create_firebase_session,
+    complete_password_change,
+    session_predates_password_change,
 )
 
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+class PrivateValidationRoute(APIRoute):
+    """인증 요청 검증 오류에 비밀번호·토큰 입력 원문을 포함하지 않는다."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def private_handler(request: Request):
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                raise HTTPException(status_code=422, detail="입력 항목의 형식과 길이를 확인해 주세요.") from exc
+
+        return private_handler
+
+
+router = APIRouter(prefix="/api/auth", tags=["auth"], route_class=PrivateValidationRoute)
 LOGGER = logging.getLogger(__name__)
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -50,6 +75,12 @@ class UserInviteRequest(BaseModel):
     role: Literal["member", "manager", "admin"] = "member"
     mantisUsername: str = Field(default="", max_length=100)
     team: str = Field(default="", max_length=100)
+    temporaryPassword: Optional[SecretStr] = None
+
+
+class PasswordChangeRequest(BaseModel):
+    currentPassword: SecretStr
+    newPassword: SecretStr
 
 
 class UserAccessUpdateRequest(BaseModel):
@@ -129,6 +160,8 @@ def create_session(
             status_code=403,
             detail="관리자가 초대한 계정이 아닙니다. 관리자에게 사용 승인을 요청해 주세요.",
         )
+    if session_predates_password_change(user, claims):
+        raise HTTPException(status_code=401, detail="변경한 비밀번호로 다시 로그인해 주세요.")
     response.set_cookie(
         session_cookie_name(),
         session_cookie,
@@ -187,6 +220,21 @@ def send_password_reset(
     return {"accepted": True}
 
 
+@router.post("/change-password")
+def change_password(payload: PasswordChangeRequest, request: Request, response: Response,
+                    x_csrf_token: str = Header(default="")) -> Dict[str, bool]:
+    _require_csrf(request, x_csrf_token)
+    user = current_request_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+    if not user["passwordChangeRequired"]:
+        raise HTTPException(status_code=409, detail="최초 비밀번호 변경 대상이 아닙니다.")
+    change_temporary_password(user, payload.currentPassword.get_secret_value(), payload.newPassword.get_secret_value())
+    complete_password_change(user["uid"])
+    response.delete_cookie(session_cookie_name(), path="/", secure=auth_cookie_secure())
+    return {"changed": True, "loginRequired": True}
+
+
 @router.get("/users")
 def read_users() -> Dict[str, Any]:
     return {"users": list_users(), "roles": sorted(VALID_ROLES)}
@@ -199,23 +247,43 @@ def invite_user(payload: UserInviteRequest, request: Request) -> Dict[str, Any]:
     if not admin or admin["role"] != "admin":
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     try:
-        uid, setup_url, firebase_created = firebase_invite_user(email, payload.displayName)
+        if payload.temporaryPassword is not None:
+            uid = create_temporary_password_user(email, payload.displayName, payload.temporaryPassword.get_secret_value())
+            setup_url, firebase_created = "", True
+        else:
+            # 기존 초대 링크 클라이언트도 유지하되 최초 변경 상태는 해제하지 않는다.
+            uid, setup_url, firebase_created = firebase_invite_user(email, payload.displayName)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail="Firebase 초대 링크를 만들지 못했습니다.") from exc
-    user = upsert_invited_user(
-        uid,
-        email,
-        payload.displayName or email.split("@", 1)[0],
-        payload.role,
-        payload.mantisUsername,
-        payload.team,
-        admin["email"],
-    )
+        raise HTTPException(status_code=502, detail="계정을 만들지 못했습니다. 이메일과 비밀번호 정책을 확인해 주세요.") from exc
+    try:
+        user = upsert_invited_user(
+            uid,
+            email,
+            payload.displayName or email.split("@", 1)[0],
+            payload.role,
+            payload.mantisUsername,
+            payload.team,
+            admin["email"],
+            password_change_required=True if payload.temporaryPassword is not None else None,
+        )
+    except Exception as exc:
+        if payload.temporaryPassword is not None and firebase_created:
+            try:
+                discard_temporary_password_user(uid)
+            except Exception as cleanup_error:
+                raise HTTPException(
+                    status_code=503,
+                    detail="계정 저장과 정리에 실패했습니다. 관리자가 인증 서비스의 해당 이메일 계정과 사용자 DB를 확인해 주세요.",
+                ) from cleanup_error
+        raise HTTPException(status_code=503, detail="계정을 저장하지 못했습니다. 잠시 후 다시 생성해 주세요.") from exc
     return {
         "user": user,
         "setupUrl": setup_url,
         "firebaseAccountCreated": firebase_created,
-        "message": "초대 링크를 사용자에게 안전하게 전달해 주세요.",
+        "message": ("이메일과 임시 비밀번호를 전달해 주세요. 첫 로그인 시 비밀번호를 변경해야 합니다."
+                    if payload.temporaryPassword is not None else "초대 링크를 사용자에게 안전하게 전달해 주세요."),
     }
 
 
