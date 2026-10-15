@@ -135,6 +135,16 @@ def build_verification_report(
             "queryPlan": query_plan, "trace": [], "sourceCount": 0, "mode": mode,
             "verifiedAt": datetime.now().astimezone().isoformat(), "note": "사용자 확인 전에는 결과를 확정하지 않습니다."}
     retrieval_checks: List[Dict[str, str]] = []
+    if query_plan.get("followup_effort") or constraints.get("followup_effort"):
+        # 실행 계획의 작업명이 맞아도 목록 응답으로 우회하면 공수 요청은 미충족이다.
+        # 아래 계산 검증을 실제로 수행하는 경로만 인정한다.
+        effort_executed = (query_plan.get("operation") == "aggregate" and mode in {
+            "deterministic_effort_report", "deterministic_filtered_effort_report",
+        })
+        retrieval_checks.append({"id": "followup_effort_result", "label": "후속 공수 요청 이행",
+            "status": "pass" if effort_executed else "fail",
+            "detail": "직전 공수 요청을 이어받아 원문 재합산 검증 수행" if effort_executed
+                      else "직전 공수 요청을 이어받았으나 공수 집계 결과가 제공되지 않음"})
     if constraints.get("unconfirmed_search_terms"):
         retrieval_checks.append({"id": "unconfirmed_search_terms", "label": "검색어 조건 확인", "status": "warning",
             "detail": "이전 대화의 검색어 조건이 아직 확정되지 않아 결과를 검증할 수 없음"})
@@ -350,6 +360,7 @@ def build_verification_report(
     retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
     needs_full_scope = bool(
         query_plan.get("operation") in {"count", "aggregate"}
+        or query_plan.get("followup_effort") or constraints.get("followup_effort")
         or infer_operation(question) in {"count", "aggregate"}
         or query_plan.get("group_by") or extract_group_by(question)
     )

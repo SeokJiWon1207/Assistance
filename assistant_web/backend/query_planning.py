@@ -632,7 +632,7 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
             ),
         })
 
-    expected_operation = infer_operation(question)
+    expected_operation = "aggregate" if plan.get("followup_effort") else infer_operation(question)
     operation_passed = plan.get("operation") == expected_operation
     checks.append({
         "id": "operation_intent",
