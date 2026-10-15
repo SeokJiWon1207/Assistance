@@ -20,6 +20,7 @@ const USER_FILTERS = [
 let notifyChange = () => {};
 let drawerTrigger = null;
 let drawerOriginal = null;
+let drawerVersion = 0;
 
 function usersSectionAvailable() {
   return Boolean(state.authEnabled && state.currentUser?.role === "admin");
@@ -126,6 +127,7 @@ function roleRadios(current, disabled) {
 }
 
 function openDrawer(title, subtitle, body, trigger) {
+  drawerVersion += 1;
   drawerTrigger = trigger || document.activeElement;
   els.adminDrawerTitle.textContent = title;
   els.adminDrawerSub.textContent = subtitle;
@@ -141,6 +143,7 @@ function openDrawer(title, subtitle, body, trigger) {
 
 function closeDrawer() {
   if (els.adminDrawer.hidden) return;
+  drawerVersion += 1;
   els.adminDrawer.hidden = true;
   els.adminDrawerBackdrop.hidden = true;
   els.adminDrawerForm.innerHTML = "";
@@ -196,11 +199,40 @@ function openEditDrawer(uid, trigger) {
       <label class="admin-field">팀<input name="team" type="text" maxlength="100" value="${escapeHtml(drawerOriginal.team)}" /></label>
       <label class="admin-switch-row"><span><strong>로그인 허용</strong><small data-admin-approved-help></small></span>
         <input name="approved" type="checkbox" role="switch" class="admin-switch"${drawerOriginal.approved ? " checked" : ""}${self ? " disabled" : ""} /></label>
+      ${!self && user.approved ? `<div class="admin-field"><strong>비밀번호 초기화</strong>
+        <p class="admin-muted">${user.passwordResetPending ? "초기화가 완료되지 않아 로그인이 차단되어 있습니다. 다시 초기화해 주세요." : user.passwordChangeRequired ? "다음 로그인 시 비밀번호를 변경해야 합니다." : "비밀번호를 잊은 사용자에게 새 임시 비밀번호를 지정할 수 있습니다."}</p>
+        <button type="button" class="admin-secondary" data-admin-password-reset="${escapeHtml(user.uid)}">임시 비밀번호로 초기화</button></div>` : ""}
       <p class="admin-form-error" role="alert" hidden></p>
     </div>
     <footer class="admin-drawer-foot"><span class="admin-muted" data-admin-dirty role="status"></span>
       <span><button type="button" class="admin-secondary" data-admin-drawer-close>취소</button><button type="submit" class="admin-primary" disabled>저장</button></span></footer>`, trigger);
   syncEditDrawer();
+}
+
+function openPasswordResetDrawer(uid, trigger) {
+  const user = state.adminUsers.find((item) => String(item.uid) === String(uid));
+  if (!user || !user.approved || isCurrentUser(user)) return;
+  drawerOriginal = null;
+  openDrawer("임시 비밀번호로 초기화", user.email, `
+    <input type="hidden" name="mode" value="reset" />
+    <input type="hidden" name="uid" value="${escapeHtml(user.uid)}" />
+    <div class="admin-drawer-body">
+      <p class="admin-callout">초기화하면 기존 로그인 세션이 차단됩니다. 사용자에게 새 임시 비밀번호를 전달해 주세요. 사용자는 다시 로그인한 뒤 비밀번호를 변경해야 합니다.</p>
+      <label class="admin-field"><span>임시 비밀번호 <small>필수 · 8~128자</small></span><input name="temporaryPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="128" /></label>
+      <p class="admin-form-error" role="alert" hidden></p>
+    </div>
+    <footer class="admin-drawer-foot is-end"><button type="button" class="admin-secondary" data-admin-drawer-close>취소</button>
+      <button type="submit" class="admin-primary">비밀번호 초기화</button></footer>`, trigger);
+}
+
+function showResetResult(email) {
+  els.adminDrawerForm.innerHTML = `
+    <div class="admin-drawer-body"><div class="admin-invite-done" role="status">
+      <strong>${escapeHtml(email)} 비밀번호 초기화 완료</strong>
+      <p>지정한 임시 비밀번호를 사용자에게 전달해 주세요. 다시 로그인한 뒤 새 비밀번호로 변경해야 합니다.</p>
+    </div></div>
+    <footer class="admin-drawer-foot is-end"><button type="button" class="admin-primary" data-admin-drawer-close>완료</button></footer>`;
+  els.adminDrawerForm.querySelector("[data-admin-drawer-close]").focus();
 }
 
 function openInviteDrawer(trigger) {
@@ -269,11 +301,35 @@ async function submitDrawer(event) {
   event.preventDefault();
   const form = els.adminDrawerForm;
   const mode = form.elements.mode?.value;
+  const requestVersion = drawerVersion;
   const submit = form.querySelector('[type="submit"]');
   if (!submit || submit.disabled) return;
   showFormError("");
   submit.disabled = true;
   try {
+    if (mode === "reset") {
+      if (!form.elements.temporaryPassword.checkValidity()) throw new Error("임시 비밀번호는 8~128자로 입력해 주세요.");
+      const uid = form.elements.uid.value;
+      const passwordInput = form.elements.temporaryPassword;
+      passwordInput.disabled = true;
+      let data;
+      try {
+        const response = await apiFetch(`/api/auth/users/${encodeURIComponent(uid)}/reset-password`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ temporaryPassword: passwordInput.value }),
+        });
+        data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "초기화하지 못했습니다. 다시 시도해 주세요.");
+        passwordInput.value = "";
+      } finally {
+        passwordInput.disabled = false;
+      }
+      replaceUser(data.user);
+      notifyChange();
+      if (drawerVersion === requestVersion && !els.adminDrawer.hidden) showResetResult(data.user.email);
+      else showToast(`${data.user.email} 비밀번호 초기화 완료. 지정한 임시 비밀번호를 전달해 주세요.`, "success");
+      return;
+    }
     if (mode === "edit") {
       const values = drawerValues();
       const user = await patchUser(drawerOriginal.uid, values);
@@ -304,7 +360,9 @@ async function submitDrawer(event) {
     notifyChange();
     showInviteResult(email);
   } catch (error) {
-    showFormError(error.message);
+    if (mode === "reset" && (drawerVersion !== requestVersion || els.adminDrawer.hidden)) {
+      showToast(error.message, "warning");
+    } else showFormError(error.message);
     submit.disabled = false;
     if (mode === "edit") syncEditDrawer();
   }
@@ -362,6 +420,8 @@ function initAdminUsers({ onChange } = {}) {
   els.adminDrawerForm.addEventListener("input", syncEditDrawer);
   els.adminDrawerForm.addEventListener("change", syncEditDrawer);
   els.adminDrawerForm.addEventListener("click", (event) => {
+    const reset = event.target.closest("[data-admin-password-reset]");
+    if (reset) return openPasswordResetDrawer(reset.dataset.adminPasswordReset, reset);
     if (event.target.closest("[data-admin-drawer-close]")) return closeDrawer();
     if (event.target.closest("[data-admin-invite-again]")) openInviteDrawer(drawerTrigger);
   });
