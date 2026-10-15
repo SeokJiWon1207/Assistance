@@ -2,7 +2,7 @@
 import time
 
 from backend.notion.body_index_sync import (
-    CrawlLimits, _Budget, _ReadFailure, _request, _page_ancestors, _valid_page,
+    CrawlLimits, _Budget, _ReadFailure, _request, _page_ancestors, _valid_page, _wait_for_retry_after,
     validate_index_candidate, sync_notion_body_index,
 )
 from backend.notion.complete_snapshot import coverage, _state
@@ -73,6 +73,11 @@ def refresh_snapshot(index, database_ids, *, max_seconds=3600, max_pages=1000, r
         for identifier in pending:
             if time.monotonic() >= deadline or attempted >= max_pages:
                 break
+            try:
+                _wait_for_retry_after(_Budget(deadline, 0))
+            except _ReadFailure:
+                # 대기할 예산이 없으면 미시도 페이지를 오류로 오염시키지 않는다.
+                return {**coverage(index, database_ids), 'attempted_page_count': attempted}
             seen.add(identifier)
             refresh_page(index, identifier, database_ids, deadline)
             attempted += 1

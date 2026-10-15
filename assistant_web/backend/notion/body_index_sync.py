@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import math
 import time
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -86,15 +87,34 @@ class _Budget:
     requests_left: int
 
 
+_retry_after_until = 0.0
+_retry_after_lock = threading.Lock()
+
+
+def _wait_for_retry_after(budget: _Budget) -> None:
+    # 페이지 예산이 끝나도 같은 프로세스의 다음 요청은 서버 대기를 지킨다.
+    while True:
+        with _retry_after_lock:
+            until = _retry_after_until
+        delay = until - time.monotonic()
+        if delay <= 0:
+            return
+        if until >= budget.deadline:
+            raise _ReadFailure("http_429")
+        interruptible_sleep(delay)
+
+
 def _request(path: str, budget: _Budget, *, payload: dict[str, Any] | None = None,
              post: bool = False) -> dict[str, Any]:
     """모든 시도는 공유 요청 간격과 현재 실행의 남은 예산을 지킨다."""
+    global _retry_after_until
     for attempt in range(3):
         remaining = budget.deadline - time.monotonic()
         if remaining <= 0:
             raise _ReadFailure("time_limit")
         if budget.requests_left <= 0:
             raise _ReadFailure("request_limit")
+        _wait_for_retry_after(budget)
         budget.requests_left -= 1
         notion_request_slot()
         remaining = budget.deadline - time.monotonic()
@@ -112,12 +132,20 @@ def _request(path: str, budget: _Budget, *, payload: dict[str, Any] | None = Non
                 if not isinstance(data, dict):
                     raise _ReadFailure("invalid_response")
                 return data
-            if status != 429 and status < 500 or attempt == 2:
+            if status != 429 and status < 500:
                 raise _ReadFailure(f"http_{status}")
             try:
                 retry_after = float(response.headers.get("Retry-After", "0"))
             except (AttributeError, TypeError, ValueError):
                 retry_after = 0
+            if not math.isfinite(retry_after):
+                retry_after = 0
+            if status == 429:
+                with _retry_after_lock:
+                    _retry_after_until = max(
+                        _retry_after_until, time.monotonic() + max(retry_after, 0.5 * 2**attempt))
+            if attempt == 2:
+                raise _ReadFailure(f"http_{status}")
         except requests.RequestException as exc:
             if attempt == 2:
                 raise _ReadFailure("request_failed") from exc
