@@ -144,11 +144,16 @@ def _add_password_change_fields(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE users ADD COLUMN password_changed_at INTEGER NOT NULL DEFAULT 0")
 
 
+def _add_password_reset_state(connection: sqlite3.Connection) -> None:
+    connection.execute("ALTER TABLE users ADD COLUMN password_reset_pending INTEGER NOT NULL DEFAULT 0")
+    connection.execute("ALTER TABLE users ADD COLUMN password_reset_version INTEGER NOT NULL DEFAULT 0")
+
+
 @lru_cache(maxsize=8)
 def _init_users_db_at(database_path: str) -> None:
     run_sqlite_migrations(
         Path(database_path),
-        [_create_users_schema, _add_password_change_fields],
+        [_create_users_schema, _add_password_change_fields, _add_password_reset_state],
         database_name="users",
     )
 
@@ -168,6 +173,8 @@ def _row_to_user(row: sqlite3.Row) -> Dict[str, Any]:
         "approved": bool(row["approved"]),
         "passwordChangeRequired": bool(row["password_change_required"]),
         "passwordChangedAt": row["password_changed_at"],
+        "passwordResetPending": bool(row["password_reset_pending"]),
+        "passwordResetVersion": row["password_reset_version"],
         "invitedBy": row["invited_by"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -262,6 +269,24 @@ def upsert_invited_user(
     user = get_user_by_uid(uid)
     assert user is not None
     return user
+
+
+def begin_password_reset(uid: str) -> None:
+    """공급자 변경 전에 접근을 차단하며 실패 시에도 관리자가 재시도할 때까지 유지한다."""
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+        connection.execute(
+            "UPDATE users SET password_change_required = 1, password_reset_pending = 1, "
+            "password_reset_version = password_reset_version + 1, password_changed_at = ?, updated_at = ? "
+            "WHERE firebase_uid = ?", (int(time.time()), _now(), uid),
+        )
+
+
+def finish_password_reset(uid: str) -> None:
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+        connection.execute(
+            "UPDATE users SET password_reset_pending = 0, password_changed_at = ?, updated_at = ? "
+            "WHERE firebase_uid = ?", (int(time.time()), _now(), uid),
+        )
 
 
 def complete_password_change(uid: str) -> None:
@@ -466,6 +491,8 @@ async def authentication_middleware(request: Request, call_next):
     claims_email = _normalize_email(claims.get("email", ""))
     if not user or not user["approved"] or (claims_email and claims_email != user["email"]):
         return JSONResponse({"detail": "승인되지 않은 사용자입니다."}, status_code=403)
+    if user.get("passwordResetPending"):
+        return JSONResponse({"detail": "비밀번호 초기화가 완료되지 않았습니다. 관리자에게 문의해 주세요."}, status_code=403)
     if session_predates_password_change(user, claims):
         return JSONResponse({"detail": "변경한 비밀번호로 다시 로그인해 주세요."}, status_code=401)
     request.state.user = user

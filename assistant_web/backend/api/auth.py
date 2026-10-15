@@ -17,6 +17,7 @@ from backend.auth_passwords import (
     create_temporary_password_user,
     change_temporary_password,
     discard_temporary_password_user,
+    reset_existing_password,
 )
 
 from backend.auth import (
@@ -36,7 +37,6 @@ from backend.auth import (
     update_user_access,
     upsert_invited_user,
     create_firebase_session,
-    complete_password_change,
     session_predates_password_change,
 )
 
@@ -76,6 +76,10 @@ class UserInviteRequest(BaseModel):
     mantisUsername: str = Field(default="", max_length=100)
     team: str = Field(default="", max_length=100)
     temporaryPassword: Optional[SecretStr] = None
+
+
+class AdminPasswordResetRequest(BaseModel):
+    temporaryPassword: SecretStr
 
 
 class PasswordChangeRequest(BaseModel):
@@ -160,6 +164,8 @@ def create_session(
             status_code=403,
             detail="관리자가 초대한 계정이 아닙니다. 관리자에게 사용 승인을 요청해 주세요.",
         )
+    if user.get("passwordResetPending"):
+        raise HTTPException(status_code=403, detail="비밀번호 초기화가 완료되지 않았습니다. 관리자에게 문의해 주세요.")
     if session_predates_password_change(user, claims):
         raise HTTPException(status_code=401, detail="변경한 비밀번호로 다시 로그인해 주세요.")
     response.set_cookie(
@@ -230,7 +236,6 @@ def change_password(payload: PasswordChangeRequest, request: Request, response: 
     if not user["passwordChangeRequired"]:
         raise HTTPException(status_code=409, detail="최초 비밀번호 변경 대상이 아닙니다.")
     change_temporary_password(user, payload.currentPassword.get_secret_value(), payload.newPassword.get_secret_value())
-    complete_password_change(user["uid"])
     response.delete_cookie(session_cookie_name(), path="/", secure=auth_cookie_secure())
     return {"changed": True, "loginRequired": True}
 
@@ -285,6 +290,19 @@ def invite_user(payload: UserInviteRequest, request: Request) -> Dict[str, Any]:
         "message": ("이메일과 임시 비밀번호를 전달해 주세요. 첫 로그인 시 비밀번호를 변경해야 합니다."
                     if payload.temporaryPassword is not None else "초대 링크를 사용자에게 안전하게 전달해 주세요."),
     }
+
+
+@router.post("/users/{uid}/reset-password")
+def reset_user_password(uid: str, payload: AdminPasswordResetRequest, request: Request,
+                        x_csrf_token: str = Header(default="")) -> Dict[str, Any]:
+    _require_csrf(request, x_csrf_token)
+    admin = current_request_user(request)
+    if not admin or admin['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    if uid == admin['uid']:
+        raise HTTPException(status_code=400, detail="본인 계정은 로그인 화면의 비밀번호 재설정 메일을 이용해 주세요.")
+    user = reset_existing_password(uid, payload.temporaryPassword.get_secret_value())
+    return {"user": user, "message": "임시 비밀번호로 초기화했습니다. 사용자는 다시 로그인한 뒤 비밀번호를 변경해야 합니다."}
 
 
 @router.patch("/users/{uid}")
