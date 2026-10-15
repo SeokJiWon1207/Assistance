@@ -13,7 +13,7 @@ import {
   pendingAdminUsers,
   renderUsersSection,
   usersSectionAvailable,
-} from "./admin_users.js?v=20260911-6";
+} from "./admin_users.js?v=20261015-password";
 
 const ADMIN_SECTIONS = ["overview", "run", "feedback", "logs", "users"];
 

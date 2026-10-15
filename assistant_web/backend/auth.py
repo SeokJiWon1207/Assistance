@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import sqlite3
+import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -138,11 +139,16 @@ def _create_users_schema(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
 
+def _add_password_change_fields(connection: sqlite3.Connection) -> None:
+    connection.execute("ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0")
+    connection.execute("ALTER TABLE users ADD COLUMN password_changed_at INTEGER NOT NULL DEFAULT 0")
+
+
 @lru_cache(maxsize=8)
 def _init_users_db_at(database_path: str) -> None:
     run_sqlite_migrations(
         Path(database_path),
-        [_create_users_schema],
+        [_create_users_schema, _add_password_change_fields],
         database_name="users",
     )
 
@@ -160,6 +166,8 @@ def _row_to_user(row: sqlite3.Row) -> Dict[str, Any]:
         "mantisUsername": row["mantis_username"],
         "team": row["team"],
         "approved": bool(row["approved"]),
+        "passwordChangeRequired": bool(row["password_change_required"]),
+        "passwordChangedAt": row["password_changed_at"],
         "invitedBy": row["invited_by"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -207,6 +215,7 @@ def upsert_invited_user(
     mantis_username: str,
     team: str,
     invited_by: str,
+    password_change_required: Optional[bool] = None,
 ) -> Dict[str, Any]:
     normalized_email = _normalize_email(email)
     normalized_role = role if role in VALID_ROLES else "member"
@@ -223,8 +232,8 @@ def upsert_invited_user(
             """
             INSERT INTO users (
                 firebase_uid, email, display_name, role, mantis_username, team,
-                approved, invited_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                approved, invited_by, created_at, updated_at, password_change_required
+            ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
             ON CONFLICT(firebase_uid) DO UPDATE SET
                 email = excluded.email,
                 display_name = excluded.display_name,
@@ -233,7 +242,8 @@ def upsert_invited_user(
                 team = excluded.team,
                 approved = 1,
                 invited_by = excluded.invited_by,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                password_change_required = COALESCE(?, users.password_change_required)
             """,
             (
                 uid,
@@ -245,11 +255,34 @@ def upsert_invited_user(
                 invited_by,
                 now,
                 now,
+                int(bool(password_change_required)),
+                None if password_change_required is None else int(password_change_required),
             ),
         )
     user = get_user_by_uid(uid)
     assert user is not None
     return user
+
+
+def complete_password_change(uid: str) -> None:
+    """기존 인증 시각의 세션은 Firebase 폐기 전파와 무관하게 차단한다."""
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+        connection.execute(
+            "UPDATE users SET password_change_required = 0, password_changed_at = ?, updated_at = ? "
+            "WHERE firebase_uid = ?",
+            (int(time.time()), _now(), uid),
+        )
+
+
+def remove_provisional_user(uid: str) -> None:
+    """생성 요청이 실패한 신규 Firebase UID의 로컬 행만 보상 삭제한다."""
+    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+        connection.execute("DELETE FROM users WHERE firebase_uid = ?", (uid,))
+
+
+def session_predates_password_change(user: Dict[str, Any], claims: Dict[str, Any]) -> bool:
+    cutoff = int(user.get("passwordChangedAt") or 0)
+    return bool(cutoff and int(claims.get("auth_time") or 0) <= cutoff)
 
 
 def update_user_access(
@@ -433,7 +466,15 @@ async def authentication_middleware(request: Request, call_next):
     claims_email = _normalize_email(claims.get("email", ""))
     if not user or not user["approved"] or (claims_email and claims_email != user["email"]):
         return JSONResponse({"detail": "승인되지 않은 사용자입니다."}, status_code=403)
+    if session_predates_password_change(user, claims):
+        return JSONResponse({"detail": "변경한 비밀번호로 다시 로그인해 주세요."}, status_code=401)
     request.state.user = user
+
+    if user.get("passwordChangeRequired") and path not in {"/api/auth/me", "/api/auth/change-password"}:
+        return JSONResponse(
+            {"detail": "서비스를 이용하려면 먼저 비밀번호를 변경해 주세요.", "code": "PASSWORD_CHANGE_REQUIRED"},
+            status_code=403,
+        )
 
     if _requires_admin(path) and user["role"] != "admin":
         return JSONResponse({"detail": "관리자 권한이 필요합니다."}, status_code=403)

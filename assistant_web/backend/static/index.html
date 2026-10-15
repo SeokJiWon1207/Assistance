@@ -65,13 +65,25 @@
         <form id="loginForm" class="login-form" hidden>
           <div>
             <h2>로그인</h2>
-            <p>관리자가 초대한 Firebase 이메일 계정을 사용합니다.</p>
+            <p>관리자에게 받은 이메일과 비밀번호로 로그인해 주세요.</p>
           </div>
           <label for="loginEmail"><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" required /></label>
           <label for="loginPassword"><span>비밀번호</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
           <p id="loginError" class="login-error" role="alert" hidden></p>
           <button id="loginSubmit" class="auth-primary-button" type="submit">로그인</button>
           <button id="passwordResetBtn" class="auth-link-button" type="button">비밀번호 재설정 메일 받기</button>
+        </form>
+        <form id="passwordChangeForm" class="login-form" hidden>
+          <div>
+            <h2>첫 로그인 비밀번호 변경</h2>
+            <p>서비스를 이용하기 전에 임시 비밀번호를 본인만 아는 새 비밀번호로 변경해 주세요.</p>
+          </div>
+          <label for="currentPassword"><span>현재 비밀번호</span><input id="currentPassword" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <label for="newPassword"><span>새 비밀번호 · 8~128자</span><input id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+          <label for="confirmPassword"><span>새 비밀번호 확인</span><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+          <p id="passwordChangeError" class="login-error" role="alert" hidden></p>
+          <button id="passwordChangeSubmit" class="auth-primary-button" type="submit">비밀번호 변경</button>
+          <button id="passwordChangeLogout" class="auth-link-button" type="button">로그아웃하고 돌아가기</button>
         </form>
       </div>
     </section>
@@ -484,7 +496,7 @@
 
     <script src="/static/frontend_core.js?v=20261007-1"></script>
     <script src="/static/custom_select.js?v=20260918-1"></script>
-    <script src="/static/auth.js?v=20261002-1"></script>
+    <script src="/static/auth.js?v=20261015-password"></script>
     <script type="module" src="/static/app.js?v=20260911-6"></script>
   </body>
 </html>
