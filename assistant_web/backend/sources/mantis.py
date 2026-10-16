@@ -535,6 +535,7 @@ def issue_matches_constraints(
         "created_at": issue.get("created_at", ""),
         "title": str(issue.get("summary", "")), "keyword": combined_text,
         "owner": handler_text, "reporter": extract_reporter_names(combined_text, reporter_text),
+        "registered_reporter": reporter_text,
     }, constraints.get("filter_clauses") or [])
 
 

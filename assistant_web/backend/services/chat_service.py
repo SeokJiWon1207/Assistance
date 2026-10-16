@@ -548,6 +548,13 @@ def prepare_chat_pipeline(
     if len(messages) > history_limit:
         messages = messages[-history_limit:]
 
+    from backend.intent.unified import enabled as unified_enabled
+    if unified_enabled():
+        from backend.services.unified_planning import prepare_context
+        return prepare_context(request, latest_user_text, user, model, api_key, messages, [
+            answer_style_instruction(request.answerStyle), CONVERSATION_TONE_NOTE, build_current_date_note(),
+        ])
+
     retrieval_text, needs_follow_up_rewrite = build_contextual_retrieval_text(request.messages)
     inherited_resolution = None
     inherited_constraints = None
@@ -754,6 +761,9 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
 
 
 def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if (context.intent_plan or {}).get("planner") == "unified_llm":
+        from backend.services.unified_planning import execute_plan
+        return execute_plan(request, context, user)
     if context.query_constraints.get("list_context_missing"):
         return {"modelId": request.modelId,
                 "content": "이어서 조회할 이전 검색 기록을 확인하지 못했습니다. 고객사·기간·담당자·플랫폼 등 원래 조회 조건으로 다시 검색해 주세요.",
@@ -944,6 +954,8 @@ def _plan_chat_query(
 
 
 def should_retrieve_chat_evidence(context: ChatPipelineContext) -> bool:
+    if (context.intent_plan or {}).get("planner") == "unified_llm":
+        return (context.intent_plan or {}).get("source") in {"mantis", "notion", "both"}
     return bool(
         context.retrieval_text
         and any(context.enabled_tools.get(key) for key in ("mantis", "vectorDb", "notion"))
@@ -955,6 +967,9 @@ def should_retrieve_chat_evidence(context: ChatPipelineContext) -> bool:
 
 
 def retrieval_limit(request: ChatRequest, context: ChatPipelineContext) -> tuple[int, Optional[str]]:
+    if (context.intent_plan or {}).get("planner") == "unified_llm":
+        plan = context.intent_plan or {}
+        return plan.get("limit") or context.active_limit, plan.get("group_by")
     # 질문에 표시 개수가 적혀 있으면 플래너가 내놓은 숫자보다 우선한다. 플래너는
     # "하나만"처럼 한글로 쓴 개수를 놓치거나 다른 숫자를 지어내는 일이 있다.
     requested_limit = extract_requested_limit(context.latest_user_text)
@@ -1023,7 +1038,8 @@ def deterministic_retrieval_response(
             "raw": {"mode": "deterministic_notion_list"},
         }
     if (context.intent_plan or {}).get("source") != "notion" and (
-        context.query_constraints.get("list_continuation")
+        ((context.intent_plan or {}).get("planner") == "unified_llm" and (context.intent_plan or {}).get("operation") in {"search", "get"})
+        or context.query_constraints.get("list_continuation")
         or (context.query_constraints.get("list_scope_edit") and context.query_constraints.get("inherited_from_audit_id"))
         or should_return_deterministic_issue_list(
             context.retrieval_text, context.query_constraints,
@@ -1182,6 +1198,12 @@ def _retrieve_chat_evidence(
 
 
 def attach_status_resolution(response: Dict[str, Any], context: ChatPipelineContext) -> Dict[str, Any]:
+    if (context.intent_plan or {}).get("planner") == "unified_llm":
+        from copy import deepcopy
+        retrieval = response.setdefault("retrieval", {"query": context.retrieval_text, "stages": []})
+        retrieval["query_plan"] = deepcopy(context.intent_plan)
+        retrieval.setdefault("constraints", deepcopy(context.query_constraints))
+        return response
     resolution = context.status_resolution
     if not resolution:
         return response
@@ -1281,7 +1303,7 @@ class ChatService:
                 0,
                 {"role": "system", "content": "\n\n".join(context.system_notes)},
             )
-        if (context.intent_plan or {}).get("operation") == "explain":
+        if (context.intent_plan or {}).get("operation") == "explain" and (context.intent_plan or {}).get("source") not in {"notion", "both"}:
             from backend.services.grounded_explanation import generate_grounded_explanation
             generated_response = measured("generation")(generate_grounded_explanation)(request, context, generate_model_response)
         else:

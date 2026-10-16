@@ -120,7 +120,7 @@ def build_verification_report(
         return verify_work_report(question, content, sources, retrieval_result or {})
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     query_plan = (retrieval_result or {}).get("query_plan") or (retrieval_result or {}).get("intent_plan") or {}
-    if mode in {"status_clarification", "search_terms_clarification"}:
+    if mode in {"status_clarification", "search_terms_clarification", "unified_plan_clarification"}:
         resolution = query_plan.get("status_resolution") or {}
         label = "검색어 확인 대기" if mode == "search_terms_clarification" else "상태 확인 대기"
         detail = (

@@ -515,7 +515,7 @@ def build_mantis_count_report(
         return None
 
     constraints = merge_query_plan_constraints(extract_query_constraints(text), query_plan)
-    display_limit = count_issue_display_limit(text)
+    display_limit = 5 if query_plan.get("planner") == "unified_llm" else count_issue_display_limit(text)
     group_by = str(query_plan.get("group_by") or "")
     # "상태별 이슈 개수"처럼 다른 조건이 없어도 그룹 집계 자체가 요청이다.
     # 예전에는 여기서 빠져나가 Notion 검색으로 흘러갔다.
@@ -801,7 +801,7 @@ def format_issue_list_criteria(
         criteria.append("고객사 제외=" + ", ".join(constraints["excluded_customer_keys"]))
     if constraints.get("people", {}).get("names"):
         role = constraints.get("people", {}).get("role") or "any"
-        role_label = "담당자" if role == "handler" else "요청자/본문" if role == "reporter" else "인물"
+        role_label = "담당자" if role == "handler" else "요청자/본문" if role == "reporter" else "Mantis 등록자" if role == "registered_reporter" else "인물"
         criteria.append(f"{role_label}={', '.join(constraints['people']['names'])}")
     elif constraints.get("unassigned_people"):
         criteria.append("담당자=미지정")

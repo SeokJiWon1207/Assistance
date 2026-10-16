@@ -80,6 +80,8 @@ def main() -> int:
                 "AUTH_USERS_DB_PATH": str(Path(temporary_directory) / "users.sqlite3"),
                 "WORKSPACE_DB_PATH": str(Path(temporary_directory) / "workspace.sqlite3"),
                 "AUDIT_DB_PATH": str(Path(temporary_directory) / "audit.sqlite3"),
+                # 기존 해석 경로의 호환성 회귀도 계속 실행한다. 단일 계획 통합 테스트는 true로 명시한다.
+                "UNIFIED_QUERY_PLANNER_ENABLED": "false",
                 "ANONYMIZED_TELEMETRY": "False",
                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0",
                 "PYTHONDONTWRITEBYTECODE": "1",

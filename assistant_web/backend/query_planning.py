@@ -618,6 +618,9 @@ def build_query_plan(
 
 
 def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
+    if plan.get("planner") == "unified_llm":
+        from backend.intent.unified_validation import validate_execution_contract
+        return validate_execution_contract(question, plan)
     checks: List[Dict[str, str]] = []
     raw_filters = plan.get("filters")
     filters: Dict[str, Any] = raw_filters if isinstance(raw_filters, dict) else {}

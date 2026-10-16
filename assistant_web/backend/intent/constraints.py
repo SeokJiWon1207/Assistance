@@ -183,6 +183,12 @@ def merge_query_plan_constraints(
     query_plan: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Apply validated planner filters without trusting arbitrary model values."""
+    if (query_plan or {}).get("planner") == "unified_llm":
+        from copy import deepcopy
+        resolved = (query_plan or {}).get("resolved_constraints") or {}
+        if not resolved.get("unified_plan_validated"):
+            raise ValueError("검증되지 않은 전체 질의 계획")
+        return deepcopy(resolved)
     merged: Dict[str, Any] = {
         **constraints,
         "customer_aliases": list(constraints.get("customer_aliases") or []),

@@ -373,7 +373,7 @@ def run_retrieval_pipeline(
     tools: Dict[str, bool],
     intent_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    if (intent_plan or {}).get("operation") == "explain":
+    if (intent_plan or {}).get("operation") == "explain" and (intent_plan or {}).get("source") not in {"notion", "both"}:
         return _explanation_retrieval(query_text, limit, tools, intent_plan or {})
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)
     display_constraints = constraints
@@ -418,7 +418,12 @@ def run_retrieval_pipeline(
     if plan_source == "both":
         notion_terms = source_specific_terms(query_text, "notion", effective_constraints)
         mantis_terms = source_specific_terms(query_text, "mantis", effective_constraints)
-    keyword = " ".join(mantis_terms or build_keyword_terms(query_text, effective_constraints))
+    unified = (intent_plan or {}).get("planner") == "unified_llm"
+    if unified:
+        notion_constraints = constraints
+        mantis_terms = planned_terms
+        notion_terms = planned_terms
+    keyword = " ".join(planned_terms) if unified else " ".join(mantis_terms or build_keyword_terms(query_text, effective_constraints))
     notion_only = planner_notion
     similar_issue_search = wants_similar_issue_search(query_text, constraints)
     exact_issue_lookup = bool(constraints.get("issue_ids")) and not similar_issue_search and plan_source != "both"

@@ -124,8 +124,8 @@ def _line(row: dict) -> str:
     return f"- #{row['id']} {title} — {display_mantis_status_label(row['status'])} · {row['handler']} · {_customer(row['project'])}"
 
 
-def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10) -> dict | None:
-    operation = work_operation(question, constraints)
+def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10, operation: str | None = None) -> dict | None:
+    operation = operation or work_operation(question, constraints)
     if not operation:
         return None
     today = today or date.today()

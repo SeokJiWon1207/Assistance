@@ -138,6 +138,9 @@ def text_matches_people(
     search_text = role_text or text
     if role == "handler":
         return any(text_matches_any_alias(search_text, [name]) for name in names)
+    if role == "registered_reporter":
+        reporter = reporter_text if reporter_text is not None else extract_chroma_field(text, "요청자")
+        return any(normalize_for_match(reporter or "") == normalize_for_match(name) for name in names)
     if role == "reporter":
         # Mantis 등록 계정과 원문 메일의 고객 요청자는 다를 수 있다. 요청자
         # 필드 또는 명시한 From. 발신자만 인정하고 담당자/본문 언급은 제외한다.
@@ -217,6 +220,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         "status": extract_chroma_field(text, "현재 상태"),
         "owner": extract_chroma_field(text, "담당자"),
         "reporter": extract_reporter_names(text, extract_chroma_field(text, "요청자")),
+        "registered_reporter": extract_chroma_field(text, "요청자"),
         "issue_id": str(issue_id),
         "screen_number": screen_filter_values(extract_chroma_field(text, "화면번호"), extract_title_from_chroma_text(text)),
         "created_at": extract_chroma_date(text),
