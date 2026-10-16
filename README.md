@@ -21,6 +21,7 @@ cd assistant_web
 cd ..
 assistant_web/.venv/bin/python scripts/make_vector_db.py --refresh-days 7
 
-cd assistant_web
-.venv/bin/python tests/run_test_suite.py
+assistant_web/scripts/check.sh   # 커밋 전 전체 검증(CI와 동일)
 ```
+
+에이전트 작업 지침은 [`AGENTS.md`](./AGENTS.md)를 기준으로 합니다.
