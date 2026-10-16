@@ -452,6 +452,8 @@ def generate_model_response(
     }
 
 
+
+
 def _read_model_response(
     response: requests.Response, model: Dict[str, Any], stream: bool,
     *, first_content_deadline: Optional[float] = None,
@@ -779,6 +781,15 @@ def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user:
     if user and not context.authenticated_owner and should_scope_to_authenticated_notion_user(context.latest_user_text):
         return {"modelId": request.modelId, "content": "개인 Notion 문서를 조회할 사용자 이름이 등록되어 있지 않습니다. 계정 표시 이름을 확인해 주세요.",
                 "sources": [], "raw": {"mode": "missing_personal_notion_scope"}}
+    from backend.intent.explanation import explanation_constraints, wants_issue_explanation
+    if context.enabled_tools.get("mantis") and wants_issue_explanation(context.retrieval_text, context.query_constraints):
+        context.query_constraints = explanation_constraints(context.retrieval_text, context.query_constraints)
+        context.intent_plan = {**build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints),
+                               "source": "mantis", "operation": "explain", "planned": True,
+                               "resolved_constraints": context.query_constraints, "terms": [],
+                               "reason": "이슈 원문과 노트에 근거한 설명"}
+        context.status_resolution = None
+        return None
     if context.enabled_tools.get("mantis"):
         from backend.reports.work_queries import build_work_query_report, work_operation
         refining_list = bool(context.query_constraints.get("list_scope_edit")
@@ -972,6 +983,8 @@ def deterministic_retrieval_response(
 ) -> Optional[Dict[str, Any]]:
     """검색 결과가 결정형 목록 계약에 해당하면 모델 호출 없이 응답한다."""
     retrieval_result = context.retrieval_result or {}
+    if (context.intent_plan or {}).get("operation") == "explain":
+        return None
     if (context.intent_plan or {}).get("source") == "both":
         combined_sources = build_sources(retrieval_result, max_sources=limit)
         if combined_sources:
@@ -1068,9 +1081,23 @@ def append_retrieval_system_note(context: ChatPipelineContext, limit: int) -> No
         "provided_issue_count와 provided_notion_count는 전달된 근거 수이며 requested_limit은 요청값일 뿐 실제 건수가 아니다. "
         "issues_truncated 또는 notion_pages_truncated가 참이면 전체 목록을 전달받지 못한 것이므로 전체를 확인했다고 말하지 마라. "
         "이슈별 ID·제목·프로젝트·담당자·상태·날짜를 다른 행과 섞거나 수정하지 마라. "
+        "현재 담당자는 handler 속성만 사용하고, 노트 작성자·회신자·수정 주체를 현재 담당자로 합쳐 표시하지 마라. "
+        "설명 질문에는 질문과 무관한 담당자·접수일 등 부가 정보와 관련성이 낮은 다른 사례를 덧붙이지 마라. "
         "질문에 고객사, 담당자, HTS, MTS 같은 조건이 있으면 그 조건과 일치하는 이슈만 답변에 포함해라. "
         "HTS/MTS 구분은 media_type 원문 속성을 우선하며, 본문의 다른 매체 언급으로 바꾸지 마라. "
         "media_type이 비어 있거나 기타/미상이면 additional_information 또는 matching_evidence의 매체 근거를 설명해라. "
+        "answer_evidence.excerpts는 해당 이슈 원문의 필드·노트 번호·시각·문자 위치를 보존한 발췌다. "
+        "질문의 각 세부 항목(원인, 조치, 수식, 변경 전후 값, 재현 순서)에 해당하는 구체적 원문을 답해라. "
+        "핵심 주장 바로 뒤에 이슈 #ID와 근거 노트 ID(예: #12345, 노트 67890)를 붙여라. "
+        "노트의 시간 순서와 정정을 확인하고 최초 추정과 최종 결론을 구분해라. "
+        "수식·함수·변수명·코드를 제시할 때는 원문 그대로 인용해라. 재작성 코드에 '원문 코드'라는 이름을 붙이지 마라. "
+        "완료·승인·QC·운영 반영을 주장할 때는 그 단계의 완료를 명시한 짧은 원문도 함께 인용해라. "
+        "'반영 예정', '수정 요청', '검토', '내역 회신'을 '반영했습니다', '수정 완료', 'QC 완료'로 바꾸지 마라. "
+        "버전반영일 같은 날짜 속성은 기록된 날짜일 뿐, 노트에 예정/보류/미반영으로 남아 있다면 실제 완료 증거가 아니다. "
+        "수정·QC·전달·커밋·운영 배포는 서로 다른 단계다. 종료 상태나 전달 기록만으로 운영 반영을 확정하지 마라. "
+        "answer_evidence.complete가 거짓이면 일부 발췌이며, 근거가 안 보일 때 '전달된 발췌에서 확인되지 않음'이라고 한정해라. "
+        "완전한 원문에서도 구체적 원인/코드가 없으면 아는 사실과 모르는 사실을 나눠라. "
+        "비슷한 사례의 원인을 대상 이슈의 원인으로 전이하지 말고, 관련성이 낮은 후보는 답변에서 제외해라. "
         "matching_evidence는 전체 본문·노트에서 찾은 검색어의 실제 원문 구절이다. 노트 근거도 관련 이슈의 근거로 사용하고, "
         "짧은 description에 검색어가 없다는 이유로 직접 언급이 없다고 말하지 마라. "
         "조회 오류·부분 조회·오래된 저장본은 제공된 조회 상태대로 알리고 최신 또는 전체 결과로 단정하지 마라. "
@@ -1119,12 +1146,17 @@ def _retrieve_chat_evidence(
     emit_chat_status(f"{' · '.join(active_source_labels)}에서 자료를 찾고 있습니다", "retrieval")
     limit, group_by = retrieval_limit(request, context)
     context.active_limit = limit
+    from backend.services.explanation_queries import prepare_explanation_queries
+    retrieval_plan = prepare_explanation_queries(context.retrieval_text, context.intent_plan,
+                                                 context.model, context.api_key, context.enabled_tools)
     context.retrieval_result = run_retrieval_pipeline(
         context.retrieval_text,
         limit,
         context.enabled_tools,
-        intent_plan=context.intent_plan,
+        intent_plan=retrieval_plan,
     )
+    if retrieval_plan and retrieval_plan.get("explanation_query_generation"):
+        context.retrieval_result["queryExpansion"] = retrieval_plan["explanation_query_generation"]
     emit_chat_status("검색 결과를 질문 조건에 맞게 정리하고 있습니다", "filtering")
     deterministic = deterministic_retrieval_response(request, context, limit, group_by)
     if deterministic:
@@ -1249,14 +1281,14 @@ class ChatService:
                 0,
                 {"role": "system", "content": "\n\n".join(context.system_notes)},
             )
-        generated_response = measured("generation")(generate_model_response)(
-            request,
-            context.model,
-            context.messages,
-            context.retrieval_result,
-            context.query_constraints,
-            context.active_limit,
-        )
+        if (context.intent_plan or {}).get("operation") == "explain":
+            from backend.services.grounded_explanation import generate_grounded_explanation
+            generated_response = measured("generation")(generate_grounded_explanation)(request, context, generate_model_response)
+        else:
+            generated_response = measured("generation")(generate_model_response)(
+                request, context.model, context.messages, context.retrieval_result,
+                context.query_constraints, context.active_limit,
+            )
         generated = StageResult.from_response(generated_response)
         assert generated.response is not None
         return finalize_chat_response(attach_status_resolution(generated.response, context))

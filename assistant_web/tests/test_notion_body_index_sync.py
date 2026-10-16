@@ -36,6 +36,13 @@ def response(data, status=200):
 
 class BodyIndexSyncTests(unittest.TestCase):
     def setUp(self):
+        self.now = sync.time.monotonic()
+        clock = patch.object(sync.time, "monotonic", side_effect=lambda: self.now)
+        clock.start()
+        self.addCleanup(clock.stop)
+        cooldown = patch.object(sync, "_retry_after_until", 0.0, create=True)
+        cooldown.start()
+        self.addCleanup(cooldown.stop)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.index = BodyIndex(Path(self.directory.name) / "bodies.sqlite3", fingerprint="test")
@@ -61,8 +68,13 @@ class BodyIndexSyncTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         for name in ("notion_request_slot", "interruptible_sleep"):
             patcher = patch.object(sync, name)
-            patcher.start()
+            mocked = patcher.start()
+            if name == "interruptible_sleep":
+                mocked.side_effect = self.advance_clock
             self.addCleanup(patcher.stop)
+
+    def advance_clock(self, seconds):
+        self.now += seconds
 
     def get(self, url, **kwargs):
         path = url.split("/v1/")[-1]
@@ -257,6 +269,58 @@ class BodyIndexSyncTests(unittest.TestCase):
                 sync._request("pages/page", sync._Budget(sync.time.monotonic() + 20, 3))
         self.assertEqual(get.call_count, 1)
         sync.interruptible_sleep.assert_not_called()
+
+    def test_retry_after_survives_page_deadline_and_delays_next_page(self):
+        limited = response({}, 429)
+        limited.headers = {"Retry-After": "30"}
+        sent = []
+        start = self.now
+
+        def server(url, **kwargs):
+            sent.append((url.rsplit("/", 1)[-1], self.now - start))
+            return limited if len(sent) == 1 else response({"ok": True})
+
+        with patch.object(sync.requests, "get", side_effect=server):
+            with self.assertRaisesRegex(sync._ReadFailure, "http_429"):
+                sync._request("pages/first", sync._Budget(start + 10, 3))
+            with self.assertRaisesRegex(sync._ReadFailure, "http_429"):
+                sync._request("pages/second", sync._Budget(start + 20, 3))
+            result = sync._request("pages/second", sync._Budget(start + 60, 3))
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(sent, [("first", 0), ("second", 30)])
+
+    def test_final_rate_limited_attempt_preserves_retry_after_for_next_page(self):
+        sent = []
+        start = self.now
+
+        def server(url, **kwargs):
+            sent.append((url.rsplit("/", 1)[-1], self.now - start))
+            if len(sent) <= 3:
+                limited = response({}, 429)
+                limited.headers = {"Retry-After": "30" if len(sent) == 3 else "1"}
+                return limited
+            return response({"ok": True})
+
+        with patch.object(sync.requests, "get", side_effect=server):
+            with self.assertRaisesRegex(sync._ReadFailure, "http_429"):
+                sync._request("pages/first", sync._Budget(start + 100, 10))
+            result = sync._request("pages/second", sync._Budget(start + 100, 3))
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(sent, [("first", 0), ("first", 1), ("first", 2), ("second", 32)])
+
+    def test_batch_leaves_unattempted_pages_pending_when_cooldown_exceeds_deadline(self):
+        from backend.notion.snapshot_maintenance import refresh_snapshot
+        self.rows = [page(identifier) for identifier in ("first", "second", "third")]
+        self.index.upsert_catalog("db", self.rows, complete=True)
+        limited = response({}, 429)
+        limited.headers = {"Retry-After": "30"}
+        self.get_errors = [limited]
+        result = refresh_snapshot(self.index, ["db"], max_seconds=10, refresh_catalog=False)
+        self.assertEqual(result["attempted_page_count"], 1)
+        self.assertEqual(result["pending_page_count"], 3)
+        with self.index._database() as db:
+            failures = db.execute("SELECT COUNT(*) FROM pages WHERE failure_count > 0").fetchone()[0]
+        self.assertEqual(failures, 1)
 
     def test_crawler_reads_more_than_two_hundred_blocks_and_nested_table(self):
         self.blocks["page"] = [paragraph(str(i), "ordinary") for i in range(250)] + [

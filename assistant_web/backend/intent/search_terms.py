@@ -13,7 +13,10 @@ from backend.config import (
     STOPWORDS,
 )
 from backend.intent.list_continuation import remove_list_continuation_request
-from backend.intent.entities import extract_mantis_keyword
+from backend.intent.entities import (
+    extract_mantis_keyword, strip_conditional_presence_instruction,
+    strip_title_bracket_platform_instruction, strip_title_date_basis_instruction,
+)
 from backend.intent.scope_changes import SCOPE_CONTROL_TERM, has_scope_edit, without_scope_clear_phrases
 from backend.team_scope import remove_team_scope_phrase
 
@@ -110,11 +113,11 @@ def term_is_covered_by_constraints(term: str, constraints: Dict[str, Any]) -> bo
 def remove_list_display_instruction(text: str) -> str:
     # 여러 표시 열과 출력 동사를 함께 지정한 절만 제거한다. '등록일 표시 오류'
     # 같은 실제 이슈 주제는 보존한다.
-    column = r"(?:이슈\s*번호|제목|담당자|등록일|프로젝트|상태|중요도)"
+    column = r"(?:이슈\s*번호|번호|제목|담당자|등록일|프로젝트|(?:현재\s*)?상태|중요도)"
     return re.sub(
-        rf"(?<![가-힣]){column}(?:\s*(?:[,·/]|과|와|및)\s*{column})+"
-        r"\s*(?:을|를)?\s*(?:(?:모두|전부|각각)\s*)?"
-        r"(?:표시|보여|출력)(?:해\s*줘|해\s*주세요|줘|주세요)[.!?]?",
+        rf"(?<![가-힣])(?:각(?:각)?\s*)?{column}(?:\s*(?:[,·/]|과|와|및)\s*{column})+"
+        r"\s*(?:을|를|로|으로)?\s*(?:(?:모두|전부|각각|함께)\s*)?"
+        r"(?:표시|보여|출력|정리|알려)(?:해\s*줘|해\s*주세요|줘|주세요)[.!?]?",
         " ",
         text,
     )
@@ -125,7 +128,8 @@ _REPORT_REQUEST = re.compile(
     r"(?<![가-힣])(?:(?:월간|주간|일간|연간)\s*)?(?:고객사\s*)?"
     r"(?:리포트|보고서)(?:를|을)?\s*(?:만들어|작성해|생성해)\s*(?:줘|주세요)(?![가-힣])|"
     r"(?<![가-힣])공수(?:는|가|를|은|이)?\s*어떻게\s*(?:돼요?|되나요|되니|됐어)(?![가-힣])|"
-    r"(?<![가-힣])공수\s+집계(?![가-힣])"
+    r"(?<![가-힣])공수\s+집계(?![가-힣])|"
+    r"(?<![가-힣])집계\s*해\s*(?:줘|주세요)(?![가-힣])"
 )
 
 
@@ -146,8 +150,26 @@ def without_report_request_terms(terms: List[str], text: str) -> List[str]:
 
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     # 조건 해제 명령은 원문 검색 주제가 아니다. 인용한 제목·키워드는 보존한다.
-    text = remove_report_request(without_scope_clear_phrases(text))
+    text = remove_report_request(strip_title_date_basis_instruction(without_scope_clear_phrases(text)))
+    text = strip_conditional_presence_instruction(text)
+    text = re.sub(r"빠짐\s*없이\s*(?:보여\s*줘|알려\s*줘|정리해\s*줘)?", " ", text)
+    text = strip_title_bracket_platform_instruction(text)
     text = remove_list_display_instruction(remove_list_continuation_request(text))
+    explicit_keywords = any(
+        clause.get("field") in {"title", "keyword"}
+        for clause in (constraints or {}).get("filter_clauses") or []
+    )
+    if (not explicit_keywords and re.search(
+            r"\b[가-힣A-Za-z0-9_.-]+까지\s*포함(?:한|해서|하여|해)?\s*"
+            r"(?:전체|모든|전부|총)\s*(?:건수|이슈|건|항목)", text)):
+        # 'A까지 포함한 전체 건수'는 모든 대상의 집계이며 A만의 교집합이 아니다.
+        return []
+    if not explicit_keywords:
+        # "정기점검도 포함"은 조회 범위를 넓히는 말이며 필수 검색어가 아니다.
+        text = re.sub(r"(?<![가-힣A-Za-z0-9_\"'“‘])[가-힣A-Za-z0-9_.-]+\s*(?:건|이슈)?도\s*"
+                      r"포함(?:해\s*(?:줘|주세요)|해서|하여|해)?", " ", text)
+    if "open" in (constraints or {}).get("statuses", []):
+        text = re.sub(r"개발\s*완료\s*(?:상태|이슈|건)?도[^.?!]{0,30}?포함(?:해\s*(?:줘|주세요)|해서|하여|해)?", " ", text)
     if (constraints or {}).get("mantis_team_scope") == "all":
         # 전사 조회는 원문의 키워드가 아니라 담당자 범위 지정이다. 인용한 주제는 보존한다.
         text = re.sub(
@@ -189,8 +211,11 @@ def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None)
     )
     filter_control_terms = {
         "중", "제목", "본문", "내용", "키워드", "빼고", "제외", "제외하고",
+        "총", "번호", "저장본", "only", "상태도", "아니면",
+        "가운데", "것만", "거만", "세고", "전이면",
         "말고", "아닌", "아니고", "없는", "없이", "있지만", "포함", "포함된",
-        "고객사별", "고객사마다", "프로젝트별", "프로젝트마다",
+        "고객사별", "고객사마다", "프로젝트별", "프로젝트마다", "매체구분",
+        "확인해서", "남는",
         "플랫폼별", "플랫폼마다", "매체별", "매체마다", "매체구분별", "매체구분마다",
         "하나씩", "한개씩", "한건씩", "1개씩", "1건씩",
         "방금", "아까", "해당", "위", "조건", "그중", "그",

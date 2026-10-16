@@ -202,8 +202,15 @@ def text_matches_customer_aliases(text: str, aliases: List[str]) -> bool:
         alias_owner = customer_alias_owner(alias) if project_owner else None
         if alias_owner and alias_owner != project_owner:
             continue
+        if alias_owner and alias_owner == project_owner:
+            return True
         normalized_alias = normalize_for_match(alias)
         if not normalized_alias:
+            continue
+        if re.fullmatch(r"[가-힣]{2}", normalized_alias):
+            # 짧은 회사명은 기술 용어의 일부(유동부채→동부, 삼성전자→삼성)가 아니다.
+            if re.search(rf"(?<![가-힣a-z0-9]){re.escape(normalized_alias)}(?=$|[\s.,:/()]|(?:증권|투자증권|금융투자|선물)(?=$|[\s.,:/()])|(?:에서|의|은|는|이|가|만|도|을|를|와|과|에게|한테|으로|로)(?:\s|$))", boundary_text):
+                return True
             continue
         if re.fullmatch(r"[a-z0-9]+", normalized_alias) and len(normalized_alias) <= 3:
             if re.search(

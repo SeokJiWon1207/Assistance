@@ -67,6 +67,13 @@ COUNT_GROUP_LABELS = {
 }
 
 
+def count_issue_display_limit(text: str) -> int:
+    """Show the requested issue list when a count question also asks for every title."""
+    if re.search(r"모두|전체|전부", text) and re.search(r"번호|제목|목록|리스트|나열", text):
+        return 50
+    return 5
+
+
 def count_group_key(group_by: str):
     """건수 집계에 쓸 그룹 값을 이슈에서 뽑는 함수를 돌려준다."""
     if group_by == "customer":
@@ -508,6 +515,7 @@ def build_mantis_count_report(
         return None
 
     constraints = merge_query_plan_constraints(extract_query_constraints(text), query_plan)
+    display_limit = count_issue_display_limit(text)
     group_by = str(query_plan.get("group_by") or "")
     # "상태별 이슈 개수"처럼 다른 조건이 없어도 그룹 집계 자체가 요청이다.
     # 예전에는 여기서 빠져나가 Notion 검색으로 흘러갔다.
@@ -525,7 +533,7 @@ def build_mantis_count_report(
         CHROMA_DB_PATH,
         lambda content: chroma_text_matches_constraints(content, constraints),
         normalize_chroma_issue_document,
-        example_limit=10,
+        example_limit=max(10, display_limit),
         scan_limit=snapshot_limit,
         group_key=count_group_key(group_by),
         constraints=constraints,
@@ -646,13 +654,15 @@ def build_mantis_count_report(
         # 그룹 집계를 요청했으면 총계보다 그룹별 건수가 답의 본문이다.
         lines.extend(group_lines)
     if total_count:
-        lines.extend(["", "대표 이슈"])
-        for issue in normalized_issues[:5]:
+        lines.extend(["", "전체 이슈" if display_limit > 5 and len(normalized_issues) == total_count else "대표 이슈"])
+        for issue in normalized_issues[:display_limit]:
             lines.append(
                 f"- #{issue['id']} {issue['summary']} "
                 f"({issue['project']} · {display_status_label(issue['status'])} · {issue['created_at'] or '미상'})"
             )
-    representative_issues = normalized_issues[:10]
+        if display_limit > 5 and total_count > min(len(normalized_issues), display_limit):
+            lines.append(f"나머지 {total_count - min(len(normalized_issues), display_limit)}건은 이 목록에 표시하지 않았습니다.")
+    representative_issues = normalized_issues[:max(10, display_limit)]
     retrieval = {
         "query": text,
         "keyword": "",

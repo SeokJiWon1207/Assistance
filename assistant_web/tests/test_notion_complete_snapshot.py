@@ -226,6 +226,22 @@ class CompleteSnapshotTests(unittest.TestCase):
             self.assertTrue(self.snapshot()._scope_current({'db1': 'db1'}))
             self.assertFalse(self.snapshot()._scope_current({'other': 'other'}))
 
+    def test_snapshot_scope_uses_configured_discovery_lifetime(self):
+        import json
+        import os
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        root = Path(self.directory.name)
+        saved = {'scope_complete': True, 'read_scope': {'db1': 'db1'},
+                 'generated_at': (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()}
+        (root / 'notion_read_scope.json').write_text(json.dumps(saved))
+        with patch('backend.config.RUNTIME_DIR', root), patch(
+            'backend.notion.read_scope.child_database_search_enabled', return_value=True):
+            with patch.dict(os.environ, {'NOTION_READ_SCOPE_TTL_SECONDS': '604800'}):
+                self.assertTrue(self.snapshot()._scope_current({'db1': 'db1'}))
+            with patch.dict(os.environ, {'NOTION_READ_SCOPE_TTL_SECONDS': '86400'}):
+                self.assertFalse(self.snapshot()._scope_current({'db1': 'db1'}))
+
     def test_final_search_preserves_matches_in_arbitrary_property_values(self):
         from unittest.mock import patch
         from backend.notion import search

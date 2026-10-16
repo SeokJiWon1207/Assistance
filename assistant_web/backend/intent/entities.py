@@ -316,6 +316,16 @@ def get_customer_alias_groups() -> List[List[str]]:
 
 def extract_status_constraints(text: str) -> List[str]:
     text = re.sub(r"개발\s*(?:끝났|끝난|끝낸|끝냈)(?:는데|지만|건|거)?", "개발완료 ", text)
+    # 미종료 범위에서 "개발완료도 포함"은 해당 상태만 고르라는 조건이
+    # 아니라 개발완료가 미종료에 속한다는 설명이다.
+    nonclosed_wording = bool(
+        PENDING_WORK_QUERY_PATTERN.search(text)
+        or any(pattern.search(normalize_for_match(text)) for pattern in NON_CLOSED_STATUS_PATTERNS)
+    )
+    inclusive_dev_done = bool(
+        nonclosed_wording
+        and re.search(r"개발\s*완료\s*(?:상태|이슈|건)?도[^.?!]{0,30}?포함", text)
+    )
     status_text = re.sub(
         r"확인\s*(?:해\s*(?:줘|주세요|줄래(?:요)?)|부탁(?:해|드려)?|할\s*수\s*있)",
         " ", remove_date_field_phrases(text),
@@ -370,6 +380,8 @@ def extract_status_constraints(text: str) -> List[str]:
             statuses.append(status_key)
     if pending_work or any(pattern.search(normalized_text) for pattern in NON_CLOSED_STATUS_PATTERNS):
         statuses = [status for status in statuses if status != "closed"]
+        if inclusive_dev_done:
+            return ["open"]
         # "종료 안 된 할당 이슈"처럼 더 구체적인 미종료 상태가 함께 있으면
         # 그 상태를 유지하고, 구체 상태가 없을 때만 전체 미종료(open)로 넓힌다.
         if not statuses:
@@ -461,8 +473,71 @@ def expression_is_excluded(text: str, value: str) -> bool:
     )
 
 
+_TITLE_DATE_BASIS_INSTRUCTION = re.compile(
+    r'''제목(?:에\s*적힌|에|의)?\s*[^"'“‘”’,.?!]{0,40}?(?:월|날짜|일자)(?:과|와)?\s*'''
+    r"관계\s*없이\s*(?:등록|접수|생성)일\s*기준(?:으)?로(?:\s*세(?:고|어|줘|주세요))?"
+)
+
+
+def strip_title_date_basis_instruction(text: str) -> str:
+    """제목 속 날짜 대신 등록일로 집계하라는 설명을 검색 조건에서 제거한다."""
+    return _TITLE_DATE_BASIS_INSTRUCTION.sub(" ", text)
+
+
+def strip_conditional_presence_instruction(text: str) -> str:
+    """존재 여부 질의의 출력 지시는 제목·키워드 조건이 아니다."""
+    text = re.sub(
+        r"(?<![가-힣])(?:있으면|있다면)\s*(?:(?:이슈\s*)?번호|제목|목록)"
+        r"[^.?!]{0,100}?(?:없으면|없다면)\s*"
+        r"(?:(?:해당\s*)?(?:조건|결과)(?:은|가|에)?\s*)?없다고\s*(?:알려|말해|답해)[^.?!]*",
+        " ", text,
+    )
+    return re.sub(
+        r"(?<![가-힣])(?:이슈|건|게|거|것)(?:이|가)?\s*"
+        r"(?:있는지|있어|있나|있나요)\s*"
+        r"(?:확인해\s*(?:줘|주세요)|알려\s*(?:줘|주세요)|말해\s*(?:줘|주세요))?[.?!]?",
+        " ", text,
+    )
+
+
+_TITLE_BRACKET_EXCLUSION = re.compile(
+    r"제목(?:에|에서|에는)\s*(\[[^\]\n]{1,40}\])(?:가|이)?\s*"
+    r"(?:포함된|들어간|있는)\s*(?:것|건|이슈)(?:은|는|을|만)?\s*"
+    r"(?:제외해\s*(?:줘|주세요)|제외|빼고)",
+)
+_TITLE_BRACKET_INCLUSION = re.compile(
+    r"제목(?:에|에서|에는)\s*(\[[^\]\n]{1,40}\])(?:가|이)?\s*"
+    r"(?:라고\s*적힌|포함된|들어간|있는)\s*(?:것|건|이슈)(?:은|는|을|를|만)?"
+    r"(?:\s*(?:골라\s*줘|찾아\s*줘|보여\s*줘))?",
+)
+_TITLE_BRACKET_INCLUSIVE_SCOPE = re.compile(
+    r"제목(?:에|에서|에는)\s*\[[^\]\n]{1,40}\](?:가|이)?\s*"
+    r"(?:붙은|적힌|포함된|들어간|있는)\s*(?:것|건|이슈)(?:도|까지)\s*"
+    r"포함(?:해서|하여|해)?",
+)
+_TITLE_BRACKET_INCLUSIVE_PREFIX = re.compile(
+    r"\[[^\]\n]{1,40}\]\s*제목(?:도|을|은|는)?\s*"
+    r"(?:빼지\s*말고|제외하지\s*말고)\s*포함(?:해\s*(?:줘|주세요)|해서|하여|해)?",
+)
+
+
+def strip_title_bracket_exclusion_instruction(text: str) -> str:
+    """제목에서 제외할 표기는 매체 범위나 별도 검색어가 아니다."""
+    return _TITLE_BRACKET_EXCLUSION.sub(" ", text)
+
+
+def strip_title_bracket_platform_instruction(text: str) -> str:
+    """제목에 적힌 매체 표기를 실제 플랫폼 범위로 취급하지 않는다."""
+    return _TITLE_BRACKET_INCLUSIVE_PREFIX.sub(
+        " ", _TITLE_BRACKET_INCLUSIVE_SCOPE.sub(
+            " ", _TITLE_BRACKET_INCLUSION.sub(" ", strip_title_bracket_exclusion_instruction(text))
+        )
+    )
+
+
 def extract_explicit_keyword_filter_clauses(text: str) -> List[Dict[str, Any]]:
     """제목/본문/키워드 문맥에서 명시한 포함·제외 단어만 구조화한다."""
+    text = strip_conditional_presence_instruction(strip_title_date_basis_instruction(text))
     if not re.search(r"제목|본문|내용|키워드", text, re.IGNORECASE):
         return []
     clauses: List[Dict[str, Any]] = []
@@ -470,10 +545,45 @@ def extract_explicit_keyword_filter_clauses(text: str) -> List[Dict[str, Any]]:
         field = "title" if match.group(1) == "제목" else "keyword"
         negative = bool(re.search(r"없|제외|빼고|미포함", match.group(3) or ""))
         add_filter_clause(clauses, field, "not_contains" if negative else "contains", match.group(2))
+    for match in re.finditer(
+        r"제목(?:에|에서|에는)\s*([가-힣A-Za-z0-9_.-]{2,40}?)(?:이|가)?\s*"
+        r"(?:들어간|포함된)\s*(?:건|이슈|것)(?:은|는|만)?\s*(?:빼고|빼면|제외)",
+        text,
+    ):
+        add_filter_clause(clauses, "title", "not_contains", match.group(1))
+    for match in re.finditer(
+        r"제목(?:이|가|은|는)\s*([가-힣A-Za-z0-9_.-]{2,40}?)인\s*"
+        r"(?:건|이슈|것)(?:은|는|을|를)?\s*(?:빼고|제외)", text,
+    ):
+        add_filter_clause(clauses, "title", "not_contains", match.group(1))
+    for match in _TITLE_BRACKET_EXCLUSION.finditer(text):
+        add_filter_clause(clauses, "title", "not_contains", match.group(1))
+    for match in _TITLE_BRACKET_INCLUSION.finditer(text):
+        add_filter_clause(clauses, "title", "contains", match.group(1))
+    text = strip_title_bracket_platform_instruction(text)
     token = r"([가-힣A-Za-z0-9_.-]{2,40}?)"
     for match in re.finditer(token + r"(?:은|는|이|가)?\s*(?:없(?:는|고)?|제외|빼고|미포함)", text):
+        if match.group(1) in {"건", "건은", "건이", "건을", "건만", "이슈", "이슈는", "이슈가",
+                              "것", "것은", "빠짐"}:
+            continue
         add_filter_clause(clauses, "keyword", "not_contains", match.group(1))
     for match in re.finditer(token + r"(?:은|는|이|가)?\s*(?:있(?:는|고)?|포함)", text):
+        if match.group(1) in {"아니면", "아니고"}:
+            continue
+        # "정기점검도 포함"은 기존 검색 범위에 더하라는 뜻이지
+        # 정기점검만 찾으라는 뜻이 아니다. 별도 제목/키워드 조건은 유지한다.
+        if match.group(1).endswith("도") and not re.search(
+            r"(?:제목|본문|내용|키워드)(?:에|에서|에는|은|는)\s*$",
+            text[:match.start()],
+        ):
+            continue
+        # "정기점검까지 포함한 전체 건수"는 전체 범위에 정기점검을
+        # 빼지 말라는 뜻이다. 명시적인 제목/키워드 조건과 구분한다.
+        if match.group(1).endswith("까지") and re.match(
+            r"\s*(?:한|해서|하여|해)?\s*(?:전체|모든|전부|총)\s*(?:건수|이슈|건|항목)",
+            text[match.end():],
+        ):
+            continue
         if not expression_is_excluded(text, match.group(1)):
             add_filter_clause(clauses, "keyword", "contains", match.group(1))
     return clauses
@@ -495,6 +605,7 @@ _EXPLICIT_HANDLER_PATTERN = re.compile(
     # 끝나는 실제 이름(예: 이지은)을 조사로 오인하지 않도록 bare-name보다 앞에서
     # 제한된 후속 표현을 요구한다.
     r"(?P<korean_possessive>[가-힣]{2,4}?)의(?=\s|$|[,.?!:;)\]}])"
+    r"|(?P<korean_copular>[가-힣]{2,4}?)(?:인|이고|이며|이면서)(?=\s|$|[,.?!:;)\]}])"
     r"|(?P<korean_subject>[가-힣]{2,4}?)(?:이|가|은|는)"
     r"(?=\s+(?:맡은|담당|처리|할당|배정))"
     r"|(?P<directional_name>[가-힣]{2,4}?|[A-Za-z][A-Za-z0-9_.-]{1,31})"
@@ -538,6 +649,7 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
             explicit_handler.group(group)
             for group in (
                 "korean_possessive",
+                "korean_copular",
                 "korean_subject",
                 "directional_name",
                 "korean_name",
@@ -546,6 +658,13 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
             )
             if explicit_handler.group(group)
         ).strip()
+        if explicit_handler.group("korean_copular"):
+            # '김지인'처럼 짧은 실명이나 명부의 전체 이름을 '김지'로 자르지 않는다.
+            # 명부 밖의 두 글자 이름 + '인'은 실명과 구별할 수 없어 전체를 보존한다.
+            if person_text[explicit_handler.end() - 1] == "인" and (
+                name + "인" in known_people or (len(name) == 2 and name not in known_people)
+            ):
+                name += "인"
         if explicit_handler.group("directional_name"):
             # '로'로 끝나는 실제 명부 이름은 이름 전체를 우선한다.
             name = next((known for known, origin in pairs

@@ -110,7 +110,7 @@ def mantis_enum_label(value: Any, default: str = "") -> str:
     return str(value or default)
 
 
-def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] = None) -> Dict[str, Any]:
+def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] = None, evidence_query: Optional[str] = None) -> Dict[str, Any]:
     media_type = "기타/미상"
     screen_number = "미상"
     work_subject = "미상"
@@ -159,8 +159,25 @@ def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] 
         for item in (issue.get("history") or [])[-40:]
     ]
 
+    from backend.sources.mantis_answer_evidence import build_answer_evidence
+
+    related_issue_ids = []
+    relationships = issue.get("relationships")
+    for relationship in relationships if isinstance(relationships, list) else []:
+        if not isinstance(relationship, dict):
+            continue
+        kind, related = relationship.get("type"), relationship.get("issue")
+        if not isinstance(kind, dict) or kind.get("name") != "related-to" or not isinstance(related, dict):
+            continue
+        related_id = related.get("id")
+        if (type(related_id) is int and related_id > 0 and related_id != issue.get("id")
+                and related_id not in related_issue_ids):
+            related_issue_ids.append(related_id)
+
     return {
+        **({"answer_evidence": build_answer_evidence(issue, evidence_query)} if evidence_query else {}),
         "id": issue.get("id"),
+        "related_issue_ids": related_issue_ids,
         "project": (issue.get("project") or {}).get("name", "미상"),
         "summary": issue.get("summary", "제목 없음"),
         "status": mantis_enum_label(issue.get("status"), "상태 미상"),
@@ -675,7 +692,7 @@ def execute_mantis_id_lookup(
             "missing_ids": missing_ids,
             "displayed_count": len(issues),
         },
-        "issues_list": [normalize_issue(issue) for issue in issues],
+        "issues_list": [normalize_issue(issue, evidence_query=(constraints or {}).get("answer_query")) for issue in issues],
     }
 
 

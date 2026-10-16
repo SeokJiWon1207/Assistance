@@ -2,6 +2,7 @@ import { icon } from "./icons.js?v=20260911-6";
 import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
 import { parseIssueListLine } from "./issue_text.js?v=20261014-1";
+import { isQuotedSourceFence, renderQuotedSourceBlock, collapseQuotedSourceHistory } from "./chat_source_quote.js?v=20261015-1";
 import {
   isMarkdownTableRow,
   isMarkdownTableSeparatorRow,
@@ -68,7 +69,7 @@ function calloutToneFor(paragraphText) {
 // **굵게**, `코드` 인라인 마크다운을 벗겨내지 않고 실제 요소로 그린다.
 // innerHTML 대신 textContent 기반 노드 조립이라 XSS 걱정 없이 안전하다.
 function appendInlineMarkdown(target, text, sources = [], messageIndex = 0) {
-  const pattern = /(\*\*[^*\n]+\*\*|`[^`\n]+`|#\d{4,7}\b)/g;
+  const pattern = /(\*\*[^*\n]+\*\*|`[^`\n]+`|#\d{1,7}\b)/g;
   let last = 0;
   let match;
   while ((match = pattern.exec(text))) {
@@ -78,7 +79,12 @@ function appendInlineMarkdown(target, text, sources = [], messageIndex = 0) {
     const token = match[0];
     if (token.startsWith("**")) {
       const strong = document.createElement("strong");
-      strong.textContent = token.slice(2, -2);
+      const label = token.slice(2, -2);
+      if (/^#\d{1,7}$/.test(label)) {
+        appendInlineMarkdown(strong, label, sources, messageIndex);
+      } else {
+        strong.textContent = label;
+      }
       target.appendChild(strong);
     } else if (token.startsWith("#")) {
       // 답변에 언급된 이슈ID가 실제 근거 목록(sources)에 있을 때만 클릭 가능한
@@ -248,13 +254,14 @@ function renderAssistantContent(content, sources = [], messageIndex = 0) {
     return wrap;
   }
 
-  const issueDetail = parseIssueDetailContent(content);
+  const lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
+  const hasQuotedFence = lines.some(isQuotedSourceFence);
+  const issueDetail = hasQuotedFence ? null : parseIssueDetailContent(content);
   if (issueDetail) {
     wrap.appendChild(renderIssueDetailCard(issueDetail, sources, messageIndex));
     return wrap;
   }
 
-  const lines = String(content || "").split("\n");
   let textBuffer = [];
   let issueBuffer = [];
 
@@ -277,6 +284,16 @@ function renderAssistantContent(content, sources = [], messageIndex = 0) {
   let index = 0;
   while (index < lines.length) {
     const line = lines[index];
+
+    // 서버 검증을 마친 원문은 목록·표·인라인 Markdown보다 먼저 문자 그대로 읽는다.
+    const quote = renderQuotedSourceBlock(lines, index);
+    if (quote) {
+      flushText();
+      flushIssues();
+      wrap.appendChild(quote.element);
+      index = quote.nextIndex;
+      continue;
+    }
 
     // "답변 스타일: 표 중심"으로 모델이 GFM 마크다운 표를 낼 때, 이걸 그냥
     // 문단으로 흘리면 "| a | b | |---|---|" 같은 파이프 문자가 그대로 노출된다.
@@ -321,7 +338,7 @@ function renderAssistantContent(content, sources = [], messageIndex = 0) {
   const hasTable = Array.from(wrap.children).some(
     (child) => child.className === "markdown-table-wrap",
   );
-  if (!hasTable) {
+  if (!hasTable && !hasQuotedFence) {
     const inlineTable = extractInlineMarkdownTable(content);
     if (inlineTable) {
       wrap.innerHTML = "";
@@ -335,6 +352,7 @@ function renderAssistantContent(content, sources = [], messageIndex = 0) {
     }
   }
 
+  if (hasQuotedFence) collapseQuotedSourceHistory(wrap);
   if (!wrap.children.length) {
     const paragraph = document.createElement("p");
     paragraph.textContent = String(content || "");

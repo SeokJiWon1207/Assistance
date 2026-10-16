@@ -39,16 +39,21 @@ RESOLUTION_MARKERS = (
 
 SIMILAR_TOP_N = 3            # 조치까지 정리해 보여줄 유사 사례 수
 NOTE_SNIPPET_CHARS = 220     # 사례별 조치 요약 길이
-COMPARE_CELL_CHARS = 90      # 원인·해결 비교표 한 칸 길이
+COMPARE_CELL_CHARS = 220      # 원인·해결 비교표 한 칸 길이
 CAUSE_FIELD = "사유 및 원인"
 FIX_FIELD = "조치 및 개선"
-# 노트에서 원인 문장을 고를 때 '원인 확인 요청'처럼 원인을 묻기만 하는 문장은 뺀다.
+# '원인'이라는 표제가 없어도 원문에 명시된 구현 불일치·제약은 보존한다.
 _CAUSE_SENTENCE = re.compile(
-    r"[^.\n。!?]*(?:원인|때문|(?:으)?로\s*인해|(?:문제|장애|오류|누락|버그)(?:로|가\s*있어))[^.\n。!?]*"
+    r"원인|때문|(?:으)?로\s*인해|(?:문제|장애|오류|누락|버그)(?:로|가\s*있어)|"
+    r"실제로는|(?:되어야|돼야).*(?:되고|되어\s*있)|"
+    r"(?:구조상|기술적인?\s*한계)|(?:데이터|이력).*(?:저장|보관).*(?:않|안\s*하|당일)"
 )
-# 노트에서 조치 내용을 고를 때: 조치 표현이 있는 노트를 우선하고, 파일 경로만 남긴 전달 기록은 건너뛴다.
-_FIX_HINT = re.compile(r"수정|조치|반영|해결|변경|적용|패치|개선|배포|추가")
-_DELIVERY_ONLY = re.compile(r"\[\s*고객사\s*전달\s*\]|\.zip\b|ftp://|svn://|svn\s*URL|[A-Za-z]:\\", re.I)
+_SVN_FILE = re.compile(r"^[AMUD]\s+(\S+\.[A-Za-z0-9]+)\s*$", re.M)
+_NOTE_METADATA = re.compile(
+    r"^(?:svn\s|리비전\s*[:：]|작성자\s*[:：]|날짜\s*[:：]|메시지\s*[:：]|"
+    r"[a-z][a-z0-9+.-]*://|[A-Za-z]:\\)", re.I
+)
+_QC_SUCCESS = re.compile(r"QC\s*결과.*(?:정상|성공|통과|OK)", re.I)
 # 인사말과 '○○ 과장입니다' 같은 자기소개. 직급이 붙은 경우만 지워 '원인은 …입니다' 같은 내용은 남긴다.
 _GREETING = re.compile(
     r"안녕하세요[.!~]*\s*|[^.\n]{0,25}(?:부장|차장|과장|대리|주임|선임|책임|수석|사원|팀장|매니저|이사|대표)(?:님)?입니다[.!~]*\s*"
@@ -62,8 +67,18 @@ _UNCONFIRMED = re.compile(
     r"해야|바랍|주세요|해줘"
 )
 _CAUSE_NEGATION = re.compile(r"(?:원인|때문)[^.\n]*(?:아닙|아니었|아닌)")
-_FIX_NOT_DONE = re.compile(r"않|못했|못하|미(?:반영|적용|배포|수정|처리)|안\s*(?:됨|됐|되|했|하)|하면|한다면|된다면|되면|했으면")
-_COMPLETED_NOTE = re.compile(r"완료|종료|해결|수정|조치|반영|변경|적용|패치|개선|배포|조정|전달|추가\s*(?:했|하였|함|완료|반영|됨)")
+_FIX_NOT_DONE = re.compile(r"불가|한계|실패|않|못했|못하|미(?:반영|적용|배포|수정|처리)|안\s*(?:됨|됐|되|했|하)|이면|하면|한다면|된다면|되면|했으면")
+_COMPLETED_NOTE = re.compile(
+    r"완료|종료(?:합니다|함|했|\s*$)|"
+    r"(?:해결|수정|조치|반영|변경|패치|개선|배포|조정)"
+    r"(?:\s*(?:함|했|하였|됨|되었|해두)|해서|하여.*(?:푸시|전달|반영|완료)|\s*$)|"
+    r"추가\s*(?:했|하였|함|완료|반영|됨)|적용\s*(?:했|하였|되었)|전달\s*(?:했|하였|드렸|드립니다)|"
+    r"(?:패치|파일|고객사).{0,40}전달\s*(?:됨|함|$)"
+)
+_PENDING_OUTCOME = re.compile(
+    r"(?:배포|반영|적용|수정|해결|조치|전달).*(?:예정|미완료|미해결|않|못했|못하|진행\s*중)|"
+    r"미(?:적용|반영|배포|수정|해결)|(?:배포|수정|조치|반영|적용)\s*중"
+)
 _COMPARE_STOPWORDS = frozenset({"현상", "문제", "오류", "수정", "요청", "확인", "관련", "발생", "처리", "원인", "화면", "경우"})
 _GENERIC_SIMILAR_FOCUS_TERMS = frozenset({
     "찾아", "찾아서", "원인", "해결", "내용", "비교", "비교해줘", "과거", "사례",
@@ -97,7 +112,9 @@ def _summarize_resolution(detail: Dict[str, Any]) -> str:
         label = "기록된 조치" if origin == "field" else "마지막 조치"
         parts.append(f"{label}: {recorded_fix}")
     else:
-        parts.append("확인된 해결·조치 기록이 없습니다.")
+        parts.append("기록에서 완료된 해결·조치를 확인하지 못했습니다.")
+    if caveat := _latest_resolution_caveat(detail):
+        parts.append(f"후속 상태: {caveat}")
     return " · ".join(parts)
 
 
@@ -120,43 +137,96 @@ def _unconfirmed(text: str, *, cause: bool = False) -> bool:
     return bool(_UNCONFIRMED.search(text) or (_CAUSE_NEGATION if cause else _FIX_NOT_DONE).search(text))
 
 
+def _note_sentences(text: str, *, join_wrapped_lines: bool = False) -> List[str]:
+    """파일명·메서드·소수점은 유지하고 문장 끝의 구두점만 나눈다."""
+    if join_wrapped_lines:
+        text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+    return [part.strip(" .-~·:") for part in re.split(r"[。!?\n]+|\.(?=\s|$)", text)
+            if part.strip(" .-~·:")]
+
+
 def _recorded_cause(detail: Dict[str, Any]) -> Tuple[str, str]:
-    """(원인 문장, 출처). 출처는 'field'(사유 및 원인), 'note'(노트 속 원인 문장), ''(기록 없음)."""
+    """확인 가능한 원인 원문과 출처. 빈 값은 추출 실패이며 기록 부재와 다르다."""
     field = str((detail.get("resolution_fields") or {}).get(CAUSE_FIELD) or "").strip()
     if field and not _unconfirmed(field, cause=True):
         return compact_text(field, COMPARE_CELL_CHARS), "field"
-    for note in reversed(detail.get("notes") or []):
-        for sentence in _CAUSE_SENTENCE.findall(_clean_note(note.get("text"), detail)):
-            sentence = sentence.strip(" -·:")
-            if len(sentence) >= 8 and not _unconfirmed(sentence, cause=True):
+    for note in reversed(_resolution_notes(detail)):
+        cleaned = _clean_note(str(note.get("text") or ""), detail)
+        for sentence in _note_sentences(cleaned, join_wrapped_lines=True):
+            if len(sentence) >= 8 and _CAUSE_SENTENCE.search(sentence) and not _unconfirmed(sentence, cause=True):
                 return compact_text(sentence, COMPARE_CELL_CHARS), "note"
     return "", ""
 
 
 def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS) -> Tuple[str, str]:
-    """(해결 내용, 출처). 'field'(조치 및 개선) → 'note'(마지막 처리 노트) 순으로 찾는다."""
+    """확인된 조치와 QC/전달 단계만 기록하며 전달을 운영 배포로 바꾸지 않는다."""
     field = str((detail.get("resolution_fields") or {}).get(FIX_FIELD) or "").strip()
     if field and not _unconfirmed(field):
         return compact_text(field, max_chars), "field"
-    for note in reversed(detail.get("notes") or []):
+    delivery = ""
+    for note in reversed(_resolution_notes(detail)):
         raw = str(note.get("text") or "").strip()
         if not raw or raw.startswith("이슈노트 추가됨"):
             continue
         cleaned = _clean_note(raw, detail)
-        if not cleaned or (_DELIVERY_ONLY.search(cleaned) and not _FIX_HINT.search(_DELIVERY_ONLY.sub("", cleaned))):
-            continue
-        # 같은 노트의 '배포 완료. 확인 부탁'은 완료 문장만 남긴다.
-        sentences = [part.strip(" .-~") for part in re.split(r"[.。!?\n]+", cleaned)]
-        confirmed = [part for part in sentences if part and _COMPLETED_NOTE.search(part)
-                     and not _unconfirmed(part)]
+        if re.search(r"\[\s*고객사\s*전달\s*\]", cleaned) and not _unconfirmed(cleaned):
+            delivery = "고객사 전달 기록 있음"
+        # SVN 변경 링크 자체에는 조치 의미가 없다. 실제 변경 파일만 제한적으로 표시한다.
+        changed_files = _SVN_FILE.findall(cleaned)
+        if changed_files and re.search(r"svn\s|리비전\s*:", cleaned, re.I):
+            change = "소스 변경 기록: " + ", ".join(changed_files[:3])
+            return compact_text(". ".join(filter(None, [change, delivery])), max_chars), "note"
+        text = "\n".join(line for line in cleaned.splitlines()
+                         if not _NOTE_METADATA.search(line.strip())
+                         and not re.fullmatch(r"\[\s*고객사\s*전달\s*\].*", line.strip()))
+        confirmed = [part for part in _note_sentences(text)
+                     if (_COMPLETED_NOTE.search(part) or _QC_SUCCESS.search(part)) and not _unconfirmed(part)]
         if confirmed:
-            return compact_text(". ".join(confirmed), max_chars), "note"
-    return "", ""
+            action = ". ".join(confirmed)
+            if delivery and "전달" not in action:
+                action += ". " + delivery
+            return compact_text(action, max_chars), "note"
+    return (delivery, "note") if delivery else ("", "")
 
 
-def _table_cell(text: str, origin: str) -> str:
+def _latest_resolution_caveat(detail: Dict[str, Any]) -> str:
+    """과거 완료 기록을 최신 미해결·배포 예정 상태로 오해하지 않도록 한정한다."""
+    for note in reversed(_resolution_notes(detail)):
+        sentences = _note_sentences(_clean_note(str(note.get("text") or ""), detail))
+        pending = [part for part in sentences if _PENDING_OUTCOME.search(part)]
+        if pending:
+            return compact_text(". ".join(pending), NOTE_SNIPPET_CHARS)
+        if any(_COMPLETED_NOTE.search(part) and not _unconfirmed(part) for part in sentences):
+            break
+    return ""
+
+
+def _resolution_notes(detail: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # 원문 발췌는 표시용 노트의 길이 제한 밖에 있는 근거를 보완한다.
+    excerpts = [item for item in [*(detail.get("matching_evidence") or []),
+                                  *((detail.get("answer_evidence") or {}).get("excerpts") or [])]
+                if str(item.get("field") or "").split(":", 1)[0] == "note"]
+    notes: Dict[str, Dict[str, Any]] = {}
+    for index, item in enumerate([*excerpts, *(detail.get("notes") or [])]):
+        note_id = str(item.get("id") or item.get("note_id") or
+                      str(item.get("field") or "").partition(":")[2])
+        key = note_id or f"position:{index}"
+        text = str(item.get("text") or "")
+        if key in notes:
+            previous = str(notes[key].get("text") or "")
+            if text in previous:
+                text = previous
+            elif previous not in text:
+                text = previous + "\n\n" + text
+        notes[key] = {**notes.get(key, {}), **item, "id": note_id, "text": text}
+    # Mantis ID는 시간순이다. ID 없는 입력은 원래 순서를 유지한다.
+    return sorted(notes.values(), key=lambda item: int(str(item.get("id") or "0"))
+                  if str(item.get("id") or "0").isdigit() else 0)
+
+
+def _table_cell(text: str, origin: str, *, has_evidence: bool = False) -> str:
     if not text:
-        return "기록 없음"
+        return "기록에서 확인되지 않음" if has_evidence else "기록 없음"
     cell = re.sub(r"\s+", " ", text).replace("|", "/")
     return f"{cell} (노트)" if origin == "note" else cell
 
@@ -172,14 +242,14 @@ def _comparison_lines(base_issue: Dict[str, Any], examples: List[Dict[str, Any]]
     """기준 이슈와 사례의 원인·해결을 표로 나란히 놓고, 기록 범위와 겹치는 단서만 짚는다."""
     base_cause, base_cause_origin = _recorded_cause(base_issue)
     base_fix, base_fix_origin = _recorded_fix(base_issue)
-    rows = [f"| 기준 #{base_issue.get('id')} | {_table_cell(base_cause, base_cause_origin)} | "
-            f"{_table_cell(base_fix, base_fix_origin)} |"]
+    rows = [f"| 기준 #{base_issue.get('id')} | {_table_cell(base_cause, base_cause_origin, has_evidence=bool(_resolution_notes(base_issue)))} | "
+            f"{_table_cell(base_fix, base_fix_origin, has_evidence=bool(_resolution_notes(base_issue)))} |"]
     case_causes = []
     for item in examples:
         cause, cause_origin = _recorded_cause(item)
         fix, fix_origin = _recorded_fix(item)
         case_causes.append((item, cause))
-        rows.append(f"| #{item.get('id')} | {_table_cell(cause, cause_origin)} | {_table_cell(fix, fix_origin)} |")
+        rows.append(f"| #{item.get('id')} | {_table_cell(cause, cause_origin, has_evidence=bool(_resolution_notes(item)))} | {_table_cell(fix, fix_origin, has_evidence=bool(_resolution_notes(item)))} |")
 
     recorded = sum(1 for _, cause in case_causes if cause)
     lines = [
@@ -189,15 +259,18 @@ def _comparison_lines(base_issue: Dict[str, Any], examples: List[Dict[str, Any]]
         "|---|---|---|",
         *rows,
         "",
-        f"- 원인 기록: 기준 이슈 {'있음' if base_cause else '없음'}, 과거 사례 {recorded}/{len(examples)}건.",
+        f"- 원인 기록: 기준 이슈 {'있음' if base_cause else ('미확인' if _resolution_notes(base_issue) else '없음')}, 과거 사례 {recorded}/{len(examples)}건.",
     ]
+    for item in [base_issue, *examples]:
+        if caveat := _latest_resolution_caveat(item):
+            lines.append(f"- #{item.get('id')}: 후속 상태 — {caveat} (노트).")
     base_terms = _clue_terms(f"{base_cause} {base_issue.get('summary') or ''}")
     for item, cause in case_causes:
         shared = sorted(base_terms & _clue_terms(cause)) if cause else []
         if shared:
             lines.append(f"- #{item.get('id')}: 기준 이슈와 겹치는 원인 단서 {', '.join(shared[:4])}. 같은 원인인지는 재현으로 확인하세요.")
     lines.append(
-        "- 원인이 기록되지 않은 사례는 해결·조치 내용으로만 비교했고, 같은 원인이라고 단정하지 않았습니다."
+        "- 원인을 기록에서 확인하지 못한 사례는 해결·조치 내용으로만 비교했고, 같은 원인이라고 단정하지 않았습니다."
         if recorded < len(examples) else
         "- 기록된 원인끼리 비교했으며, 같은 원인인지는 재현으로 확인해야 합니다."
     )

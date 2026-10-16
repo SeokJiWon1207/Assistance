@@ -88,7 +88,10 @@ def work_operation(question: str, constraints: dict) -> str | None:
         return "health"
     if re.search(r"다\s*끝났|개발\s*끝났|아직.*(?:남|못\s*끝)|끝난\s*건\s*빼", question):
         return "open"
-    if constraints.get("customer_key") and re.search(r"남은|남아|미처리", question):
+    # 제목·키워드를 제외하고 '남은 건수'를 세라는 표현은 결과 개수이며
+    # 미종료 업무를 묻는 '남은 건'과 구분한다.
+    work_state_text = re.sub(r"남은\s*(?:건수|번호|목록)", " ", question)
+    if constraints.get("customer_key") and re.search(r"남은|남아|미처리", work_state_text):
         return "open"
     if constraints.get("customer_key") and re.search(r"만\s*보면|^아니.*말고|^(?:그럼|그러면).*지난달|그중.*팀", question):
         return "list"

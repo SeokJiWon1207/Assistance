@@ -39,6 +39,20 @@ class NotionIdentifierSearchTests(unittest.TestCase):
         constraints = extract_query_constraints("147MiraeAsset(미래에셋증권) 이슈 보여줘")
         self.assertEqual(constraints["customer_exact"], "147MiraeAsset(미래에셋증권)")
 
+    def test_database_prefix_without_name_remains_a_keyword(self):
+        for token in ("DB02_", "db02_"):
+            with self.subTest(token=token):
+                self.search_fixture([fixtures.page("target"), fixtures.page("unrelated")], {
+                    "target": [fixtures.NotionAccuracyRegressionTests.paragraph("block", token)],
+                    "unrelated": [fixtures.NotionAccuracyRegressionTests.paragraph("other", "DB금융투자")],
+                })
+                query = f"노션에서 {token} 찾아줘"
+                self.assertIsNone(extract_query_constraints(query)["customer_key"])
+                stage = run_retrieval_pipeline(query, 5, {"notion": True})["stages"][0]
+                self.assertEqual(stage["meta"]["terms"], [token])
+                self.assertEqual([p["id"] for p in stage["notion_pages"]], ["target"])
+        self.assertTrue(extract_query_constraints("노션 DB증권 DB02_ 찾아줘")["customer_aliases"])
+
 
 if __name__ == "__main__":
     unittest.main()

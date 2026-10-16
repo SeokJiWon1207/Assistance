@@ -14,8 +14,6 @@ from backend.notion.mapping import notion_property_to_text
 
 API_EXCLUSIONS = frozenset({'unsupported_block', 'foreign_synced_block',
                             'synced_source_outside_scope', 'http_403', 'http_404'})
-# 읽기 범위(하위 DB 구성)는 드물게 바뀌므로 하루 동안 재사용한다.
-READ_SCOPE_TTL_SECONDS = 86400
 
 
 def catalog_max_age_seconds() -> int:
@@ -246,14 +244,14 @@ def _current_results(index, pages, candidates, allowed):
 
 def _scope_current(read_scope):
     from backend.config import RUNTIME_DIR
-    from backend.notion.read_scope import child_database_search_enabled
+    from backend.notion.read_scope import child_database_search_enabled, _read_scope_max_age
     if not child_database_search_enabled():
         return True
     try:
         saved = json.loads((RUNTIME_DIR / 'notion_read_scope.json').read_text())
         age = datetime.now(timezone.utc).timestamp() - _time(saved.get('generated_at', ''))
         return (saved.get('scope_complete') is True and saved.get('read_scope') == read_scope
-                and 0 <= age < READ_SCOPE_TTL_SECONDS)
+                and 0 <= age <= _read_scope_max_age())
     except (OSError, ValueError):
         return False
 

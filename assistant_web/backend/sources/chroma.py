@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
-from backend.execution import bounded_timeout
+from backend.execution import bounded_timeout, RequestStopped
 from backend.timing import measured
 from backend.intent.search_terms import keyword_term_aliases, text_matches_keyword_terms
 from backend.common import (
@@ -117,6 +117,22 @@ def rank_chroma_documents_semantically(
     limit: int,
     constraints: Dict[str, Any],
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    if os.getenv("MANTIS_HYBRID_SEARCH_ENABLED", "true").lower() != "false":
+        from backend.sources.mantis_hybrid import search_hybrid
+        try:
+            result = search_hybrid(search_keyword, limit, constraints, _rank_legacy_documents_semantically)
+        except HTTPException:
+            result = None  # Mantis 연결 미설정 환경에서도 기존 Chroma 검색은 사용할 수 있다.
+        if result is not None:
+            return result
+    return _rank_legacy_documents_semantically(search_keyword, limit, constraints)
+
+
+def _rank_legacy_documents_semantically(
+    search_keyword: str,
+    limit: int,
+    constraints: Dict[str, Any],
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Rank Chroma documents by bge-m3 distance, with a lexical semantic fallback."""
     multiplier = 80 if has_constraint(constraints) else 20
     candidate_limit = min(max(limit * multiplier, 100), 400)
@@ -159,6 +175,8 @@ def rank_chroma_documents_semantically(
             )
         ]
         ranking_meta = {"ranking": "semantic_vector", "embedding_model": embedding_model}
+    except RequestStopped:
+        raise
     except Exception as exc:  # The fallback is intentional for deployments without Ollama/Chroma.
         ranking_error = f"{type(exc).__name__}: {exc}"[:300]
         with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
@@ -319,17 +337,25 @@ def execute_chroma_search(
         if latest_issue:
             refreshed_count += 1
             refreshed_issue_ids.add(issue_id)
-            if has_constraint(constraints) and not issue_matches_constraints(latest_issue, constraints):
+            if (has_constraint(constraints) or document.get("chunk_evidence")) and not issue_matches_constraints(latest_issue, constraints):
                 skipped_after_refresh += 1
                 continue
             if not semantic:
                 if not text_matches_keyword_terms(issue_to_search_text(latest_issue), terms):
                     skipped_after_refresh += 1
                     continue
-            document["latest_issue"] = normalize_issue(latest_issue, search_terms=terms + constraint_evidence_terms(constraints))
+            document["latest_issue"] = normalize_issue(latest_issue, search_terms=terms + constraint_evidence_terms(constraints),
+                                                       evidence_query=constraints.get("answer_query"))
+            if document.get("chunk_evidence"):
+                from backend.sources.mantis_hybrid import attach_chunk_evidence
+                attach_chunk_evidence(document["latest_issue"], latest_issue, document["chunk_evidence"])
             document["latest_source"] = "mantis"
+        elif document.get("snapshot_issue"):
+            document["latest_issue"] = document["snapshot_issue"]
+            document["latest_source"] = "mantis_snapshot"
         else:
             document["latest_source"] = "chroma_snapshot"
+        document.pop("snapshot_issue", None)
         documents.append(document)
         if len(documents) >= limit:
             break

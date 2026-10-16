@@ -19,7 +19,7 @@ from backend.query_filters import (
 )
 
 
-COUNT_MARKERS = ("몇개", "몇건", "건수", "총몇", "개수")
+COUNT_MARKERS = ("몇개", "몇건", "총몇")
 SUM_MARKERS = ("합계", "총합", "합이", "합은", "더하면", "공수합")
 SIMILAR_MARKERS = ("비슷", "유사", "같은", "동일", "관련")
 
@@ -49,7 +49,23 @@ def infer_operation(question: str) -> str:
         return "aggregate"
     if any(marker in normalized for marker in SUM_MARKERS):
         return "aggregate"
-    if any(marker in normalized for marker in COUNT_MARKERS):
+    # '건 수정본', '개 수정'을 붙이면 건수·개수가 생긴다. 띄어 쓴 수량
+    # 명사는 '수'와 허용 조사 뒤 경계까지 확인해 '건 수신'과 구분한다.
+    if any(marker in normalized for marker in COUNT_MARKERS) or re.search(
+        r"건수|개수|(?:건|개)\s+수(?:는|가|를|와|만|도|의|로|까지|부터)?(?=$|[^가-힣])", question
+    ):
+        return "count"
+    if re.search(
+        r"(?:이슈|건|게|거|것)(?:이|가)?\s*(?:있는지|있어|있나|있나요)[\s\S]{0,120}"
+        r"(?:있으면|있다면)[\s\S]{0,120}(?:없으면|없다면)",
+        request_text,
+    ):
+        return "count"
+    if re.search(r"(?:이슈|건)(?:이|가)?\s*있는지(?:만)?\s*(?:알려|말해|답해)", request_text):
+        return "count"
+    if re.search(r"(?:이슈|건|것|거)(?:을|를|만)?\s*(?:모두|전체|전부)?\s*세(?:고|어|줘|주세요)", request_text):
+        return "count"
+    if re.search(r"(?:이슈|건|항목)(?:을|를)?\s*(?:모두|전체|전부)?\s*집계(?:해|하여|하)?", request_text):
         return "count"
     if extract_group_by(question) and "집계" in normalized:
         return "count"
@@ -501,11 +517,23 @@ def build_query_plan(
         constraints.get("statuses") or constraints.get("excluded_statuses")
     )
     filter_clauses = normalize_filter_clauses(constraints.get("filter_clauses") or [])
+    from backend.intent.search_terms import build_keyword_terms
+    structured_topic_free = bool(
+        source in {"mantis", "both"}
+        and filters["customer"]
+        and created_at
+        and not build_keyword_terms(question, constraints)
+        and not any(clause["field"] in {"title", "keyword"} for clause in filter_clauses)
+    )
     if group_by == "customer":
         model_filter_clauses = [
             clause for clause in model_filter_clauses if clause["field"] != "customer"
         ]
     for clause in model_filter_clauses:
+        if structured_topic_free and clause["field"] in {"title", "keyword"}:
+            # 고객사·기간만 지정한 조회에 모델이 설명/표시 문구를 필수
+            # 검색어로 덧붙이면 정상 항목이 모두 탈락한다.
+            continue
         if clause["field"] == "created_at" and (
             detected_created_at
             or not question_has_temporal_expression(question)
@@ -564,6 +592,8 @@ def build_query_plan(
                 if values:
                     add_filter_clause(filter_clauses, "status", operator, values)
     terms = model_plan.get("terms") or source_plan.get("terms") or []
+    if structured_topic_free:
+        terms = []
     resolution = constraints.get("status_resolution") or {}
     if resolution.get("status_intent") == "open" and resolution.get("evidence"):
         evidence = re.sub(r"\s+", "", resolution["evidence"]).casefold()
@@ -594,7 +624,11 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     raw_created_at = filters.get("created_at")
     created_at = raw_created_at if isinstance(raw_created_at, dict) else None
 
-    expected_date = extract_created_at_range(question)
+    if plan.get("operation") == "explain":
+        from backend.intent.explanation import explanation_date_text
+        expected_date = extract_created_at_range(explanation_date_text(question))
+    else:
+        expected_date = extract_created_at_range(question)
     resolved = plan.get("resolved_constraints") or {}
     if isinstance(resolved, dict) and resolved.get("inherited_from_audit_id"):
         from backend.intent.scope_changes import followup_created_at
@@ -632,7 +666,18 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
             ),
         })
 
+    explanation_scope = None
+    if plan.get("operation") == "explain":
+        from backend.intent.explanation import explanation_constraints, wants_issue_explanation
+        from backend.intent.constraints import extract_query_constraints
+        parsed = extract_query_constraints(question)
+        if resolved.get("inherited_from_audit_id"):
+            parsed = {**resolved, **{k: v for k, v in parsed.items() if v}}
+        if wants_issue_explanation(question, parsed):
+            explanation_scope = explanation_constraints(question, parsed)
     expected_operation = "aggregate" if plan.get("followup_effort") else infer_operation(question)
+    if explanation_scope is not None:
+        expected_operation = "explain"
     operation_passed = plan.get("operation") == expected_operation
     checks.append({
         "id": "operation_intent",
@@ -652,7 +697,8 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     clauses = normalize_filter_clauses(plan.get("filter_clauses") or [])
     if source in {"mantis", "both"}:
         from backend.intent.entities import extract_status_constraints
-        expected_statuses = set(extract_status_constraints(question))
+        expected_statuses = set(explanation_scope["statuses"] if explanation_scope is not None
+                                else extract_status_constraints(question))
         from backend.intent.status_semantics import ALL_STATUSES, resolution_is_grounded
         if ALL_STATUSES.search(question) and not expected_statuses - {"open", "closed"}:
             expected_statuses = set()
@@ -689,7 +735,11 @@ def validate_query_plan(question: str, plan: Dict[str, Any]) -> Dict[str, Any]:
             c["field"] in ({"owner", "reporter"} if field == "owner" else {field}) for c in clauses)]
         checks.append({"id": "scope_reset", "label": "조건 해제 반영", "status": "fail" if uncleared else "pass",
                        "detail": "해제할 조건이 남아 있음: " + ", ".join(uncleared) if uncleared else "요청한 조건만 해제됨"})
-    has_negative_phrase = bool(re.search(r"빼고|제외|아닌|말고|없이|미포함|없는", without_scope_clear_phrases(question)))
+    negative_text = without_scope_clear_phrases(question)
+    if explanation_scope is not None:
+        from backend.intent.explanation import explanation_filter_text
+        negative_text = explanation_filter_text(negative_text)
+    has_negative_phrase = bool(re.search(r"빼고|제외|아닌|말고|없이|미포함|없는", negative_text))
     if has_negative_phrase:
         negative_passed = any(
             clause["operator"] in {"not_equals", "not_in", "not_contains", "not_exists"}

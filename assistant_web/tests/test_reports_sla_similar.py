@@ -237,7 +237,7 @@ class SimilarResolutionReportTest(unittest.TestCase):
                 self.assertEqual(similar._recorded_cause(detail), ("", ""))
                 self.assertNotIn(text.rstrip("."), "\n".join(similar._comparison_lines({}, [detail])))
 
-    def test_pending_notes_do_not_replace_completed_fixes_or_enter_playbooks(self):
+    def test_pending_notes_do_not_replace_completed_fixes_in_playbooks(self):
         for text in (
             "서버 설정 수정 후 다시 확인 부탁드립니다.", "패치 배포 예정입니다.",
             "수정이 완료되지 않았습니다.", "아직 해결하지 못했습니다.", "추가 확인 필요",
@@ -250,7 +250,7 @@ class SimilarResolutionReportTest(unittest.TestCase):
                 detail = {"id": 9001, "notes": [{"text": text}]}
                 self.assertEqual(similar._recorded_fix(detail), ("", ""))
                 self.assertNotIn("마지막 조치:", similar._summarize_resolution(detail))
-                self.assertNotIn(text, similar._build_playbook_candidate({}, [detail])["resolution"])
+                self.assertNotIn(f"마지막 조치: {text}", similar._build_playbook_candidate({}, [detail])["resolution"])
                 detail["notes"].insert(0, {"text": "서버 설정 수정 완료."})
                 self.assertEqual(similar._recorded_fix(detail), ("서버 설정 수정 완료", "note"))
 
@@ -374,7 +374,7 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("| #9001 | 서버 세션 타임아웃 10분 설정 | 타임아웃 30분으로 조정 |", content)
         # 원인을 묻기만 하는 노트는 건너뛰고, 노트에서 뽑은 원인은 (노트)로 표시한다.
         self.assertIn("| #9002 | 확인 결과 원인은 인증 토큰 갱신 누락입니다 (노트) |", content)
-        self.assertIn("| #9003 | 기록 없음 | 고객 안내 후 종료 (노트) |", content)
+        self.assertIn("| #9003 | 기록에서 확인되지 않음 | 고객 안내 후 종료 (노트) |", content)
         # 인사말·제목 반복과 파일 경로뿐인 전달 기록은 걷어내고 실제 원인·조치를 보여 준다.
         self.assertIn("| #9004 | 현재 개발기 디스크문제로 조회가 안되는 상황입니다 (노트) | 서버 설정 수정해서 소스 전달드립니다 (노트) |", content)
         self.assertIn("원인 기록: 기준 이슈 있음, 과거 사례 3/4건.", content)

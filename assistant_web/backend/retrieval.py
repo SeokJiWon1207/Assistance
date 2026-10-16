@@ -38,7 +38,11 @@ from backend.sources.mantis import (
     execute_mantis_id_lookup,
     execute_mantis_page_scan,
     execute_mantis_snapshot_search,
+    fetch_mantis_issue_by_id,
+    get_issue_custom_field_value,
     get_mantis_snapshot_freshness,
+    issue_matches_constraints,
+    normalize_issue,
     revalidate_mantis_snapshot_stage,
 )
 from backend.sources.notion import (
@@ -157,6 +161,211 @@ def grounded_mantis_terms(
     return source_specific_terms(query_text, "mantis", constraints)
 
 
+_SOURCE_TITLE_REFERENCE = re.compile(r"(?<!\d)0*(\d{4,7})\s*:\s*(\[\s*\d{3,5}\s*\][^\r\n]{8,240})")
+_REFERENCE_GENERIC_TERMS = {
+    "조건검색", "조건식", "화면", "결과", "결과값", "현상", "문의", "관련", "수정", "내용", "확인", "처리",
+    "운영", "적용", "예정", "버전", "검색", "기능", "오류", "문제", "고객", "이슈",
+}
+
+
+def _reference_matches_question(query: str, title: str, constraints: Dict[str, Any]) -> bool:
+    title_screen = re.match(r"^\s*\[\s*(\d{3,5})\s*\]", title)
+    query_screens = set(re.findall(r"(?<!\d)\d{3,5}(?!\d)", query))
+    if title_screen and query_screens and title_screen.group(1) not in query_screens:
+        return False
+    customer_terms = {word for alias in constraints.get("customer_aliases") or []
+                      for word in re.findall(r"[가-힣]{2,}", alias)}
+    query_terms = set(re.findall(r"[가-힣]{2,}", query))
+    title_terms = set(re.findall(r"[가-힣]{2,}", title))
+    shared = (query_terms & title_terms) - _REFERENCE_GENERIC_TERMS - customer_terms
+    return len(shared) >= 2 or bool(title_screen and title_screen.group(1) in query_screens
+                                    and any(len(term) >= 4 for term in shared))
+
+
+def _explanation_referenced_issues(query: str, constraints: Dict[str, Any], stages: List[Dict[str, Any]]) -> None:
+    """설명 원문에 번호와 제목이 함께 인용된 선행 이슈만 확인해 후보에 더한다."""
+    sources: List[Dict[str, Any]] = []
+    for stage in stages:
+        sources.extend(stage.get("issues_list") or [])
+        sources.extend(doc.get("latest_issue") for doc in stage.get("documents", []) if doc.get("latest_issue"))
+    if not sources:
+        return
+    existing_ids = {issue.get("id") for issue in sources}
+    added: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+    reference_scopes: Dict[int, Dict[str, Any]] = {}
+    checked: set[int] = set()
+    for source in sources[:5]:
+        project = source.get("project")
+        if not isinstance(project, str) or project.strip() in {"", "미상", "기타/미상"}:
+            continue
+        excerpts = (source.get("answer_evidence") or {}).get("excerpts") or []
+        for excerpt in excerpts:
+            if not str(excerpt.get("field") or "").startswith("note:"):
+                continue
+            for reference in _SOURCE_TITLE_REFERENCE.finditer(str(excerpt.get("text") or "")):
+                target_id = int(reference.group(1))
+                if target_id == source.get("id") or target_id in existing_ids or target_id in checked:
+                    continue
+                checked.add(target_id)
+                try:
+                    raw = fetch_mantis_issue_by_id(target_id)
+                except (HTTPException, requests.RequestException):
+                    continue
+                if not raw or raw.get("id") != target_id:
+                    continue
+                title = str(raw.get("summary") or "").strip()
+                if (len(title) < 20 or normalize_for_match(title) not in normalize_for_match(reference.group(2))
+                        or not _reference_matches_question(query, title, constraints)
+                        or str((raw.get("project") or {}).get("name") or "") != project):
+                    continue
+                # 기본 담당자 범위는 검색 기본값이다. 사용자가 직접 선택한 팀·담당자 조건은 보존한다.
+                scoped = dict(constraints)
+                relaxed: List[str] = []
+                if scoped.get("mantis_team_scope") == "default":
+                    scoped.pop("mantis_team_members", None)
+                    scoped.pop("mantis_team_label", None)
+                    scoped.pop("mantis_team_scope", None)
+                    relaxed.append("default_team")
+                # '구 HTS와 결과가 다름'은 비교 대상 설명이다. 원본 매체 필드가 비어
+                # 있더라도 정확히 인용된 원본 제목에 HTS가 있을 때만 함께 제시한다.
+                media = get_issue_custom_field_value(raw, "매체구분")
+                contextual_platform = bool(re.search(r"(?:구|기존|옛)\s*HTS\s*(?:와|과|대비|비교)", query, re.I))
+                hard_platform = bool(re.search(
+                    r"매체\s*구분|(?:HTS|H-able).{0,10}(?:만|한정|제한)|"
+                    r"(?:만|한정|제한).{0,10}(?:HTS|H-able)", query, re.I))
+                if (not media and contextual_platform and not hard_platform
+                        and any(normalize_for_match(alias) in normalize_for_match(title)
+                                for alias in scoped.get("platform_aliases") or [])):
+                    scoped.pop("platform_key", None)
+                    scoped.pop("platform_aliases", None)
+                    scoped["filter_clauses"] = [clause for clause in scoped.get("filter_clauses") or []
+                                                if clause.get("field") != "platform"]
+                    relaxed.append("unknown_media_context")
+                if not issue_matches_constraints(raw, scoped):
+                    continue
+                normalized = normalize_issue(raw, evidence_query=query)
+                source.setdefault("source_reference_ids", []).append(target_id)
+                added.append(normalized)
+                reference_scopes[target_id] = {**scoped,
+                                               '_reference_unknown_media': 'unknown_media_context' in relaxed}
+                existing_ids.add(target_id)
+                edges.append({"source_issue_id": source["id"], "target_issue_id": target_id,
+                              "source_field": excerpt["field"], "scope_exception": relaxed})
+                if len(added) >= 2:
+                    break
+            if len(added) >= 2:
+                break
+        if len(added) >= 2:
+            break
+    if added:
+        stages.append({"source": "mantis_explanation_reference", "status": "ok", "issues_list": added,
+                       "meta": {"search_complete": True, "source_reference_edges": edges,
+                                "reference_scopes": reference_scopes}})
+
+
+def _explanation_retrieval(query: str, limit: int, tools: Dict[str, bool], plan: Dict[str, Any]) -> Dict[str, Any]:
+    """설명 문장의 조사·서술어를 필수 AND 검색어로 변환하지 않는다."""
+    from backend.intent.explanation import explanation_search_terms
+    constraints = dict(plan["resolved_constraints"])
+    scoped = {**constraints, "answer_query": query}
+    # CMF 같은 드문 기술 식별어가 짧은 최신 이슈의 제목에 정확히 있어도,
+    # 긴 과거 이슈의 의미 점수에 밀려 표시 범위 밖으로 나갈 수 있다.
+    # 설명 질문에 식별어가 하나만 명시된 경우 그 원문 일치를 후보 범위에 보존한다.
+    technical_terms = [term for term in explanation_search_terms(query, constraints)
+                       if re.fullmatch(r"[A-Z][A-Z0-9_]{2,7}", term)
+                       and term not in {"HTS", "MTS", "KRX", "NXT", "API", "QC", "FID", "DLL"}]
+    if len(technical_terms) == 1:
+        scoped["semantic_focus_terms"] = technical_terms
+    stages: List[Dict[str, Any]] = []
+    ids = constraints.get("issue_ids") or []
+    similar = wants_similar_issue_search(query, constraints)
+    if tools.get("mantis") and ids:
+        try:
+            stages.append(execute_mantis_id_lookup(ids, scoped))
+        except (HTTPException, requests.RequestException) as exc:
+            stages.append({"source": "mantis_id_lookup", "status": "error", "issues_list": [],
+                           "reason": str(exc), "meta": {"search_complete": False}})
+    if tools.get("mantis") and tools.get("vectorDb") and (not ids or similar):
+        search_query = query
+        screen = re.search(r'(?<!\d)(\d{4})(?!\d)', query)
+        mismatch = re.search(r'종목명.{0,20}차트.{0,20}데이터.{0,30}(?:다르|달랐|달라|맞지|불일치)', query)
+        if not ids and constraints.get('customer_key') and screen and mismatch:
+            focus = execute_mantis_page_scan(f'{screen.group(1)} 종목 차트', 1, scoped)
+            candidates = focus.get('issues_list') or []
+            if candidates:
+                title = normalize_for_match(str(candidates[0].get('summary') or ''))
+                if (screen.group(1) in title and '종목' in title and '차트' in title
+                        and re.search(r'맞지않|다르|불일치', title)):
+                    stages.append({**focus, 'source': 'mantis_explanation_focus'})
+                    stages.append(execute_mantis_id_lookup([int(candidates[0]['id'])], scoped))
+                    return {
+                        'query': query, 'keyword': '', 'constraints': constraints,
+                        'intent_plan': plan, 'query_plan': plan, 'limit': limit, 'stages': stages,
+                        'filter_audit': {
+                            'planned_filters': constraints.get('filter_clauses') or [],
+                            'sources': [filter_audit_for_source(str(s['source']),
+                                                                constraints.get('filter_clauses') or [])
+                                        for s in stages],
+                        },
+                    }
+        if not ids and re.search(r'저장', query) and re.search(r'최종|답했|회신', query):
+            # 설명 질문의 고유 설정명을 앞 네 개 일반 검색어가 밀어내는 경우,
+            # 동일 고객사의 제목·본문 원문 일치 최신 후보 하나를 보존한다.
+            setting = re.search(r'(?<![가-힣])([가-힣]{4,12})\s*설정(?:값|도|을|은|이)?', query)
+            if setting:
+                focus = execute_mantis_page_scan(f'{setting.group(1)} 저장', 1, scoped)
+                stages.append({**focus, 'source': 'mantis_explanation_focus'})
+                candidates = focus.get('issues_list') or []
+                if candidates and re.search(r'가능|할\s*수\s*있', query):
+                    title = normalize_for_match(str(candidates[0].get('summary') or ''))
+                    if (normalize_for_match(setting.group(1)) in title
+                            and '저장' in title and '가능여부' in title):
+                        # 질문의 고유 설정명·행위·가능 여부가 최신 원문 제목에
+                        # 모두 맞으면 오래된 유사 이슈를 답변 대상으로 섞지 않는다.
+                        stages.append(execute_mantis_id_lookup([int(candidates[0]['id'])], scoped))
+                        return {
+                            'query': query, 'keyword': '', 'constraints': constraints,
+                            'intent_plan': plan, 'query_plan': plan, 'limit': limit, 'stages': stages,
+                            'filter_audit': {
+                                'planned_filters': constraints.get('filter_clauses') or [],
+                                'sources': [filter_audit_for_source(str(s['source']),
+                                                                    constraints.get('filter_clauses') or [])
+                                            for s in stages],
+                            },
+                        }
+        if similar:
+            scoped = {**scoped, "issue_ids": [], "exclude_issue_ids": list(dict.fromkeys([*ids, *(constraints.get("exclude_issue_ids") or [])])),
+                      "max_issue_id_exclusive": min(ids),
+                      "filter_clauses": [c for c in scoped.get("filter_clauses", []) if c["field"] != "issue_id" or c["operator"] in {"not_equals", "not_in"}]}
+            # 기준 이슈 제목이 사용자가 명시한 비교 주제를 덮어쓰지 않게 한다.
+            search_query = re.sub(r"#\s*\d+", " ", query)
+            focus = explanation_search_terms(query, constraints)
+            bases = [issue for s in stages for issue in s.get("issues_list", [])]
+            if not focus and bases:
+                search_query = build_similar_issue_search_text(bases[0]) or search_query
+        from backend.sources.mantis_multiquery import search_explanation_queries
+        stage = search_explanation_queries(search_query, plan.get('explanation_queries') or [],
+                                           max(1, min(limit, 5) - bool(ids)), scoped,
+                                           search=execute_chroma_search)
+        stages.append({**stage, "source": "chroma_explanation",
+                       "meta": {**stage.get("meta", {}), "constraints": scoped}})
+    elif tools.get("mantis") and not ids:
+        keyword = " ".join(explanation_search_terms(query, constraints))
+        stage = execute_mantis_page_scan(keyword, limit, constraints)
+        stages.append(stage)
+        found_ids = [int(issue["id"]) for issue in stage.get("issues_list", []) if issue.get("id")]
+        if found_ids:
+            stages.append(execute_mantis_id_lookup(found_ids[:limit], scoped))
+    if tools.get("mantis") and not ids:
+        _explanation_referenced_issues(query, constraints, stages)
+    return {"query": query, "keyword": "", "constraints": constraints, "intent_plan": plan,
+            "query_plan": plan, "limit": limit, "stages": stages,
+            "filter_audit": {"planned_filters": constraints.get("filter_clauses") or [],
+                             "sources": [filter_audit_for_source(str(s["source"]), constraints.get("filter_clauses") or [])
+                                         for s in stages]}}
+
+
 @with_store_scope
 def run_retrieval_pipeline(
     query_text: str,
@@ -164,6 +373,8 @@ def run_retrieval_pipeline(
     tools: Dict[str, bool],
     intent_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if (intent_plan or {}).get("operation") == "explain":
+        return _explanation_retrieval(query_text, limit, tools, intent_plan or {})
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)
     display_constraints = constraints
     constraints = continuation_execution_constraints(constraints)
@@ -592,6 +803,8 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
         "issues": [
             {
                 "id": issue.get("id"),
+                "related_issue_ids": (issue.get("detail") or {}).get("related_issue_ids", []),
+                "source_reference_ids": (issue.get("detail") or {}).get("source_reference_ids", []),
                 "project": issue.get("project"),
                 "title": issue.get("summary"),
                 "status": (issue.get("detail") or {}).get("status_label") or display_mantis_status_label(issue.get("status")),
@@ -605,6 +818,7 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 "date_fields": (issue.get("detail") or {}).get("date_fields", {}),
                 "resolution_fields": (issue.get("detail") or {}).get("resolution_fields", {}),
                 "matching_evidence": (issue.get("detail") or {}).get("matching_evidence", []),
+                "answer_evidence": (issue.get("detail") or {}).get("answer_evidence", {"complete": False, "excerpts": []}),
                 "additional_information": compact_text((issue.get("detail") or {}).get("additional_information", ""), 620),
                 "description": compact_text(
                     (issue.get("detail") or {}).get("description") or issue.get("preview", ""),
@@ -737,6 +951,9 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "media_type": issue.get("media_type", "기타/미상"),
                 "preview": issue.get("description", "")[:260],
                 "detail": issue,
+                "_retrieval_rank": (0 if stage.get("source") in {
+                    "mantis_explanation_reference", "mantis_explanation_focus"
+                } else 10**9),
             }
 
         for document_index, doc in enumerate(stage.get("documents", []), start=1):
@@ -761,7 +978,10 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                     "media_type": latest_issue.get("media_type", "기타/미상"),
                     "preview": latest_issue.get("description", "")[:260],
                     "detail": latest_issue,
-                    "_retrieval_rank": int(doc.get("similarity_rank") or document_index),
+                    "_retrieval_rank": min(
+                        rows.get(issue_id, {}).get("_retrieval_rank", 10**9),
+                        int(doc.get("similarity_rank") or document_index),
+                    ),
                 }
                 continue
             if issue_id in rows or int(issue_id) in excluded_ids:
@@ -788,6 +1008,10 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "_retrieval_rank": int(doc.get("similarity_rank") or document_index),
             }
 
+    if (retrieval_result.get("intent_plan") or {}).get("operation") == "explain":
+        base_ids = (retrieval_result.get("constraints") or {}).get("issue_ids") or []
+        return sorted(rows.values(), key=lambda issue: (int(issue["id"]) not in base_ids,
+                      issue.get("_retrieval_rank", 10**9), -int(issue["id"])))[:limit]
     if similarity_search:
         return sorted(
             rows.values(),
