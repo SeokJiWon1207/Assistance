@@ -49,6 +49,8 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
     claims: list[tuple[int, str, str]] = []
     headers: list[str] = []
     current_id: int | None = None
+    feature_section = False
+    feature_identified = False
     in_source = False
     json_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip(), flags=re.I)
     try:
@@ -93,6 +95,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
         # 목록 필드 안의 ID 표기는 원문 제목의 일부다. 행의 ID와 속성을 각각 검증한다.
         item = re.match(r"^\s*\d+\.\s*(?:\*\*)?ID(?:\*\*)?\s*:\s*#?(\d{1,7})\s*\|", raw_line, re.I)
         if item:
+            feature_section = feature_identified = False
             issue_id = int(item[1])
             ids.add(issue_id)
             current_id = issue_id
@@ -109,6 +112,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
             cells = [plain_text(decode_issue_field(cell.strip())) for cell in re.split(r"(?<!\\)\|", raw_line.strip().strip("|"))]
             fields = [FIELD_LABELS.get(normalize_for_match(cell), "") for cell in cells]
             if "id" in fields and any(field and field != "id" for field in fields):
+                feature_section = feature_identified = False
                 headers = fields
                 current_id = None
                 ids.update(int(v) for key, cell in zip(fields, cells, strict=True) if not key
@@ -137,6 +141,15 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
         line_ids = {int(v) for v in EXPLICIT_ID.findall(line)}
         ids.update(line_ids)
         headers = []
+        # 기능의 보류/예정 상태를 Mantis 이슈의 현재 상태로 오인하지 않는다.
+        # 독립 소제목과 명시적인 기능 항목이 모두 있는 좁은 범위에만 적용한다.
+        section_heading = bool(re.match(r"^\s*#{1,6}\s+", raw_line)
+                               or re.fullmatch(r"\s*\*\*[^*]+\*\*\s*", raw_line))
+        if section_heading or line_ids:
+            feature_section = section_heading and not line_ids and bool(re.search(r"기능(?:\s|$|[(:])", line))
+            feature_identified = False
+        if feature_section and re.match(r"^\s*(?:[-*]\s*)?기능\s*[:：]", line):
+            feature_identified = True
         if len(line_ids) == 1:
             current_id = next(iter(line_ids))
         elif len(line_ids) > 1:
@@ -144,7 +157,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
         if current_id is None:
             continue
         heading = re.match(r"^(?:#{1,6}\s+)?#\d+\s+(.+)$", line)
-        if heading and re.match(r"^\s*(?:\*\*#|#{1,6}\s+#)", raw_line):
+        if heading and re.match(r"^\s*(?:\*\*#\d+\s+(?!\*\*)|#{1,6}\s+#)", raw_line):
             # 분석 소제목은 이슈 제목을 그대로 인용한다는 주장이 아니다.
             section = re.fullmatch(r"(?:원인|해결|조치|현황|상세|이슈|문제|진행 상황)?\s*(?:분석|요약|정리|검토|상세|현황)", heading[1])
             if not section:
@@ -152,6 +165,15 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
             continue
         for match in LABELLED_FIELD.finditer(line):
             field = FIELD_LABELS[normalize_for_match(match["label"])]
+            prefix = line[:match.start()].rstrip()
+            # '문제 플랫폼', '마지막 진행 상태' 같은 설명 항목의 일부를
+            # 구조화된 현재 이슈 속성 라벨로 잘라 읽지 않는다.
+            if (re.search(r"[가-힣A-Za-z]$", prefix)
+                    and not re.search(r"(?:현재|이슈|Mantis)(?:의)?$", prefix, re.I)):
+                continue
+            if (field == "status" and feature_identified and not line_ids
+                    and not re.search(r"(?:현재|이슈|Mantis)(?:의)?\s*상태\s*[:：]", line, re.I)):
+                continue
             if field != "id":
                 claims.append((current_id, field, match["value"]))
         if len(line_ids) == 1:
@@ -179,6 +201,12 @@ def _matches(field: str, claimed: str, actual: Any) -> bool:
         return display_mantis_status_label(candidate) == display_mantis_status_label(expected)
     if field in {"created_at", "updated_at"}:
         return candidate == expected or candidate == expected[:10]
+    if field == "handler":
+        # 괄호 속 '(담당자: 이름)'의 닫는 괄호와 이름 뒤 존칭은 속성이 아니다.
+        # 원래 값 비교도 유지해 실제 이름이 '님'으로 끝나는 경우를 보존한다.
+        presented = re.sub(r"\s*님$", "", candidate.rstrip("). "))
+        if normalize_for_match(presented) == normalize_for_match(expected):
+            return True
     return normalize_for_match(candidate) == normalize_for_match(expected)
 
 

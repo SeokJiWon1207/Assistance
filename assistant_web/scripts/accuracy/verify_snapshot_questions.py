@@ -52,7 +52,6 @@ def run(model_id):
     from backend.schemas import ChatRequest, ChatMessage
     from backend.services.chat_service import chat_service
     from backend.sources.mantis_store import read_complete_store
-    from backend.sources.mantis import issue_to_search_text
     from backend.team_scope import TEAM_MEMBERS
     rows = read_complete_store()
     if rows is None:
@@ -71,7 +70,8 @@ def run(model_id):
                 continue
             if scope.get("media"):
                 fields = {f.get("field", {}).get("name"): f.get("value") for f in row.get("custom_fields") or []}
-                media = str(fields.get("매체구분") or "").strip() or issue_to_search_text(row)
+                # 운영 계약은 매체구분 필드만 사용한다. 본문의 비교 언급은 소속 매체가 아니다.
+                media = str(fields.get("매체구분") or "").strip()
                 aliases = {"MTS": ("mts", "엠티에스", "모바일", "mobile"), "HTS": ("hts", "h-able", "hable")}[scope["media"]]
                 if not any(value in media.casefold() for value in aliases):
                     continue
@@ -81,7 +81,8 @@ def run(model_id):
                 continue
             if scope.get("owner") and scope["owner"] not in {owner.get("name"), owner.get("real_name")}:
                 continue
-            if scope.get("team") and not {owner.get("name"), owner.get("real_name")}.intersection(TEAM_MEMBERS):
+            # 담당자를 명시하지 않은 Mantis 질의는 기존 기본 팀 범위를 따른다.
+            if (scope.get("team") or not scope.get("owner")) and not {owner.get("name"), owner.get("real_name")}.intersection(TEAM_MEMBERS):
                 continue
             if scope.get("year") and not str(row.get("created_at") or "").startswith(scope["year"]):
                 continue

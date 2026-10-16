@@ -33,17 +33,23 @@ def is_structured_status_neutral_query(question: str, constraints: Dict[str, Any
               *(constraints.get("screen_numbers") or [])]
     if not values or not re.search(r"이슈|목록|리스트", question):
         return False
-    text = question
+    from backend.intent.entities import strip_title_date_basis_instruction
+    from backend.intent.search_terms import remove_list_display_instruction
+    from backend.team_scope import remove_team_scope_phrase
+    text = remove_team_scope_phrase(remove_list_display_instruction(strip_title_date_basis_instruction(question)))
     for value in sorted(set(values), key=len, reverse=True):
         text = re.sub(r"(?<![가-힣A-Za-z0-9_])" + re.escape(value)
                       + r"(?:에서|에서는|은|는|의|만|에)?(?=\s|$|[,.?!])", " ", text, flags=re.I)
     if constraints.get("created_at"):
         text = re.sub(r"\d{1,4}\s*[년월일](?:에|에는)?", " ", text)
+    # "정기점검도 포함해서"는 상태 지정이 아니라 집계 대상을 넓히는 설명이다.
+    text = re.sub(r"(?<![가-힣A-Za-z0-9_])[가-힣A-Za-z0-9_.-]+도\s*포함(?:해서|하여|해)?", " ", text)
     tokens = re.findall(r"[^\s,.?!]+", text)
     vocabulary = re.compile(
-        r"(?:최근|최신|최신순으로|최신순|기준으로|총|전체|모든|몇|몇개야|몇건이야|"
+        r"(?:최근|최신|최신순으로|최신순|기준으로|총|전체|모든|모두|전부|몇|몇건|몇개야|몇건이야|"
         r"개야|건이야|건인지|개인지|(?:개|건)(?:만)?|담당자|담당|화면번호|관련|들어온|등록된|접수된|"
-        r"보여줘|보여주세요|보여줄래|알려줘|알려주세요|알려줄래|확인해줘|확인해주세요|"
+        r"등록|번호|제목|"
+        r"보여줘|보여주세요|보여줄래|알려줘|알려주세요|알려줄래|확인해줘|확인해주세요|집계해줘|집계해주세요|"
         r"Mantis|멘티스|있는지|빼고|제외하고|"
         r"(?:이슈|목록|리스트)(?:에서|는|를|만|가|이)?|\d+\s*(?:건|개)(?:만)?|"
         r"(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)(?:(?:건|개)(?:만)?)?)",

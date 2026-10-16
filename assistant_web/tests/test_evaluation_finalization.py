@@ -300,5 +300,49 @@ class EvaluationFinalizationTests(unittest.TestCase):
         self.assertEqual(finalized["abTest"]["variantB"]["label"], "기본 검색 연동")
 
 
+    def test_validated_source_explanations_never_attach_free_prose_ab_variants(self):
+        for completed in (True, False):
+            for ab_model_id in ('candidate-model', 'primary-model'):
+                with self.subTest(completed=completed, ab_model_id=ab_model_id):
+                    response = {
+                        'content': '검증한 원문 인용' if completed else '원문 근거가 부족해 설명을 보류합니다.',
+                        'sources': [],
+                        'retrieval': {'stages': [], 'query_plan': {'source': 'mantis', 'operation': 'explain'}},
+                        'raw': {} if completed else {'mode': 'explanation_evidence_incomplete'},
+                        'groundingReview': {'method': 'validated_source_quotes', 'completed': completed},
+                    }
+                    original_content = response['content']
+                    candidate = Mock(return_value={'status': 'unavailable', 'content': '검증 밖 후보 답변'})
+                    baseline = Mock(return_value={'status': 'unavailable', 'content': '검증 밖 기본 답변'})
+                    dependencies = {
+                        'generate_follow_up_questions': Mock(return_value=[]),
+                        'build_verification_report': Mock(return_value={
+                            'verifiedAt': '2026-10-15T12:00:00+09:00',
+                            'score': 100, 'status': 'passed', 'checks': [],
+                        }),
+                        'generate_candidate_model_answer': candidate,
+                        'generate_basic_grounded_baseline': baseline,
+                        'evaluate_ab_comparison': Mock(return_value={'winner': 'A'}),
+                    }
+                    with tempfile.TemporaryDirectory() as directory:
+                        database_path = Path(directory) / 'audit.sqlite3'
+                        with (
+                            patch.object(finalization, 'AUDIT_DB_PATH', database_path),
+                            patch.object(finalization, 'init_audit_db',
+                                         side_effect=lambda path=database_path: create_validation_log_table(path)),
+                            patch.object(finalization, '_compat_dependency',
+                                         side_effect=lambda name, default, deps=dependencies: deps.get(name, default)),
+                        ):
+                            result = finalization.finalize_chat_response(
+                                chat_request(abTest=True, abModelId=ab_model_id), '이슈 원인을 설명해줘', response)
+                        with closing(sqlite3.connect(database_path)) as connection:
+                            payload = json.loads(connection.execute('SELECT payload FROM validation_logs').fetchone()[0])
+                    self.assertNotIn('abTest', result)
+                    self.assertIsNone(payload['abTest'])
+                    self.assertEqual(result['content'], original_content)
+                    candidate.assert_not_called()
+                    baseline.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

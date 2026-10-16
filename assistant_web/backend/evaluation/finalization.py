@@ -98,7 +98,9 @@ def finalize_chat_response(
         followups = response.get("followUps") or generate_followups(
             question, evidence_sources, retrieval_result, mode,
         )
-    if delivery.allowed and should_attach(request, retrieval_result, mode):
+    # 원문 선택 검증을 거친 설명은 보류 응답까지 자유서술 AB 경로로 우회하지 않는다.
+    source_quote_explanation = (response.get("groundingReview") or {}).get("method") == "validated_source_quotes"
+    if delivery.allowed and not source_quote_explanation and should_attach(request, retrieval_result, mode):
         checkpoint()
         candidate_model_id = str(
             request.abModelId or os.getenv("AB_COMPARISON_MODEL_ID", "")

@@ -1,14 +1,68 @@
 """잔여 업무 구어체를 상태 조건으로 해석하고 누락을 검증한다."""
 
 import unittest
+from datetime import date
+from unittest.mock import patch
 
 from backend.intent.constraints import extract_query_constraints, merge_query_plan_constraints
 from backend.intent.search_terms import build_keyword_terms
 from backend.query_planning import build_query_plan, validate_query_plan
+from backend.reports.work_queries import build_work_query_report, work_operation
 from backend.sources.mantis import issue_matches_constraints
+from backend.sources.mantis_collection import IssueBatch
 
 
 class PendingWorkQueryTests(unittest.TestCase):
+    def test_excluding_closed_issues_keeps_open_scope_through_work_report(self):
+        questions = (
+            "2026년 6월 등록 SK증권 이슈에서 종료된 건을 빼면 우리 팀 담당으로 몇 건 남아? 이슈 번호, 제목, 지금 상태를 알려줘.",
+            "2026년 6월 등록 SK증권 이슈에서 종료된 이슈를 제외하면 몇 건 남아?",
+            "2026년 6월 등록 SK증권 이슈에서 종료된 건은 빼고 몇 건 남아?",
+        )
+        rows = [
+            {"id": 31218, "handler": {"real_name": "석지원"}, "project": {"name": "108SK(SK증권)"},
+             "status": {"name": "confirmed"}, "created_at": "2026-06-26"},
+            {"id": 31203, "handler": {"real_name": "강수현"}, "project": {"name": "108SK(SK증권)"},
+             "status": {"name": "closed"}, "created_at": "2026-06-25"},
+            {"id": 31204, "handler": {"real_name": "왕승엽"}, "project": {"name": "108SK(SK증권)"},
+             "status": {"name": "confirmed"}, "created_at": "2026-06-25"},
+        ]
+        for question in questions:
+            with self.subTest(question=question):
+                constraints = extract_query_constraints(question)
+                plan = build_query_plan(question, {"source": "mantis"}, constraints)
+                merged = merge_query_plan_constraints(constraints, plan)
+                self.assertEqual(constraints["statuses"], ["open"])
+                self.assertEqual(plan["filters"]["statuses"], ["open"])
+                self.assertEqual(merged["statuses"], ["open"])
+                self.assertEqual(work_operation(question, merged), "open")
+                self.assertEqual([row["id"] for row in rows if issue_matches_constraints(row, merged)], [31218])
+
+    def test_closed_issues_remain_selected_without_exclusion(self):
+        question = "2026년 6월 등록 SK증권 종료된 이슈만 몇 건이야?"
+        constraints = extract_query_constraints(question)
+        self.assertEqual(constraints["statuses"], ["closed"])
+        self.assertEqual(build_query_plan(question, {"source": "mantis"}, constraints)["filters"]["statuses"], ["closed"])
+
+    def test_closed_exclusion_work_report_uses_only_remaining_team_issue(self):
+        question = "2026년 6월 등록 SK증권 이슈에서 종료된 건을 빼면 우리 팀 담당으로 몇 건 남아? 이슈 번호, 제목, 지금 상태를 알려줘."
+        rows = [
+            {"id": 31218, "summary": "[4103] 유지보수 내에 조건검색식 추가 관련 문의", "handler": {"real_name": "석지원"},
+             "project": {"name": "108SK(SK증권)"}, "status": {"name": "confirmed"}, "created_at": "2026-06-26"},
+            {"id": 31203, "summary": "종료된 이슈", "handler": {"real_name": "강수현"},
+             "project": {"name": "108SK(SK증권)"}, "status": {"name": "closed"}, "created_at": "2026-06-25"},
+        ]
+        snapshot = IssueBatch(rows, {"search_complete": True, "snapshot_complete": True,
+                                     "fetchedAt": "2026-10-15T03:06:25+00:00"})
+        with patch("backend.reports.work_queries.read_complete_store", return_value=snapshot):
+            report = build_work_query_report(question, extract_query_constraints(question), today=date(2026, 10, 15))
+        self.assertIsNotNone(report)
+        self.assertEqual(report["retrieval"]["stages"][0]["meta"]["matched_ids"], [31218])
+        self.assertIn("1건", report["content"])
+        self.assertIn("#31218", report["content"])
+        self.assertIn("확인된 이슈", report["content"])
+        self.assertNotIn("#31203", report["content"])
+
     def test_colloquial_pending_phrases_keep_customer_platform_and_open_status(self):
         phrases = (
             "남은거", "남은 거", "남은 건", "남은 것", "남아있는 이슈", "남아 있는 건",

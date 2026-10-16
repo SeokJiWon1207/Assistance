@@ -217,6 +217,8 @@ def build_verification_report(
         content or "", source_sections=mode == "deterministic_issue_list",
         source_quotes=tuple(plain_text(text) for source in sources
                             for text in [(source.get("detail") or {}).get("description", ""),
+                                         *[excerpt.get("text", "") for excerpt in
+                                           ((source.get("detail") or {}).get("answer_evidence") or {}).get("excerpts", [])],
                                          *[note.get("text", "") for note in (source.get("detail") or {}).get("notes", [])]]
                             if text),
     )

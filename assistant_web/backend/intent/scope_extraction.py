@@ -21,6 +21,7 @@ from backend.intent.entities import (
     extract_status_constraints,
     extract_unknown_customers,
     get_customer_alias_groups,
+    strip_title_bracket_platform_instruction,
 )
 from backend.intent.people import drop_people, empty_people
 from backend.intent.identifiers import COMPOUND_IDENTIFIER
@@ -146,7 +147,24 @@ def extract_customer_scope(text: str, normalized_text: str) -> Dict[str, Any]:
     }
 
 
+_PLATFORM_DISPLAY_PAIR = re.compile(
+    r"(?<![A-Za-z0-9])(?:HTS\s*(?:/|·|,|와|과|및)\s*MTS|MTS\s*(?:/|·|,|와|과|및)\s*HTS)"
+    r"\s*구분(?:이|을|해서|하여|해)?\s*(?:보이도록|표시|보여|알려|정리)",
+    re.IGNORECASE,
+)
+_PLATFORM_INCLUSIVE_PAIR = re.compile(
+    r"(?<![A-Za-z0-9])(?:HTS\s*(?:/|·|,|와|과|및)\s*MTS|MTS\s*(?:/|·|,|와|과|및)\s*HTS|"
+    r"HTS도\s*MTS도|MTS도\s*HTS도)\s*(?:(?:둘\s*다|모두|전부|양쪽|함께)\s*)?포함",
+    re.IGNORECASE,
+)
+
+
 def extract_platform_scope(text: str, normalized_text: str) -> Dict[str, Any]:
+    # 두 매체를 구분해 표시하거나 모두 포함하라는 문장은 한쪽 매체 필터가
+    # 아니다. 같은 질문의 별도 'HTS만'·'MTS 제외' 조건은 그대로 해석한다.
+    platform_text = strip_title_bracket_platform_instruction(text)
+    platform_text = _PLATFORM_INCLUSIVE_PAIR.sub(" ", _PLATFORM_DISPLAY_PAIR.sub(" ", platform_text))
+    normalized_text = normalize_for_match(platform_text)
     platform_key = None
     platform_aliases: List[str] = []
     excluded_keys: List[str] = []
@@ -155,7 +173,7 @@ def extract_platform_scope(text: str, normalized_text: str) -> Dict[str, Any]:
         candidates = [key, *aliases]
         if any(normalize_for_match(alias) in normalized_text for alias in candidates):
             matched_alias = next(alias for alias in candidates if normalize_for_match(alias) in normalized_text)
-            if expression_is_excluded(text, matched_alias):
+            if expression_is_excluded(platform_text, matched_alias):
                 excluded_keys.append(key)
                 excluded_aliases.extend(aliases)
             elif not platform_key:
