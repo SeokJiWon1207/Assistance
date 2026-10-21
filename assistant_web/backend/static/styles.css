@@ -1547,7 +1547,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .sidebar-action-button .ui-icon {
@@ -1735,7 +1735,7 @@ body.theme-dark .chat-header {
   background: transparent;
   /* 11px 본문이라 --muted(대비 4.22)로는 AA 4.5 에 못 미친다. */
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: var(--button-weight);
   cursor: pointer;
 }
@@ -2045,7 +2045,7 @@ body.theme-dark .chat-header {
 .ab-evaluation-details summary {
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -3911,7 +3911,7 @@ body.theme-dark .messages.is-scrolled + .composer {
   border: 0;
   background: transparent;
   color: var(--blue);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: var(--button-weight);
   cursor: pointer;
 }

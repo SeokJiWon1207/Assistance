@@ -287,6 +287,22 @@ class FrontendCoreTests(unittest.TestCase):
                 rule = css[css.index(selector) : css.index("}", css.index(selector))]
                 self.assertIn(f"font-size: var({token});", rule)
 
+    def test_interactive_labels_are_at_least_13px(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in ("styles.css", "workspace.css")}
+
+        # 12px은 시간·건수 같은 보조 정보에만 쓰고, 누르는 요소는 13px 이상으로 둔다.
+        for name, selector in (
+            ("styles.css", "\n.sidebar-action-button {"),
+            ("styles.css", "\n.message-actions button {"),
+            ("styles.css", "\n.ab-evaluation-details summary {"),
+            ("styles.css", "\n.edit-notice button {"),
+            ("workspace.css", "\n.workspace-tabs button {"),
+        ):
+            with self.subTest(selector=selector.strip()):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn("font-size: 13px;", rule)
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
