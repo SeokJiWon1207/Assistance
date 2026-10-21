@@ -279,6 +279,15 @@
   .message-action-divider {
     display: none;
   }
+
+  /* 13px 글자에서도 답변 도구 버튼 네 개가 한 줄에 들어가도록 좌우 여백만 줄인다. */
+  .message-actions {
+    gap: 2px;
+  }
+
+  .message-actions button {
+    padding: 4px 6px;
+  }
 }
 
 @media (max-width: 860px) and (prefers-reduced-motion: reduce) {
