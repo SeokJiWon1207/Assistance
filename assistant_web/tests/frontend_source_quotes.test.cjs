@@ -111,7 +111,7 @@ test('unclosed quoted fence keeps quoted content literal without consuming follo
   const { api } = await rendering();
   const rendered = api.renderAssistantContent('> ```text\n> **원문**\n\n### 다음 항목\n설명');
   assert.equal(descendants(rendered, 'code')[0].textContent, '**원문**');
-  assert.equal(descendants(rendered, 'h4')[0].textContent, '다음 항목');
+  assert.equal(descendants(rendered, 'h3')[0].textContent, '다음 항목');
 });
 
 test('ordinary aggregate tables and source-less bold references retain their existing behavior', async () => {
@@ -147,8 +147,8 @@ test('only the history section of quoted answers starts collapsed and later sect
   assert.equal(descendants(details[0], 'code')[0].textContent, '1차 수정 요청\n### 조치\n아직 완료 아님');
   assert.equal(descendants(details[0], 'button')[0].textContent, '#90001');
   assert.doesNotMatch(details[0].textContent, /FID = 42/);
-  assert.ok(rendered.children.some(child => child.tagName === 'h4' && child.textContent === '원인'));
-  assert.ok(rendered.children.some(child => child.tagName === 'h4' && child.textContent === '기술 내용'));
+  assert.ok(rendered.children.some(child => child.tagName === 'h3' && child.textContent === '원인'));
+  assert.ok(rendered.children.some(child => child.tagName === 'h3' && child.textContent === '기술 내용'));
   assert.equal(rendered.children.at(-1).tagName, 'blockquote');
 });
 
@@ -156,7 +156,7 @@ test('ordinary history headings without source quotes are not collapsed', async 
   const { api } = await rendering();
   const rendered = api.renderAssistantContent('### 진행 이력\n일반 설명\n\n| 상태 | 건수 |\n|---|---|\n| 진행 | 3 |');
   assert.equal(descendants(rendered, 'details').length, 0);
-  assert.equal(descendants(rendered, 'h4')[0].textContent, '진행 이력');
+  assert.equal(descendants(rendered, 'h3')[0].textContent, '진행 이력');
   assert.equal(descendants(rendered, 'table').length, 1);
 });
 
@@ -175,7 +175,7 @@ test('registration and history sources collapse separately while cause remains v
   assert.equal(descendants(visibleQuotes[0], 'code')[0].textContent, '확인된 원인');
   const ordinary = api.renderAssistantContent('### 등록 내용\n일반 설명');
   assert.equal(descendants(ordinary, 'details').length, 0);
-  assert.equal(descendants(ordinary, 'h4')[0].textContent, '등록 내용');
+  assert.equal(descendants(ordinary, 'h3')[0].textContent, '등록 내용');
 });
 
 test('additional topic evidence starts collapsed while the cited key quote stays visible', async () => {

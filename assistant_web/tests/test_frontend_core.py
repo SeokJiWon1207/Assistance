@@ -222,6 +222,125 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (hover: none)", styles)
         self.assertIn(".message:focus-within .message-time", styles)
 
+    def test_focus_ring_and_blue_tints_follow_the_theme_accent(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+        dark = styles[styles.index("body.theme-dark {") : styles.index("}", styles.index("body.theme-dark {"))]
+
+        # :root에서 계산된 포커스 색은 다크 모드의 --blue를 따르지 않으므로 다크 테마에서 다시 정의한다.
+        self.assertIn("--focus-ring-color: color-mix(in srgb, var(--blue) 16%, transparent);", dark)
+        self.assertIn("--focus-ring: 0 0 0 3px var(--focus-ring-color);", dark)
+        # 포커스 표시와 파랑 틴트는 차트색 고정값 대신 테마 강조색에서 만든다.
+        for path in STATIC_DIR.glob("*.css"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("rgba(49, 130, 246", path.read_text(encoding="utf-8"))
+
+    def test_buttons_and_inputs_share_height_and_weight_tokens(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("--button-height-lg: 44px;", styles)
+        self.assertIn("--control-height: 44px;", styles)
+        # 보조 버튼은 한 곳에서만 정의해 앞선 정의가 뒤에서 덮이지 않게 한다.
+        self.assertEqual(styles.count("\n.secondary-button {"), 1)
+        for selector in (".auth-primary-button {", ".logout-confirm-button {", ".send-button {"):
+            with self.subTest(selector=selector):
+                rule = styles[styles.index(selector) : styles.index("}", styles.index(selector))]
+                self.assertIn("font-weight: var(--button-weight);", rule)
+
+    def test_chips_share_height_and_font_tokens(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in (
+            "styles.css", "dashboard.css", "admin_center.css", "template_picker.css")}
+
+        self.assertIn("--chip-height: 32px;", sheets["styles.css"])
+        self.assertIn("--chip-height-sm: 28px;", sheets["styles.css"])
+        for name, selector, height in (
+            ("styles.css", ".search-condition-chip {", "var(--chip-height-sm)"),
+            ("styles.css", ".criteria-chip {", "var(--chip-height-sm)"),
+            ("styles.css", ".follow-up-chip {", "var(--chip-height)"),
+            ("dashboard.css", ".dashboard-chip {", "var(--chip-height)"),
+            ("admin_center.css", ".admin-chip {", "var(--chip-height)"),
+            ("template_picker.css", ".template-chip span {", "var(--chip-height)"),
+        ):
+            with self.subTest(selector=selector):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn(height, rule)
+                self.assertIn("font-size: var(--chip-font-size);", rule)
+
+    def test_same_role_headings_share_size_tokens_across_views(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in (
+            "styles.css", "dashboard.css", "admin_center.css", "workspace.css", "template_picker.css")}
+
+        for name, selector, token in (
+            ("styles.css", ".chat-header h2 {", "--font-title"),
+            ("styles.css", ".workspace-modal-header h2 {", "--font-title"),
+            ("dashboard.css", ".dashboard-heading h2 { margin", "--font-title"),
+            ("dashboard.css", ".dashboard-detail h3 {", "--font-title"),
+            ("admin_center.css", ".admin-section-header h2 {", "--font-title"),
+            ("admin_center.css", ".admin-drawer h2 {", "--font-title"),
+            ("workspace.css", ".workspace-decision h3 {", "--font-headline"),
+            ("template_picker.css", ".template-picker-form-heading h3 {", "--font-headline"),
+            ("workspace.css", ".workspace-section h3 {", "--font-section"),
+            ("admin_center.css", ".admin-card-head h3 {", "--font-section"),
+        ):
+            with self.subTest(selector=selector):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn(f"font-size: var({token});", rule)
+
+    def test_interactive_labels_are_at_least_13px(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in ("styles.css", "workspace.css")}
+
+        # 12px은 시간·건수 같은 보조 정보에만 쓰고, 누르는 요소는 13px 이상으로 둔다.
+        for name, selector in (
+            ("styles.css", "\n.sidebar-action-button {"),
+            ("styles.css", "\n.message-actions button {"),
+            ("styles.css", "\n.ab-evaluation-details summary {"),
+            ("styles.css", "\n.edit-notice button {"),
+            ("workspace.css", "\n.workspace-tabs button {"),
+        ):
+            with self.subTest(selector=selector.strip()):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn("font-size: 13px;", rule)
+
+    def test_corner_radius_uses_the_shared_scale(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        for token in ("--radius-sm: 6px;", "--control-radius: 8px;", "--radius-card: 12px;", "--radius-lg: 16px;"):
+            self.assertIn(token, styles)
+        # 8px과 눈으로 구분되지 않던 7·9·10·11·14px 모서리는 단계 값으로 합쳤다.
+        for path in STATIC_DIR.glob("*.css"):
+            with self.subTest(path=path.name):
+                css = path.read_text(encoding="utf-8")
+                self.assertIsNone(re.search(r"border-radius:\s*(7|9|10|11|14)px", css))
+
+    def test_views_share_one_heading_hierarchy(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        modules = {name: (STATIC_DIR / "modules" / f"{name}.js").read_text(encoding="utf-8")
+                   for name in ("admin", "admin_users", "dashboard", "workspace")}
+
+        # 앱 제목 h1 하나 아래에 화면 제목은 h2, 화면 안 구역 제목은 h3로 둔다.
+        self.assertEqual(len(re.findall(r"<h1\b", html)), 1)
+        for title_id in ("activeConversationTitle", "workspaceModalTitle"):
+            with self.subTest(title=title_id):
+                self.assertIn(f'<h2 id="{title_id}">', html)
+        self.assertIn("<h2>팀 대시보드</h2>", html)
+        for name, source in modules.items():
+            with self.subTest(module=name):
+                self.assertNotRegex(source, r"<h1\b")
+                self.assertNotRegex(source, r"<h4\b")
+        self.assertIn('<header class="admin-section-header"><div><h2>', modules["admin"])
+        self.assertIn('<div class="admin-card-head"><h3', modules["admin"])
+
+        # 답변 본문도 대화 제목(h2) 바로 아래 단계인 h3에서 시작한다. h4는 이슈 상세 카드(h3) 안에서만 쓴다.
+        answer = {name: (STATIC_DIR / "modules" / f"{name}.js").read_text(encoding="utf-8")
+                  for name in ("chat_rendering", "notion", "charts")}
+        self.assertIn('document.createElement("h3");\n      heading.className = "answer-heading";', answer["chat_rendering"])
+        self.assertIn("<h3>후속 질문</h3>", answer["chat_rendering"])
+        for name in ("notion", "charts"):
+            with self.subTest(module=name):
+                self.assertNotRegex(answer[name], r"<h4\b")
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
@@ -229,7 +348,9 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertNotIn('role="button"', dashboard_js)
         self.assertNotIn('els.dashboardBody.addEventListener("keydown"', dashboard_js)
         self.assertIn('target.closest("[data-dashboard-row-issue]")', dashboard_js)
-        self.assertIn(".dashboard-card-button::after", dashboard_css)
+        # 차트 막대·경과 열도 버튼 역할이 아닌 실제 버튼이며 기본 버튼 모양만 걷어 낸다.
+        self.assertIn('<button type="button" class="dashboard-column dashboard-clickable', dashboard_js)
+        self.assertIn("button.dashboard-bar,", dashboard_css)
 
     def test_mobile_menu_is_a_left_drawer_and_send_sits_inside_the_composer(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

@@ -26,13 +26,30 @@
   --warning-strong: #a86600;
   --purple: #7655d6;
   --shadow: 0 12px 32px rgba(25, 31, 40, 0.08);
-  --control-radius: 9px;
+  /* 모서리: 작은 요소 6 · 입력·버튼 8 · 카드 12 · 큰 요약 카드 16 · 칩은 999px */
+  --radius-sm: 6px;
+  --control-radius: 8px;
+  --radius-card: 12px;
+  --radius-lg: 16px;
+  /* 버튼 높이: 큰 버튼(모달·폼 확인, 로그인) 44 · 기본 40 · 작은 버튼 36 */
+  --button-height-lg: 44px;
   --button-height: 40px;
   --button-height-compact: 36px;
+  /* 입력창·선택창은 같은 줄의 큰 버튼과 높이를 맞춘다. */
+  --control-height: 44px;
+  /* 칩: 기본 32px(필터·템플릿·후속 질문), 작은 칩 28px(답변 위 검색 조건·기준). 글자는 모두 13px. */
+  --chip-height: 32px;
+  --chip-height-sm: 28px;
+  --chip-font-size: 13px;
+  /* 제목: 페이지·모달·상세 패널 20 · 강조 헤드라인 17 · 섹션 15 */
+  --font-title: 20px;
+  --font-headline: 17px;
+  --font-section: 15px;
   --button-font-size: 14px;
   --button-font-size-compact: 13px;
   --button-weight: 600;
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--blue) 16%, transparent);
+  --focus-ring-color: color-mix(in srgb, var(--blue) 16%, transparent);
+  --focus-ring: 0 0 0 3px var(--focus-ring-color);
   /* 강조색으로 채운 요소 위의 글자색 */
   --on-accent: #ffffff;
   --on-danger: #ffffff;
@@ -63,6 +80,9 @@ body.theme-dark {
   --warning-strong: #fbbf24;
   --purple: #a78bfa;
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  /* var(--blue)는 선언한 요소에서 계산되므로 다크 모드의 --blue로 포커스 색을 다시 만든다. */
+  --focus-ring-color: color-mix(in srgb, var(--blue) 16%, transparent);
+  --focus-ring: 0 0 0 3px var(--focus-ring-color);
   /* 밝은 파랑 위에는 흰 글자 대비가 2.77 이라 어두운 글자를 쓴다 */
   --on-accent: #111318;
   --on-danger: #111318;
@@ -182,7 +202,7 @@ body {
   max-width: calc(100vw - 32px);
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow);
   text-align: left;
@@ -238,7 +258,7 @@ body {
 .data-badge-note {
   margin: 0;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--surface-alt);
   color: var(--text);
   font-size: 13px;
@@ -257,7 +277,7 @@ body {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -317,7 +337,7 @@ body.auth-pending .app-shell {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 50% 12%, rgba(49, 130, 246, 0.13), transparent 34%),
+    radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--blue) 13%, transparent), transparent 34%),
     var(--bg);
 }
 
@@ -409,7 +429,7 @@ body.auth-pending .app-shell {
 
 .login-form input {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   padding: 0 13px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -424,14 +444,14 @@ body.auth-pending .app-shell {
 }
 
 .auth-primary-button {
-  min-height: 48px;
+  min-height: var(--button-height-lg);
   margin-top: 4px;
   border: 0;
   border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--button-weight);
 }
 
 .auth-primary-button:hover {
@@ -449,7 +469,7 @@ body.auth-pending .app-shell {
   color: var(--blue);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
 }
 
 .login-error {
@@ -524,7 +544,7 @@ body.theme-dark .app-shell {
   height: 44px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   cursor: pointer;
   overflow: hidden;
@@ -559,7 +579,7 @@ body.theme-dark .app-shell {
   min-height: 56px;
   padding: 6px 2px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -637,7 +657,7 @@ body.theme-dark .app-shell {
   width: 268px;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
@@ -704,7 +724,7 @@ body.theme-dark .sidebar {
 .chat-header h2 {
   margin: 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   font-weight: 700;
   line-height: 29px;
 }
@@ -724,7 +744,7 @@ body.theme-dark .sidebar {
   height: 30px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -847,7 +867,7 @@ body.theme-dark .sidebar {
   border-color: var(--blue);
   color: var(--blue);
   outline: none;
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 .help-tooltip {
@@ -953,10 +973,9 @@ body.theme-dark .sidebar {
 
 select,
 .field-row input,
-.mini-range-row input,
-.secondary-button {
+.mini-range-row input {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface);
@@ -1000,7 +1019,7 @@ select.custom-select-native {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   padding: 0 13px 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -1064,7 +1083,7 @@ select.custom-select-native {
   padding: 6px;
   overflow-y: auto;
   border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   box-shadow: 0 18px 44px rgba(25, 31, 40, 0.17), 0 3px 10px rgba(25, 31, 40, 0.08);
   backdrop-filter: blur(18px);
@@ -1233,7 +1252,7 @@ select.custom-select-native {
 }
 
 .template-field .custom-select-trigger {
-  min-height: 44px;
+  min-height: var(--control-height);
   padding: 10px 12px;
   border-radius: var(--control-radius);
 }
@@ -1415,8 +1434,13 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 }
 
 .secondary-button {
+  width: 100%;
   margin-top: auto;
   min-height: var(--button-height);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
   font-size: var(--button-font-size);
   font-weight: var(--button-weight);
   cursor: pointer;
@@ -1424,7 +1448,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 
 .subtle-button {
   margin-top: 0;
-  min-height: 40px;
+  min-height: var(--button-height);
   background: var(--surface-alt);
   color: var(--text-soft);
 }
@@ -1521,13 +1545,13 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 38px;
+  min-height: var(--button-height);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .sidebar-action-button .ui-icon {
@@ -1594,13 +1618,13 @@ body.theme-dark .chat-header {
 }
 
 .source-card:hover {
-  border-color: rgba(49, 130, 246, 0.4);
+  border-color: color-mix(in srgb, var(--blue) 40%, transparent);
   box-shadow: 0 8px 18px rgba(25, 31, 40, 0.08);
   transform: translateY(-1px);
 }
 
 .source-card:focus-visible {
-  outline: 3px solid rgba(49, 130, 246, 0.18);
+  outline: 3px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -1715,8 +1739,8 @@ body.theme-dark .chat-header {
   background: transparent;
   /* 11px 본문이라 --muted(대비 4.22)로는 AA 4.5 에 못 미친다. */
   color: var(--text-soft);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: var(--button-weight);
   cursor: pointer;
 }
 
@@ -1814,14 +1838,14 @@ body.theme-dark .chat-header {
   align-items: center;
   gap: 5px;
   min-width: 0;
-  min-height: 28px;
-  padding: 4px 7px 4px 9px;
-  border: 1px solid rgba(49, 130, 246, 0.28);
+  min-height: var(--chip-height-sm);
+  padding: 3px 7px 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--blue) 28%, transparent);
   border-radius: 999px;
   background: var(--blue-soft);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
 }
 
 .search-condition-chip.is-readonly {
@@ -1859,7 +1883,7 @@ body.theme-dark .chat-header {
 }
 
 .search-condition-chip:not(.is-readonly):hover i {
-  background: rgba(49, 130, 246, 0.12);
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
   color: var(--blue);
 }
 
@@ -2014,7 +2038,7 @@ body.theme-dark .chat-header {
 
 .ab-score-item.is-winner {
   color: var(--blue);
-  box-shadow: inset 0 0 0 1px rgba(49, 130, 246, 0.3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 30%, transparent);
 }
 
 .ab-score-item strong {
@@ -2025,7 +2049,7 @@ body.theme-dark .chat-header {
 .ab-evaluation-details summary {
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -2111,7 +2135,7 @@ body.theme-dark .chat-header {
   background: var(--surface);
 }
 
-.follow-up-panel h4 {
+.follow-up-panel h3 {
   margin: 0;
   color: var(--text-soft);
   font-size: 13px;
@@ -2128,15 +2152,15 @@ body.theme-dark .chat-header {
   appearance: none;
   -webkit-appearance: none;
   max-width: 100%;
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: var(--chip-height);
+  padding: 5px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
   line-height: 1.5;
   text-align: left;
@@ -2146,14 +2170,14 @@ body.theme-dark .chat-header {
 
 .follow-up-chip:hover {
   border-color: var(--blue);
-  background: rgba(49, 130, 246, 0.08);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
   color: var(--blue);
 }
 
 .follow-up-chip:focus-visible {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 .source-list {
@@ -2191,7 +2215,7 @@ body.theme-dark .chat-header {
 .source-list-toggle:focus-visible {
   outline: none;
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14);
+  box-shadow: var(--focus-ring);
 }
 
 .source-list-toggle span {
@@ -2299,7 +2323,7 @@ body.theme-dark .chat-header {
   font-style: normal;
 }
 
-.related-issue-item h4 {
+.related-issue-item h3 {
   margin: 0;
   color: var(--text);
   font-size: 13px;
@@ -2379,10 +2403,11 @@ body.theme-dark .chat-header {
   letter-spacing: 0.01em;
 }
 
-.modal-header h3 {
+.modal-header h3,
+.workspace-modal-header h2 {
   margin: 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 29px;
@@ -2431,13 +2456,13 @@ body.theme-dark .chat-header {
 
 .logout-confirm-button {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--button-height-lg);
   border: 0;
   border-radius: var(--control-radius);
   background: var(--danger);
   color: var(--on-danger);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   transition: filter 0.15s ease, transform 0.15s ease;
 }
 
@@ -2508,7 +2533,7 @@ body.theme-dark .chat-header {
 .template-field select,
 .feedback-comment-field textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--control-height);
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -2530,7 +2555,7 @@ body.theme-dark .chat-header {
   gap: 7px;
   padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--blue) 32%, var(--line));
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--blue-soft);
 }
 
@@ -2557,7 +2582,7 @@ body.theme-dark .chat-header {
 .modal-form-actions .secondary-button,
 .modal-form-actions .run-evaluation-button {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--button-height-lg);
 }
 
 .feedback-reason-group {
@@ -2658,7 +2683,7 @@ body.theme-dark .chat-header {
   gap: 4px;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface-alt);
 }
 
@@ -2720,7 +2745,7 @@ body.theme-dark .chat-header {
 .detail-prose {
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface-alt);
   color: var(--text);
   font-size: 14px;
@@ -2796,7 +2821,7 @@ body.theme-dark .chat-header {
   min-height: 112px;
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 5px 16px rgba(25, 31, 40, 0.04);
@@ -2821,7 +2846,7 @@ body.theme-dark .chat-header {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--blue-soft);
   color: var(--blue);
 }
@@ -3070,7 +3095,7 @@ body.theme-dark .chat-header {
   font-weight: 700;
   cursor: pointer;
   text-decoration: underline;
-  text-decoration-color: rgba(49, 130, 246, 0.35);
+  text-decoration-color: color-mix(in srgb, var(--blue) 35%, transparent);
   text-underline-offset: 2px;
 }
 
@@ -3123,12 +3148,13 @@ body.theme-dark .chat-header {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  min-height: var(--chip-height-sm);
+  padding: 3px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
 }
 
@@ -3172,7 +3198,7 @@ body.theme-dark .chat-header {
   align-items: flex-start;
   gap: 9px;
   padding: 11px 14px;
-  border-radius: 9px;
+  border-radius: 8px;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -3248,7 +3274,7 @@ body.theme-dark .chat-header {
 .markdown-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
 }
 
 .markdown-table {
@@ -3311,7 +3337,7 @@ body.theme-dark .chat-header {
 .issue-detail-header h3 {
   margin: 6px 0 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   line-height: 29px;
 }
 
@@ -3493,7 +3519,7 @@ body.theme-dark .chat-header {
 }
 
 .issue-table-clickable:focus-visible {
-  outline: 3px solid rgba(49, 130, 246, 0.16);
+  outline: 3px solid var(--focus-ring-color);
   outline-offset: -3px;
 }
 
@@ -3613,7 +3639,7 @@ body.theme-dark .chat-header {
 }
 
 .issue-summary-clickable:focus-visible {
-  outline: 3px solid rgba(49, 130, 246, 0.16);
+  outline: 3px solid var(--focus-ring-color);
   outline-offset: 2px;
   border-radius: 8px;
 }
@@ -3694,13 +3720,13 @@ body.theme-dark .chat-header {
 }
 
 .notion-card:hover {
-  border-color: rgba(49, 130, 246, 0.34);
+  border-color: color-mix(in srgb, var(--blue) 34%, transparent);
   background: var(--surface-alt);
   transform: translateY(-1px);
 }
 
 .notion-card:focus-visible {
-  outline: 3px solid rgba(49, 130, 246, 0.16);
+  outline: 3px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -3733,7 +3759,7 @@ body.theme-dark .chat-header {
   font-weight: 700;
 }
 
-.notion-card h4 {
+.notion-card h3 {
   margin: 0;
   color: var(--text);
   font-size: 15px;
@@ -3874,8 +3900,8 @@ body.theme-dark .messages.is-scrolled + .composer {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px;
-  border: 1px solid rgba(49, 130, 246, 0.32);
-  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--blue) 32%, transparent);
+  border-radius: var(--radius-sm);
   background: var(--blue-soft);
   color: var(--text-soft);
   font-size: 12px;
@@ -3890,8 +3916,8 @@ body.theme-dark .messages.is-scrolled + .composer {
   border: 0;
   background: transparent;
   color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: var(--button-weight);
   cursor: pointer;
 }
 
@@ -3919,7 +3945,7 @@ textarea::placeholder {
 
 textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.14), var(--shadow);
+  box-shadow: var(--focus-ring), var(--shadow);
 }
 
 .send-button {
@@ -3928,9 +3954,9 @@ textarea:focus {
   border-radius: 8px;
   background: var(--blue);
   color: var(--on-accent);
-  font-weight: 700;
+  font-weight: var(--button-weight);
   cursor: pointer;
-  box-shadow: 0 10px 22px rgba(49, 130, 246, 0.24);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--blue) 24%, transparent);
 }
 
 .send-button:hover {
@@ -3970,7 +3996,7 @@ textarea:focus {
   justify-content: space-between;
   margin-top: 0;
   padding: 9px 12px;
-  border-color: rgba(49, 130, 246, 0.34);
+  border-color: color-mix(in srgb, var(--blue) 34%, transparent);
   color: var(--blue);
 }
 
@@ -4083,7 +4109,7 @@ textarea:focus {
 
 .verification-dimension {
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   overflow: hidden;
 }
@@ -4241,7 +4267,7 @@ textarea:focus {
 .summary-stat-card {
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--surface);
   display: grid;
   gap: 4px;
@@ -4284,7 +4310,7 @@ textarea:focus {
   color: var(--danger);
 }
 
-.summary-section h4 {
+.summary-section h3 {
   margin: 0 0 10px;
   font-size: 13px;
   color: var(--text-soft);

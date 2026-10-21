@@ -41,7 +41,7 @@
   background: transparent;
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -122,7 +122,7 @@
   min-height: 38px;
   padding: 0 13px;
   border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--blue-soft);
   color: var(--blue);
   font-size: 12px;
@@ -160,7 +160,7 @@
   gap: 4px;
   padding: 16px 18px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: 0 3px 14px rgba(25, 31, 40, 0.035);
 }
@@ -246,7 +246,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
@@ -274,10 +274,10 @@
   font-weight: 700;
 }
 
-.workspace-section h4 {
+.workspace-section h3 {
   margin: 0;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-section);
 }
 
 .workspace-section > header em {
@@ -506,7 +506,7 @@
 
 .workspace-brief-hero {
   padding: 24px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--blue), var(--blue-pressed));
   color: var(--on-accent);
 }
@@ -517,7 +517,7 @@
   opacity: 0.82;
 }
 
-.workspace-brief-hero h4 {
+.workspace-brief-hero h3 {
   margin: 7px 0 5px;
   font-size: 22px;
 }
@@ -531,7 +531,7 @@
 .workspace-decision {
   padding: 20px;
   border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--blue) 5%, var(--surface));
 }
 
@@ -557,7 +557,7 @@
 
 .workspace-decision.is-high > header span,
 .workspace-decision.is-high > header em { color: var(--danger); }
-.workspace-decision h4 { margin: 9px 0 0; color: var(--text); font-size: 16px; }
+.workspace-decision h3 { margin: 9px 0 0; color: var(--text); font-size: var(--font-headline); }
 .workspace-decision ul { margin: 12px 0 0; padding-left: 18px; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
 
 .workspace-decision-actions {
@@ -572,7 +572,7 @@
   gap: 5px;
   padding: 13px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -605,7 +605,7 @@
   gap: 5px 16px;
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--blue-soft);
   color: var(--text);
   cursor: pointer;
@@ -684,7 +684,7 @@
   margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--blue) 6%, var(--surface));
   display: flex;
   align-items: center;
@@ -697,11 +697,11 @@
 .playbook-candidate-action button,
 .playbook-card-actions button {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   padding: 8px 12px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -758,21 +758,21 @@
   min-width: 132px;
 }
 
-/* 검색줄의 입력창·선택·버튼 높이를 새 플레이북 버튼(46px)에 맞춘다. */
+/* 검색줄의 입력창·선택·버튼은 공통 입력 높이로 맞추고, 새 플레이북 버튼은 같은 줄에서 늘어난다. */
 .playbook-toolbar input,
 .playbook-toolbar select,
 .playbook-toolbar form > .secondary-button {
-  min-height: 46px;
+  min-height: var(--control-height);
 }
 
 .playbook-toolbar .custom-select-trigger {
-  min-height: 46px;
+  min-height: var(--control-height);
   border-color: var(--line);
 }
 .playbook-list { display: grid; gap: 14px; }
 .playbook-card {
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   padding: 18px;
   box-shadow: var(--shadow);
@@ -784,7 +784,7 @@
   justify-content: space-between;
   gap: 14px;
 }
-.playbook-card h4 { margin: 7px 0 0; color: var(--text); font-size: 17px; }
+.playbook-card h3 { margin: 7px 0 0; color: var(--text); font-size: var(--font-headline); }
 .playbook-card header small,
 .playbook-card footer span { color: var(--muted); font-size: 12px; }
 .playbook-card section { margin-top: 15px; }
@@ -806,10 +806,10 @@
   margin-bottom: 18px;
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--blue) 4%, var(--surface));
 }
-.playbook-editor header h4 { margin: 3px 0 0; }
+.playbook-editor header h3 { margin: 3px 0 0; font-size: var(--font-section); }
 .playbook-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
 .playbook-editor textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
 .playbook-editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -903,7 +903,7 @@
   gap: 2px;
   margin-bottom: 4px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface-alt);
 }
 

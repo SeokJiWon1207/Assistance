@@ -43,6 +43,7 @@ async function harness(apiFetch) {
     './runtime.js': runtime,
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
     './events.js': { cancelMessageEdit() {} },
+    './motion.js': { captureLayout: () => new Map(), animateLayoutChange() {} },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
     './data_badge.js': {
       dataBadgeState: ({ source, complete = true, refreshing = false, loading = false } = {}) => (loading ? 'loading' : source === 'error' ? 'error' : refreshing ? 'refreshing' : source === 'snapshot' ? 'snapshot' : complete === false ? 'partial' : 'fresh'),

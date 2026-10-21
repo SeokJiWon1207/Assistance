@@ -36,7 +36,8 @@ def response(data, status=200):
 
 class BodyIndexSyncTests(unittest.TestCase):
     def setUp(self):
-        self.now = sync.time.monotonic()
+        # 실제 시계에서 시작하면 값에 따라 경과 시간에 부동소수점 오차가 생겨 정확 비교가 흔들린다.
+        self.now = 1000.0
         clock = patch.object(sync.time, "monotonic", side_effect=lambda: self.now)
         clock.start()
         self.addCleanup(clock.stop)

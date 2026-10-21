@@ -430,7 +430,7 @@ export function renderEffortChart(chart) {
   if (byType.length) {
     const section = document.createElement("div");
     section.className = "summary-section";
-    section.innerHTML = `<h4>유형별 공수</h4>`;
+    section.innerHTML = `<h3>유형별 공수</h3>`;
     section.appendChild(renderDonutChart(byType, { centerLabel: "총 공수", animated }));
     wrap.appendChild(section);
   }
@@ -438,7 +438,7 @@ export function renderEffortChart(chart) {
   if (chart.topIssues?.length) {
     const section = document.createElement("div");
     section.className = "summary-section";
-    section.innerHTML = `<h4>공수가 큰 이슈</h4>`;
+    section.innerHTML = `<h3>공수가 큰 이슈</h3>`;
     const items = chart.topIssues.map(({ id, summary, amount }) => ({
       label: id ? `#${id} ${summary}` : summary,
       amount,
@@ -473,7 +473,7 @@ export function renderEffortRankingChart(ranking) {
   if (ranking.topPeople?.length) {
     const section = document.createElement("div");
     section.className = "summary-section";
-    section.innerHTML = `<h4>공수 순위</h4>`;
+    section.innerHTML = `<h3>공수 순위</h3>`;
     section.appendChild(renderBarChartSVG(ranking.topPeople, { animated }));
     wrap.appendChild(section);
   }

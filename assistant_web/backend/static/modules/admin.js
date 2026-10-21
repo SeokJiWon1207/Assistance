@@ -88,7 +88,7 @@ function statusPill(label, tone) {
 }
 
 function sectionHeader(title, description, aside = "") {
-  return `<header class="admin-section-header"><div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p></div>${aside}</header>`;
+  return `<header class="admin-section-header"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div>${aside}</header>`;
 }
 
 function barList(entries, tone = "") {
@@ -263,7 +263,7 @@ function renderOverview() {
     <div class="admin-metrics">${metrics.join("")}</div>
     <div class="admin-columns">
       <section class="admin-card admin-list-card" aria-labelledby="adminAttentionTitle">
-        <div class="admin-card-head"><h2 id="adminAttentionTitle">먼저 볼 것</h2><span>실패·확인 필요만 모았어요</span></div>
+        <div class="admin-card-head"><h3 id="adminAttentionTitle">먼저 볼 것</h3><span>실패·확인 필요만 모았어요</span></div>
         ${attention.length ? attention.map((item) => `
           <button type="button" class="admin-attention" data-admin-go="${item.go}"${item.kindKey ? ` data-admin-kind="${item.kindKey}" data-admin-filter="fail"` : ""}${item.filter ? ` data-admin-filter="${item.filter}"` : ""}${item.open ? ` data-admin-open="${escapeHtml(item.open)}"` : ""}${item.go === "logs" ? ' data-admin-filter="issue"' : ""}>
             ${statusPill(item.kind, item.tone)}
@@ -272,7 +272,7 @@ function renderOverview() {
           </button>`).join("") : `<p class="admin-empty">지금 확인할 항목이 없어요.</p>`}
       </section>
       <section class="admin-card" aria-labelledby="adminFailureTitle">
-        <div class="admin-card-head"><h2 id="adminFailureTitle">반복 실패 유형</h2><span>최근 정확도 검사 기준</span></div>
+        <div class="admin-card-head"><h3 id="adminFailureTitle">반복 실패 유형</h3><span>최근 정확도 검사 기준</span></div>
         ${failures.length ? barList(failures, "is-danger") : `<p class="admin-empty">최근 정확도 검사에서 반복된 실패가 없어요.</p>`}
       </section>
     </div>`;  renderFreshnessBadge();
@@ -352,7 +352,7 @@ function suiteCard(kind) {
     : "실시간 Mantis·Notion 데이터로 기본 질문 10개와 이전 대화를 잇는 후속 질문 4개를 만들어 실제 답변까지 채점합니다.";
   return `
     <article class="admin-card admin-suite${running ? " is-running" : ""}">
-      <div class="admin-suite-head"><div><h2>${title}</h2><p>${escapeHtml(description)}</p></div>
+      <div class="admin-suite-head"><div><h3>${title}</h3><p>${escapeHtml(description)}</p></div>
         ${statusPill(base ? (duration ? `지난번 ${duration}` : "빠름") : "수 분 걸림", "is-grey")}</div>
       ${progress}
       <div class="admin-suite-foot"><span>${escapeHtml(last)}</span>
@@ -423,12 +423,12 @@ function renderFeedbackSection() {
       ${lowest ? `<div class="admin-metric"><small>도움됨이 가장 낮은 템플릿</small><strong class="admin-metric-text">${escapeHtml(teamTemplateLabel(lowest.templateId))}</strong><span>도움됨 ${Number(lowest.helpfulRate) || 0}% · ${Number(lowest.total) || 0}건</span></div>` : ""}
     </div>
     <div class="admin-columns is-even">
-      <section class="admin-card"><div class="admin-card-head"><h2>개선 필요 사유</h2></div>
+      <section class="admin-card"><div class="admin-card-head"><h3>개선 필요 사유</h3></div>
         ${barList((summary.reasonCounts || []).map((item) => [item.label, item.count]))}</section>
-      <section class="admin-card admin-list-card"><div class="admin-card-head"><h2>템플릿별 만족도</h2></div>
+      <section class="admin-card admin-list-card"><div class="admin-card-head"><h3>템플릿별 만족도</h3></div>
         ${templates.length ? templates.map((item) => `<div class="admin-row admin-template-row"><span>${escapeHtml(teamTemplateLabel(item.templateId))}</span><span class="admin-muted admin-num">${Number(item.total) || 0}건</span><strong class="admin-num${(Number(item.helpfulRate) || 0) < 70 ? " is-danger" : ""}">${Number(item.helpfulRate) || 0}%</strong></div>`).join("") : `<p class="admin-empty">템플릿으로 한 질문의 피드백이 아직 없어요.</p>`}</section>
     </div>
-    <section class="admin-card admin-list-card"><div class="admin-card-head"><h2>최근 피드백</h2></div>
+    <section class="admin-card admin-list-card"><div class="admin-card-head"><h3>최근 피드백</h3></div>
       ${(summary.recent || []).map((item) => `
         <article class="admin-row admin-feedback-row">
           ${item.rating === "helpful" ? statusPill("도움됨", "is-pass") : statusPill("개선 필요", "is-fail")}
@@ -457,7 +457,7 @@ function renderLogsSection() {
       <div class="admin-metric"><small>실패</small><strong class="${counts.fail ? "is-danger" : ""}">${counts.fail || 0}건</strong><span>${Math.round(((counts.fail || 0) / summary.total) * 100)}%</span></div>
     </div>` : ""}
     <section class="admin-card" aria-label="단계별 응답 시간">
-      <div class="admin-card-head"><h2>단계별 응답 시간</h2><span>${Number(latency.sampleCount) || 0}건 측정</span></div>
+      <div class="admin-card-head"><h3>단계별 응답 시간</h3><span>${Number(latency.sampleCount) || 0}건 측정</span></div>
       ${Object.entries(latency.groups?.all || {}).map(([key, value]) => `<div class="admin-row"><strong>${escapeHtml(latencyLabels[key] || key)}</strong><span>중앙값 ${Number(value.medianMs).toLocaleString()} ms · p95 ${Number(value.p95Ms).toLocaleString()} ms · ${Number(value.count)}건</span></div>`).join("") || '<p class="admin-empty">아직 측정된 응답이 없어요.</p>'}
       <p class="admin-muted">${escapeHtml(latency.note || "단계 시간은 중첩되어 합산하지 않습니다.")}</p>
     </section>
@@ -469,9 +469,9 @@ function renderLogsSection() {
       }).join("") : `<p class="admin-empty">${logs.length ? "실패하거나 확인이 필요한 답변이 없어요." : "아직 저장된 답변 로그가 없어요."}</p>`}
     </section>
     ${summary.total ? `<div class="admin-columns is-three">
-      <section class="admin-card"><div class="admin-card-head"><h2>답변 방식별</h2></div>${barList(Object.entries(summary.modeCounts || {}).map(([mode, count]) => [modeLabel(mode), count]))}</section>
-      <section class="admin-card"><div class="admin-card-head"><h2>모델별</h2></div>${barList(Object.entries(summary.modelCounts || {}))}</section>
-      <section class="admin-card"><div class="admin-card-head"><h2>자주 실패하는 검사 항목</h2></div>${barList((summary.topFailingChecks || []).map((item) => [item.label, item.count]), "is-danger")}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>답변 방식별</h3></div>${barList(Object.entries(summary.modeCounts || {}).map(([mode, count]) => [modeLabel(mode), count]))}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>모델별</h3></div>${barList(Object.entries(summary.modelCounts || {}))}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>자주 실패하는 검사 항목</h3></div>${barList((summary.topFailingChecks || []).map((item) => [item.label, item.count]), "is-danger")}</section>
     </div>` : ""}`;
 }
 

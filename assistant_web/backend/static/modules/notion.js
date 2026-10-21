@@ -158,7 +158,7 @@ function renderNotionAnswer(content, sources = [], messageIndex = 0) {
         <strong>${escapeHtml(source.database_label || "Notion")}</strong>
         <em class="status-badge ${statusToneClass(source.status)}">${escapeHtml(source.status || "상태 미상")}</em>
       </div>
-      <h4>${escapeHtml(source.title || "제목 없음")}</h4>
+      <h3>${escapeHtml(source.title || "제목 없음")}</h3>
       <div class="notion-card-meta">${escapeHtml(metaItems.join(" · "))}</div>
     `;
     list.appendChild(card);

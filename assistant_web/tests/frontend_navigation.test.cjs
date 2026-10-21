@@ -7,6 +7,7 @@ const vm = require('node:vm');
 async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const calls = [];
   const accountMenuCloses = [];
+  const reveals = [];
   const storage = new Map(stored ? [[`team-ai-assistant-main-view-v1:user-${role}`, stored]] : []);
   let focused;
   const element = (name) => ({
@@ -46,6 +47,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './motion.js': { revealOnScroll: (container, selector) => { reveals.push({ container, selector }); return () => {}; } },
     './sidebar.js': {
       closeMobileSidebar: () => { context.document.body.sidebarOpen = false; },
       closeAccountMenu: () => { accountMenuCloses.push(true); },
@@ -76,7 +78,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const loaderCalls = [];
   module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { loaderCalls, badges, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
+  return { loaderCalls, badges, reveals, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -106,11 +108,17 @@ test('filters and detail use the entire open population beyond the priority prev
   const h = await harness('member', undefined, async () => ({ok: true, payload}));
   await h.api.loadDashboard();
   assert.match(h.els.dashboardBody.innerHTML, /4 \/ 4건/);
+  assert.equal(h.reveals.length, 1);
+  assert.equal(h.reveals[0].container, h.els.dashboardBody);
   for (const [metric, count] of [['overdue', 2], ['aging', 3], ['highRisk', 2]]) {
     h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-metric]', {dashboardMetric: metric})});
     assert.match(h.els.dashboardBody.innerHTML, new RegExp(`${count} / 4건`));
     assert.match(h.els.dashboardBody.innerHTML, /상위 목록 밖/);
   }
+  // 필터로 다시 그릴 때는 등장 효과 없이 바로 보여 준다.
+  assert.equal(h.reveals.length, 1);
+  await h.api.loadDashboard(true);
+  assert.equal(h.reveals.length, 2);
   h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-issue]', {dashboardIssue: '99'})});
   assert.equal(h.els.dashboardDetail.hidden, false);
   assert.match(h.els.dashboardDetailBody.innerHTML, /개발완료 · 보통/);
@@ -326,8 +334,10 @@ test('priority queue follows the metrics and filters stay above the scrolling bo
   const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
   await h.api.loadDashboard();
   const html = h.els.dashboardBody.innerHTML;
-  assert.ok(html.indexOf('dashboard-metrics') < html.indexOf('dashboard-priority-section'));
-  assert.ok(html.indexOf('dashboard-priority-section') < html.indexOf('dashboard-decision'));
+  // 지표 → 판단 배너 → 분포 차트 → 우선 확인 목록 순서로 읽힌다.
+  assert.ok(html.indexOf('dashboard-metrics') < html.indexOf('dashboard-decision'));
+  assert.ok(html.indexOf('dashboard-decision') < html.indexOf('dashboard-grid'));
+  assert.ok(html.indexOf('dashboard-grid') < html.indexOf('dashboard-priority-section'));
   assert.doesNotMatch(html, /dashboard-filterbar/);
   assert.equal(h.els.dashboardFilterbar.hidden, false);
   assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
@@ -367,6 +377,69 @@ test('customer rows toggle their filter and the filter bar hides while reloading
   finish({ ok: true, payload: filterableDashboard() });
   await reloading;
   assert.equal(h.els.dashboardFilterbar.hidden, false);
+});
+
+test('age columns filter the queue and the age chip clears only that filter', async () => {
+  const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
+  await h.api.loadDashboard();
+  const pickAge = (key) => h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-age]', { dashboardAge: key }) });
+  pickAge('30-59');
+  assert.match(h.els.dashboardFilterbar.innerHTML, /data-dashboard-clear="age"[^>]*>경과: 30–59일<svg data-icon="close">/);
+  assert.match(h.els.dashboardBody.innerHTML, /2 \/ 3건/);
+  assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-age="30-59" aria-pressed="true"/);
+
+  // 고객사 필터와 겹치면 둘 다 만족하는 이슈만 남고, 경과 칩은 경과 조건만 푼다.
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-customer]', { dashboardCustomer: '고객사 A' }) });
+  assert.match(h.els.dashboardBody.innerHTML, /1 \/ 3건/);
+  h.els.dashboardFilterbar.handlers.click({ target: clickTarget('[data-dashboard-clear]', { dashboardClear: 'age' }) });
+  assert.doesNotMatch(h.els.dashboardFilterbar.innerHTML, /경과:/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /고객사: 고객사 A/);
+  assert.match(h.els.dashboardBody.innerHTML, /2 \/ 3건/);
+
+  pickAge('0-7');
+  h.els.dashboardFilterbar.handlers.click({ target: clickTarget('[data-dashboard-clear]', { dashboardClear: 'all' }) });
+  assert.match(h.els.dashboardFilterbar.innerHTML, /없음/);
+  assert.match(h.els.dashboardBody.innerHTML, /3 \/ 3건/);
+});
+
+test('priority queue previews five rows and toggles the rest', async () => {
+  const payload = filterableDashboard();
+  payload.openIssues = Array.from({ length: 7 }, (_, index) => ({
+    id: index + 1, title: `이슈 ${index + 1}`, project: '고객사 A', overdue: false, ageDays: index, riskLevel: 'watch',
+  }));
+  const h = await harness('member', undefined, async () => ({ ok: true, payload }));
+  await h.api.loadDashboard();
+  const rows = () => (h.els.dashboardBody.innerHTML.match(/data-dashboard-row-issue=/g) || []).length;
+  assert.equal(rows(), 5);
+  assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-more aria-expanded="false">나머지 2건 보기/);
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-more]', {}) });
+  assert.equal(rows(), 7);
+  assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-more aria-expanded="true">상위 5건만 보기/);
+  h.els.dashboardBody.handlers.click({ target: clickTarget('[data-dashboard-more]', {}) });
+  assert.equal(rows(), 5);
+});
+
+test('charts count an overdue aging issue once and intake shows the new issue split', async () => {
+  const payload = filterableDashboard();
+  Object.assign(payload.summary, { newIssues: 28, closedNow: 19, previousNewIssues: 25, changeRate: 12 });
+  payload.members = [
+    { displayName: '김팀원', role: 'member', open: 5, overdue: 2, agingOnly: 1, highRisk: 1 },
+    { displayName: '이팀원', role: 'member', open: 7, overdue: 0, agingOnly: 0, highRisk: 0 },
+  ];
+  const h = await harness('member', undefined, async () => ({ ok: true, payload }));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.match(html, /이번 기간 신규 이슈 28건 중 종료 19건, 미종료 9건/);
+  assert.match(html, /종료 19<\/b> · <b class="is-open">미종료 9<\/b> · 직전 기간 25건/);
+  assert.match(html, /신규 증가 12%/);
+  // 고객사 A의 #1은 지연이면서 40일이 지났지만 지연 구간에만 한 번 들어간다.
+  assert.match(html, /aria-label="고객사 A 미종료 2건, 지연 1건, 장기 0건, 그 외 1건/);
+  assert.match(html, /aria-label="고객사 B 미종료 1건, 지연 0건, 장기 1건, 그 외 0건/);
+  assert.match(html, /30일 이상 2건이 장기 미종료입니다\./);
+  // 팀원 막대는 미종료 많은 순서이고, 나머지는 미종료에서 지연·장기를 뺀 값이다.
+  assert.ok(html.indexOf('이팀원') < html.indexOf('김팀원'));
+  assert.match(html, /aria-label="김팀원 [^"]*미종료 5건, 지연 2건, 장기 1건, 그 외 2건, 고위험 1건"/);
+  assert.doesNotMatch(html, /dashboard-grid is-two/);
 });
 
 test('expired snapshot and live error never display zero dashboard metrics', async () => {
@@ -421,7 +494,6 @@ test('dashboard rows keep table semantics and expose real buttons', async () => 
   const payload = filterableDashboard();
   payload.customerHealth = [{ customer: '고객사 A', level: 'high', label: '위험', reasons: ['지연'], openCount: 2, overdueCount: 1, agingCount: 1 }];
   payload.customerSpikes = [{ name: '고객사 B', count: 4, previousCount: 1, ratio: 4 }];
-  payload.todos = [{ id: 7, title: '오늘 볼 이슈', project: '고객사 A', riskLevel: 'high', recommendedAction: '확인' }];
   const h = await harness('member', undefined, async () => ({ ok: true, payload }));
   await h.api.loadDashboard();
   const html = h.els.dashboardBody.innerHTML;
@@ -429,9 +501,10 @@ test('dashboard rows keep table semantics and expose real buttons', async () => 
   assert.doesNotMatch(html, /role="button"|tabindex="0"/);
   assert.match(html, /<tr class="dashboard-clickable" data-dashboard-row-issue="1">/);
   assert.match(html, /<button type="button" class="dashboard-issue-button" data-dashboard-issue="1">/);
-  assert.match(html, /<button type="button" class="workspace-item-title dashboard-card-button" data-dashboard-issue="7">/);
-  assert.match(html, /<button type="button" class="health-row dashboard-clickable" aria-pressed="false" data-dashboard-customer="고객사 A">/);
-  assert.match(html, /<button class="dashboard-spike-row dashboard-clickable" type="button" data-dashboard-customer="고객사 B" aria-pressed="false">/);
+  // 차트 막대도 실제 버튼이며, 급증 신호는 해당 고객사 막대의 배지로 붙는다.
+  assert.match(html, /<button type="button" class="dashboard-bar dashboard-clickable" data-dashboard-customer="고객사 A" aria-pressed="false" aria-label="고객사 A 미종료 2건, 지연 1건, 장기 0건, 그 외 1건, 위험">/);
+  assert.match(html, /<button type="button" class="dashboard-bar dashboard-clickable" data-dashboard-customer="고객사 B"[^>]*>[\s\S]*?<b class="dashboard-spike-badge" title="고객사 B 4건\(직전 1건\)">급증 ×4<\/b>/);
+  assert.match(html, /<button type="button" class="dashboard-column dashboard-clickable is-aging" data-dashboard-age="30-59" aria-pressed="false" aria-label="경과 30–59일 미종료 2건">/);
   assert.equal(h.els.dashboardBody.handlers.keydown, undefined);
 
   // 마우스로 행의 다른 칸을 눌러도 같은 이슈 상세가 열린다.
