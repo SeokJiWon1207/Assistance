@@ -85,8 +85,18 @@ def build_incident_triage_report(text: str, *, search_similar: bool = True) -> O
         *[f"- {item}" for item in scope_checks],
         "", "초동 확인 순서", "",
         *[f"{index}. {item}" for index, item in enumerate(initial_checks, 1)],
-        "", "유사 사례", "",
     ]
+    lines.extend([
+        "",
+        "담당자 전달 내용",
+        f"- 우선순위: {urgency}",
+        f"- 고객사/플랫폼: {scope_label}",
+        f"- 증상: {symptom}",
+        "- 필수 첨부: 발생 시각, 영향 사용자·기능, 앱 버전, 재현 절차, 화면 캡처, 클라이언트/API 로그",
+        "- 함께 전달할 판단: 영향 사용자·기능 범위, 재현 여부, 우회 가능 여부, 다음 확인 담당자와 회신 시각",
+    ])
+
+    lines.extend(["", "유사 사례", ""])
     if examples:
         lines.append("- 고객사 제한을 풀고 같은 플랫폼의 과거 사례를 찾았습니다. 원인이 같다고 단정하지 않습니다.")
         for issue in examples:
@@ -99,15 +109,7 @@ def build_incident_triage_report(text: str, *, search_similar: bool = True) -> O
     else:
         lines.append("- 현재 검색 범위에서는 참고할 만한 과거 사례를 찾지 못했습니다.")
 
-    lines.extend([
-        "",
-        "담당자 전달 내용",
-        f"- 우선순위: {urgency}",
-        f"- 고객사/플랫폼: {scope_label}",
-        f"- 증상: {symptom}",
-        "- 필수 첨부: 발생 시각, 영향 사용자·기능, 앱 버전, 재현 절차, 화면 캡처, 클라이언트/API 로그",
-        "- 함께 전달할 판단: 영향 사용자·기능 범위, 재현 여부, 우회 가능 여부, 다음 확인 담당자와 회신 시각",
-    ])
+
 
     sources = build_sources_from_issue_rows(examples)
     return {
@@ -124,6 +126,7 @@ def build_incident_triage_report(text: str, *, search_similar: bool = True) -> O
                 "issues_list": examples,
                 "meta": {
                     "displayed_count": len(examples),
+                    "reference_issue_ids": [issue['id'] for issue in examples],
                     "similar_scope": "platform" if platform else "all",
                 },
             }],

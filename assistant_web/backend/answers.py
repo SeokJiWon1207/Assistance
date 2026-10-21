@@ -434,7 +434,8 @@ def build_issue_intro_line(
     if count == 0:
         tail = f"{prefix}이슈는 지금 조건으로는 찾지 못했어요." if prefix else "조건에 맞는 이슈를 찾지 못했어요."
         return f"🔍 {tail} 기간이나 상태 같은 조건을 바꿔서 다시 찾아볼까요?"
-    return f"🔍 {prefix}이슈 {count}건을 찾았어요. 최신 등록순으로 정리했습니다."
+    order = '오래된 등록순' if constraints.get('sort', {}).get('direction') == 'asc' else '최신 등록순'
+    return f"🔍 {prefix}이슈 {count}건을 찾았어요. {order}으로 정리했습니다."
 
 
 def build_status_excluded_note(
@@ -590,6 +591,9 @@ def format_deterministic_issue_answer(
             "similar_base_issue_ids": similar_base_issue_ids,
         }
     criteria = format_issue_list_criteria(display_constraints, issues)
+    requested_order = (constraints.get('sort') or {})
+    sort_label = ('의미 유사도 기준' if similar_base_issue_ids else
+                  '등록일 오래된 순' if requested_order.get('direction') == 'asc' else '최신 이슈 ID 기준')
     topic = str(retrieval_result.get("keyword") or "").strip() if not similar_base_issue_ids else ""
     if topic:
         criteria = f"{criteria}, 검색어={topic}"
@@ -620,7 +624,6 @@ def format_deterministic_issue_answer(
                  dependency_note or build_issue_intro_line(display_constraints, issues, 0))
         if topic and not dependency_note and not (continuation and complete and not incomplete):
             intro = f"🔍 ‘{topic}’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요."
-        sort_label = "의미 유사도 기준" if similar_base_issue_ids else "최신 이슈 ID 기준"
         parts = [intro, "", f"검색 기준: {criteria}, 정렬: {sort_label}"]
         if status_note:
             parts.extend(["", status_note])
@@ -681,7 +684,7 @@ def format_deterministic_issue_answer(
     lines = [
         intro,
         "",
-        f"검색 기준: {criteria}, 정렬: {'의미 유사도 기준' if similar_base_issue_ids else '최신 이슈 ID 기준'}",
+        f"검색 기준: {criteria}, 정렬: {sort_label}",
         "",
     ]
     if group_by == "customer":

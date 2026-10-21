@@ -20,6 +20,7 @@ from backend.retrieval import (
 )
 from backend.schemas import ChatRequest
 from backend.evaluation.issue_facts import check_issue_fields, extract_issue_claims, has_definite_scope_mismatch, plain_text
+from backend.evaluation.report_scopes import report_evidence_constraints
 from backend.understanding import (
     extract_query_constraints,
     extract_requested_limit,
@@ -35,6 +36,7 @@ def ungrounded_constraint_labels(
     grounding_text: str,
     constraints: Dict[str, Any],
     source: str = "",
+    *, query_plan: Optional[Dict[str, Any]] = None,
 ) -> List[str]:
     """질문에 근거가 없는 검색 조건을 찾는다.
 
@@ -45,11 +47,15 @@ def ungrounded_constraint_labels(
     근거 텍스트로는 검색에 실제 쓰인 문장을 쓴다. 후속 질문에서 이전 턴의
     조건을 물려받은 경우까지 근거 없음으로 잡히면 경고가 무의미해진다.
     """
+    from backend.intent.condition_grounding import grounded_values
+    certified = grounded_values(grounding_text, constraints, query_plan)
+    def grounded(field, value):
+        return (field, normalize_for_match(str(value).lstrip('#'))) in certified
     normalized = normalize_for_match(grounding_text)
     labels: List[str] = []
 
     customer_key = constraints.get("customer_key")
-    if customer_key and not any(
+    if customer_key and not grounded("customer", customer_key) and not any(
         normalize_for_match(alias) in normalized
         for alias in [customer_key, *(constraints.get("customer_aliases") or [])]
         if alias
@@ -57,7 +63,7 @@ def ungrounded_constraint_labels(
         labels.append(f"고객사={customer_key}")
 
     platform_key = constraints.get("platform_key")
-    if platform_key and not any(
+    if platform_key and not grounded("platform", platform_key) and not any(
         normalize_for_match(alias) in normalized
         for alias in [platform_key, *(constraints.get("platform_aliases") or [])]
         if alias
@@ -65,11 +71,13 @@ def ungrounded_constraint_labels(
         labels.append(f"플랫폼={platform_key}")
 
     for name in constraints.get("people", {}).get("names") or []:
-        if normalize_for_match(name) not in normalized:
+        role = constraints.get("people", {}).get("role")
+        field = "owner" if role == "handler" else role
+        if not grounded(field, name) and normalize_for_match(name) not in normalized:
             labels.append(f"담당자={name}")
 
     for number in constraints.get("screen_numbers") or []:
-        if str(number) not in str(grounding_text):
+        if not grounded("screen_number", number) and str(number) not in str(grounding_text):
             labels.append(f"화면번호={number}")
 
     expected = extract_query_constraints(grounding_text)
@@ -81,10 +89,10 @@ def ungrounded_constraint_labels(
         native = extract_notion_constraints(grounding_text)
         expected["statuses"] = [native["status"]] if native.get("status") else []
     for status in constraints.get("statuses") or []:
-        if status not in (expected.get("statuses") or []):
+        if not grounded("status", status) and status not in (expected.get("statuses") or []):
             labels.append(f"상태={status}")
     for issue_id in constraints.get("issue_ids") or []:
-        if issue_id not in (expected.get("issue_ids") or []):
+        if not grounded("issue_id", issue_id) and issue_id not in (expected.get("issue_ids") or []):
             labels.append(f"이슈 ID={issue_id}")
 
     # 집계값과 실행 필터가 서로 일치해도, 질문에 없던 검색어로 범위를
@@ -102,7 +110,8 @@ def ungrounded_constraint_labels(
     for label, value in keyword_values:
         term = normalize_for_match(str(value or ""))
         missing_label = f"{label}={value}"
-        if term and term not in normalized and missing_label not in labels:
+        field = "title" if label == "제목" else "keyword"
+        if term and not grounded(field, value) and term not in normalized and missing_label not in labels:
             labels.append(missing_label)
 
     return labels
@@ -279,7 +288,9 @@ def build_verification_report(
                 "status": "pass" if matched_owner else "fail",
                 "detail": f"요청 담당자 {', '.join(expected_people)} · 실행 담당자 {actual['owner']}",
             })
+    base_match_constraints = match_constraints
     for source in sources:
+        match_constraints = report_evidence_constraints(mode, source, base_match_constraints, retrieval_result or {})
         if source.get("type") == "notion":
             matched = notion_page_matches_constraints(
                 {**(source.get("detail") or {}), **source}, notion_constraints,
@@ -338,6 +349,7 @@ def build_verification_report(
         str((retrieval_result or {}).get("query") or question),
         constraints,
         str(query_plan.get("source") or ""),
+        query_plan=query_plan,
     )
     retrieval_checks.append(
         {
@@ -345,7 +357,7 @@ def build_verification_report(
             "label": "조건 근거",
             "status": "pass" if not ungrounded else "warning",
             "detail": (
-                "모든 조건이 질문에 근거함"
+                "모든 조건이 현재 질문 또는 인증 사용자·서버에서 확인한 이전 조건에 근거함"
                 if not ungrounded
                 else f"질문에 없는 조건: {', '.join(ungrounded)}"
             ),
@@ -430,8 +442,9 @@ def build_verification_report(
         }
     )
 
-    if mode in {"deterministic_effort_report", "deterministic_filtered_effort_report"}:
-        filtered_effort = mode == "deterministic_filtered_effort_report"
+    if mode in {"deterministic_effort_report", "deterministic_filtered_effort_report", "deterministic_effort_sla_report"}:
+        component_mode = (retrieval_result or {}).get('effort_component_mode', mode)
+        filtered_effort = component_mode == "deterministic_filtered_effort_report"
         effort_source = "mantis_effort_filtered" if filtered_effort else "mantis_effort"
         effort_stage: Dict[str, Any] = next(
             (stage for stage in (retrieval_result or {}).get("stages", []) if stage.get("source") == effort_source),
@@ -452,6 +465,10 @@ def build_verification_report(
         stored_total = float(effort_meta.get("total_effort", 0))
         displayed_total_match = re.search(r"총\s*공수:\s*\*\*([0-9.]+)", content or "")
         displayed_total = float(displayed_total_match.group(1)) if displayed_total_match else None
+        effort_sources = sources
+        if mode == 'deterministic_effort_sla_report':
+            effort_ids = (retrieval_result or {}).get('effort_source_ids') or []
+            effort_sources = [s for s in sources if s.get('issue_id') in effort_ids]
         calculation_checks = [
             {
                 "id": "effort_recalculation",
@@ -478,8 +495,8 @@ def build_verification_report(
             {
                 "id": "effort_issue_count",
                 "label": "반영 이슈 수",
-                "status": "pass" if len(sources) == int(effort_meta.get("displayed_count", 0)) else "fail",
-                "detail": f"원문 {len(sources)}건 · 집계 {effort_meta.get('displayed_count', 0)}건",
+                "status": "pass" if len(effort_sources) == int(effort_meta.get("displayed_count", 0)) else "fail",
+                "detail": f"원문 {len(effort_sources)}건 · 집계 {effort_meta.get('displayed_count', 0)}건",
             },
         ]
         calculation_score, calculation_status = score_checks(calculation_checks)
@@ -504,11 +521,19 @@ def build_verification_report(
         expected_count = int(count_stage.get("meta", {}).get("total_count", -1))
         displayed_match = re.search(r"총\s*(\d+)\s*건", content or "")
         displayed_count = int(displayed_match.group(1)) if displayed_match else None
+        partial = (count_stage.get('status') in {'error', 'partial_error'}
+                   or count_stage.get('meta', {}).get('search_complete') is False)
+        count_status = 'pass' if displayed_count == expected_count and expected_count >= 0 else 'fail'
+        if partial:
+            reference = re.search(r'확인된 범위의 참고값은\s*(\d+)\s*건', content or '')
+            displayed_count = int(reference[1]) if reference else None
+            count_status = ('warning' if displayed_match is None and displayed_count == expected_count
+                            and expected_count >= 0 and '확정할 수 없' in content else 'fail')
         calculation_checks = [
             {
                 "id": "count_result",
                 "label": "집계 결과",
-                "status": "pass" if displayed_count == expected_count and expected_count >= 0 else "fail",
+                "status": count_status,
                 "detail": f"실행 결과 {expected_count}건 · 답변 {displayed_count if displayed_count is not None else '미표시'}건",
             },
             {

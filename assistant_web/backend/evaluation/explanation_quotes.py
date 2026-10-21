@@ -365,6 +365,25 @@ def validate_quote_answer(payload: dict[str, Any], grounding: dict[str, Any], *,
                 if match not in checked:
                     checked.append(match)
         result["sections"].append({"topic": topic, "evidence": checked, "unanswered": unanswered})
+    result['answer_items'] = []
+    items = payload.get('answer_items', [])
+    if not isinstance(items, list) or len(items) > 5:
+        errors.append('invalid_question_answers')
+    else:
+        for item in items:
+            if (not isinstance(item, dict) or not isinstance(item.get('question_part'), str)
+                    or not 0 < len(item['question_part']) <= 120):
+                errors.append('invalid_question_part')
+                continue
+            proof = validate_quote_answer({'selected_issue_ids': selected, 'sections': [{
+                'topic': 'technical', 'unanswered': item.get('unanswered'), 'evidence': item.get('evidence'),
+            }]}, grounding, allow_multiple=allow_multiple)
+            if not proof['valid']:
+                errors.append('invalid_question_answer_evidence')
+            else:
+                result['answer_items'].append({'question_part': item['question_part'],
+                    'unanswered': item['unanswered'], 'evidence': proof['sections'][0]['evidence'],
+                    **({'draft_answer': item['answer']} if 'answer' in item else {})})
     result["valid"] = not errors
     return result
 
@@ -1573,7 +1592,8 @@ def _conclusion_lines(plans: list[tuple[str, list[dict[str, Any]], list[dict[str
     return lines
 
 
-def render_quote_answer(validated: dict[str, Any], grounding: dict[str, Any]) -> str:
+def render_quote_answer(validated: dict[str, Any], grounding: dict[str, Any], *, question: str = "",
+                        previous_questions: list[str] | None = None) -> str:
     """검증된 인용만 고정 제목과 출처 표시로 렌더한다. 자유 생성 요약은 읽지 않는다."""
     if not validated.get("valid"):
         return ""
@@ -1621,7 +1641,14 @@ def render_quote_answer(validated: dict[str, Any], grounding: dict[str, Any]) ->
         detail = [row for row in evidence_rows if row not in preview]
         plans.append((topic, preview, detail, section.get("unanswered", False)))
     selected_ids = validated.get("selected_issue_ids", [])
-    lines = _conclusion_lines(plans, selected_ids, issues) + lines
+    from backend.evaluation.explanation_direct import direct_conclusion
+    conclusion = direct_conclusion(question, plans, selected_ids, issues, previous_questions,
+                                   validated.get('answer_items'))
+    if not conclusion:
+        conclusion = _conclusion_lines(plans, selected_ids, issues)
+        if question and not re.search(r'운영|반영|배포', question):
+            conclusion = [line for line in conclusion if line != '선택된 근거만으로 운영 반영 완료는 확정할 수 없습니다.']
+    lines = conclusion + lines
     rendered_quotes: set[tuple[int, str, str]] = set()
     initial_sources: set[tuple[int, str]] = set()
     dated_by_issue: dict[int, list[dict[str, Any]]] = {}

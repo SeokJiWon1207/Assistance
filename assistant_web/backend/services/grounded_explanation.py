@@ -1,7 +1,8 @@
-"""설명 답변은 이슈별 원문 선택을 검증한 뒤 고정 형식으로 출력한다."""
+"""이슈별 원문을 검증하고 독립 검토를 거친 짧은 답변과 전체 근거를 출력한다."""
 import json
 import re
 from copy import deepcopy
+from functools import partial
 from time import perf_counter
 from typing import Any, Callable
 
@@ -64,7 +65,9 @@ def resolve_selections(payload: Any, catalog: dict[str, dict[str, Any]]) -> dict
     if not isinstance(payload, dict) or not isinstance(payload.get('sections'), list):
         return {}
     result = deepcopy(payload)
-    for section in result['sections']:
+    if not isinstance(result.get('answer_items', []), list):
+        return {}
+    for section in [*result['sections'], *result.get('answer_items', [])]:
         if not isinstance(section, dict) or not isinstance(section.get('evidence_ids'), list):
             return {}
         refs = section['evidence_ids']
@@ -120,6 +123,7 @@ def merge_reviewed_selection(first: dict[str, Any], review: dict[str, Any], *,
         return {'valid': False, 'errors': ['focused_review_invalid_or_changed_issue']}
     merged = deepcopy(first)
     merged['selected_issue_ids'] = list(review['selected_issue_ids'])
+    merged['answer_items'] = deepcopy(review.get('answer_items') or first.get('answer_items') or [])
     for section in review['sections']:
         existing = next((s for s in merged['sections'] if s['topic'] == section['topic']), None)
         if existing is None:
@@ -304,10 +308,29 @@ def generate_grounded_explanation(
         '그대로 표시한다. 발신자 질문에는 From과 메일 서명이 적힌 문단도 선택한다. '
         '질문의 각 세부 항목을 답하는 여러 문단을 빠짐없이 선택한다. '
         'section은 topic enum만 쓰며 자유 제목·결론·summary를 출력하지 마라. '
+        'answer_items에는 현재 질문의 세부 항목을 최대 5개로 나누어 각각 그 항목에 직접 답하는 근거 ID를 연결해라. '
+        'question_part는 현재 질문에 실제 있는 짧은 구절 그대로이고, 자유 제목이나 요약 문장을 만들지 마라. '
+        '서로 다른 함수·TR·기간·설정·주체는 별도 항목으로 구분하며 각 항목당 필요한 evidence_ids를 선택해라. '
+        '각 항목은 제목·인사·파일 경로 대신 실제 답을 담은 핵심 문단 1~3개를 우선하고, 필수 조건이나 정정은 생략하지 마라. '
+        'answer_items의 answer에는 해당 evidence_ids만으로 답하는 짧은 한국어 결론을 각각 1문장으로 작성해라. '
+        '각 answer는 140자 이내, 합계 480자 이내로 핵심 수치·함수·조건·예외를 보존한다. 원문 나열이나 인사는 생략한다. '
+        'answer에 p24 같은 문단 식별자나 출처 번호를 쓰지 마라. 출처는 서버가 별도로 붙인다. '
+        '이미 제공된 조치·결과 기록이 있으면 그 내용을 직접 답하고, 기록을 확인해야 한다는 안내로 대신하지 마라. '
+        '조치 기록이 별도로 있다는 안내로 끝내지 말고 실제 조치명과 결과를 answer에 적어라. '
+        '접수와 완료를 구분하되 조치 필드의 실제 지원 완료 기록도 빠뜨리지 말고, 확인된 지원과 미확정인 세부 범위를 나눠라. '
+        '질문이 원인과 조치 또는 플랫폼별 파일·일자를 묻는다면 모두 직접 답한다. '
+        '답을 확정할 근거가 없는 항목은 unanswered=true와 확인하지 못한 범위를 answer에 명시하고 완료 사실을 만들어내지 마라. '
+        '미확정 항목은 확인된 사실을 먼저 적고, 미확정 범위에는 반드시 "확인할 수 없습니다"라는 표현을 사용해라. '
+        '완료 기록이 없다는 것과 실제로 하지 않았다는 것은 다르다. 미확인 전달·반영을 "전달되지 않았다", '
+        '"반영되지 않았다"로 단정하지 마라. 보류·종료 기록도 실제 고객 적용 여부의 증거와 구분해라. '
+        '전달·QC 완료를 고객 검증·운영 반영 완료로 바꾸지 말고 질문에 없는 완료 여부를 덧붙이지 마라. '
+        'selected 이슈의 누락 노트가 있어야 답할 수 있으면 investigate에 해당 issue_id를 최대 2개만 넣어라. '
+        '이미 전체 근거가 있거나 제공된 근거로 충분하면 investigate는 빈 배열이다. 근거에 없는 사실을 찾으려고 같은 자료를 반복 조회하지 마라. '
         f'필수 topic: {json.dumps(topics)}. 필요한 topic만 포함하되 모든 필수 topic에 답해라. '
         '형식: {"selected_issue_ids":[12345],"sections":[{"topic":"action",'
         '"evidence_ids":["p3","p7"],'
-        '"unanswered":false}]}. 허용 topic은 cause,action,timeline,conditions,technical,actors다.\n\n'
+        '"unanswered":false}],"answer_items":[{"question_part":"현재 질문의 일부","evidence_ids":["p3"],"unanswered":false,"answer":"짧은 답"}],"investigate":[]}. '
+        '허용 topic은 cause,action,timeline,conditions,technical,actors다.\n\n'
         f'[검색 파이프라인 결과]\n{json.dumps(shown, ensure_ascii=False, separators=(",", ":"))}'
     )
     messages = [{'role': 'system', 'content': instruction},
@@ -360,9 +383,13 @@ def generate_grounded_explanation(
                 if supplement_meta is None:
                     started = perf_counter()
                     # 검색에서 사용한 확정 조건을 그대로 적용하며 이미 선택한 이슈만 보강한다.
-                    grounding, supplement_meta = supplement_explanation_notes(
-                        grounding, selected, context.latest_user_text, context.retrieval_result or {},
-                        (context.retrieval_result or {}).get('constraints', context.query_constraints))
+                    from backend.services.explanation_investigation import investigation_plan, bounded_investigation
+                    investigation = investigation_plan(context.latest_user_text, validated, grounding, payload.get('investigate'))
+                    grounding, supplement_meta = bounded_investigation(
+                        partial(supplement_explanation_notes,
+                            grounding, investigation['issue_ids'], context.latest_user_text, context.retrieval_result or {},
+                            (context.retrieval_result or {}).get('constraints', context.query_constraints)),
+                        grounding, investigation)
                     supplement_meta['elapsed_ms'] = round((perf_counter() - started) * 1000, 1)
                     invalid_source = any(f['reason'] != 'fetch_failed' for f in supplement_meta['failures'])
                     if invalid_source:
@@ -400,7 +427,16 @@ def generate_grounded_explanation(
                      '연결된 요청의 지시 대상, 누락 소스, 고객 답변 발신자와 개발측 회신을 빠뜨리지 마라. '
                      '최종 구현 방식이나 완료 여부를 묻는데 QC/전달 기록만 있고 그 방식의 확정 기록이 없으면 '
                      '해당 topic을 unanswered=true로 표시하고 확인 가능한 근거는 유지해라. '
-                     '기존 선택에서 빠진 문단을 보충해 같은 JSON 형식의 전체 선택을 출력해라.\n'
+                     '기존 answer의 각 문장이 연결된 근거로 뒷받침되는지 독립 검토해라. '
+                     '원문과 수치·함수·주체·조건이 다르거나 요청/예정/미완료를 완료로 바꾼 문장은 수정해라. '
+                     '이미 제공된 완료·조치 기록을 무시하고 확인이 필요하다고 미룬 문장도 수정해라. '
+                     '노트뿐 아니라 조치 필드의 실제 결과를 반영하되 확인된 범위 이상으로 확장하지 마라. '
+                     '기록 부재를 실제 미전달·미반영으로 단정한 문장은 완료 여부를 확인할 수 없다는 표현으로 수정해라. '
+                     '질문의 필수 항목에 빠진 답이나 문단이 있으면 보충한다. '
+                     '검토 결과 모든 필수 항목과 정정·미확정 판정, answer 문장이 충분하면 {"unchanged":true}만 출력해라. '
+                     '추가 노트와 연결 후보까지 실제로 대조한 뒤 판단하고, 근거가 부족하면 확인됐다고 바꾸지 마라. '
+                     '보충·수정이 필요하면 기존 선택에서 빠진 문단을 보충해 같은 JSON 형식의 전체 선택을 출력해라. '
+                     'unchanged와 선택 필드를 함께 출력하지 마라.\n'
                      '[검색 파이프라인 결과]\n' + json.dumps(focused, ensure_ascii=False, separators=(',', ':'))},
                     {'role': 'user', 'content': messages[1]['content'] + '\n기존 선택:\n' + raw_content},
                 ]
@@ -410,9 +446,15 @@ def generate_grounded_explanation(
                     review_payload = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', review_response.get('content', '').strip()))
                 except (ValueError, TypeError):
                     review_payload = {}
-                resolved_review = restrict_to_primary(resolve_selections(review_payload, catalog), primary_scope)
-                review_multiple = multiple or validate_related_selection(grounding, resolved_review.get('selected_issue_ids', []))
-                review = validate_quote_answer(resolved_review, grounding, allow_multiple=review_multiple)
+                # 독립 검토는 항상 수행하되, 변경이 없으면 검증된 기존 선택을 다시 출력하지 않는다.
+                unchanged = (isinstance(review_payload, dict) and set(review_payload) == {'unchanged'}
+                             and review_payload['unchanged'] is True)
+                if unchanged:
+                    review, review_multiple = deepcopy(validated), allowed_multiple
+                else:
+                    resolved_review = restrict_to_primary(resolve_selections(review_payload, catalog), primary_scope)
+                    review_multiple = multiple or validate_related_selection(grounding, resolved_review.get('selected_issue_ids', []))
+                    review = validate_quote_answer(resolved_review, grounding, allow_multiple=review_multiple)
                 reviewed = merge_reviewed_selection(validated, review, grounding=grounding,
                                                     allow_resolved=bool(supplement_meta.get('added_chars')))
                 if not reviewed['valid']:
@@ -449,21 +491,28 @@ def generate_grounded_explanation(
                         validated['sections'].extend(checked_background['sections'])
                     else:
                         history_complete = False
-                response['content'] = render_quote_answer(validated, grounding)
+                response['content'] = render_quote_answer(
+                    validated, grounding, question=context.latest_user_text,
+                    previous_questions=(context.intent_plan or {}).get('previous_explanation_questions'))
+                from backend.evaluation.explanation_summary import summary_items, render_summary
+                summaries = summary_items(validated, grounding, context.latest_user_text)
+                if summaries:
+                    response['content'] = render_summary(summaries, response['content'])
                 limits = platform_limits(context.latest_user_text, grounding, selected)
                 if limits:
                     response['content'] = limits + '\n\n' + response['content']
                 if not history_complete:
-                    response['content'] += '\n\n일부 진행 이력의 인용 문맥을 검증하지 못해 추가하지 않았습니다.'
+                    response['content'] = '일부 진행 이력의 인용 문맥을 검증하지 못해 추가하지 않았습니다.\n\n' + response['content']
                 if supplement_meta.get('failures'):
-                    response['content'] += '\n\n추가 노트를 조회하지 못해 최초 조회한 부분 근거로만 설명했습니다.'
+                    response['content'] = '추가 노트를 조회하지 못해 최초 조회한 부분 근거로만 설명했습니다.\n\n' + response['content']
                 selected_sources = [s for s in response.get('sourcesForFollowUps', response.get('sources', []))
                                     if s.get('issue_id') in selected]
                 response['sourcesForFollowUps'] = selected_sources
                 response['sources'] = selected_sources if request.showSources else []
                 response['groundingReview'] = {'completed': True, 'method': 'validated_source_quotes',
                                               'attempts': attempt + 1, 'selectedIssueIds': selected,
-                                              'focusedCoverageReview': True, 'historyComplete': history_complete,
+                                              'focusedCoverageReview': True, 'focusedReviewUnchanged': unchanged,
+                                              'historyComplete': history_complete, 'summaryAccepted': bool(summaries),
                                               'noteSupplement': supplement_meta}
                 return response
         messages.extend([{'role': 'assistant', 'content': raw_content},

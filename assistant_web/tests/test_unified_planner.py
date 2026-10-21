@@ -19,6 +19,24 @@ def proposal(**updates):
 
 
 class UnifiedPlannerTests(unittest.TestCase):
+    def test_narrowing_similarity_cannot_clear_a_customer_named_as_the_target(self):
+        previous=self.validate('#9000과 비슷한 과거 사례의 원인을 비교해줘',proposal(
+            operation='report',report_kind='similar',scope='target',
+            status={'mode':'unspecified','values':[],'evidence':''},filters=[
+                {'field':'issue_id','operator':'equals','value':9000,'evidence':'#9000'}]))
+        q='NH MTS 사례로 좁혀서 원인과 조치를 비교해줘'
+        wrong=proposal(operation='report',report_kind='similar',scope='inherit',followup=True,
+            status={'mode':'inherit','values':[],'evidence':''},clear_fields=['customer'],filters=[
+                {'field':'platform','operator':'equals','value':'mts','evidence':'MTS'}])
+        with self.assertRaisesRegex(ValueError,'고객사'):
+            self.validate(q,wrong,previous)
+        correct=copy.deepcopy(wrong);correct['clear_fields']=[]
+        correct['filters'].append({'field':'customer','operator':'equals','value':'NH','evidence':'NH'})
+        result=self.validate(q,correct,previous)
+        self.assertEqual(result['resolved_constraints']['customer_key'],'NH')
+        cleared=self.validate('NH 고객사 조건은 풀고 MTS로 좁혀서 비교해줘',wrong,result)
+        self.assertIsNone(cleared['resolved_constraints']['customer_key'])
+
     def planner(self):
         self.assertIsNotNone(importlib.util.find_spec('backend.intent.unified'))
         return importlib.import_module('backend.intent.unified')
@@ -190,8 +208,15 @@ class UnifiedIntegrationTests(unittest.TestCase):
             if 'unified' not in case:
                 continue
             with self.subTest(question=case['q']):
-                p = validate_plan(case['q'], case['unified'], {'mantisUsername': '석지원'}, {})
+                previous = {}
+                if case.get('unified_previous'):
+                    previous = validate_plan(case['unified_previous_q'], case['unified_previous'],
+                                             {'mantisUsername': '석지원'}, {})
+                p = validate_plan(case['q'], case['unified'], {'mantisUsername': '석지원'}, previous)
                 self.assertEqual(p['resolved_constraints']['statuses'], case['unified_statuses'])
+                if 'unified_excluded_statuses' in case:
+                    self.assertEqual(p['resolved_constraints']['excluded_statuses'], case['unified_excluded_statuses'])
+                    self.assertIsNone(p['resolved_constraints']['created_at'])
                 self.assertEqual(p['resolved_constraints']['people']['role'], case['unified_role'])
 
 
@@ -267,3 +292,24 @@ class UnifiedSchemaNormalizationTests(unittest.TestCase):
         p['status']['evidence']='신규만 제외...해결 포함'
         with self.assertRaises(ValueError):
             self.validate('내 이슈 종료만 제외하고 해결 포함해서 몇 개?',p)
+
+    def test_explicit_status_classification_is_not_quantity_all(self):
+        p=proposal(status={'mode':'all','values':[],'evidence':'상태 구분 없이'})
+        self.assertEqual(self.validate('내 이슈 상태 구분 없이 몇 건?',p)['resolved_constraints']['statuses'],[])
+        p['status']['evidence']='모두'
+        with self.assertRaises(ValueError):
+            self.validate('내 남아 있는 이슈 모두 몇 건?',p)
+
+    def test_equivalent_singleton_in_filter_is_not_a_new_followup_condition(self):
+        previous=self.validate('우동헌 담당 전체 상태 이슈 몇 건?',proposal(scope='target',
+            status={'mode':'all','values':[],'evidence':'전체 상태'},filters=[
+                {'field':'owner','operator':'in','value':['우동헌'],'evidence':'우동헌 담당'}]))
+        previous['audit_id']='c'*32
+        result=self.validate('같은 담당자로 다시 세어줘',proposal(scope='inherit',followup=True,
+            status={'mode':'inherit','values':[],'evidence':''},filters=[
+                {'field':'owner','operator':'equals','value':'우동헌','evidence':'같은 담당자'}]),previous)
+        self.assertEqual(result['filter_clauses'],previous['filter_clauses'])
+        with self.assertRaises(ValueError):
+            self.validate('같은 담당자로 다시 세어줘',proposal(scope='inherit',followup=True,
+                status={'mode':'inherit','values':[],'evidence':''},filters=[
+                    {'field':'owner','operator':'equals','value':'김진성','evidence':'같은 담당자'}]),previous)

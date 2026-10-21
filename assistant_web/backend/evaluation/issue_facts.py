@@ -45,6 +45,16 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
     코드가 인용하는 원문 본문/이력은 현재 속성 주장이 아니므로 별도로 취급한다.
     임의의 숫자(날짜, 건수, 화면번호)는 ID로 간주하지 않는다.
     """
+    source_colors = {match[1].casefold() for source in source_quotes
+                     for match in re.finditer(r'\bcolor["\']?\s*[:=]\s*["\']?(#[0-9a-f]{6})(?![0-9a-f])', source, re.I)}
+
+    def reference_ids(text: str):
+        # 원문에서 확인된 color 값만 색상 문맥에서 구분한다. 명시 이슈 참조는 그대로 검사한다.
+        if source_colors and re.search(r'색상|color', text, re.I) and not re.search(r'이슈|issue|\bID\b', text, re.I):
+            text = re.sub(r'#[0-9a-f]{6}(?![0-9a-f])',
+                          lambda match: '색상코드' if match[0].casefold() in source_colors else match[0], text, flags=re.I)
+        return EXPLICIT_ID.findall(text)
+
     ids: set[int] = set()
     claims: list[tuple[int, str, str]] = []
     headers: list[str] = []
@@ -106,7 +116,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                 if separator and field and field != "id":
                     claims.append((issue_id, field, decode_issue_field(value.strip())))
                 else:
-                    ids.update(int(v) for v in EXPLICIT_ID.findall(plain_text(part)))
+                    ids.update(int(v) for v in reference_ids(plain_text(part)))
             continue
         if "|" in raw_line:
             cells = [plain_text(decode_issue_field(cell.strip())) for cell in re.split(r"(?<!\\)\|", raw_line.strip().strip("|"))]
@@ -116,7 +126,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                 headers = fields
                 current_id = None
                 ids.update(int(v) for key, cell in zip(fields, cells, strict=True) if not key
-                           for v in EXPLICIT_ID.findall(cell))
+                           for v in reference_ids(cell))
                 continue
             if all(re.fullmatch(r"[-:\s]+", cell) for cell in cells):
                 continue
@@ -132,13 +142,13 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                         if key == "id" and re.fullmatch(r"#?\s*\d{1,7}", cell):
                             ids.add(int(cell.lstrip("#").strip()))
                         elif not key or key == "id":
-                            ids.update(int(v) for v in EXPLICIT_ID.findall(cell))
+                            ids.update(int(v) for v in reference_ids(cell))
                     continue
             if headers:
                 # 검증 가능한 속성 행이 아닌 경우에도 명시된 이슈 참조는 검사한다.
-                ids.update(int(v) for v in EXPLICIT_ID.findall(line))
+                ids.update(int(v) for v in reference_ids(line))
                 continue
-        line_ids = {int(v) for v in EXPLICIT_ID.findall(line)}
+        line_ids = {int(v) for v in reference_ids(line)}
         ids.update(line_ids)
         headers = []
         # 기능의 보류/예정 상태를 Mantis 이슈의 현재 상태로 오인하지 않는다.

@@ -1,11 +1,68 @@
 """원문 노트의 기술 설명과 처리 단계가 해결 요약에서 왜곡되지 않는지 검증한다."""
 
 import unittest
+from unittest.mock import patch
 
 from backend.reports import similar
 
 
 class ResolutionEvidenceTest(unittest.TestCase):
+    def test_administrative_closure_does_not_replace_a_recorded_technical_fix(self):
+        admin="지난 완료 이슈를 일괄적으로 종료 처리함"
+        self.assertEqual(similar._recorded_fix({'notes':[{'id':2,'text':admin}]}),('',''))
+        fix,_=similar._recorded_fix({'notes':[{'id':1,'text':'타이머 삭제 로직 수정 완료.'},{'id':2,'text':admin}]})
+        self.assertIn('타이머',fix)
+        self.assertNotIn('일괄',fix)
+
+    def test_requests_partial_outcomes_and_credentials_do_not_become_conclusions(self):
+        for note in ('테스트 버전 개발이 금일 내로 완료가 가능하실까요?',
+                     '수정해주신 내용 관련해서 운영에 적용했음에도 문제가 남아 있습니다.'):
+            with self.subTest(note=note):
+                self.assertEqual(similar._recorded_fix({'notes':[{'text':note}]}), ('',''))
+        for note in ('현재 구조상 개선책을 찾기 어려운 상황입니다.',
+                     '그럴 경우, 조건마다 확인하기 때문에 부하가 발생합니다.',
+                     '이럴 때, 초기화 키가 다르기 때문에 설정을 불러오지 못합니다.',
+                     '해당 화면을 원인으로 보고 있습니다.'):
+            with self.subTest(note=note):
+                self.assertEqual(similar._recorded_cause({'notes':[{'text':note}]}), ('',''))
+        detail={'notes':[{'text':'ID: sample-user\nPASS: sample-secret\nCerpass: sample-cert\n직접 원인: 타이머 해제 누락으로 인해 증가합니다.'}]}
+        cause,_=similar._recorded_cause(detail)
+        self.assertIn('타이머',cause)
+        self.assertNotIn('sample-',cause)
+
+    def test_resource_shortage_uses_symptom_filter(self):
+        self.assertTrue(similar._resource_symptom('차트 전환 후 리소스 부족 현상'))
+        self.assertFalse(similar._resource_symptom('차트 시세 표시 변경 요청'))
+
+    def test_work_section_survives_later_qc_and_delivery_notes(self):
+        detail = {'notes': [
+            {'id': 1, 'text': '- 현상 원인\nSetTimer 이후 KillTimer 누락\n\n- 작업 내역\n1. 그리드 초기화 시 타이머 삭제\n2. 재진입 타이머 삭제 시점 추가'},
+            {'id': 2, 'text': '[QC 완료]'}, {'id': 3, 'text': '[전달완료]'},
+        ]}
+        action, _ = similar._recorded_fix(detail)
+        self.assertIn('그리드 초기화', action)
+        self.assertIn('재진입 타이머', action)
+        self.assertIn('전달', action)
+        self.assertEqual(similar._recorded_cause(detail)[0], 'SetTimer 이후 KillTimer 누락')
+
+    def test_editing_instructions_and_deferral_are_not_symptom_causes(self):
+        for note in ('시스템 부하 문제로 라는 문구는 삭제', '메리츠 소스 프리징으로 인해 보류 및 롤백'):
+            with self.subTest(note=note):
+                self.assertEqual(similar._recorded_cause({'notes': [{'text': note}]}), ('', ''))
+
+    def test_resource_symptom_excludes_same_screen_with_different_problem(self):
+        base = {'id': 100, 'summary': '[1768] 화면 유지 시 리소스가 급격하게 증가하는 현상'}
+        unrelated = {'issue_id': 90, 'latest_issue': {'id': 90, 'summary': '[1768] 화면 상단 문구 수정 요청'}}
+        relevant = {'issue_id': 80, 'latest_issue': {'id': 80, 'summary': '[9000] 사용자 개체가 계속 증가하는 현상'}}
+        with patch.object(similar, 'extract_query_constraints', return_value={'issue_ids':[100]}), \
+             patch.object(similar, 'fetch_mantis_issue_by_id', return_value=base), \
+             patch.object(similar, 'execute_chroma_search', side_effect=[
+                 {'status':'ok','documents':[unrelated]}, {'status':'ok','documents':[relevant]}]):
+            report = similar.build_similar_resolution_report('#100과 비슷한 과거 이슈의 원인과 해결 내용을 비교해줘')
+        self.assertIn('#80', report['content'])
+        self.assertNotIn('#90', report['content'])
+        self.assertEqual({s['issue_id'] for s in report['sources']}, {100,80})
+
     def test_parameter_contract_cause_preserves_identifier_and_meaning(self):
         detail = {"notes": [{"id": 92418, "text": (
             "COMUtil.substr(str, startIndex, endIndex) 함수 만들때\n"

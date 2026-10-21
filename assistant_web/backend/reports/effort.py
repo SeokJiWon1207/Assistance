@@ -117,6 +117,9 @@ def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
         if candidate in known_people and is_valid_person_name(candidate):
             person = candidate
     constraints = extract_query_constraints(text)
+    if constraints.get('unified_plan_validated') and constraints.get('created_at'):
+        date_range = dict(constraints['created_at'])
+        year = int(date_range['from'][:4])
     if not person:
         people = constraints.get("people", {}).get("names") or []
         if people:

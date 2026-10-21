@@ -19,6 +19,11 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
                 previous = {**previous, 'audit_id': request.contextAuditId}
                 break
     plan = plan_question(question, model, api_key, user, previous)
+    if previous and plan.get('operation') == 'explain' and (plan.get('interpretation') or {}).get('followup'):
+        # 표시용 질문 문맥도 같은 사용자에게 묶인 서버 기록만 사용한다.
+        plan['previous_explanation_questions'] = [
+            *(previous.get('previous_explanation_questions') or []), str(previous.get('grounding_text') or ''),
+        ][-4:]
     return ChatPipelineContext(
         latest_user_text=question, model=model, api_key=api_key, messages=messages,
         retrieval_text=question, enabled_tools={'mantis': True, 'vectorDb': True, 'notion': True, **request.tools},
@@ -50,6 +55,32 @@ def execute_plan(request, context, user):
                     user_uid=str((user or {}).get('uid') or ''))
         return {'modelId': request.modelId, **result} if result else clarification(request, 'Notion 작업 대상을 확인해 주세요.')
     if operation == 'report':
+        kind = plan.get('report_kind')
+        if kind in {'handoff', 'postmortem', 'notice'}:
+            from backend.reports.issue_documents import build_issue_document_report
+            result = build_issue_document_report(context.latest_user_text, context.query_constraints, kind)
+            return {'modelId': request.modelId, **result} if result else clarification(request, '문서를 작성할 단일 이슈 번호와 조건을 확인해 주세요.')
+        if kind == 'effort_sla':
+            from backend.reports.effort_sla import build_effort_sla_report
+            result = build_effort_sla_report(context.latest_user_text)
+            return {'modelId': request.modelId, **result} if result else clarification(request, '공수·처리시간 조회 조건을 확인해 주세요.')
+        builders = {'profile': service.build_customer_profile_report,
+                    'monthly': service.build_monthly_customer_report,
+                    'weekly': service.build_weekly_report,
+                    'similar': service.build_similar_resolution_report}
+        if kind == 'similar' and not context.enabled_tools.get('vectorDb'):
+            return clarification(request, '유사 사례 검색 도구가 꺼져 있습니다.')
+        if kind == 'similar':
+            result = service.build_similar_resolution_report(context.latest_user_text, validated_plan=True,
+                                                            model=context.model, api_key=context.api_key, topic_terms=plan.get('terms'))
+            return {'modelId': request.modelId, **result} if result else clarification(request, '유사 비교의 기준 이슈를 확인해 주세요.')
+        if kind == 'triage':
+            result = service.build_incident_triage_report(context.latest_user_text,
+                        search_similar=bool(context.enabled_tools.get('vectorDb')))
+            return {'modelId': request.modelId, **result} if result else clarification(request, '장애 증상을 확인해 주세요.')
+        if kind in builders:
+            result = builders[kind](context.latest_user_text)
+            return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
         if plan.get('report_kind') in {'priority', 'aging', 'due', 'comparison', 'completed', 'waiting', 'customers'}:
             from backend.reports.work_queries import build_work_query_report
             result = build_work_query_report(context.latest_user_text, context.query_constraints,

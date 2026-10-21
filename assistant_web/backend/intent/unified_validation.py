@@ -8,11 +8,11 @@ from backend.intent.scope_extraction import empty_query_constraints
 from backend.query_filters import normalize_filter_clause, clause_supported, SUPPORTED_FIELDS, values_for_clause
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 
-STATUS_ALL = re.compile(r'전체\s*상태|모든\s*상태|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함')
+STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함')
 PENDING = re.compile(r'(?:이슈|업무|티켓).{0,20}남(?:았|아)|남(?:은|아\s*있는).{0,20}(?:이슈|업무|티켓)|미종료|미완료|안\s*끝난|못\s*끝낸')
 PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter'}
 STATUS_VALUES = set(MANTIS_STATUS_NAMES)
-REPORT_KINDS = {'effort', 'weekly', 'sla', 'pivot', 'spike', 'customers', 'priority', 'aging', 'due', 'comparison', 'completed', 'waiting', 'similar'}
+REPORT_KINDS = {'effort', 'weekly', 'sla', 'pivot', 'spike', 'customers', 'priority', 'aging', 'due', 'comparison', 'completed', 'waiting', 'similar', 'profile', 'monthly', 'triage', 'effort_sla', 'handoff', 'postmortem', 'notice'}
 
 
 def require(ok, reason):
@@ -24,7 +24,7 @@ def unquoted(question):
     return re.sub(r'"[^"]*"|\'[^\']*\'|“[^”]*”|‘[^’]*’', ' ', question)
 
 
-def check_status(question, status, followup, source, operation=None):
+def check_status(question, status, followup, source, operation=None, report_kind=None):
     require(isinstance(status, dict), '상태 계획이 없습니다')
     mode, values, evidence = status.get('mode'), status.get('values'), status.get('evidence')
     require(mode in {'unspecified', 'all', 'open', 'include', 'exclude', 'inherit', 'unclear'}, '지원하지 않는 상태 의도')
@@ -36,8 +36,11 @@ def check_status(question, status, followup, source, operation=None):
         require(mode in {'unspecified', 'inherit'}, 'Mantis 상태를 다른 원천에 적용할 수 없습니다')
         return
     text = unquoted(question)
+    if operation == 'report' and report_kind == 'weekly':
+        text = re.sub(r'신규\s*이슈\s*[,·]\s*미종료\s*이슈\s*[,·]\s*장기\s*적체', ' ', text)
     if mode == 'all':
-        require(bool(STATUS_ALL.search(evidence)), '모두/전부는 전체 상태를 뜻하지 않습니다')
+        require(evidence_is_grounded(evidence, text) and bool(STATUS_ALL.search(text)),
+                '모두/전부는 전체 상태를 뜻하지 않습니다')
     if mode in {'open', 'include', 'exclude'}:
         require(evidence_is_grounded(evidence, text), '상태 근거가 없거나 인용된 검색어입니다')
     if mode in {'include', 'exclude'}:
@@ -58,7 +61,15 @@ def evidence_is_grounded(evidence, question):
     return bool(parts and re.search(r'.*?'.join(re.escape(part) for part in parts), question, re.S))
 
 
-def normalize_status_clauses(parsed):
+def effective_statuses(included, excluded):
+    """미종료 별칭까지 펼쳐 포함/제외가 뜻하는 실제 상태 범위를 비교한다."""
+    def expand(values):
+        require(all(v in STATUS_VALUES | {'open'} for v in values), '지원하지 않는 상태값')
+        return set().union(*(MANTIS_OPEN_STATUSES if v == 'open' else {v} for v in values))
+    return (expand(included) if included else set(STATUS_VALUES)) - expand(excluded)
+
+
+def normalize_status_clauses(parsed, previous=None):
     parsed = deepcopy(parsed)
     raw = parsed.get('filters')
     if not isinstance(raw, list) or parsed.get('source') not in {'mantis', 'both'}:
@@ -75,6 +86,14 @@ def normalize_status_clauses(parsed):
                  'values': values, 'evidence': item.get('evidence')}
     status = parsed.get('status') or {}
     require(isinstance(status, dict), '상태 계획 형식 오류')
+    # 같은 사용자에게 묶인 이전 실행 조건을 확보한 뒤에만 반복 상태를 상속으로 인정한다.
+    if (previous and status.get('mode') == 'inherit' and status.get('values') == [] and values
+            and isinstance(parsed.get('clear_fields'), list) and 'status' not in parsed['clear_fields']
+            and effective_statuses(values if converted['mode'] == 'include' else [],
+                                   values if converted['mode'] == 'exclude' else []) ==
+                effective_statuses(previous.get('statuses') or [], previous.get('excluded_statuses') or [])):
+        parsed['filters'] = [f for f in raw if f not in items]
+        return parsed
     require(status.get('mode') == 'unspecified' or
             (status.get('mode') == converted['mode'] and set(status.get('values', [])) == set(values)), '서로 다른 상태 계획 충돌')
     parsed['status'] = converted
@@ -92,7 +111,9 @@ def check_clause(item, question, source):
     field = clause['field']
     require(field != 'status' or source == 'notion', 'Mantis 상태는 상태 계획에 지정해야 합니다')
     families = ['mantis', 'notion'] if source == 'both' else [source]
-    require(all(clause_supported(f, clause) for f in families), '원천이 지원하지 않는 필터')
+    hint = '. 기준 번호는 equals/in으로 지정하고 유사 비교의 과거 범위는 보고서에 맡기세요' if field == 'issue_id' else ''
+    require(all(clause_supported(f, clause) for f in families),
+            f"원천이 지원하지 않는 필터: {field} {clause['operator']}" + hint)
     values = values_for_clause(clause.get('value'))
     if field in PERSON_FIELDS | {'title', 'keyword', 'screen_number', 'issue_id', 'database'}:
         require(all(str(v).lstrip('#') in question for v in values), '질문에 없는 필터값')
@@ -109,6 +130,11 @@ def check_clause(item, question, source):
         except ValueError as exc:
             raise ValueError('날짜 형식 오류') from exc
         require(len(dates) in {1, 2} and (len(dates) == 1 or dates[0] <= dates[1]), '날짜 범위 오류')
+        if field == 'created_at' and re.fullmatch(r'지난\s*달|저번\s*달|전월', str(evidence).strip()):
+            from datetime import timedelta
+            end = date.today().replace(day=1) - timedelta(days=1)
+            expected = [end.replace(day=1).isoformat(), end.isoformat()]
+            require(values == expected, f'지난달은 달력 기준 {expected[0]}~{expected[1]}입니다')
     return clause
 
 
@@ -172,9 +198,23 @@ def constraints_from_clauses(clauses, status, scope, user, previous):
     return c
 
 
+def same_filter(left, right):
+    if left == right:
+        return True
+    if not left or not right or left.get('field') != right.get('field'):
+        return False
+    for operators in ({'equals', 'in'}, {'not_equals', 'not_in'}):
+        if left.get('operator') in operators and right.get('operator') in operators:
+            return set(values_for_clause(left.get('value'))) == set(values_for_clause(right.get('value')))
+    return False
+
+
+def _literal_similarity_keyword(question):
+    return bool(re.search(r'정확히|문자열|키워드|(?:본문|노트|내용|텍스트).{0,100}(?:포함|들어|있는|있어)', question))
+
+
 def validate_plan(question, parsed, user, previous):
     require(isinstance(parsed, dict), '계획 JSON 형식 오류')
-    parsed = normalize_status_clauses(parsed)
     required = {'source', 'operation', 'scope', 'followup', 'filters', 'status', 'clear_fields', 'terms', 'group_by', 'limit'}
     require(required <= parsed.keys(), '필수 계획 항목 누락')
     source, operation, scope = (parsed.get(k) for k in ('source', 'operation', 'scope'))
@@ -185,13 +225,31 @@ def validate_plan(question, parsed, user, previous):
     require(scope in {'self', 'team', 'all', 'target', 'default', 'inherit'}, '잘못된 범위')
     followup = parsed['followup']
     require(isinstance(followup, bool), '후속 질문 형식 오류')
+    if re.match(r'^\s*(?:그중|그\s*조건|같은\s*조건)', unquoted(question)):
+        require(followup and bool(previous.get('resolved_constraints')),
+                '후속 조건을 이어받을 이전 확정 계획이 필요합니다. 앞 조건이 없으면 clarify로 답하세요')
     base = deepcopy(previous.get('resolved_constraints') or {}) if followup else {}
     require(not followup or bool(base), '이어서 조회할 확정 검색 기록이 없습니다')
     require(scope != 'inherit' or followup, '상속할 범위가 없습니다')
     if followup:
         require(previous.get('source') == source, '후속 조회의 원천이 바뀌었습니다')
+    parsed = normalize_status_clauses(parsed, base)
     status = parsed['status']
-    check_status(question, status, followup, source, operation)
+    report = parsed.get('report_kind') or (previous.get('report_kind') if followup and operation == 'report' else None)
+    soft_topics = []
+    if operation == 'report' and report == 'similar':
+        # 유사성 주제와 명시적인 문자열 조건은 다른 계약이다. 이전 버전의 과제약도
+        # 후속 질문에서 되살리지 않되, 사용자가 지정한 리터럴 조건·제외는 보존한다.
+        literals = previous.get('similar_literal_filters', [])
+        retained = []
+        for clause in base.get('filter_clauses', []):
+            if (clause['field'] == 'keyword' and clause['operator'] == 'contains'
+                    and clause not in literals and not _literal_similarity_keyword(previous.get('grounding_text') or '')):
+                soft_topics.extend(values_for_clause(clause.get('value')))
+            else:
+                retained.append(clause)
+        base['filter_clauses'] = retained
+    check_status(question, status, followup, source, operation, report)
     clear = parsed['clear_fields']
     require(isinstance(clear, list) and all(f in SUPPORTED_FIELDS | {'terms', 'team'} for f in clear), '해제 조건 오류')
     require(not clear or followup, '해제할 이전 조건이 없습니다')
@@ -201,14 +259,25 @@ def validate_plan(question, parsed, user, previous):
     grounded_raw = []
     for item in raw:
         # 이전 확정 조건을 모델이 반복해 출력해도 새 조건으로 취급하지 않는다.
-        # 값/필드/연산자가 서버 기록과 모두 같은 경우만 생략하며 새 값은 원문 근거가 필요하다.
+        # 서버 기록과 값·필드가 같고 연산자도 동등한 경우만 생략하며 새 값은 원문 근거가 필요하다.
         normalized = normalize_filter_clause(item)
-        if (followup and normalized and normalized in base.get('filter_clauses', [])
-                and normalized['field'] not in clear and not evidence_is_grounded(item.get('evidence'), question)):
+        if (followup and normalized and any(same_filter(normalized, prior) for prior in base.get('filter_clauses', []))
+                and normalized['field'] not in clear):
             continue
-        incoming.append(check_clause(item, question, source))
+        checked = check_clause(item, question, source)
+        if (operation == 'report' and report == 'similar' and checked['field'] == 'keyword'
+                and checked['operator'] == 'contains' and not _literal_similarity_keyword(question)):
+            soft_topics.extend(values_for_clause(checked.get('value')))
+            continue
+        incoming.append(checked)
         grounded_raw.append(item)
     raw = grounded_raw
+    if followup and report=='similar' and 'customer' in clear and re.search(r'좁|한정',question):
+        named_customer=any(re.search(r'(?<![A-Za-z0-9])'+re.escape(alias)+r'(?![A-Za-z0-9])',question,re.I)
+                           for key,aliases in CUSTOMER_ALIASES.items() for alias in [key,*aliases])
+        explicit_removal=re.search(r'(?:고객사|증권사).{0,12}(?:해제|풀|빼|제거|제외|없)',question)
+        require(not named_customer or explicit_removal or any(f['field']=='customer' for f in incoming),
+                '고객사로 범위를 좁히는 질문에서 고객사 조건을 해제했습니다. 명시된 고객사와 플랫폼을 모두 필터에 넣고 기준 이슈는 유지하세요.')
     replaced = {f['field'] for f in incoming} | set(clear) | {'status'}
     if replaced & PERSON_FIELDS:
         replaced |= PERSON_FIELDS
@@ -235,6 +304,8 @@ def validate_plan(question, parsed, user, previous):
     require(isinstance(terms, list) and len(terms) <= 6 and all(isinstance(t, str) and 0 < len(t) <= 100 for t in terms), '검색어 형식 오류')
     if followup and not terms and 'terms' not in clear and not (replaced & {'keyword', 'title'}):
         terms = list(previous.get('terms') or [])
+    if operation == 'report' and report == 'similar':
+        terms = list(dict.fromkeys([*terms, *soft_topics]))[:6]
     if operation in {'count', 'aggregate'}:
         for term in terms:
             require(term in question or (followup and term in (previous.get('terms') or [])), '집계 검색어의 원문 근거 누락')
@@ -248,17 +319,21 @@ def validate_plan(question, parsed, user, previous):
     limit = parsed['limit']
     require(limit is None or (type(limit) is int and 1 <= limit <= 200), '표시 개수 오류')
     require(operation != 'count' or limit is None, '전체 집계에 표시 개수를 적용할 수 없습니다')
-    sort = parsed.get('sort') or {'field': 'created_at', 'direction': 'desc'}
+    sort = parsed.get('sort') or (previous.get('sort') if followup else None) or {'field': 'created_at', 'direction': 'desc'}
     require(isinstance(sort, dict) and sort.get('field') in {'created_at', 'updated_at', 'issue_id'} and sort.get('direction') in {'asc', 'desc'}, '정렬 형식 오류')
-    report = parsed.get('report_kind')
+    if parsed.get('sort') or (followup and previous.get('sort')):
+        c['sort'] = deepcopy(sort)
     require(operation != 'report' or report in REPORT_KINDS, '지원하지 않는 보고서')
     c['unified_plan_validated'] = True
+    from backend.intent.condition_grounding import build_condition_grounding
+    condition_grounding = build_condition_grounding(question, c, incoming, status, effective_scope, scoped_user, previous if followup else {})
     return {'version': 3, 'planner': 'unified_llm', 'source': source, 'operation': operation,
-            'grounding_text': question, 'planned': True, 'confidence': 1.0, 'reason': '전체 질문의 단일 검증 계획',
+            'grounding_text': question, 'condition_grounding': condition_grounding, 'planned': True, 'confidence': 1.0, 'reason': '전체 질문의 단일 검증 계획',
             'filters': {'customer': c.get('customer_key'), 'platform': c.get('platform_key'), 'people': c['people'],
                         'statuses': c['statuses'], 'issue_ids': c['issue_ids'], 'screen_numbers': c['screen_numbers'], 'created_at': c['created_at']},
             'filter_clauses': deepcopy(c['filter_clauses']), 'resolved_constraints': c, 'terms': terms,
             'group_by': group, 'limit': limit, 'sort': sort, 'report_kind': report,
+            'similar_literal_filters': [f for f in c['filter_clauses'] if f['field'] == 'keyword'] if report == 'similar' else [],
             'interpretation': {'status': deepcopy(status), 'followup': followup, 'scope': scope,
                                'evidence': deepcopy(raw), 'clear_fields': clear}}
 
@@ -272,7 +347,7 @@ def validate_execution_contract(question, plan):
         require(c.get('unified_plan_validated'), '미검증 계획')
         require(c.get('filter_clauses') == plan.get('filter_clauses'), '실행 조건과 계획 불일치')
         interpretation = plan.get('interpretation') or {}
-        check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'))
+        check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         for clause in interpretation.get('evidence') or []:
             check_clause(clause, question, plan.get('source'))
         require(not interpretation.get('followup') or bool(c.get('inherited_from_audit_id')), '이전 기록 근거 누락')

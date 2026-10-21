@@ -262,6 +262,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
                     "closed_count": len(closed),
                     "unknown_status_count": unknown_count,
                     "aging_count": len(aging),
+                    "backlog_ids": [issue['id'] for issue in aging],
                     "total_effort": round(total_effort, 2),
                 },
             }],

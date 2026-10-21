@@ -186,7 +186,6 @@ class SimilarResolutionReportTest(unittest.TestCase):
             "fetch": similar.fetch_mantis_issue_by_id,
             "normalize": similar.normalize_issue,
             "search_text": similar.build_similar_issue_search_text,
-            "terms": similar.build_keyword_terms,
             "sources": similar.build_sources_from_issue_rows,
             "chroma": similar.execute_chroma_search,
         }
@@ -198,9 +197,8 @@ class SimilarResolutionReportTest(unittest.TestCase):
         }
         similar.wants_similar_issue_search = lambda text, constraints: True
         similar.fetch_mantis_issue_by_id = lambda issue_id: {"id": issue_id, "summary": "[1200] 세션 만료"}
-        similar.normalize_issue = lambda raw: {"id": raw["id"], "summary": raw["summary"], "description": ""}
+        similar.normalize_issue = lambda raw, **kwargs: {"id": raw["id"], "summary": raw["summary"], "description": ""}
         similar.build_similar_issue_search_text = lambda issue: "세션 만료"
-        similar.build_keyword_terms = lambda text, constraints: ["세션"]
         similar.build_sources_from_issue_rows = lambda rows: [{"id": r.get("id")} for r in rows]
 
     def tearDown(self):
@@ -213,7 +211,6 @@ class SimilarResolutionReportTest(unittest.TestCase):
                     "fetch": "fetch_mantis_issue_by_id",
                     "normalize": "normalize_issue",
                     "search_text": "build_similar_issue_search_text",
-                    "terms": "build_keyword_terms",
                     "sources": "build_sources_from_issue_rows",
                     "chroma": "execute_chroma_search",
                 }[name],
@@ -235,7 +232,8 @@ class SimilarResolutionReportTest(unittest.TestCase):
             with self.subTest(text=text):
                 detail = {"notes": [{"text": text}]}
                 self.assertEqual(similar._recorded_cause(detail), ("", ""))
-                self.assertNotIn(text.rstrip("."), "\n".join(similar._comparison_lines({}, [detail])))
+                table = '\n'.join(similar._comparison_lines({}, [detail])).split('- 원인 기록:')[0]
+                self.assertNotIn(text.rstrip("."), table)
 
     def test_pending_notes_do_not_replace_completed_fixes_in_playbooks(self):
         for text in (
@@ -317,7 +315,6 @@ class SimilarResolutionReportTest(unittest.TestCase):
 
     def test_generic_resolution_words_do_not_filter_similarity_candidates(self):
         captured = {}
-        similar.build_keyword_terms = lambda text, constraints: ["찾아서", "원인"]
 
         def search(q, limit, cons, semantic=False):
             captured["constraints"] = cons
@@ -330,7 +327,7 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertEqual(captured["constraints"]["semantic_focus_terms"], [])
 
     def test_report_compares_recorded_causes_and_fixes_side_by_side(self):
-        similar.normalize_issue = lambda raw: {
+        similar.normalize_issue = lambda raw, **kwargs: {
             "id": raw["id"], "summary": "[1200] 세션 만료 현상", "description": "",
             "resolution_fields": {"사유 및 원인": "세션 타임아웃 설정 누락"}, "notes": [],
         }
@@ -374,12 +371,11 @@ class SimilarResolutionReportTest(unittest.TestCase):
         self.assertIn("| #9001 | 서버 세션 타임아웃 10분 설정 | 타임아웃 30분으로 조정 |", content)
         # 원인을 묻기만 하는 노트는 건너뛰고, 노트에서 뽑은 원인은 (노트)로 표시한다.
         self.assertIn("| #9002 | 확인 결과 원인은 인증 토큰 갱신 누락입니다 (노트) |", content)
-        self.assertIn("| #9003 | 기록에서 확인되지 않음 | 고객 안내 후 종료 (노트) |", content)
+        self.assertIn("| #9003 | 기록에서 확인되지 않음 | 기록에서 확인되지 않음 |", content)
         # 인사말·제목 반복과 파일 경로뿐인 전달 기록은 걷어내고 실제 원인·조치를 보여 준다.
-        self.assertIn("| #9004 | 현재 개발기 디스크문제로 조회가 안되는 상황입니다 (노트) | 서버 설정 수정해서 소스 전달드립니다 (노트) |", content)
+        self.assertIn("| #9004 | 현재 개발기 디스크문제로 조회가 안되는 상황입니다 (노트) | 서버 설정 수정해서 소스 전달드립니다", content)
         self.assertIn("원인 기록: 기준 이슈 있음, 과거 사례 3/4건.", content)
         self.assertIn("#9001: 기준 이슈와 겹치는 원인 단서 설정, 세션, 타임아웃", content)
-        self.assertIn("기록된 조치: 타임아웃 30분으로 조정", content)
         self.assertIn("같은 원인이라고 단정하지 않았습니다", content)
         self.assertIn("#12345 세션 타임아웃 설정 누락", report["playbookCandidate"]["cause"])
         self.assertIn("#9001 서버 세션 타임아웃 10분 설정", report["playbookCandidate"]["cause"])

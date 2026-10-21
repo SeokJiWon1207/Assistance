@@ -277,6 +277,7 @@ def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
                     "closed_count": len(closed_in_window),
                     "unknown_status_count": unknown_count,
                     "open_count": len(open_rows),
+                    "backlog_ids": [issue['id'] for issue in open_rows],
                     "aging_count": len(aging),
                     "total_effort": round(total_effort, 2),
                 },

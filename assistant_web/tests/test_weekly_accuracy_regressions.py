@@ -1,6 +1,7 @@
 """최근 일주일 실데이터 검증에서 발견한 Notion 상태 충돌의 재현."""
 
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
 from backend.intent.constraints import extract_query_constraints
@@ -59,6 +60,7 @@ class WeeklyAccuracyRegressionTests(unittest.TestCase):
         stored = IssueBatch([current, older], {"fetchedAt": "2026-10-02T11:00:00+00:00"})
         constraints = extract_query_constraints("2025년 7월 교보증권 이슈")
         with patch.object(mantis, "read_complete_store", return_value=stored) as read, \
+                patch.object(mantis, 'stream_complete_store', side_effect=lambda: nullcontext(stored)), \
                 patch.object(mantis, "fetch_mantis_issues", return_value=[older, current]) as fetch:
             window = mantis.collect_mantis_live_ids_in_range(constraints, scan_limit=1)
             self.assertEqual(list(window["issues"]), ["29691"])
@@ -68,7 +70,7 @@ class WeeklyAccuracyRegressionTests(unittest.TestCase):
             fetch.reset_mock()
             total = mantis.collect_mantis_live_ids_in_range(constraints)
             self.assertEqual(list(total["issues"]), ["29691"])
-            read.assert_called_once()
+            read.assert_not_called()
             fetch.assert_not_called()
 
     def test_native_status_precedence_preserves_non_status_filters(self):

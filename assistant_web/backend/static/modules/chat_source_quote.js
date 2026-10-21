@@ -62,4 +62,17 @@ export function collapseQuotedSourceHistory(container) {
     else children.push(child);
   }
   container.replaceChildren(...children);
+  // 짧은 답변을 먼저 표시하고 서버가 보존한 인용·이력은 한 번에 펼친다.
+  const blocks = Array.from(container.children);
+  const start = blocks.findIndex(child => child.className === "answer-heading"
+    && child.textContent === "원문 근거와 전체 이력");
+  if (start >= 0) {
+    const details = document.createElement("details");
+    details.className = "answer-source-history";
+    const summary = document.createElement("summary");
+    summary.textContent = "원문 근거와 전체 이력 보기";
+    details.appendChild(summary);
+    blocks.slice(start + 1).forEach(child => details.appendChild(child));
+    container.replaceChildren(...blocks.slice(0, start), details);
+  }
 }

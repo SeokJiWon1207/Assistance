@@ -202,3 +202,17 @@ test('long source context is entirely available behind a disclosure', async () =
   assert.equal(detail[0].children[0].textContent, '긴 인용 원문 보기');
   assert.equal(descendants(detail[0], 'code')[0].textContent, source);
 });
+
+test('concise summary remains visible while its entire original evidence stays in one disclosure', async () => {
+  const { api } = await rendering();
+  const content = '### 핵심 답변\n\n- 캐시 크기를 변경했습니다. (#91 · 노트 11)\n\n### 원문 근거와 전체 이력\n\n### 핵심 근거\n\n노트 11\n\n> ```text\n> 캐시 크기를 변경했습니다.\n> ```\n\n### 진행 이력\n\n노트 12\n\n> ```text\n> QC NG로 재요청했습니다.\n> ```';
+  const rendered = api.renderAssistantContent(content, [{ issue_id: 91 }]);
+  const disclosure = rendered.children.filter(child => child.tagName === 'details');
+  assert.equal(disclosure.length, 1);
+  assert.equal(disclosure[0].children[0].textContent, '원문 근거와 전체 이력 보기');
+  assert.ok(!disclosure[0].open);
+  assert.equal(descendants(disclosure[0], 'code').length, 2);
+  assert.match(disclosure[0].textContent, /QC NG로 재요청/);
+  assert.ok(rendered.children.some(child => child.tagName === 'ul' && child.textContent.includes('캐시 크기')));
+  assert.equal(rendered.children.filter(child => child.tagName === 'blockquote').length, 0);
+});

@@ -340,9 +340,9 @@ def _explanation_retrieval(query: str, limit: int, tools: Dict[str, bool], plan:
                       "filter_clauses": [c for c in scoped.get("filter_clauses", []) if c["field"] != "issue_id" or c["operator"] in {"not_equals", "not_in"}]}
             # 기준 이슈 제목이 사용자가 명시한 비교 주제를 덮어쓰지 않게 한다.
             search_query = re.sub(r"#\s*\d+", " ", query)
-            focus = explanation_search_terms(query, constraints)
+            comparison_terms = explanation_search_terms(query, constraints)
             bases = [issue for s in stages for issue in s.get("issues_list", [])]
-            if not focus and bases:
+            if not comparison_terms and bases:
                 search_query = build_similar_issue_search_text(bases[0]) or search_query
         from backend.sources.mantis_multiquery import search_explanation_queries
         stage = search_explanation_queries(search_query, plan.get('explanation_queries') or [],
@@ -953,6 +953,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "severity": issue.get("severity", ""),
                 "handler": issue.get("handler", "담당자 미지정"),
                 "created_at": issue.get("created_at", ""),
+                "updated_at": issue.get("updated_at", ""),
                 "media_type": issue.get("media_type", "기타/미상"),
                 "preview": issue.get("description", "")[:260],
                 "detail": issue,
@@ -980,6 +981,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                     "severity": latest_issue.get("severity", ""),
                     "handler": latest_issue.get("handler", "담당자 미지정"),
                     "created_at": latest_issue.get("created_at", ""),
+                    "updated_at": latest_issue.get("updated_at", ""),
                     "media_type": latest_issue.get("media_type", "기타/미상"),
                     "preview": latest_issue.get("description", "")[:260],
                     "detail": latest_issue,
@@ -1022,6 +1024,12 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
             rows.values(),
             key=lambda issue: (issue.get("_retrieval_rank", 10**9), -int(issue["id"])),
         )[:limit]
+    ordering = (retrieval_result.get('constraints') or {}).get('sort') or {}
+    if ordering:
+        field = ordering.get('field')
+        key = 'id' if field == 'issue_id' else str(field)
+        return sorted(rows.values(), key=lambda issue: (issue.get(key) or '', issue['id']),
+                      reverse=ordering.get('direction') != 'asc')[:limit]
     return sorted(rows.values(), key=lambda issue: issue["id"], reverse=True)[:limit]
 
 
