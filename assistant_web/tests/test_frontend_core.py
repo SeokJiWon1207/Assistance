@@ -222,6 +222,18 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (hover: none)", styles)
         self.assertIn(".message:focus-within .message-time", styles)
 
+    def test_focus_ring_and_blue_tints_follow_the_theme_accent(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+        dark = styles[styles.index("body.theme-dark {") : styles.index("}", styles.index("body.theme-dark {"))]
+
+        # :root에서 계산된 포커스 색은 다크 모드의 --blue를 따르지 않으므로 다크 테마에서 다시 정의한다.
+        self.assertIn("--focus-ring-color: color-mix(in srgb, var(--blue) 16%, transparent);", dark)
+        self.assertIn("--focus-ring: 0 0 0 3px var(--focus-ring-color);", dark)
+        # 포커스 표시와 파랑 틴트는 차트색 고정값 대신 테마 강조색에서 만든다.
+        for path in STATIC_DIR.glob("*.css"):
+            with self.subTest(path=path.name):
+                self.assertNotIn("rgba(49, 130, 246", path.read_text(encoding="utf-8"))
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
