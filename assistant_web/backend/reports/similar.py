@@ -44,7 +44,11 @@ COMPARE_CELL_CHARS = 220      # 원인·해결 비교표 한 칸 길이
 CAUSE_FIELD = "사유 및 원인"
 FIX_FIELD = "조치 및 개선"
 # '원인'이라는 표제가 없어도 원문에 명시된 구현 불일치·제약은 보존한다.
+_BODY_DIAGNOSIS = re.compile(
+    r"(?:참조|호출|할당|해제|갱신|초기화).{0,70}(?:되어|해서|하여).{0,25}(?:나타나|발생).{0,25}(?:파악|확인)", re.I
+)
 _CAUSE_SENTENCE = re.compile(
+    _BODY_DIAGNOSIS.pattern + r"|"
     r"(?:증가|발생).{0,12}(?:함에|에)\s*따라.{0,50}(?:자원|CPU|부하|메모리)|원인|때문|(?:으)?로\s*인해|(?:문제|장애|오류|누락|버그)(?:로|가\s*있어)|"
     r"실제로는.{0,80}(?:구현|설정|되어\s*있)|(?:되어야|돼야).*(?:되고|되어\s*있)|"
     r"(?:구조상|기술적인?\s*한계)|(?:데이터|이력).*(?:저장|보관).*(?:않|안\s*하|당일)|"
@@ -62,7 +66,7 @@ _GREETING = re.compile(
 )
 _UNCONFIRMED = re.compile(
     r"요청\s*(?:드|합|함|하|해|$)|가능하실|했음에도|되었음에도|했지만|부탁|예정|계획|검토\s*중|진행\s*중|분석\s*중|확인\s*중|"
-    r"해도\s*무방|추정|추측|의심|가능성|미상|불명|모름|미확인|(?<!불)필요|무엇인지|때문인지|"
+    r"해도\s*무방|추정|추측|의심|유추|파악\s*중|가능성|미상|불명|모름|미확인|(?<!불)필요|무엇인지|때문인지|"
     r"미완료|미해결|"
     r"(?:수정|조치|반영|적용|패치|배포|조사)\s*중|하겠|모르|"
     r"것\s*같|인\s*듯|인가요|입니까|일까요|맞나요|(?:할|알)\s*수\s*없|"
@@ -71,6 +75,7 @@ _UNCONFIRMED = re.compile(
 _CAUSE_NEGATION = re.compile(r"(?:원인|때문)[^.\n]*(?:아닙|아니었|아닌|보이나|보이며|보이지만|보임)|원인(?:으)?로\s*보|것으로\s*보")
 _FIX_NOT_DONE = re.compile(r"일괄.{0,20}종료|완료된?\s*작업\s*종료|불가|한계|실패|않|못했|못하|미(?:반영|적용|배포|수정|처리)|안\s*(?:됨|됐|되|했|하)|이면|하면|한다면|된다면|되면|했으면")
 _COMPLETED_NOTE = re.compile(
+    r"복구\s*후|(?:로드|복구|재기동|재시작|재부팅)\s*(?:시킴|했|하였|완료)|"
     r"완료|종료(?:합니다|함|했|\s*$)|(?:delete|초기화)\s*(?:함|했|하였)|"
     r"(?:해결|수정|조치|반영|변경|패치|개선|배포|조정)"
     r"(?:(?:을)?\s*(?:함|했|하였|됨|되었|해두)|해서|하여.*(?:푸시|전달|반영|완료)|\s*$)|"
@@ -83,6 +88,7 @@ _PENDING_OUTCOME = re.compile(
 )
 _COMPARE_STOPWORDS = frozenset({"현상", "문제", "오류", "수정", "요청", "확인", "관련", "발생", "처리", "원인", "화면", "경우", "본문", "노트", "제목"})
 _NON_CAUSAL_CONTEXT = re.compile(r"문구.{0,20}(?:삭제|변경|수정)|소스\s*프리징|보류\s*(?:및|후)?\s*롤백|"
+    r"원인\s*(?:파악\s*)?(?:설명|안내)|"
     r"더\s*중요.{0,15}때문|롤백.{0,15}하지\s*않고|진행하기로|"
     r"그럴\s*경우|이럴\s*때|이런\s*경우|원인으로\s*보고|개선책을\s*찾기|운영에서\s*테스트\s*가능|"
     r"우선순위.{0,50}(?:때문|인해)|(?:QC|검수|담당자).{0,40}병행|원인(?:을)?\s*(?:파악|분석|확인)\s*(?:및|요청|완료|후|중)|롤백.{0,10}하려고|"
@@ -204,6 +210,10 @@ def _clean_note(text: str, detail: Dict[str, Any]) -> str:
 
 def _unconfirmed(text: str, *, cause: bool = False) -> bool:
     # '예외를 처리하지 않아 발생한 오류'는 원인이다. 완료 조치의 부정과 구분한다.
+    if cause:
+        # '라이브러리 반영 중, 재기동 전 조회하여 CPU 증가됨'의 사건 시점은
+        # 원인 파악이 진행 중이라는 뜻이 아니다. 뒤의 불확실성 검사는 유지한다.
+        text = re.sub(r'(?:반영|적용|배포)\s*중(?=\s*[,，])', '', text)
     return bool(_UNCONFIRMED.search(text) or (_CAUSE_NEGATION if cause else _FIX_NOT_DONE).search(text))
 
 
@@ -213,6 +223,18 @@ def _note_sentences(text: str, *, join_wrapped_lines: bool = False) -> List[str]
         text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
     return [part.strip(" .-~·:") for part in re.split(r"[。!?\n]+|\.(?=\s|$)", text)
             if part.strip(" .-~·:")]
+
+
+def _cause_sentences(text: str) -> List[str]:
+    separate = _note_sentences(text)
+    wrapped = _note_sentences(text, join_wrapped_lines=True)
+    # 이름: 내용 같은 구역은 다른 주체와 합치지 않는다. 구역이 없는 일반
+    # 문장은 줄바꿈 앞의 함수명도 원인과 함께 보존한다.
+    labelled = re.search(r'(?m)^\s*[-#*]*\s*[^\n:：]{1,24}[:：]', text)
+    # 일반 문단의 예정·의문 문맥은 통째로 보존한다. 요청 문단 사이에 독립적으로
+    # 적힌 본문 진단만 구체적인 메커니즘+진단 표현이 있는 경우 분리해 보완한다.
+    isolated = separate if labelled else [part for part in separate if _BODY_DIAGNOSIS.search(part)]
+    return list(dict.fromkeys([*isolated, *wrapped] if labelled else [*wrapped, *isolated]))
 
 
 def _is_consequence(text: str, detail: dict) -> bool:
@@ -260,7 +282,8 @@ def _recorded_cause(detail: Dict[str, Any]) -> Tuple[str, str]:
     limitation = None
     for note in reversed(_resolution_notes(detail)):
         cleaned = _clean_note(str(note.get("text") or ""), detail)
-        sentences = _note_sentences(cleaned, join_wrapped_lines=True)
+        # 원인·조치·서버별 줄 경계를 먼저 지킨다. 줄바꿈만 된 문장은 후순위로 보완한다.
+        sentences = _cause_sentences(cleaned)
         # 한 회신의 여러 Q&A 중 증상에 대한 직접 자원 부하 답변을 먼저 본다.
         sentences.sort(key=lambda sentence: not bool(re.search(
             r'(?:증가|발생).{0,12}(?:함에|에)\s*따라.{0,50}(?:자원|CPU|부하|메모리)', sentence, re.I)))
@@ -273,7 +296,7 @@ def _recorded_cause(detail: Dict[str, Any]) -> Tuple[str, str]:
                     continue
                 return compact_text(sentence, COMPARE_CELL_CHARS) + _note_reference(note), "note"
     description = _clean_note(str(detail.get('description') or ''), detail)
-    sentences = _note_sentences(description, join_wrapped_lines=True)
+    sentences = _cause_sentences(description)
     for sentence in sentences:
         if (_CAUSE_SENTENCE.search(sentence) and not _NON_CAUSAL_CONTEXT.search(sentence)
                 and not _unconfirmed(sentence, cause=True) and not _is_consequence(sentence, detail)):
@@ -355,17 +378,19 @@ def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS
         sentences = _note_sentences(text)
         confirmed = []
         for index, part in enumerate(sentences):
+            if re.fullmatch(r'(?:현상|원인|조치|조치\s*(?:내용|내역)|작업\s*내역)', part):
+                continue
             if (re.search(r'(?:소스|모듈|패치|수정본).{0,60}적용\s*후.{0,80}(?:확인|측정|테스트)', part)
                     and not re.search(r'부탁|요청|주세요|적용\s*후.{0,20}(?:할|하겠)', part)):
                 confirmed.append(part)
                 continue
             completion = (_COMPLETED_NOTE.search(part) or re.search(
                 r'처리(?:함|\s*$)|(?:처리|해제).{0,90}정상\s*해제\s*확인', part) or _OPERATIONAL_ACTION.search(part))
-            changed = re.search(r'개발|구현|수정|추가|조정|개선|삭제|제거|변경|해제|패치|적용|반영|해결|갱신|조치|delete|초기화|(?:누수|릭).{0,12}잡았', part) or _OPERATIONAL_ACTION.search(part)
+            changed = re.search(r'개발|구현|수정|추가|조정|개선|삭제|제거|변경|해제|패치|적용|반영|해결|갱신|조치|복구|로드|재기동|재시작|재부팅|delete|초기화|(?:누수|릭).{0,12}잡았', part) or _OPERATIONAL_ACTION.search(part)
             if (not completion or not changed or _unconfirmed(part) or _QC_SUCCESS.search(part)
                     or _NON_TECHNICAL_CHANGE.search(part)):
                 continue
-            if index and re.search(r'\bclass\b|\bDelete\b|해제\s*누락', sentences[index - 1], re.I):
+            if index and re.search(r'\bclass\b|\bDelete\b|해제\s*누락|(?:로드|적재).{0,12}(?:않|누락)', sentences[index - 1], re.I):
                 part = sentences[index - 1] + ': ' + part
             confirmed.append(part.lstrip('> '))
         if confirmed:
@@ -421,7 +446,8 @@ def _unconfirmed_cause(detail: dict) -> str:
         from backend.reports.comparison_facts import render_facts
         return render_facts(rows)[0]
     for note in reversed(_resolution_notes(detail)):
-        for part in _note_sentences(_clean_note(str(note.get('text') or ''), detail), join_wrapped_lines=True):
+        cleaned = _clean_note(str(note.get('text') or ''), detail)
+        for part in _cause_sentences(cleaned):
             if (re.search(r'원인|누수.{0,40}(?:단정|판단)|(?:CPU|자원|부하).{0,80}(?:추측|추정|예상)', part, re.I) and _unconfirmed(part, cause=True)
                     and not re.search(r'요청|부탁|주세요|무엇|때문인지', part)):
                 return compact_text(part, 160) + _note_reference(note)
@@ -489,7 +515,12 @@ def _comparison_lines(base_issue: Dict[str, Any], examples: List[Dict[str, Any]]
         f"- 원인 기록: 기준 이슈 {'있음' if base_cause else ('미확인' if _resolution_notes(base_issue) else '없음')}, 과거 사례 {recorded}/{len(examples)}건.",
     ]
     for item in [base_issue, *examples]:
-        if not _recorded_cause(item)[0] and (uncertain := _unconfirmed_cause(item)):
+        cause_text = _recorded_cause(item)[0]
+        uncertain = _unconfirmed_cause(item)
+        # 같은 노트의 서로 다른 원인 범위는 함께 남긴다. 이후 확정 필드가
+        # 있는 경우 예전 다른 노트의 추측을 현재 미확정 원인으로 되살리지 않는다.
+        shared_note = set(re.findall(r'\[노트 (\d+)\]', cause_text)) & set(re.findall(r'\[노트 (\d+)\]', uncertain))
+        if uncertain and (not cause_text or shared_note) and normalize_for_match(uncertain) != normalize_for_match(cause_text):
             lines.append(f"- #{item.get('id')}: 미확정 원인 — {uncertain}")
         if caveat := _latest_resolution_caveat(item):
             lines.append(f"- #{item.get('id')}: 후속 상태 — {caveat} (노트).")
