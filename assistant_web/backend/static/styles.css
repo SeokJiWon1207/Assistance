@@ -27,8 +27,12 @@
   --purple: #7655d6;
   --shadow: 0 12px 32px rgba(25, 31, 40, 0.08);
   --control-radius: 9px;
+  /* 버튼 높이: 큰 버튼(모달·폼 확인, 로그인) 44 · 기본 40 · 작은 버튼 36 */
+  --button-height-lg: 44px;
   --button-height: 40px;
   --button-height-compact: 36px;
+  /* 입력창·선택창은 같은 줄의 큰 버튼과 높이를 맞춘다. */
+  --control-height: 44px;
   --button-font-size: 14px;
   --button-font-size-compact: 13px;
   --button-weight: 600;
@@ -413,7 +417,7 @@ body.auth-pending .app-shell {
 
 .login-form input {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   padding: 0 13px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -428,14 +432,14 @@ body.auth-pending .app-shell {
 }
 
 .auth-primary-button {
-  min-height: 48px;
+  min-height: var(--button-height-lg);
   margin-top: 4px;
   border: 0;
   border-radius: var(--control-radius);
   background: var(--blue);
   color: var(--on-accent);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--button-weight);
 }
 
 .auth-primary-button:hover {
@@ -453,7 +457,7 @@ body.auth-pending .app-shell {
   color: var(--blue);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
 }
 
 .login-error {
@@ -957,10 +961,9 @@ body.theme-dark .sidebar {
 
 select,
 .field-row input,
-.mini-range-row input,
-.secondary-button {
+.mini-range-row input {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface);
@@ -1004,7 +1007,7 @@ select.custom-select-native {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 46px;
+  min-height: var(--control-height);
   padding: 0 13px 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -1237,7 +1240,7 @@ select.custom-select-native {
 }
 
 .template-field .custom-select-trigger {
-  min-height: 44px;
+  min-height: var(--control-height);
   padding: 10px 12px;
   border-radius: var(--control-radius);
 }
@@ -1419,8 +1422,13 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 }
 
 .secondary-button {
+  width: 100%;
   margin-top: auto;
   min-height: var(--button-height);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
   font-size: var(--button-font-size);
   font-weight: var(--button-weight);
   cursor: pointer;
@@ -1428,7 +1436,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 
 .subtle-button {
   margin-top: 0;
-  min-height: 40px;
+  min-height: var(--button-height);
   background: var(--surface-alt);
   color: var(--text-soft);
 }
@@ -1525,7 +1533,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 38px;
+  min-height: var(--button-height);
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
@@ -1720,7 +1728,7 @@ body.theme-dark .chat-header {
   /* 11px 본문이라 --muted(대비 4.22)로는 AA 4.5 에 못 미친다. */
   color: var(--text-soft);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   cursor: pointer;
 }
 
@@ -2435,13 +2443,13 @@ body.theme-dark .chat-header {
 
 .logout-confirm-button {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--button-height-lg);
   border: 0;
   border-radius: var(--control-radius);
   background: var(--danger);
   color: var(--on-danger);
   cursor: pointer;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   transition: filter 0.15s ease, transform 0.15s ease;
 }
 
@@ -2512,7 +2520,7 @@ body.theme-dark .chat-header {
 .template-field select,
 .feedback-comment-field textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--control-height);
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--control-radius);
@@ -2561,7 +2569,7 @@ body.theme-dark .chat-header {
 .modal-form-actions .secondary-button,
 .modal-form-actions .run-evaluation-button {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--button-height-lg);
 }
 
 .feedback-reason-group {
@@ -3895,7 +3903,7 @@ body.theme-dark .messages.is-scrolled + .composer {
   background: transparent;
   color: var(--blue);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   cursor: pointer;
 }
 
@@ -3932,7 +3940,7 @@ textarea:focus {
   border-radius: 8px;
   background: var(--blue);
   color: var(--on-accent);
-  font-weight: 700;
+  font-weight: var(--button-weight);
   cursor: pointer;
   box-shadow: 0 10px 22px color-mix(in srgb, var(--blue) 24%, transparent);
 }

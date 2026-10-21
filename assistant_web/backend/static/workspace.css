@@ -701,7 +701,7 @@
   background: var(--surface);
   color: var(--text);
   padding: 8px 12px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -758,15 +758,15 @@
   min-width: 132px;
 }
 
-/* 검색줄의 입력창·선택·버튼 높이를 새 플레이북 버튼(46px)에 맞춘다. */
+/* 검색줄의 입력창·선택·버튼은 공통 입력 높이로 맞추고, 새 플레이북 버튼은 같은 줄에서 늘어난다. */
 .playbook-toolbar input,
 .playbook-toolbar select,
 .playbook-toolbar form > .secondary-button {
-  min-height: 46px;
+  min-height: var(--control-height);
 }
 
 .playbook-toolbar .custom-select-trigger {
-  min-height: 46px;
+  min-height: var(--control-height);
   border-color: var(--line);
 }
 .playbook-list { display: grid; gap: 14px; }

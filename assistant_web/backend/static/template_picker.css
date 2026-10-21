@@ -19,7 +19,7 @@
   color: var(--text-soft);
   font: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: var(--button-weight);
   cursor: pointer;
   box-shadow: var(--shadow);
 }
@@ -531,6 +531,6 @@ body.theme-dark .template-missing-hint.is-missing {
 
   .template-picker-form-actions .secondary-button,
   .template-picker-form-actions .run-evaluation-button {
-    min-height: 46px;
+    min-height: var(--button-height-lg);
   }
 }

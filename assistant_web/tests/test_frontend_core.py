@@ -234,6 +234,18 @@ class FrontendCoreTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertNotIn("rgba(49, 130, 246", path.read_text(encoding="utf-8"))
 
+    def test_buttons_and_inputs_share_height_and_weight_tokens(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("--button-height-lg: 44px;", styles)
+        self.assertIn("--control-height: 44px;", styles)
+        # 보조 버튼은 한 곳에서만 정의해 앞선 정의가 뒤에서 덮이지 않게 한다.
+        self.assertEqual(styles.count("\n.secondary-button {"), 1)
+        for selector in (".auth-primary-button {", ".logout-confirm-button {", ".send-button {"):
+            with self.subTest(selector=selector):
+                rule = styles[styles.index(selector) : styles.index("}", styles.index(selector))]
+                self.assertIn("font-weight: var(--button-weight);", rule)
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
