@@ -19,6 +19,7 @@ from backend.common import compact_text, normalize_for_match
 from backend.sources.chroma import execute_chroma_search
 from backend.sources.chroma_lexical import lexical_ranking_scope
 from backend.sources.mantis_hybrid import hybrid_filter_scope
+from backend.sources.mantis_refresh import short_refresh_scope
 from backend.template_questions import attach_korean_particles
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
@@ -126,7 +127,8 @@ def _resource_symptom(text: str) -> bool:
 
 def _search_similar_candidates(query: str, constraints: dict, resource: bool) -> dict:
     symptom_query='리소스 증가 메모리 누수 사용자 개체 타이머 해제 누락'
-    with lexical_ranking_scope([query,symptom_query] if resource else [query]), hybrid_filter_scope():
+    with (lexical_ranking_scope([query,symptom_query] if resource else [query]),
+          hybrid_filter_scope(), short_refresh_scope() as refresh):
         result=execute_chroma_search(query,8 if resource else SIMILAR_TOP_N,constraints,semantic=True)
         if result.get('status')!='ok':
             return result
@@ -150,7 +152,9 @@ def _search_similar_candidates(query: str, constraints: dict, resource: bool) ->
         else:
             documents = [doc for doc in documents
                          if '[중복제외]' not in str((doc.get('latest_issue') or {}).get('summary') or '')]
-        return {**result,'documents':documents,'searches':searches}
+        return {**result,'documents':documents,'searches':searches,
+                'refresh_budget': {'seconds': refresh.total_seconds, 'spent_seconds': round(refresh.spent_seconds, 3),
+                                   'cache_hits': refresh.cache_hits}}
 
 
 def _wants_resolution(text: str) -> bool:
@@ -669,12 +673,17 @@ def build_similar_resolution_report(text: str, *, validated_plan: bool = False, 
                 "constraints": constraints,
                 "stages": [{"source": "mantis_similar_resolution", "status": "no_results", "issues_list":[base_issue],
                             "meta": {"base_id": base_id, "base_issue_ids": [base_id], "displayed_count":0,
-                                     "derived_query": similar_query[:300],"searches":searches}}],
+                                     "derived_query": similar_query[:300],"searches":searches,
+                                     "refresh_budget": result.get('refresh_budget')}}],
             },
             "raw": {"mode": "deterministic_similar_resolution"},
         }
 
     lines = [header, ""]
+    snapshot_fallback = sum(doc.get('latest_source') in {'mantis_snapshot', 'chroma_snapshot'} for doc in documents)
+    if snapshot_fallback:
+        saved_at = next((str(search.get('fetchedAt')) for search in searches if search.get('fetchedAt')), '수집 시각 미확인')
+        lines.extend([f'일부 사례는 원문 갱신이 지연되어 저장본 근거로 비교했습니다. 저장본 수집 시각: {saved_at}', ''])
     example_rows: List[Dict[str, Any]] = []
     for index, doc in enumerate(documents, start=1):
         latest = doc.get("latest_issue")
@@ -729,6 +738,8 @@ def build_similar_resolution_report(text: str, *, validated_plan: bool = False, 
                 "derived_query": similar_query[:300],
                 "displayed_count": len(example_rows),
                 "searches": searches,
+                "refresh_budget": result.get('refresh_budget'),
+                "snapshot_fallback_count": snapshot_fallback,
                 "comparison_review": comparison_review,
                 "comparison_summary": summary_meta,
             },

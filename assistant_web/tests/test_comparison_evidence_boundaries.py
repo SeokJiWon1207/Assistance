@@ -58,3 +58,16 @@ class ComparisonEvidenceBoundaryTests(TestCase):
     def test_tentative_body_mechanism_is_not_promoted_by_a_request(self):
         issue={'description':'원인 확인 요청\n정적 변수로 참조하여 나타나는 현상으로 추측됩니다.\n제거 필요'}
         self.assertEqual(similar._recorded_cause(issue),('',''))
+
+    def test_snapshot_fallback_keeps_notes_and_discloses_its_basis(self):
+        base={'id':90,'summary':'메모리 증가'}
+        example={'id':80,'summary':'메모리 증가','notes':[{'id':9,'text':'캐시 해제 로직 수정 완료'}]}
+        result={'status':'ok','documents':[{'issue_id':80,'latest_issue':example,'latest_source':'mantis_snapshot'}],
+                'searches':[{'fetchedAt':'2026-10-21T04:18:52+00:00'}]}
+        with patch.object(similar,'extract_query_constraints',return_value={'issue_ids':[90]}), \
+             patch.object(similar,'fetch_mantis_issue_by_id',return_value=base), \
+             patch.object(similar,'_search_similar_candidates',return_value=result):
+            report=similar.build_similar_resolution_report('#90과 비슷한 과거 이슈의 원인과 조치를 비교해줘')
+        self.assertIn('저장본',report['content'])
+        self.assertIn('2026-10-21T04:18:52',report['content'])
+        self.assertIn('노트 9',report['content'])

@@ -276,24 +276,30 @@ def fetch_mantis_issues(
 def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
     if not issue_id:
         return None
+    from backend.sources.mantis_refresh import fetch_with_refresh_budget
+    return fetch_with_refresh_budget(issue_id, lambda timeout, attempts:
+                                     _fetch_mantis_issue_by_id(issue_id, timeout, attempts))
+
+
+def _fetch_mantis_issue_by_id(issue_id: int, timeout: float, attempts: int) -> Optional[Dict[str, Any]]:
 
     settings = get_mantis_settings()
     issue_url = f"{settings['url'].rstrip('/')}/{issue_id}"
-    for attempt in range(1, 4):
+    for attempt in range(1, attempts + 1):
         try:
             response = requests.get(
                 issue_url,
                 headers=get_mantis_headers(),
-                timeout=bounded_timeout(20),
+                timeout=bounded_timeout(timeout),
             )
         except (requests.ConnectionError, requests.Timeout):
-            if attempt == 3:
+            if attempt == attempts:
                 raise
             interruptible_sleep(2 ** (attempt - 1))
             continue
 
         retryable_status = response.status_code == 429 or response.status_code >= 500
-        if retryable_status and attempt < 3:
+        if retryable_status and attempt < attempts:
             interruptible_sleep(2 ** (attempt - 1))
             continue
         if retryable_status:
