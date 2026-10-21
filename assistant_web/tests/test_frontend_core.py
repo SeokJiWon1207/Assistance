@@ -348,7 +348,9 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertNotIn('role="button"', dashboard_js)
         self.assertNotIn('els.dashboardBody.addEventListener("keydown"', dashboard_js)
         self.assertIn('target.closest("[data-dashboard-row-issue]")', dashboard_js)
-        self.assertIn(".dashboard-card-button::after", dashboard_css)
+        # 차트 막대·경과 열도 버튼 역할이 아닌 실제 버튼이며 기본 버튼 모양만 걷어 낸다.
+        self.assertIn('<button type="button" class="dashboard-column dashboard-clickable', dashboard_js)
+        self.assertIn("button.dashboard-bar,", dashboard_css)
 
     def test_mobile_menu_is_a_left_drawer_and_send_sits_inside_the_composer(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
