@@ -217,7 +217,7 @@ function appendAnswerParagraph(container, rawBlock, sources = [], messageIndex =
     if (headingMatch) {
       flushParagraph();
       flushList();
-      const heading = document.createElement("h4");
+      const heading = document.createElement("h3");
       heading.className = "answer-heading";
       appendInlineMarkdown(heading, headingMatch[1], sources, messageIndex);
       container.appendChild(heading);
@@ -519,7 +519,7 @@ function buildIssueReferenceNotes(issue, source, sources = []) {
 function renderFollowUps(followUps = []) {
   const section = document.createElement("section");
   section.className = "follow-up-panel";
-  section.innerHTML = `<h4>후속 질문</h4>`;
+  section.innerHTML = `<h3>후속 질문</h3>`;
   const list = document.createElement("div");
   list.className = "follow-up-list";
 
@@ -696,7 +696,7 @@ function renderSourceList(sources, messageIndex, keyPrefix = "source") {
           <span>${escapeHtml(secondary)}</span>
           <em>${escapeHtml(typeLabel)}</em>
         </div>
-        <h4>${escapeHtml(source.title || "제목 없음")}</h4>
+        <h3>${escapeHtml(source.title || "제목 없음")}</h3>
       </div>
       <span class="related-issue-action">상세</span>
     `;

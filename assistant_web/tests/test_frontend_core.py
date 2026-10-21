@@ -332,6 +332,15 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn('<header class="admin-section-header"><div><h2>', modules["admin"])
         self.assertIn('<div class="admin-card-head"><h3', modules["admin"])
 
+        # 답변 본문도 대화 제목(h2) 바로 아래 단계인 h3에서 시작한다. h4는 이슈 상세 카드(h3) 안에서만 쓴다.
+        answer = {name: (STATIC_DIR / "modules" / f"{name}.js").read_text(encoding="utf-8")
+                  for name in ("chat_rendering", "notion", "charts")}
+        self.assertIn('document.createElement("h3");\n      heading.className = "answer-heading";', answer["chat_rendering"])
+        self.assertIn("<h3>후속 질문</h3>", answer["chat_rendering"])
+        for name in ("notion", "charts"):
+            with self.subTest(module=name):
+                self.assertNotRegex(answer[name], r"<h4\b")
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")

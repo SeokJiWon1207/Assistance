@@ -2135,7 +2135,7 @@ body.theme-dark .chat-header {
   background: var(--surface);
 }
 
-.follow-up-panel h4 {
+.follow-up-panel h3 {
   margin: 0;
   color: var(--text-soft);
   font-size: 13px;
@@ -2323,7 +2323,7 @@ body.theme-dark .chat-header {
   font-style: normal;
 }
 
-.related-issue-item h4 {
+.related-issue-item h3 {
   margin: 0;
   color: var(--text);
   font-size: 13px;
@@ -3759,7 +3759,7 @@ body.theme-dark .chat-header {
   font-weight: 700;
 }
 
-.notion-card h4 {
+.notion-card h3 {
   margin: 0;
   color: var(--text);
   font-size: 15px;
@@ -4310,7 +4310,7 @@ textarea:focus {
   color: var(--danger);
 }
 
-.summary-section h4 {
+.summary-section h3 {
   margin: 0 0 10px;
   font-size: 13px;
   color: var(--text-soft);

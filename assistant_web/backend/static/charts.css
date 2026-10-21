@@ -41,7 +41,7 @@
   gap: 10px;
 }
 
-.effort-chart .summary-section h4 {
+.effort-chart .summary-section h3 {
   margin: 0;
   color: var(--text-soft);
   font-size: 13px;
