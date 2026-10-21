@@ -122,7 +122,7 @@
   min-height: 38px;
   padding: 0 13px;
   border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--blue-soft);
   color: var(--blue);
   font-size: 12px;
@@ -160,7 +160,7 @@
   gap: 4px;
   padding: 16px 18px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: 0 3px 14px rgba(25, 31, 40, 0.035);
 }
@@ -246,7 +246,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
 }
 
@@ -506,7 +506,7 @@
 
 .workspace-brief-hero {
   padding: 24px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--blue), var(--blue-pressed));
   color: var(--on-accent);
 }
@@ -531,7 +531,7 @@
 .workspace-decision {
   padding: 20px;
   border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--blue) 5%, var(--surface));
 }
 
@@ -572,7 +572,7 @@
   gap: 5px;
   padding: 13px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -605,7 +605,7 @@
   gap: 5px 16px;
   padding: 16px 18px;
   border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--blue-soft);
   color: var(--text);
   cursor: pointer;
@@ -684,7 +684,7 @@
   margin-top: 14px;
   padding: 14px 16px;
   border: 1px solid color-mix(in srgb, var(--blue) 28%, var(--line));
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--blue) 6%, var(--surface));
   display: flex;
   align-items: center;
@@ -697,7 +697,7 @@
 .playbook-candidate-action button,
 .playbook-card-actions button {
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
   padding: 8px 12px;
@@ -772,7 +772,7 @@
 .playbook-list { display: grid; gap: 14px; }
 .playbook-card {
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   padding: 18px;
   box-shadow: var(--shadow);
@@ -806,7 +806,7 @@
   margin-bottom: 18px;
   padding: 18px;
   border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
-  border-radius: 16px;
+  border-radius: var(--radius-card);
   background: color-mix(in srgb, var(--blue) 4%, var(--surface));
 }
 .playbook-editor header h4 { margin: 3px 0 0; }
@@ -903,7 +903,7 @@
   gap: 2px;
   margin-bottom: 4px;
   padding: 3px;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface-alt);
 }
 

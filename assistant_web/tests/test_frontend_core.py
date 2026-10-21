@@ -303,6 +303,17 @@ class FrontendCoreTests(unittest.TestCase):
                 rule = css[css.index(selector) : css.index("}", css.index(selector))]
                 self.assertIn("font-size: 13px;", rule)
 
+    def test_corner_radius_uses_the_shared_scale(self):
+        styles = (STATIC_DIR / "styles.css").read_text(encoding="utf-8")
+
+        for token in ("--radius-sm: 6px;", "--control-radius: 8px;", "--radius-card: 12px;", "--radius-lg: 16px;"):
+            self.assertIn(token, styles)
+        # 8px과 눈으로 구분되지 않던 7·9·10·11·14px 모서리는 단계 값으로 합쳤다.
+        for path in STATIC_DIR.glob("*.css"):
+            with self.subTest(path=path.name):
+                css = path.read_text(encoding="utf-8")
+                self.assertIsNone(re.search(r"border-radius:\s*(7|9|10|11|14)px", css))
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")

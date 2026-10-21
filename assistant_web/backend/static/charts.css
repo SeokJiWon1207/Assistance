@@ -199,7 +199,7 @@
   max-width: 280px;
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow);
   opacity: 0;

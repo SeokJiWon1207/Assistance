@@ -32,7 +32,7 @@
   gap: 12px;
   padding: 14px 16px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text-soft);
   font-size: 14px;
@@ -93,7 +93,7 @@
   margin: 0;
   padding: 3px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--control-radius);
   background: var(--surface-alt);
 }
 
@@ -346,10 +346,10 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
 .dashboard-detail-body { display: grid; gap: 18px; padding: 22px; }
 .dashboard-detail-summary { margin: 0; color: var(--text); font-size: 15px; font-weight: 700; line-height: 1.5; }
 .dashboard-detail-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.dashboard-detail-meta div { display: grid; gap: 4px; padding: 12px; border-radius: 10px; background: var(--surface-alt); }
+.dashboard-detail-meta div { display: grid; gap: 4px; padding: 12px; border-radius: 8px; background: var(--surface-alt); }
 .dashboard-detail-meta span { color: var(--muted); font-size: 12px; font-weight: 700; }
 .dashboard-detail-meta strong { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
-.dashboard-detail-reason { padding: 15px; border-left: 3px solid var(--warning); border-radius: 0 10px 10px 0; background: color-mix(in srgb, var(--warning) 7%, var(--surface)); }
+.dashboard-detail-reason { padding: 15px; border-left: 3px solid var(--warning); border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--warning) 7%, var(--surface)); }
 .dashboard-detail-reason strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 12px; }
 .dashboard-detail-reason p { margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
 
@@ -378,7 +378,7 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
   min-height: 38px;
   padding: 0 13px;
   border: 1px solid color-mix(in srgb, var(--blue) 20%, var(--line));
-  border-radius: 9px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--blue-soft) 94%, var(--surface));
   color: var(--blue);
   font-size: 12px;
