@@ -52,6 +52,7 @@ class FrontendCoreTests(unittest.TestCase):
         scripts = [
             STATIC_DIR / "frontend_core.js",
             STATIC_DIR / "auth.js",
+            STATIC_DIR / "auth_scene.js",
             STATIC_DIR / "app.js",
             *sorted((STATIC_DIR / "modules").glob("*.js")),
         ]
@@ -95,6 +96,8 @@ class FrontendCoreTests(unittest.TestCase):
             "adminDrawerForm",
         ):
             self.assertIn(required_id, parser.ids)
+        self.assertIn('<canvas id="authScene" class="auth-scene" aria-hidden="true">', html)
+        self.assertLess(html.index("/static/auth_scene.js"), html.index("/static/auth.js"))
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
         self.assertIn('type="module" src="/static/app.js', html)

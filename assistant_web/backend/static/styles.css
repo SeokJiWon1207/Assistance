@@ -316,18 +316,45 @@ body.auth-pending .app-shell {
   display: grid;
   place-items: center;
   padding: 24px;
+  /* WebGL 장면을 못 쓰거나 그리기 전에 보이는 정지 배경 */
   background:
+    radial-gradient(circle at 18% 34%, rgba(49, 130, 246, 0.16), transparent 26%),
+    radial-gradient(circle at 84% 70%, rgba(139, 92, 246, 0.13), transparent 24%),
     radial-gradient(circle at 50% 12%, rgba(49, 130, 246, 0.13), transparent 34%),
     var(--bg);
 }
 
+/* auth_scene.js가 그리는 3D 배경. 첫 장면을 그린 뒤 is-ready로 서서히 나타난다. */
+.auth-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.9s ease;
+}
+
+.auth-scene.is-ready {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-scene {
+    transition: none;
+  }
+}
+
 .auth-card {
+  position: relative;
+  z-index: 1;
   width: min(430px, 100%);
   padding: 30px;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   box-shadow: 0 28px 90px rgba(25, 31, 40, 0.14);
+  backdrop-filter: blur(18px) saturate(1.2);
 }
 
 .auth-brand {
