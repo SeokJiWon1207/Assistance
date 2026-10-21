@@ -60,6 +60,8 @@ from backend.understanding import (
 
 
 CONVERSATION_TONE_NOTE = (
+    "고객사 이름은 근거의 customer_name에 있는 현재 표시명을 사용해라. "
+    "project에 있는 Mantis 내부 코드나 구사명은 회사 이름 대신 출력하지 마라. 원문 인용은 그대로 보존해라. "
     "말투는 사내 동료에게 설명하듯 자연스럽고 정중한 한국어 존댓말로 답해라. "
     "이전 대화 내용을 이어서 이해하고, 사용자가 '그거', '그중 첫 번째', '담당자 누구야'처럼 "
     "앞 답변을 가리키면 직전 맥락을 참고해 답해라. "
@@ -380,7 +382,7 @@ def format_deterministic_combined_answer(sources: List[Dict[str, Any]]) -> str:
             source_badge = " · ".join(source.get("matched_sources", ["mantis"]))
             lines.append(
                 f"- **{issue_label}{source.get('title', '제목 없음')}** `[출처: {source_badge}]` "
-                f"({source.get('project', '프로젝트 미상')} · "
+                f"({customer_name(source.get('project', '프로젝트 미상'))} · "
                 f"{display_status_label(source.get('status', '상태 미상'))})"
             )
     return "\n".join(lines)

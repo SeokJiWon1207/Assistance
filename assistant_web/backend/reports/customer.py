@@ -5,7 +5,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional
 
-from backend.display import korean_day, korean_day_range, status_name
+from backend.display import customer_name, korean_day, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.sources.mantis import (
@@ -93,8 +93,8 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
     for key in ("customer_exact", "customer_key"):
         value = str(constraints.get(key) or "").strip()
         if value:
-            return value
-    return Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0]
+            return customer_name(value)
+    return customer_name(Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0])
 
 
 def _failure(

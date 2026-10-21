@@ -10,13 +10,42 @@ TODAY = date(2026, 10, 7)
 
 
 class DisplayNameTests(unittest.TestCase):
+    def test_model_context_uses_current_name_without_changing_source_project(self):
+        evidence = {'stages': [{'source': 'mantis_page_scan', 'status': 'ok', 'meta': {'search_complete': True},
+            'issues_list': [{'id': 1, 'project': '159eBest', 'summary': '로그인 오류',
+                             'status': 'closed', 'handler': '석지원', 'detail': {}}]}]}
+        context = retrieval.build_model_retrieval_context(evidence, 5)
+        self.assertEqual(context['issues'][0]['customer_name'], 'LS증권')
+        self.assertEqual(context['issues'][0]['project'], '159eBest')
+        self.assertEqual(evidence['stages'][0]['issues_list'][0]['project'], '159eBest')
+
     def test_mantis_project_names_read_as_customer_names(self):
         self.assertEqual(customer_name("112KBStar(KB증권)"), "KB증권")
         self.assertEqual(customer_name("117Hantu_Project"), "한국투자증권")
-        self.assertEqual(customer_name("138Meritz(메리츠)"), "메리츠")
+        self.assertEqual(customer_name("138Meritz(메리츠)"), "메리츠증권")
         # 고객사로 등록되지 않은 내부 프로젝트는 원래 이름을 그대로 둔다.
         self.assertEqual(customer_name("900DRFN(공용)"), "900DRFN(공용)")
         self.assertEqual(customer_name(""), "고객사 미상")
+
+    def test_current_broker_names_preserve_project_identity(self):
+        names = {
+            "115다올투자증권(구KTB)": "다올투자증권",
+            "115다올투자증권(구KTB)_Project": "다올투자증권",
+            "159eBest": "LS증권",
+            "101PopcornRenewal(동부증권)": "DB증권",
+            "113HMC_Project": "현대차증권",
+            "132SHGM(신한굿모닝증권)": "신한투자증권",
+            "163Hi-ib(하이투자증권)": "아이엠증권",
+            "114Solomon(아이엠증권)": "메리츠증권(구 아이엠투자증권)",
+            "146케이프증권(CAPE증권)": "케이프투자증권",
+            "110Shinyoung(신영증권)": "신영증권",
+            "131HDFutures(현대선물)": "넥스트증권",
+            "143WooriFuture(우리선물)": "NH선물",
+            "164NHFuture": "NH선물",
+        }
+        for project, name in names.items():
+            with self.subTest(project=project):
+                self.assertEqual(customer_name(project), name)
 
     def test_internal_status_values_read_as_labels(self):
         for raw in ("confirmed", "developed", "closed", "assigned"):

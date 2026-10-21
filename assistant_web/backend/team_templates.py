@@ -8,8 +8,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
-from backend.common import text_matches_customer_aliases
-from backend.config import CONFIG_DIR, CUSTOMER_ALIASES
+from backend.common import customer_project_owner, text_matches_customer_aliases
+from backend.config import CONFIG_DIR, CUSTOMER_ALIASES, CUSTOMER_DIRECTORY
 
 
 TEAM_TEMPLATES_PATH = CONFIG_DIR / "team_templates.json"
@@ -30,6 +30,8 @@ CUSTOMER_DISPLAY_OVERRIDES = {
 
 def _customer_display_name(canonical: str, aliases: List[str]) -> str:
     """검색 별칭 중 템플릿 선택기에 표시할 읽기 쉬운 대표 이름을 고른다."""
+    if canonical in CUSTOMER_DIRECTORY:
+        return CUSTOMER_DIRECTORY[canonical]["name"]
     if canonical in CUSTOMER_DISPLAY_OVERRIDES:
         return CUSTOMER_DISPLAY_OVERRIDES[canonical]
     cleaned = [value.strip() for value in aliases if value.strip()]
@@ -81,6 +83,9 @@ def customer_template_search_terms() -> Dict[str, str]:
 @lru_cache(maxsize=256)
 def customer_display_for_project(project_name: str) -> Optional[str]:
     """Mantis 프로젝트 이름(예: 147MiraeAsset(미래에셋증권))을 선택 목록의 대표 이름으로 바꾼다."""
+    owner = customer_project_owner(project_name)
+    if owner in CUSTOMER_DIRECTORY:
+        return CUSTOMER_DIRECTORY[owner]["name"]
     for canonical, aliases in CUSTOMER_ALIASES.items():
         if text_matches_customer_aliases(project_name, [canonical, *aliases]):
             return _customer_display_name(canonical, aliases)

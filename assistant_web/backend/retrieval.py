@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
-from backend.display import korean_day, korean_time
+from backend.display import customer_name, korean_day, korean_time
 from backend.common import (
     compact_text,
     display_mantis_status_label,
@@ -791,7 +791,7 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
         "issues_truncated": len(collect_retrieved_issues(retrieval_result, None)) > len(issues),
         "provided_notion_count": len(notion_pages),
         "notion_pages_truncated": len(collect_retrieved_notion_pages(retrieval_result, notion_limit + 1)) > len(notion_pages),
-        "customer_counts": dict(Counter(customer_groups.values())),
+        "customer_counts": dict(Counter(customer_name(value) for value in customer_groups.values())),
         "customer_counts_complete": len(customer_groups) == count_retrieved_issues(retrieval_result),
         "stages": [
             {
@@ -811,6 +811,7 @@ def build_model_retrieval_context(retrieval_result: Dict[str, Any], limit: int) 
                 "related_issue_ids": (issue.get("detail") or {}).get("related_issue_ids", []),
                 "source_reference_ids": (issue.get("detail") or {}).get("source_reference_ids", []),
                 "project": issue.get("project"),
+                "customer_name": customer_name(issue.get("project")),
                 "title": issue.get("summary"),
                 "status": (issue.get("detail") or {}).get("status_label") or display_mantis_status_label(issue.get("status")),
                 "priority": (issue.get("detail") or {}).get("priority_label") or issue.get("priority", ""),

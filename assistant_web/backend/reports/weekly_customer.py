@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.display import korean_day_range, status_name
+from backend.display import customer_name, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
@@ -52,10 +52,10 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
     for key in ("customer_exact", "customer_key"):
         value = str(constraints.get(key) or "").strip()
         if value:
-            return value
+            return customer_name(value)
     if not issues:
         return "전체 고객사"
-    return Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0]
+    return customer_name(Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0])
 
 
 def _effort_total(issue: Dict[str, Any]) -> float:

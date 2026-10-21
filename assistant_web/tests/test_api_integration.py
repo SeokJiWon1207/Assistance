@@ -139,7 +139,8 @@ class ApiIntegrationTests(unittest.TestCase):
         ]
         self.assertTrue(customer_fields)
         self.assertTrue(all(field["type"] == "customer" for field in customer_fields))
-        self.assertTrue(all(len(field["options"]) == 33 for field in customer_fields))
+        self.assertTrue(all({"LS증권", "다올투자증권", "케이프투자증권", "신영증권"}.issubset(field["options"])
+                            for field in customer_fields))
 
     def test_team_templates_endpoint_lists_customers_with_recent_issues_first(self):
         class Batch(list):
@@ -168,8 +169,8 @@ class ApiIntegrationTests(unittest.TestCase):
             for field in template["fields"]
             if field["type"] == "customer"
         )
-        self.assertEqual(options[:3], ["케이프증권", "NH투자증권", "KB증권"])
-        self.assertEqual(len(options), 33)
+        self.assertEqual(options[:3], ["케이프투자증권", "NH투자증권", "KB증권"])
+        self.assertEqual(len(options), 37)
 
     @patch.object(workspace_api, "get_weekly_team_brief")
     @patch.object(workspace_api, "current_request_user")

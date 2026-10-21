@@ -169,6 +169,12 @@
 {"q":"코스콤 2026년 4월 등록 이슈 중 제목에 정기점검이 들어간 건은 빼고 집계해줘. 우리 팀 기준으로 남는 건수와 번호·제목을 알려줘.","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"코스콤","statuses":[],"created_at":{"from":"2026-04-01","to":"2026-04-30","precision":"month"}}
 {"q":"현대차증권에서 2026년 4월에 등록된 우리 팀 이슈 중 매체구분이 MTS인 게 있어? 있으면 번호와 제목을, 없으면 해당 조건은 없다고 알려줘.","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"현대차증권","platform_key":"mts","statuses":[],"created_at":{"from":"2026-04-01","to":"2026-04-30","precision":"month"}}
 {"q":"우리 팀의 LS증권 2026년 8월 등록 내역을 확인해서, 종료 상태를 제외하고 남는 이슈가 있는지만 알려줘.","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"LS증권","created_at":{"from":"2026-08-01","to":"2026-08-31","precision":"month"}}
+{"q":"LS증권 최근 이슈 세 개만 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"LS증권"}
+{"q":"다올투자증권에서 종료된 이슈 최근 두 개만 보여줄래?","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"다올투자증권","statuses":["closed"]}
+{"q":"아이엠증권 MTS 이슈 최근 두 개만 최신순으로 알려줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"아이엠증권","platform_key":"mts"}
+{"q":"케이프투자증권 최근 이슈 알려줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"케이프투자증권"}
+{"q":"넥스트증권 최근 이슈 알려줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"넥스트증권"}
+{"q":"NH선물 최근 이슈 알려줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"NH선물"}
 {"q":"DB금융투자 2026년 4월 등록 이슈에서 제목에 [MTS]가 포함된 것은 제외해줘. 우리 팀 기준으로 남는 건수와 번호·제목을 모두 보여줘.","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"DB금융투자","platform_key":null,"created_at":{"from":"2026-04-01","to":"2026-04-30","precision":"month"}}
 {"q":"한화에서 롤백했던 작업들을 다시 보내 달라는 건, 바로 재전달할 수 있었어? 먼저 필요했던 자료와 마지막 QC·전달 기록을 짧게 정리해줘.","source":"notion","authority":"advisory","people":[],"candidate_people":[],"customer_key":"한화","issue_explanation":true}
 {"q":"유진투자증권에서 2026년 7월에 등록된 우리 팀 이슈는 전부 몇 건이야? 번호와 제목을 빠짐없이 보여줘.","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_key":"유진투자증권","statuses":[],"created_at":{"from":"2026-07-01","to":"2026-07-31","precision":"month"}}

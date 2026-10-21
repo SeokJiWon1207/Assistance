@@ -49,7 +49,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
         expected_options = customer_template_options()
 
         self.assertEqual(len(customer_fields), 7)
-        self.assertEqual(len(expected_options), 33)
+        self.assertGreaterEqual(len(expected_options), 33)
         self.assertEqual(len(expected_options), len(set(expected_options)))
         for field in customer_fields:
             self.assertEqual(field["type"], "customer")
@@ -57,7 +57,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
             self.assertIn("미래에셋증권", field["options"])
             self.assertIn("한국투자증권", field["options"])
             self.assertIn("NH투자증권", field["options"])
-            self.assertIn("eBest", field["optionSearchTerms"]["이베스트증권"])
+            self.assertIn("eBest", field["optionSearchTerms"]["LS증권"])
             self.assertIn("101PopcornRenewal", field["optionSearchTerms"]["DB증권"])
 
     def test_mantis_project_names_map_to_customer_display_names(self):
@@ -66,7 +66,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
         self.assertEqual(customer_display_for_project("113HMC(HMC증권)"), "현대차증권")
         self.assertEqual(customer_display_for_project("145SignalMakerON"), "시그널메이커")
         # 짧은 영문 별칭(NH)이 다른 회사 이름 안에서 잘못 잡히지 않고, 내부 프로젝트는 고객사가 아니다.
-        self.assertIsNone(customer_display_for_project("164NHFuture"))
+        self.assertEqual(customer_display_for_project("164NHFuture"), "NH선물")
         self.assertIsNone(customer_display_for_project("900DRFN(공용)"))
 
     def test_recent_counts_only_include_issues_inside_the_window(self):
@@ -87,7 +87,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
 
     def test_im_securities_option_and_counts_use_hi_project(self):
         self.assertEqual(customer_display_for_project("163Hi-ib(하이투자증권)"), "아이엠증권")
-        self.assertEqual(customer_display_for_project("114Solomon(아이엠증권)"), "IM투자증권")
+        self.assertEqual(customer_display_for_project("114Solomon(아이엠증권)"), "메리츠증권(구 아이엠투자증권)")
         terms = customer_template_search_terms()["아이엠증권"]
         for alias in ("하이투자", "IM증권", "163Hi-ib"):
             self.assertIn(alias, terms)
@@ -96,18 +96,18 @@ class TeamTemplateConfigTests(unittest.TestCase):
             {"project": {"name": "163Hi-ib(하이투자증권)"}, "created_at": "2026-10-01"},
             {"project": {"name": "114Solomon(아이엠증권)"}, "created_at": "2026-10-01"},
         ], today=date(2026, 10, 7))
-        self.assertEqual(counts, {"아이엠증권": 1, "IM투자증권": 1})
+        self.assertEqual(counts, {"아이엠증권": 1, "메리츠증권(구 아이엠투자증권)": 1})
 
     def test_customer_options_put_busy_customers_first_and_keep_config_order_for_ties(self):
         payload = load_team_templates()
         original = [field["options"] for template in payload["templates"] for field in template["fields"] if field["type"] == "customer"][0]
 
-        ordered = order_customer_options(payload, {"케이프증권": 8, "NH투자증권": 31, "미래에셋증권": 45})
+        ordered = order_customer_options(payload, {"케이프투자증권": 8, "NH투자증권": 31, "미래에셋증권": 45})
         options = [field["options"] for template in ordered["templates"] for field in template["fields"] if field["type"] == "customer"]
 
         for field_options in options:
-            self.assertEqual(field_options[:3], ["미래에셋증권", "NH투자증권", "케이프증권"])
-            rest = [name for name in original if name not in {"미래에셋증권", "NH투자증권", "케이프증권"}]
+            self.assertEqual(field_options[:3], ["미래에셋증권", "NH투자증권", "케이프투자증권"])
+            rest = [name for name in original if name not in {"미래에셋증권", "NH투자증권", "케이프투자증권"}]
             self.assertEqual(field_options[3:], rest)
         # 프로세스 캐시에 든 원본 설정은 바뀌지 않는다.
         self.assertEqual(

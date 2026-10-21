@@ -238,6 +238,30 @@ def load_customer_aliases() -> Dict[str, List[str]]:
 
 CUSTOMER_ALIASES = load_customer_aliases()
 
+
+def load_customer_directory() -> Dict[str, Any]:
+    path = CONFIG_DIR / "customer_directory.json"
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    customers = data.get("customers", {})
+    if not isinstance(customers, dict) or any(
+        not isinstance(key, str) or not isinstance(value, dict)
+        or not isinstance(value.get("name"), str) or not value["name"].strip()
+        or any(not isinstance(item, str) for item in value.get("projects", []) + value.get("aliases", []))
+        for key, value in customers.items()
+    ):
+        raise ValueError("customer_directory.json 고객사 이름표 형식이 올바르지 않습니다.")
+    return customers
+
+
+CUSTOMER_DIRECTORY = load_customer_directory()
+for _customer_key, _customer_entry in CUSTOMER_DIRECTORY.items():
+    CUSTOMER_ALIASES[_customer_key] = list(dict.fromkeys([
+        _customer_entry["name"], *CUSTOMER_ALIASES.get(_customer_key, []),
+        *_customer_entry.get("projects", []), *_customer_entry.get("aliases", []),
+    ]))
+
 AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES = {
     "KRX",
     # 삼성증권과 삼성선물 프로젝트가 공통 어간으로 하나의 고객사 그룹에
