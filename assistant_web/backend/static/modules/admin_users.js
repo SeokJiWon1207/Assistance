@@ -96,7 +96,7 @@ function renderUserRows() {
 function renderUsersSection(container) {
   const header = `
     <header class="admin-section-header">
-      <div><h1>사용자</h1><p>권한과 Mantis 담당자명을 맞춰 두면 ‘내 업무’가 정확해집니다.</p></div>
+      <div><h2>사용자</h2><p>권한과 Mantis 담당자명을 맞춰 두면 ‘내 업무’가 정확해집니다.</p></div>
       <button type="button" class="admin-primary" data-admin-invite><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>사용자 초대</button>
     </header>`;
   if (state.adminUsersError) {

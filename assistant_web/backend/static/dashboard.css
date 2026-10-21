@@ -210,7 +210,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 }
 
 .dashboard-decision { position: relative; }
-.dashboard-decision h4 { padding-right: 110px; }
+.dashboard-decision h3 { padding-right: 110px; }
 .dashboard-decision-note { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .dashboard-ai-button {
   display: inline-flex;
@@ -446,7 +446,7 @@ button.dashboard-spike-row:last-child { border-bottom: 0; }
   .dashboard-metrics { gap: 8px; }
   .dashboard-metrics .workspace-metric { padding: 13px; }
   .dashboard-metrics .workspace-metric strong { font-size: 22px; }
-  .dashboard-decision h4 { padding-right: 0; }
+  .dashboard-decision h3 { padding-right: 0; }
   .dashboard-decision > header { align-items: flex-start; }
   .dashboard-detail-meta { grid-template-columns: 1fr; }
 }

@@ -117,7 +117,7 @@
   flex-wrap: wrap;
 }
 
-.admin-section-header h1 {
+.admin-section-header h2 {
   margin: 0;
   color: var(--text);
   font-size: var(--font-title);
@@ -265,7 +265,7 @@ button.admin-metric:hover { border-color: color-mix(in srgb, var(--blue) 35%, va
   padding-bottom: 14px;
 }
 
-.admin-card-head h2 {
+.admin-card-head h3 {
   margin: 0;
   color: var(--text);
   font-size: var(--font-section);
@@ -435,7 +435,7 @@ button.admin-metric:hover { border-color: color-mix(in srgb, var(--blue) 35%, va
   gap: 12px;
 }
 
-.admin-suite-head h2 {
+.admin-suite-head h3 {
   margin: 0;
   color: var(--text);
   font-size: var(--font-section);

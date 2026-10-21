@@ -74,7 +74,7 @@ function emptyBlock(message) {
 }
 
 function sectionHeader(title, meta = "") {
-  return `<header><div><h4>${escapeHtml(title)}</h4></div>${meta ? `<em>${escapeHtml(meta)}</em>` : ""}</header>`;
+  return `<header><div><h3>${escapeHtml(title)}</h3></div>${meta ? `<em>${escapeHtml(meta)}</em>` : ""}</header>`;
 }
 
 function metricCard(key, label, value, helper, tone = "", delta = "") {
@@ -114,7 +114,7 @@ function renderDecision(decision, periodDays) {
   return `
     <section class="workspace-decision dashboard-decision ${decision.riskLevel === "high" ? "is-high" : ""}">
       <header><span>${periodDays}일 운영 판단</span><em>${riskLabel(decision.riskLevel)}</em></header>
-      <h4>${escapeHtml(decision.headline || "운영 신호를 확인했습니다.")}</h4>
+      <h3>${escapeHtml(decision.headline || "운영 신호를 확인했습니다.")}</h3>
       <ul>${signals}</ul>
       ${actions ? `<div class="workspace-decision-actions">${actions}</div>` : ""}
     </section>`;

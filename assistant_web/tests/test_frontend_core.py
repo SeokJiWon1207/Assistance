@@ -272,15 +272,15 @@ class FrontendCoreTests(unittest.TestCase):
 
         for name, selector, token in (
             ("styles.css", ".chat-header h2 {", "--font-title"),
-            ("styles.css", ".modal-header h3 {", "--font-title"),
+            ("styles.css", ".workspace-modal-header h2 {", "--font-title"),
             ("dashboard.css", ".dashboard-heading h2 { margin", "--font-title"),
             ("dashboard.css", ".dashboard-detail h3 {", "--font-title"),
-            ("admin_center.css", ".admin-section-header h1 {", "--font-title"),
+            ("admin_center.css", ".admin-section-header h2 {", "--font-title"),
             ("admin_center.css", ".admin-drawer h2 {", "--font-title"),
-            ("workspace.css", ".workspace-decision h4 {", "--font-headline"),
+            ("workspace.css", ".workspace-decision h3 {", "--font-headline"),
             ("template_picker.css", ".template-picker-form-heading h3 {", "--font-headline"),
-            ("workspace.css", ".workspace-section h4 {", "--font-section"),
-            ("admin_center.css", ".admin-card-head h2 {", "--font-section"),
+            ("workspace.css", ".workspace-section h3 {", "--font-section"),
+            ("admin_center.css", ".admin-card-head h3 {", "--font-section"),
         ):
             with self.subTest(selector=selector):
                 css = sheets[name]
@@ -313,6 +313,24 @@ class FrontendCoreTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 css = path.read_text(encoding="utf-8")
                 self.assertIsNone(re.search(r"border-radius:\s*(7|9|10|11|14)px", css))
+
+    def test_views_share_one_heading_hierarchy(self):
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        modules = {name: (STATIC_DIR / "modules" / f"{name}.js").read_text(encoding="utf-8")
+                   for name in ("admin", "admin_users", "dashboard", "workspace")}
+
+        # 앱 제목 h1 하나 아래에 화면 제목은 h2, 화면 안 구역 제목은 h3로 둔다.
+        self.assertEqual(len(re.findall(r"<h1\b", html)), 1)
+        for title_id in ("activeConversationTitle", "workspaceModalTitle"):
+            with self.subTest(title=title_id):
+                self.assertIn(f'<h2 id="{title_id}">', html)
+        self.assertIn("<h2>팀 대시보드</h2>", html)
+        for name, source in modules.items():
+            with self.subTest(module=name):
+                self.assertNotRegex(source, r"<h1\b")
+                self.assertNotRegex(source, r"<h4\b")
+        self.assertIn('<header class="admin-section-header"><div><h2>', modules["admin"])
+        self.assertIn('<div class="admin-card-head"><h3', modules["admin"])
 
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
