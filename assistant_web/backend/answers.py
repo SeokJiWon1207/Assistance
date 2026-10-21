@@ -177,7 +177,10 @@ def answer_style_instruction(answer_style: str) -> str:
             "여러 행을 한 줄에 이어 붙이지 마라. 예시:\n"
             "| 항목 | 설명 |\n|---|---|\n| A | 내용1 |\n| B | 내용2 |"
         )
-    return "답변은 필요한 만큼만 간결하고 명확하게 작성해라."
+    return (
+        "질문에서 표·길이·형식을 요청하면 그 요청을 따르고, "
+        "요청이 없으면 필요한 만큼만 간결하고 명확하게 작성해라."
+    )
 
 
 
@@ -185,6 +188,11 @@ def answer_style_instruction(answer_style: str) -> str:
 def wants_table_output(text: str) -> bool:
     """질문이 표 형태를 요구하는지 본다."""
     return bool(re.search(r"표\s*(?:로|형태|형식)|테이블\s*(?:로|형태|형식)|표로\s*만들", str(text or "")))
+
+
+def wants_detailed_output(text: str) -> bool:
+    """질문이 이슈별 요약까지 담은 자세한 목록을 요구하는지 본다."""
+    return bool(re.search(r"자세히|자세하게|상세히|상세하게|요약\s*(?:도|까지|포함)", str(text or "")))
 
 
 def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
@@ -732,7 +740,8 @@ def format_deterministic_issue_answer(
                 f"**담당자**: {encode_issue_field(issue['handler'])} | "
                 f"**등록일**: {encode_issue_field(issue['created_at'] or '미상')}"
             )
-            if answer_style == "detailed":
+            # 화면의 답변 스타일 설정을 없앴으므로 질문 문구로도 판단한다.
+            if answer_style == "detailed" or wants_detailed_output(query_text):
                 preview = compact_text(issue.get("preview", ""), 220)
                 if preview:
                     lines.append(f"   - 요약: {preview}")
