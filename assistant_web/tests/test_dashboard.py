@@ -166,6 +166,15 @@ class OperationsDashboardTests(unittest.TestCase):
         self.assertFalse(result["customerSpikes"])
         self.assertFalse(result["screenSpikes"])
 
+    def test_member_aging_only_excludes_overdue_rows_for_stacked_bars(self):
+        self.issues.append({**self.issues[1], "id": 104, "handler": "석지원",
+                            "created_at": "2026-07-01", "updated_at": "2026-07-01", "date_fields": {}})
+        users = [{"displayName": "석지원", "mantisUsername": "석지원", "approved": True, "role": "member"}]
+        result = self._build({"role": "member", "displayName": "석지원"}, users)
+        member = {row["mantisUsername"]: row for row in result["members"]}["석지원"]
+        # #101은 지연이면서 장기라서 aging에는 들어가도 agingOnly에서는 빠진다.
+        self.assertEqual((member["open"], member["overdue"], member["aging"], member["agingOnly"]), (2, 1, 2, 1))
+
 class DashboardWholePopulationTests(unittest.TestCase):
     setUp = OperationsDashboardTests.setUp
     _build = OperationsDashboardTests._build

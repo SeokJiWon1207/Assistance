@@ -235,6 +235,21 @@ Notion 제목·상태, 결과 없음, 한글 개수·구어체, 이전 항목 �
   답변에 표시합니다. 상태 제외 조건은 관련 상태 필드들에도 적용합니다.
 - 페이지 제한이나 조회 오류로 일부만 확인한 경우 전체 건수를 단정하지 않습니다.
 
+고정 문항 평가는 사람이 원문에서 확정한 질문·정답을 매번 같은 조건으로 비교합니다.
+문항은 `scripts/accuracy/benchmark_cases.example.jsonl` 형식으로
+`runtime/accuracy_benchmark/cases.jsonl`에 만들고 Git에 추가하지 않습니다.
+수정에 사용한 문항은 `dev`, 최종 점수에 쓰는 미사용 문항은 `final`로 나눕니다.
+`run`은 `.env`의 모델·원천으로 답변만 저장하고, `score`는 저장된 답변을 모델·데이터 접근
+없이 다시 채점합니다. 건수·출처 이슈·실행 조건·필수/금지 서술·확인 질문 여부를 검사하며
+상대 날짜 정답은 실행일 기준으로 계산합니다.
+
+```bash
+cd assistant_web
+.venv/bin/python scripts/accuracy/benchmark.py validate runtime/accuracy_benchmark/cases.jsonl
+.venv/bin/python scripts/accuracy/benchmark.py run runtime/accuracy_benchmark/cases.jsonl --model-id company-qwen3.6-35b-a3b
+.venv/bin/python scripts/accuracy/benchmark.py score runtime/accuracy_benchmark/cases.jsonl runtime/accuracy_reports/benchmark-<실행시각>
+```
+
 새로운 오답은 원문 근거와 기대 조건을 포함한 회귀 테스트로 추가합니다.
 `tests/test_team_question_accuracy.py`는 자연어 조건, 필드 충돌, 후속 질문, 거짓 통과
 방지를 담당합니다. 설명형 답변의 충분함과 해결책의 타당성은 이 정형 검사만으로

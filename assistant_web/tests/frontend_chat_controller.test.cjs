@@ -193,3 +193,45 @@ test('completed answers refresh stale data status without blocking or replacing 
     assert.equal(state.messages.at(-1).content, '6건 · 2.35');
   }
 });
+
+test('only a completed answer is marked for the reveal timeline with whether its text already streamed', async () => {
+  for (const [frames, expected] of [
+    [[{ type: 'delta', content: '답변' }, { type: 'result', data: { content: '답변' } }], [{ content: '답변', streamed: true }]],
+    [[{ type: 'status', message: '집계 중' }, { type: 'result', data: { content: '집계 결과' } }], [{ content: '집계 결과', streamed: false }]],
+    [[{ type: 'delta', content: '부분' }, { type: 'error', message: '실패' }], []],
+  ]) {
+    const state = { messages: [{ role: 'user', content: '질문' }] };
+    const marked = [];
+    const context = vm.createContext({ AbortController, TextDecoder, Uint8Array });
+    const apiFetch = async () => ({ ok: true, body: { getReader: () => ({
+      read: async () => frames.length
+        ? { done: false, value: new TextEncoder().encode(`data: ${JSON.stringify(frames.shift())}\n\n`) }
+        : { done: true },
+    }) } });
+    const dependencies = {
+      './runtime.js': { state, els: { input: { focus() {} } }, apiFetch,
+        buildChatMessages: core.buildChatMessages, parseSseBuffer: core.parseSseBuffer },
+      './workspace.js': { persistConversations() {} },
+    };
+    const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/chat_controller.js'), 'utf8');
+    const module = new vm.SourceTextModule(source, { context });
+    await module.link((specifier) => {
+      const exports = dependencies[specifier.replace(/\?v=.*$/, '')];
+      return new vm.SyntheticModule(Object.keys(exports), function () {
+        for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
+      }, { context });
+    });
+    await module.evaluate();
+    module.namespace.configureChatController({
+      ensureModels: async () => {}, selectedModel: () => ({ id: 'test', status: 'active' }), statusLabel: String,
+      generationPayload: () => ({}), abComparisonEnabled: () => false, sourceToolsPayload: () => ({}),
+      renderMessages() {}, setBusy() {},
+      markFreshAnswer: (message, { streamed }) => {
+        assert.equal(message, state.messages.at(-1));
+        marked.push({ content: message.content, streamed });
+      },
+    });
+    await module.namespace.requestAssistant('질문');
+    assert.deepEqual(marked, expected);
+  }
+});

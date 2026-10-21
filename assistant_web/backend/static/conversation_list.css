@@ -95,7 +95,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   min-height: 36px;
-  border-radius: 7px;
+  border-radius: var(--control-radius);
 }
 
 .conversation-row.active {

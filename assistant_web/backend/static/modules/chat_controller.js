@@ -11,6 +11,7 @@ const controllerHooks = {
   renderMessages: null,
   setBusy: null,
   refreshDataStatus: null,
+  markFreshAnswer: null,
 };
 
 function configureChatController(hooks = {}) {
@@ -147,6 +148,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       }
       renderMessages();
     }, abortController.signal);
+    const streamed = Boolean(state.messages[assistantIndex]?.streaming);
     state.messages[assistantIndex] = {
       role: "assistant",
       content: answer.content,
@@ -164,6 +166,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       questionAskedAt,
       templateId,
     };
+    controllerHooks.markFreshAnswer?.(state.messages[assistantIndex], { streamed });
   } catch (error) {
     if (error.name === "AbortError") {
       const partial = state.messages[assistantIndex]?.content || "";

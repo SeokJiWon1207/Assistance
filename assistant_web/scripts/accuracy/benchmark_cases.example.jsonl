@@ -1,0 +1,12 @@
+// 고정 문항 정확도 평가의 문항 형식 예시. 정답값은 예시이며 실제 데이터가 아니다.
+// 실제 문항은 runtime/accuracy_benchmark/cases.jsonl에 만들고 Git에 추가하지 않는다.
+// 한 줄에 한 문항. split=dev(수정에 사용) | final(최종 점수, 수정에 쓰지 않음).
+// turns는 같은 대화의 연속 질문이며, 앞 답변의 감사 ID를 이어 받아 후속 질문으로 보낸다.
+// 기대값 종류: count, issue_ids, notion_titles, plan, contains, not_contains, mode, clarify, delivered.
+{"id":"EX-COUNT-01","split":"dev","category":"count","note":"원본 담당자·상태 필드로 직접 센 값","turns":[{"question":"석지원한테 남아 있는 이슈가 모두 몇 개야?","expect":[{"type":"count","value":7},{"type":"plan","operation":"count","statuses":["open"],"people":["석지원"]}]}]}
+{"id":"EX-DATE-01","split":"dev","category":"date","note":"상대 날짜는 실행일 기준으로 채점 시 계산한다","turns":[{"question":"최근 3개월 등록된 우리 팀 이슈 몇 건이야?","expect":[{"type":"plan","operation":"count","created_at":{"relative":"recent_months","n":3}},{"type":"delivered"}]}]}
+{"id":"EX-FOLLOW-01","split":"dev","category":"followup","turns":[{"question":"2026년 9월 등록된 NH 이슈 몇 건이야?","expect":[{"type":"count","value":12},{"type":"plan","customer":"NH","created_at":{"from":"2026-09-01","to":"2026-09-30"}}]},{"question":"그중 MTS만 세어줘","expect":[{"type":"count","value":5},{"type":"plan","customer":"NH","platform":"mts","created_at":{"from":"2026-09-01","to":"2026-09-30"}}]}]}
+{"id":"EX-LIST-01","split":"dev","category":"list","turns":[{"question":"#31585 이슈 보여줘","expect":[{"type":"issue_ids","ids":[31585],"match":"exact"},{"type":"plan","issue_ids":[31585]}]}]}
+{"id":"EX-EXPLAIN-01","split":"dev","category":"explain","note":"원문 전체를 읽고 요구 사실과 금지 서술을 정한다","turns":[{"question":"#31468 고객 검증까지 끝났어?","expect":[{"type":"issue_ids","ids":[31468],"match":"includes"},{"type":"contains","all":[["미재현","재현되지 않"],["수정 안내","수정 버전"]]},{"type":"not_contains","any":["고객 검증이 완료","검증 완료되었습니다"]}]}]}
+{"id":"EX-NOTION-01","split":"dev","category":"notion","turns":[{"question":"노션에서 배포 체크리스트 찾아줘","expect":[{"type":"notion_titles","titles":["배포 체크리스트"],"match":"includes"},{"type":"plan","source":"notion"}]}]}
+{"id":"EX-CLARIFY-01","split":"dev","category":"clarify","note":"이전 대화 없이 생략된 조건은 추측하지 않고 되물어야 한다","turns":[{"question":"그중 MTS만 세어줘","expect":[{"type":"clarify"}]}]}

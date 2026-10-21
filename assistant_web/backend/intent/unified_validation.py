@@ -6,12 +6,22 @@ import re
 from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.query_filters import normalize_filter_clause, clause_supported, SUPPORTED_FIELDS, values_for_clause
+from backend.query_planning import extract_relative_created_at_range
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 
 STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함')
 PENDING = re.compile(r'(?:이슈|업무|티켓).{0,20}남(?:았|아)|남(?:은|아\s*있는).{0,20}(?:이슈|업무|티켓)|미종료|미완료|안\s*끝난|못\s*끝낸')
 PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter'}
 STATUS_VALUES = set(MANTIS_STATUS_NAMES)
+# 근거가 상대 등록일 표현 하나로만 된 경우에만 서버 달력 계산과 대조한다.
+# '지난달 15일 이후', '지난주 월요일'처럼 세부 조건이 붙으면 전체 기간과 다르므로 대조하지 않는다.
+# '30일 넘은' 같은 기준일 이전 조건은 상한만 있어 제외한다.
+RELATIVE_CREATED_AT_EVIDENCE = re.compile(
+    r'\s*(?:등록일\s*(?:이|은|기준)?\s*)?'
+    r'(?P<expr>최근\s*\d{1,3}\s*(?:일|개월|달)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
+    r'|지난\s*주|저번\s*주|전\s*주|이번\s*주|금주|그제|그저께|엊그제|어제|전일|오늘|금일)'
+    r'(?:\s*(?:에|의|간|동안|사이|중|이내|안에|기준|기간|등록일|(?:에\s*)?(?:등록|생성|접수)(?:된|한|됐던|되었던)?'
+    r'|(?:에\s*)?(?:올라온|들어온)))*\s*[.?!]?\s*')
 REPORT_KINDS = {'effort', 'weekly', 'sla', 'pivot', 'spike', 'customers', 'priority', 'aging', 'due', 'comparison', 'completed', 'waiting', 'similar', 'profile', 'monthly', 'triage', 'effort_sla', 'handoff', 'postmortem', 'notice'}
 
 
@@ -130,12 +140,39 @@ def check_clause(item, question, source):
         except ValueError as exc:
             raise ValueError('날짜 형식 오류') from exc
         require(len(dates) in {1, 2} and (len(dates) == 1 or dates[0] <= dates[1]), '날짜 범위 오류')
-        if field == 'created_at' and re.fullmatch(r'지난\s*달|저번\s*달|전월', str(evidence).strip()):
-            from datetime import timedelta
-            end = date.today().replace(day=1) - timedelta(days=1)
-            expected = [end.replace(day=1).isoformat(), end.isoformat()]
-            require(values == expected, f'지난달은 달력 기준 {expected[0]}~{expected[1]}입니다')
+        if field == 'created_at':
+            check_relative_created_at(clause, str(evidence))
     return clause
+
+
+def check_relative_created_at(clause, evidence):
+    """상대 등록일은 모델 계산 대신 서버 달력 계산과 같은 범위만 실행한다.
+
+    근거 구절만 해석해 한 질문의 다른 날짜 표현과 섞지 않는다. 등록일에는 미래가
+    없으므로 오늘 이후의 끝 날짜는 오늘로 맞춰 '이번 달 1일~오늘'과 '1일~말일'을
+    같은 조회로 본다. 불일치 사유에 정답 범위를 담아 플래너 재시도가 바로잡게 한다."""
+    match = RELATIVE_CREATED_AT_EVIDENCE.fullmatch(evidence)
+    if not match:
+        return
+    today = date.today()
+    expected = extract_relative_created_at_range(match.group('expr'), today)
+    if not expected:
+        return
+    values = values_for_clause(clause.get('value'))
+    operator = clause['operator']
+    if operator == 'between' and len(values) == 2:
+        start, end = values
+    elif operator == 'equals' and len(values) == 1:
+        start = end = values[0]
+    elif operator == 'gte' and len(values) == 1:
+        start, end = values[0], today.isoformat()
+    else:
+        start = end = ''
+    def clip(value):
+        return min(value, today.isoformat())
+    expected_range = (expected['from'], clip(expected['to']))
+    require((start, clip(end)) == expected_range,
+            f"'{evidence.strip()}' 기간은 달력 기준 {expected_range[0]}~{expected_range[1]}입니다")
 
 
 def constraints_from_clauses(clauses, status, scope, user, previous):
