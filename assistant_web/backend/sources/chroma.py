@@ -7,9 +7,9 @@ where 필터 구성, 의미 유사도 스코어링·재랭킹, 이슈 문서 정
 """
 
 import os
-import re
 import sqlite3
 from contextlib import closing
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -21,11 +21,15 @@ from backend.intent.search_terms import keyword_term_aliases, text_matches_keywo
 from backend.common import (
     clamp_int,
     extract_issue_id_from_text,
-    extract_title_from_chroma_text,
     normalize_for_match,
 )
 from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR, STATUS_MATCH_ALIASES
 from backend.sources.mantis_evidence import constraint_evidence_terms
+from backend.sources.chroma_lexical import (
+    semantic_character_score as semantic_character_score,
+    lexical_ranking_scope as lexical_ranking_scope,
+    rank_lexical_documents,
+)
 from backend.sources.mantis import (
     fetch_mantis_issue_by_id,
     issue_matches_constraints,
@@ -99,19 +103,6 @@ def build_chroma_where(
     return " AND ".join(where_parts), params
 
 
-def semantic_character_score(query: str, document: str) -> float:
-    """Cheap Korean-friendly fallback score when the embedding service is unavailable."""
-    def ngrams(value: str, size: int = 2) -> set[str]:
-        normalized = re.sub(r"[^0-9a-z가-힣]+", "", value.lower())
-        return {normalized[index : index + size] for index in range(max(0, len(normalized) - size + 1))}
-
-    query_grams = ngrams(query)
-    document_grams = ngrams(document)
-    if not query_grams or not document_grams:
-        return 0.0
-    return 2 * len(query_grams & document_grams) / (len(query_grams) + len(document_grams))
-
-
 def rank_chroma_documents_semantically(
     search_keyword: str,
     limit: int,
@@ -179,27 +170,8 @@ def _rank_legacy_documents_semantically(
         raise
     except Exception as exc:  # The fallback is intentional for deployments without Ollama/Chroma.
         ranking_error = f"{type(exc).__name__}: {exc}"[:300]
-        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
-            rows = connection.execute(
-                "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
-            ).fetchall()
-        scored = []
-        for (content,) in rows:
-            title = extract_title_from_chroma_text(content)
-            score = semantic_character_score(search_keyword, title)
-            if score > 0:
-                scored.append((score, content))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        ranked = [
-            {
-                "issue_id": extract_issue_id_from_text(content),
-                "content": content[:2400],
-                "similarity_score": round(score, 6),
-                "similarity_rank": index,
-            }
-            for index, (score, content) in enumerate(scored[:candidate_limit], start=1)
-        ]
-        ranking_meta = {"ranking": "semantic_lexical_fallback", "ranking_fallback_reason": ranking_error}
+        ranked, lexical_meta = rank_lexical_documents(CHROMA_DB_PATH, search_keyword, candidate_limit)
+        ranking_meta = {"ranking": "semantic_lexical_fallback", "ranking_fallback_reason": ranking_error, **lexical_meta}
 
     filtered: List[Dict[str, Any]] = []
     seen_ids = set()
@@ -243,6 +215,9 @@ def _rank_legacy_documents_semantically(
                     if float(document.get("distance", distance_cutoff)) <= distance_cutoff
                 ]
             ranking_meta["semantic_focus_term"] = focus_term
+        elif constraints.get("require_semantic_focus"):
+            filtered = []
+            ranking_meta["semantic_focus_missing"] = "no_matching_candidates"
     return filtered, {**ranking_meta, "candidate_count": len(filtered)}
 
 
@@ -307,6 +282,7 @@ def execute_chroma_search(
         candidate_documents.sort(key=lambda item: item["issue_id"], reverse=True)
 
     documents: List[Dict[str, Any]] = []
+    refresh_started = perf_counter()
     refreshed_count = 0
     refreshed_issue_ids: set[int] = set()
     skipped_after_refresh = 0
@@ -345,7 +321,7 @@ def execute_chroma_search(
                     skipped_after_refresh += 1
                     continue
             document["latest_issue"] = normalize_issue(latest_issue, search_terms=terms + constraint_evidence_terms(constraints),
-                                                       evidence_query=constraints.get("answer_query"))
+                                                       evidence_query=constraints.get("answer_query") or constraints.get("resolution_evidence_query"))
             if document.get("chunk_evidence"):
                 from backend.sources.mantis_hybrid import attach_chunk_evidence
                 attach_chunk_evidence(document["latest_issue"], latest_issue, document["chunk_evidence"])
@@ -378,6 +354,7 @@ def execute_chroma_search(
             "scanned_issue_ids": sorted(refreshed_issue_ids),
             "matched_issue_ids": [int(doc["issue_id"]) for doc in documents],
             "mantis_refresh_failures": live_refresh_failures,
+            "refresh_ms": round((perf_counter() - refresh_started) * 1000, 1),
             "skipped_after_refresh": skipped_after_refresh,
             "terms": terms[:4],
             "constraints": constraints,

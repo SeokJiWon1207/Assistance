@@ -137,6 +137,48 @@ class HybridSearchTests(unittest.TestCase):
         return search_hybrid(query, limit, constraints or {}, lambda *_: (vectors or [], {"ranking": "semantic_vector"}),
                              source=self.source, target=self.index, identity="test", embed=embed)
 
+    def test_scope_prefilter_is_reused_only_for_same_request_and_generation(self):
+        import backend.sources.mantis_hybrid as hybrid
+        self.build([raw_issue(1, '메모리 누수')])
+        scope=hybrid.hybrid_filter_scope
+        constraints={'platform_aliases':['MTS']}
+        with patch.object(hybrid,'_scope_candidate_ids',wraps=hybrid._scope_candidate_ids) as lookup:
+            with scope():
+                _,first=self.search('메모리',constraints,embed=lambda texts:[[1.,0.] for _ in texts])
+                _,second=self.search('누수',constraints,embed=lambda texts:[[1.,0.] for _ in texts])
+                self.assertFalse(first['scope_filter_reused'])
+                self.assertTrue(second['scope_filter_reused'])
+                from backend.sources.mantis_chunk_index import build_index
+                source_database(self.source,[raw_issue(1,'메모리 누수')],generation='2026-10-16T00:00:00Z')
+                build_index(self.source,self.index,'test')
+                _,changed=self.search('메모리',constraints,embed=lambda texts:[[1.,0.] for _ in texts])
+                self.assertFalse(changed['scope_filter_reused'])
+            self.search('메모리',constraints,embed=lambda texts:[[1.,0.] for _ in texts])
+            self.assertEqual(lookup.call_count,3)
+
+    def test_narrow_scope_avoids_loading_rejected_raw_bodies_and_keeps_ranking(self):
+        import backend.sources.mantis_hybrid as hybrid
+        issues=[raw_issue(i,'메모리 누수',notes=[{'id':1,'text':'본문 '*1000}],project='대상증권' if i==30 else '다른증권') for i in range(1,41)]
+        self.build(issues)
+        queries=[]
+        from backend.sources.mantis_chunk_index import open_index
+        from contextlib import contextmanager
+        @contextmanager
+        def tracked(*args):
+            with open_index(*args) as opened:
+                opened[1].set_trace_callback(queries.append)
+                yield opened
+        with patch.object(hybrid,'open_index',side_effect=tracked):
+            docs,meta=self.search('메모리 누수',{'customer_exact':'대상증권','platform_aliases':['MTS'],'mantis_team_scope':'all'},embed=lambda texts:[[1.,0.] for _ in texts])
+        self.assertEqual([d['issue_id'] for d in docs],[30])
+        reads=[q for q in queries if q.startswith('SELECT payload FROM issues WHERE id=')]
+        self.assertEqual(len(reads),1,'고객사·매체가 다른 원문 본문을 읽지 않아야 합니다')
+        self.assertEqual(meta.get('scope_candidate_count'),1)
+        with patch.object(hybrid,'_scope_candidate_ids',return_value=None):
+            original,_=self.search('메모리 누수',{'customer_exact':'대상증권','platform_aliases':['MTS'],'mantis_team_scope':'all'},embed=lambda texts:[[1.,0.] for _ in texts])
+        self.assertEqual(docs,original)
+
+
     def test_explanation_recalls_dotted_identifier_written_as_separate_words(self):
         generic = [raw_issue(i, "[MTS] 차트 라이브러리 Crash 세 건",
                              "NH 차트 라이브러리 Crash 세 건을 수정했습니다. "
@@ -224,6 +266,12 @@ class HybridSearchTests(unittest.TestCase):
                                  embed=lambda texts: [[1.0, 0.0] for _ in texts])
         self.assertEqual([d["issue_id"] for d in docs], [2])
         self.assertEqual(meta["semantic_focus_term"], "메모리")
+
+    def test_required_focus_with_no_matches_does_not_return_unrelated_cases(self):
+        self.build([raw_issue(1, '일반 개선'), raw_issue(2, '조건식 저장 오류')])
+        docs, _ = self.search('개선', {'semantic_focus_terms': ['CPU'], 'require_semantic_focus': True},
+                              vectors=[{'issue_id': 2}], embed=lambda texts: [[1.0, 0.0] for _ in texts])
+        self.assertEqual(docs, [])
 
     def test_late_note_is_used_by_deterministic_resolution_report(self):
         from backend.reports.similar import _summarize_resolution

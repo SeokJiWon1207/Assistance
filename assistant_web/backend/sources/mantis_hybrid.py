@@ -47,6 +47,37 @@ def rerank_embedding_scope():
         _EMBEDDING_REUSE.reset(token)
 
 
+_FILTER_REUSE: ContextVar[dict | None] = ContextVar('mantis_header_filter_reuse', default=None)
+
+
+@contextmanager
+def hybrid_filter_scope():
+    token = _FILTER_REUSE.set({})
+    try:
+        yield
+    finally:
+        _FILTER_REUSE.reset(token)
+
+
+def _scope_candidate_ids(raw_db, constraints: dict) -> set[int] | None:
+    narrow = ('customer_exact', 'customer_aliases', 'excluded_customer_aliases',
+              'platform_aliases', 'excluded_platform_aliases')
+    if not any(constraints.get(key) for key in narrow):
+        return None
+    keys = (*narrow, 'mantis_team_scope', 'exclude_issue_ids', 'max_issue_id_exclusive')
+    subset = {key: constraints[key] for key in keys if key in constraints}
+    allowed = set()
+    # 같은 원본 트랜잭션을 순차로 읽는다. 본문·노트·이력은 Python에 적재하지 않는다.
+    for row in raw_db.execute("SELECT id, json_extract(payload,'$.project'), "
+                              "json_extract(payload,'$.handler'), json_extract(payload,'$.custom_fields') FROM issues"):
+        checkpoint()
+        header = {'id': row[0], 'project': json.loads(row[1] or '{}'),
+                  'handler': json.loads(row[2] or '{}'), 'custom_fields': json.loads(row[3] or '[]')}
+        if issue_matches_constraints(header, subset, search_text=''):
+            allowed.add(row[0])
+    return allowed
+
+
 def _identifier_tail_terms(query: str) -> list[str]:
     """분리 표기된 클래스·함수명을 찾도록 점 뒤 식별자도 독립 검색한다."""
     terms = []
@@ -135,10 +166,24 @@ def search_hybrid(
         db, raw_db, index_meta = opened
         candidate_limit = min(max(limit * 6, 30), 80)
         raw_issues: dict[int, dict | None] = {}
+        scope_started = perf_counter()
+        scope_cache = _FILTER_REUSE.get()
+        scope_key = (str(source.resolve()), index_meta['fetchedAt'], index_meta['count'],
+                     json.dumps(constraints, sort_keys=True, ensure_ascii=False))
+        scope_reused = scope_cache is not None and scope_key in scope_cache
+        allowed_ids = scope_cache[scope_key] if scope_reused and scope_cache is not None else _scope_candidate_ids(raw_db, constraints)
+        if scope_cache is not None and not scope_reused:
+            scope_cache[scope_key] = allowed_ids
+        scope_ms = (perf_counter() - scope_started) * 1000
+        raw_reads = 0
 
         def eligible(issue_id):
+            nonlocal raw_reads
+            if allowed_ids is not None and issue_id not in allowed_ids:
+                return None
             if issue_id not in raw_issues:
                 checkpoint()
+                raw_reads += 1
                 row = raw_db.execute("SELECT payload FROM issues WHERE id=?", [issue_id]).fetchone()
                 raw = json.loads(row[0]) if row else None
                 raw_issues[issue_id] = raw if raw and issue_matches_constraints(raw, constraints) else None
@@ -149,7 +194,7 @@ def search_hybrid(
         identifier_candidates = 0
         if constraints.get("answer_query"):
             for term in _identifier_tail_terms(query):
-                focused = lexical_chunks(db, term)
+                focused = lexical_chunks(db, term, issue_ids=allowed_ids)
                 try:
                     for chunk in focused:
                         issue_id = chunk["issue_id"]
@@ -164,7 +209,7 @@ def search_hybrid(
                     focused.close()
                 if identifier_candidates >= min(candidate_limit, 8):
                     break
-        with_closing = lexical_chunks(db, query)
+        with_closing = lexical_chunks(db, query, issue_ids=allowed_ids)
         try:
             for chunk in with_closing:
                 issue_id = chunk["issue_id"]
@@ -178,6 +223,8 @@ def search_hybrid(
             with_closing.close()
 
         checkpoint()
+        lexical_ms = (perf_counter() - started) * 1000
+        vector_started = perf_counter()
         vector_error = ""
         try:
             vector_docs, vector_meta = vector_search(query, limit, constraints)
@@ -186,6 +233,7 @@ def search_hybrid(
         except (OSError, sqlite3.Error, requests.RequestException, ValueError):
             vector_docs, vector_meta = [], {}
             vector_error = "vector_unavailable"
+        vector_ms = (perf_counter() - vector_started) * 1000
         vector_ids = []
         for document in vector_docs:
             issue_id = int(document.get("issue_id") or 0)
@@ -213,6 +261,8 @@ def search_hybrid(
                 focus_term = min(meaningful, key=lambda term: frequencies[term])
                 scores = {issue_id: score for issue_id, score in scores.items()
                           if normalize_for_match(focus_term) in texts[issue_id]}
+            elif constraints.get("require_semantic_focus"):
+                scores = {}
         fusion_order = sorted(scores, key=lambda issue_id: (-scores[issue_id], -issue_id))
         ranked = fusion_order[:candidate_limit]
         reranking, rerank_error = "not_needed", ""
@@ -259,7 +309,7 @@ def search_hybrid(
             raw = raw_issues[issue_id]
             assert raw is not None
             chunk = selected[issue_id]
-            normalized = normalize_issue(raw, evidence_query=constraints.get("answer_query"))
+            normalized = normalize_issue(raw, evidence_query=constraints.get("answer_query") or constraints.get("resolution_evidence_query"))
             attach_chunk_evidence(normalized, raw, chunk)
             content = (f"[Mantis 이슈 정보]\n- 이슈 ID: #{issue_id}\n"
                        f"- 프로젝트(고객사): {normalized['project']}\n"
@@ -276,6 +326,10 @@ def search_hybrid(
             "identifier_candidates": identifier_candidates,
             "candidate_count": len(documents), "fetchedAt": index_meta["fetchedAt"],
             "semantic_focus_term": focus_term,
+            "scope_filter_ms": round(scope_ms, 1), "scope_filter_reused": scope_reused,
+            "scope_candidate_count": len(allowed_ids) if allowed_ids is not None else None,
+            "raw_issue_reads": raw_reads,
+            "lexical_ms": round(lexical_ms, 1), "vector_ms": round(vector_ms, 1),
             "reranking_ms": round((perf_counter() - rerank_started) * 1000, 1),
             "hybrid_search_ms": round((perf_counter() - started) * 1000, 1),
         }

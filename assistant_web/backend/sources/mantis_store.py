@@ -259,6 +259,8 @@ def _read_complete_store(*, allow_stale: bool = False, summary_only: bool = Fals
     # 하나의 세대만 유지하고 동시 요청의 중복 디코딩을 막는다. 요청별 목록과
     # 메타데이터는 분리하되 중첩 원본은 읽기 전용으로 공유한다.
     try:
+        if not allow_stale and read_store_metadata() is None:
+            return None
         with _generation_lock:
             generation = _generation_key(store_path())
             # 이전 세대를 새 원본·읽기 전용 사본과 겹쳐 보관하면 2GB 서버에서
@@ -291,6 +293,29 @@ def _read_complete_store(*, allow_stale: bool = False, summary_only: bool = Fals
             })
     except (OSError, ValueError, TypeError, HTTPException):
         return None
+
+
+def read_recent_store_rows(limit: int) -> IssueBatch | None:
+    """필요한 최신 원문만 읽는다. 본문 폴백과 노트는 그대로 유지한다."""
+    db = None
+    try:
+        db = sqlite3.connect(f"file:{store_path()}?mode=ro", uri=True)
+        db.execute('BEGIN')
+        saved = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
+        age = time.time() - datetime.fromisoformat(saved['fetchedAt']).timestamp()
+        if saved['connection'] != connection_key() or not 0 <= age < MAX_AGE_SECONDS:
+            return None
+        if db.execute('SELECT count(*) FROM issues').fetchone()[0] != saved['count']:
+            return None
+        rows = [json.loads(raw) for (raw,) in db.execute(
+            'SELECT payload FROM issues ORDER BY id DESC LIMIT ?', (max(0, limit),))]
+        return IssueBatch(rows, {'status': 'snapshot', 'fetchedAt': saved['fetchedAt'],
+                                 'search_complete': len(rows) == saved['count']})
+    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError, HTTPException):
+        return None
+    finally:
+        if db is not None:
+            db.close()
 
 
 def _load_complete_store(

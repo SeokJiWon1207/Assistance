@@ -41,7 +41,8 @@ from backend.intent.search_terms import text_matches_keyword_terms
 from backend.query_filters import matches_source_filters, screen_filter_values
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
-from backend.sources.mantis_store import read_complete_store, read_store_metadata, stream_complete_store
+from backend.sources.mantis_store import read_complete_store as read_complete_store
+from backend.sources.mantis_store import read_store_metadata, stream_complete_store, read_recent_store_rows
 from backend.sources.mantis_evidence import constraint_evidence_terms, matching_issue_evidence
 from backend.timing import measured
 from backend.understanding import (
@@ -318,11 +319,11 @@ def fetch_mantis_recent_issues(
     force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
     """API 선두 범위를 병렬 수집한 뒤 ID순으로 정렬한다(전역 최신순 보장 없음)."""
-    stored = None if force_refresh else read_complete_store()
+    stored = None if force_refresh else read_recent_store_rows(total_limit)
     if stored is not None:
         # 명시적인 최신 N건 요청은 전체 원본을 정렬한 뒤 자른다.
         from backend.sources.mantis_collection import IssueBatch
-        return IssueBatch(stored[:total_limit], {**stored.meta, "search_complete": len(stored) <= total_limit})
+        return IssueBatch(stored[:total_limit], stored.meta)
     issues = _fetch_mantis_raw_issues(total_limit, page_size, request_timeout, force_refresh=force_refresh)
     issues.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
     return issues
@@ -583,13 +584,17 @@ def collect_mantis_live_ids_in_range(
     반환해 호출부가 오래된 스냅샷 값을 현재의 확정값처럼 표시하지 않게 한다."""
     # 명시적인 최신 N건 창은 API 응답 순서를 기준으로 한다. 전체 저장본은
     # ID 내림차순이므로 이를 잘라 쓰면 최근 수정된 과거 이슈가 사라진다.
-    stored = read_complete_store() if scan_limit is None else None
-    if stored is not None:
-        selected = stored[:scan_limit] if scan_limit else stored
-        return {"status": "ok", "error_kind": "", "reason": "", "complete": True,
-                "issues": {str(row["id"]): row for row in selected if issue_matches_constraints(row, constraints)},
-                "scanned_pages": 0, "scanned_ids": [int(row["id"]) for row in selected],
-                "fetchedAt": stored.meta["fetchedAt"]}
+    if scan_limit is None:
+        with stream_complete_store() as stored:
+            if stored is not None:
+                matched, scanned = {}, []
+                for row in stored:
+                    scanned.append(int(row['id']))
+                    if issue_matches_constraints(row, constraints):
+                        matched[str(row['id'])] = row
+                return {'status': 'ok', 'error_kind': '', 'reason': '', 'complete': True,
+                        'issues': matched, 'scanned_pages': 0, 'scanned_ids': scanned,
+                        'fetchedAt': stored.meta['fetchedAt']}
     collected: Dict[str, Dict[str, Any]] = {}
     scanned_ids: set[int] = set()
     scanned_pages = 0
@@ -992,6 +997,17 @@ def revalidate_mantis_snapshot_stage(
 
 
 @measured("mantis_page_scan")
+def _sort_search_matches(rows, constraints):
+    ordering = (constraints or {}).get('sort') or {}
+    field = ordering.get('field')
+    if field in {'created_at', 'updated_at', 'issue_id'}:
+        key = 'id' if field == 'issue_id' else field
+        rows.sort(key=lambda row: (row.get(key) or (0 if key == 'id' else ''), row.get('id', 0)),
+                  reverse=ordering.get('direction') != 'asc')
+    else:
+        rows.sort(key=lambda row: (row.get('_assistant_match_score', 0), row.get('id', 0)), reverse=True)
+
+
 def execute_mantis_page_scan(
     search_keyword: str,
     limit: int = 5,
@@ -1045,9 +1061,7 @@ def execute_mantis_page_scan(
                         matched_groups[issue_id] = (issue.get("project") or {}).get("name") or "미상"
                     scored = {**issue, "_assistant_match_score": mantis_keyword_match_score(issue, keywords)}
                     filtered_issues.append(scored)
-                    filtered_issues.sort(
-                        key=lambda row: (row.get("_assistant_match_score", 0), row.get("id", 0)), reverse=True,
-                    )
+                    _sort_search_matches(filtered_issues, constraints)
                     del filtered_issues[limit:]
             source_meta = collection_metadata(raw_issues)
             searched_pages = 0 if stored is not None else min(len(raw_issues) // page_size + 1, max_pages)
@@ -1056,10 +1070,7 @@ def execute_mantis_page_scan(
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Mantis connection failed: {exc}") from exc
 
-    filtered_issues.sort(
-        key=lambda issue: (issue.get("_assistant_match_score", 0), issue.get("id", 0)),
-        reverse=True,
-    )
+    _sort_search_matches(filtered_issues, constraints)
     target_batch = filtered_issues[:limit]
 
     return {

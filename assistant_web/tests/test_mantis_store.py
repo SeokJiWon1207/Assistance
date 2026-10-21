@@ -372,7 +372,43 @@ class MantisCompleteStoreTests(unittest.TestCase):
         with patch.object(mantis_store, '_read_complete_store', wraps=mantis_store._read_complete_store) as read:
             result = build_mantis_count_report(question, plan)
             self.assertIsNotNone(result)
-            self.assertEqual(read.call_count, 1)
+            self.assertLessEqual(read.call_count, 1)
+
+
+    def test_stale_default_read_does_not_decode_and_retain_full_payloads(self):
+        self.sync([{'id': 1, 'notes': [{'text': '큰 원문'}]}])
+        self.backdate(fetchedAt='2020-01-01T00:00:00+00:00')
+        with patch.object(mantis_store, '_load_complete_store', side_effect=AssertionError('불필요한 원문 적재')):
+            self.assertIsNone(mantis_store.read_complete_store())
+
+    def test_recent_window_keeps_notes_without_loading_the_entire_generation(self):
+        self.sync([{'id': i, 'notes': [{'text': 'HTS 원문'}]} for i in range(1, 5)])
+        with patch.object(mantis_store, '_load_complete_store', side_effect=AssertionError('전체 적재')):
+            rows = mantis.fetch_mantis_recent_issues(total_limit=2)
+        self.assertEqual([r['id'] for r in rows], [4, 3])
+        self.assertEqual(rows[0]['notes'][0]['text'], 'HTS 원문')
+        self.assertFalse(rows.meta['search_complete'])
+
+    def test_oldest_scan_keeps_oldest_match_before_limit(self):
+        self.sync([{'id': i, 'created_at': f'2026-01-0{i}'} for i in range(1, 5)])
+        result = mantis.execute_mantis_page_scan('', limit=1,
+            constraints={'sort': {'field': 'created_at', 'direction': 'asc'}})
+        self.assertEqual(result['issues_list'][0]['id'], 1)
+
+    def test_live_count_from_complete_store_streams_without_caching_full_source(self):
+        self.sync([{'id': 1, 'notes': [{'text': 'HTS 원문'}]}, {'id': 2}])
+        with patch.object(mantis_store, '_load_complete_store', side_effect=AssertionError('전체 적재')):
+            result = mantis.collect_mantis_live_ids_in_range({})
+        self.assertTrue(result['complete'])
+        self.assertEqual(set(result['issues']), {'1', '2'})
+
+    def test_profile_includes_an_old_customer_issue_outside_recent_window(self):
+        from backend.reports.customer import build_customer_profile_report
+        self.sync([{'id': 1, 'summary':'옛 고객 이슈','project':{'name':'120NH(NH증권)'},
+                    'created_at':'2020-01-01','status':{'name':'confirmed'}}])
+        with patch('backend.reports.customer.fetch_mantis_recent_issues',return_value=[]):
+            result=build_customer_profile_report('전사 NH 고객사 프로필을 만들어줘')
+        self.assertIn('옛 고객 이슈',result['content'])
 
 
 class MantisNullableTextTests(unittest.TestCase):

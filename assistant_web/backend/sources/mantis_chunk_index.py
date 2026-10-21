@@ -135,19 +135,39 @@ def open_index(source: Path, target: Path, identity: str):
             raw_db.close()
 
 
-def lexical_chunks(db, query: str) -> Generator[dict[str, Any], None, None]:
+def lexical_chunks(db, query: str, *, issue_ids: set[int] | None = None) -> Generator[dict[str, Any], None, None]:
     tokens = list(dict.fromkeys(search_tokens(query)))[:80]
     if not tokens:
         return
     expression = " OR ".join(f'"{token}"' for token in tokens)
     # 먼저 잘라 버리지 않고, 호출자가 원본 조건에 맞는 이슈 수로 제한한다.
-    cursor = db.execute("""SELECT c.*, bm25(chunks_fts) AS lexical_score FROM chunks_fts
-        JOIN chunks c ON c.id=chunks_fts.rowid WHERE chunks_fts MATCH ?
-        ORDER BY lexical_score, c.id""", [expression])
-    try:
-        for row in cursor:
+    # 순위 계산에는 행 ID·점수만 필요하다. 긴 구간 본문은 정렬이 끝난 뒤
+    # 호출자가 소비하는 행만 읽어 같은 BM25·동점 순서를 유지한다.
+    allowed_chunks: set[int] | None = None
+    if issue_ids is not None:
+        if not issue_ids:
+            return
+        allowed_chunks = set()
+        selected = sorted(issue_ids)
+        # chunks_issue의 작은 ID 색인만 읽는다. FTS 순위 계산에 본문 테이블을
+        # 결합하면 넓은 키워드가 맞는 본문 페이지를 다시 무작위로 읽게 된다.
+        for start in range(0,len(selected),500):
             checkpoint()
-            yield dict(row)
+            batch = selected[start:start+500]
+            allowed_chunks.update(row[0] for row in db.execute(
+                'SELECT id FROM chunks WHERE issue_id IN (' + ','.join('?' for _ in batch) + ')', batch))
+        if not allowed_chunks:
+            return
+    cursor = db.execute("""SELECT rowid, bm25(chunks_fts) AS lexical_score
+        FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY lexical_score, rowid""", [expression])
+    try:
+        for ranked in cursor:
+            checkpoint()
+            if allowed_chunks is not None and ranked['rowid'] not in allowed_chunks:
+                continue
+            row = db.execute("SELECT * FROM chunks WHERE id=?", [ranked["rowid"]]).fetchone()
+            if row is not None:
+                yield {**dict(row), "lexical_score": ranked["lexical_score"]}
     finally:
         cursor.close()
 

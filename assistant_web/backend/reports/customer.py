@@ -15,6 +15,8 @@ from backend.sources.mantis import (
     normalize_issue,
 )
 from backend.understanding import extract_query_constraints
+from backend.sources.mantis_store import stream_complete_store
+from backend.sources.mantis_collection import IssueBatch
 
 
 CUSTOMER_PROFILE_PATTERN = re.compile(r"고객사?\s*프로필|프로필\s*(?:카드|리포트)", re.IGNORECASE)
@@ -136,7 +138,9 @@ def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
             error_kind="validation",
         )
     try:
-        raw_issues = fetch_mantis_recent_issues(total_limit=CUSTOMER_PROFILE_FETCH_LIMIT)
+        with stream_complete_store(allow_stale=True) as stored:
+            raw_issues = (IssueBatch([row for row in stored if issue_matches_constraints(row, constraints)], stored.meta)
+                          if stored is not None else fetch_mantis_recent_issues(total_limit=CUSTOMER_PROFILE_FETCH_LIMIT))
     except Exception as exc:
         return _failure(
             text,
