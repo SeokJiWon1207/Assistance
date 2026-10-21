@@ -59,6 +59,7 @@ import {
 import { renderEffortTrendChart } from "./trend_chart.js?v=20260911-6";
 import { renderAnswerScope } from "./answer_scope.js?v=20261007-1";
 import { createModelLoader } from "./model_loader.js?v=20261012-1";
+import { revealSequence } from "./motion.js?v=20260911-6";
 
 function selectedModel() {
   return state.models.find((model) => model.id === els.modelSelect.value);
@@ -197,6 +198,37 @@ function renderMessageTime(timestamp) {
   return time;
 }
 
+// 방금 완료된 답변에만 등장 타임라인을 1회 재생한다. renderMessages()가 DOM을
+// 통째로 다시 그리므로 메시지 객체 기준으로 소비하며, 불러온 대화나 이후
+// 재렌더에서는 재생하지 않는다. WeakMap이라 대화 저장 결과에는 영향이 없다.
+const freshAnswers = new WeakMap();
+
+function markFreshAnswer(message, { streamed = false } = {}) {
+  if (message) freshAnswers.set(message, { streamed });
+}
+
+const ANSWER_CHART_SELECTOR = ".effort-chart, .effort-trend";
+
+// 등장 순서: 검색 조건 → 본문·데이터 기준 → 차트 → 출처·후속 질문·검증 → 답변 도구.
+// 스트리밍으로 이미 보인 본문과 그 위 조건 칩은 다시 숨기지 않고 뒤에 붙는 영역만 드러낸다.
+function revealAnswer(content, bubble, { streamed }) {
+  if (!content) return;
+  const parts = Array.from(content.children);
+  const bodyIndex = parts.findIndex((part) => part.contains(bubble));
+  if (bodyIndex < 0) return;
+  const after = parts.slice(bodyIndex + 1);
+  const isScope = (part) => part.classList.contains("answer-data-scope");
+  const isChart = (part) => part.matches(ANSWER_CHART_SELECTOR);
+  const isActions = (part) => part.classList.contains("message-actions");
+  revealSequence([
+    streamed ? [] : parts.slice(0, bodyIndex),
+    [...(streamed ? [] : [parts[bodyIndex]]), ...after.filter(isScope)],
+    after.filter(isChart),
+    after.filter((part) => !isScope(part) && !isChart(part) && !isActions(part)),
+    after.filter(isActions),
+  ]);
+}
+
 function renderMessages() {
   els.messages.innerHTML = "";
   state.sourceMap.clear();
@@ -314,6 +346,11 @@ function renderMessages() {
       row.append(avatar, content);
     }
     els.messages.appendChild(row);
+    const freshAnswer = freshAnswers.get(message);
+    if (freshAnswer) {
+      freshAnswers.delete(message);
+      revealAnswer(row.querySelector(":scope > .message-content"), bubble, freshAnswer);
+    }
   });
 
   els.messages.scrollTop = els.messages.scrollHeight;
@@ -755,6 +792,7 @@ configureChatController({
   sourceToolsPayload,
   renderMessages,
   setBusy,
+  markFreshAnswer,
   refreshDataStatus: () => loadDataStatus().catch(() => renderChatDataBadge({ failed: true })),
 });
 configureChatFeedback({ renderMessages });

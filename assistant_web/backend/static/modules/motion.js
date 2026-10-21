@@ -2,7 +2,7 @@
 // 빌드 스텝 없이 vendor에 넣은 ESM 번들을 그대로 불러온다.
 // 모든 애니메이션은 prefers-reduced-motion 설정을 존중하며, 해당 설정이 켜져
 // 있으면 애니메이션을 건너뛰고 최종 상태만 즉시 적용한다.
-import { animate, stagger, utils } from "../vendor/anime.esm.min.js?v=20260911-6";
+import { animate, createTimeline, stagger, utils } from "../vendor/anime.esm.min.js?v=20260911-6";
 
 export { animate, stagger, utils };
 
@@ -73,5 +73,34 @@ export function countUp(element, to, {
     onUpdate: () => write(counter.value),
     // 반올림 오차로 최종 숫자가 어긋나지 않도록 목표값을 그대로 다시 쓴다.
     onComplete: () => write(target),
+  });
+}
+
+// 여러 묶음을 위에서 아래로 차례대로 드러내는 등장 타임라인.
+// 같은 묶음 안에서는 stagger로 엇갈려 나타나고, 다음 묶음은 이전 묶음이
+// 끝나기 조금 전에 시작해 끊기지 않게 이어진다.
+// 끝나면 인라인 opacity/transform을 지운다. transform이 남으면 그 안의
+// 툴팁·드롭다운 위치 기준이 바뀌기 때문이다.
+export function revealSequence(groups, { distance = 8, duration = 420, interval = 70, overlap = 200 } = {}) {
+  const steps = groups.map((group) => group.filter(Boolean)).filter((group) => group.length);
+  if (!steps.length || prefersReducedMotion()) return;
+  const targets = steps.flat();
+  targets.forEach((element) => {
+    element.style.opacity = "0";
+    element.style.transform = `translateY(${distance}px)`;
+  });
+  const clear = () => targets.forEach((element) => {
+    element.style.opacity = "";
+    element.style.transform = "";
+  });
+  whenDocumentVisible(() => {
+    const timeline = createTimeline({ defaults: { duration, ease: "outQuad" }, onComplete: clear });
+    steps.forEach((step, index) => {
+      timeline.add(step, {
+        opacity: [0, 1],
+        translateY: [distance, 0],
+        delay: stagger(interval),
+      }, index ? `<-=${overlap}` : 0);
+    });
   });
 }
