@@ -207,6 +207,11 @@ def _member_rows(users: List[Dict[str, Any]], issues: List[Dict[str, Any]], toda
                 "open": len(open_rows),
                 "overdue": sum(bool(row.get("overdue")) for row in open_rows),
                 "aging": sum(int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS for row in open_rows),
+                # 지연이면서 장기인 이슈는 지연으로만 센다. 누적 막대가 같은 이슈를 두 번 그리지 않게 한다.
+                "agingOnly": sum(
+                    not row.get("overdue") and int(row.get("ageDays") or 0) >= TEAM_BRIEF_AGING_DAYS
+                    for row in open_rows
+                ),
                 "highRisk": sum(row.get("riskLevel") == "high" for row in priorities),
             }
         )
