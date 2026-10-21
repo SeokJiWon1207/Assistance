@@ -212,6 +212,10 @@ class UnifiedIntegrationTests(unittest.TestCase):
                 if case.get('unified_previous'):
                     previous = validate_plan(case['unified_previous_q'], case['unified_previous'],
                                              {'mantisUsername': '석지원'}, {})
+                if 'unified_rejected' in case:
+                    with self.assertRaisesRegex(ValueError, case['unified_rejected']):
+                        validate_plan(case['q'], case['unified'], {'mantisUsername': '석지원'}, previous)
+                    continue
                 p = validate_plan(case['q'], case['unified'], {'mantisUsername': '석지원'}, previous)
                 self.assertEqual(p['resolved_constraints']['statuses'], case['unified_statuses'])
                 if 'unified_excluded_statuses' in case:
@@ -313,3 +317,83 @@ class UnifiedSchemaNormalizationTests(unittest.TestCase):
             self.validate('같은 담당자로 다시 세어줘',proposal(scope='inherit',followup=True,
                 status={'mode':'inherit','values':[],'evidence':''},filters=[
                     {'field':'owner','operator':'equals','value':'김진성','evidence':'같은 담당자'}]),previous)
+
+
+class RelativeCreatedAtValidationTests(unittest.TestCase):
+    """상대 등록일은 모델이 계산한 범위가 아니라 서버 달력 계산과 대조한다."""
+
+    TODAY = __import__('datetime').date(2026, 10, 21)
+
+    def setUp(self):
+        from datetime import date
+
+        today = self.TODAY
+
+        class FixedDate(date):
+            @classmethod
+            def today(cls):
+                return today
+
+        patcher = patch('backend.intent.unified_validation.date', FixedDate)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def plan(self, value, evidence, operator='between'):
+        return proposal(scope='team', status={'mode': 'unspecified', 'values': [], 'evidence': ''}, filters=[
+            {'field': 'created_at', 'operator': operator, 'value': value, 'evidence': evidence}])
+
+    def validate(self, question, plan):
+        from backend.intent.unified_validation import validate_plan
+        return validate_plan(question, plan, {'mantisUsername': '석지원'}, {})
+
+    def test_model_computed_relative_range_must_match_server_calendar(self):
+        for question, evidence, wrong, expected in (
+            ('최근 3개월 등록된 이슈 몇 건이야?', '최근 3개월', ['2025-01-01', '2025-03-31'], '2026-08-01~2026-10-21'),
+            ('지난주 등록된 이슈 몇 건이야?', '지난주', ['2026-10-13', '2026-10-19'], '2026-10-12~2026-10-18'),
+            ('최근 7일 등록된 이슈 몇 건이야?', '최근 7일', ['2026-10-14', '2026-10-21'], '2026-10-15~2026-10-21'),
+            ('어제 올라온 이슈 몇 건이야?', '어제 올라온', ['2026-10-21', '2026-10-21'], '2026-10-20~2026-10-20'),
+            ('지난달 등록된 이슈 몇 건이야?', '지난달', ['2026-08-01', '2026-08-31'], '2026-09-01~2026-09-30'),
+        ):
+            with self.subTest(question=question):
+                # 재시도에서 모델이 바로잡을 수 있도록 거절 사유에 서버가 계산한 범위를 담는다.
+                with self.assertRaisesRegex(ValueError, expected):
+                    self.validate(question, self.plan(wrong, evidence))
+
+    def test_equivalent_forms_of_the_server_range_are_accepted(self):
+        for question, evidence, operator, value in (
+            ('최근 3개월 등록된 이슈 몇 건이야?', '최근 3개월', 'between', ['2026-08-01', '2026-10-21']),
+            ('최근 3개월 등록된 이슈 몇 건이야?', '최근 3개월 등록된', 'gte', '2026-08-01'),
+            # 등록일에는 미래가 없으므로 말일까지와 오늘까지는 같은 조회다.
+            ('이번 달 등록된 이슈 몇 건이야?', '이번 달', 'between', ['2026-10-01', '2026-10-31']),
+            ('이번 달 등록된 이슈 몇 건이야?', '이번 달', 'between', ['2026-10-01', '2026-10-21']),
+            ('이번 주에 등록된 이슈 몇 건이야?', '이번 주에 등록된', 'between', ['2026-10-19', '2026-10-25']),
+            ('오늘 등록된 이슈 몇 건이야?', '오늘', 'equals', '2026-10-21'),
+        ):
+            with self.subTest(evidence=evidence, value=value):
+                plan = self.validate(question, self.plan(value, evidence, operator))
+                self.assertTrue(plan['resolved_constraints']['unified_plan_validated'])
+
+    def test_qualified_or_absolute_dates_are_not_forced_to_the_whole_period(self):
+        # 세부 조건이 붙은 근거를 전체 기간으로 고치면 맞는 계획을 틀린 범위로 유도한다.
+        for question, evidence, value in (
+            ('지난달 15일 이후 등록된 이슈 몇 건이야?', '지난달 15일 이후', ['2026-09-15', '2026-09-30']),
+            ('지난주 월요일에 등록된 이슈 몇 건이야?', '지난주 월요일', ['2026-10-12', '2026-10-12']),
+            ('2026년 9월 등록된 이슈 몇 건이야?', '2026년 9월', ['2026-09-01', '2026-09-30']),
+        ):
+            with self.subTest(evidence=evidence):
+                plan = self.validate(question, self.plan(value, evidence))
+                self.assertEqual(plan['resolved_constraints']['created_at'], {'from': value[0], 'to': value[1]})
+
+    def test_planner_retry_executes_the_corrected_relative_range(self):
+        import json
+        module = importlib.import_module('backend.intent.unified')
+        wrong = self.plan(['2025-01-01', '2025-03-31'], '최근 3개월')
+        correct = self.plan(['2026-08-01', '2026-10-21'], '최근 3개월')
+        responses = [Mock(json=lambda body=body: {'choices': [{'message': {'content': json.dumps(body)}}]})
+                     for body in (wrong, correct)]
+        with patch.object(module, 'post_model_chat', side_effect=responses) as call:
+            result = module.plan_question('최근 3개월 등록된 이슈 몇 건이야?', {'id': 'test'}, 'key',
+                                          {'mantisUsername': '석지원'}, {})
+        self.assertEqual(call.call_count, 2)
+        self.assertIn('2026-08-01~2026-10-21', call.call_args_list[1].args[2]['messages'][-1]['content'])
+        self.assertEqual(result['resolved_constraints']['created_at'], {'from': '2026-08-01', 'to': '2026-10-21'})
