@@ -37,6 +37,10 @@
   --chip-height: 32px;
   --chip-height-sm: 28px;
   --chip-font-size: 13px;
+  /* 제목: 페이지·모달·상세 패널 20 · 강조 헤드라인 17 · 섹션 15 */
+  --font-title: 20px;
+  --font-headline: 17px;
+  --font-section: 15px;
   --button-font-size: 14px;
   --button-font-size-compact: 13px;
   --button-weight: 600;
@@ -716,7 +720,7 @@ body.theme-dark .sidebar {
 .chat-header h2 {
   margin: 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   font-weight: 700;
   line-height: 29px;
 }
@@ -2398,7 +2402,7 @@ body.theme-dark .chat-header {
 .modal-header h3 {
   margin: 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   font-weight: 700;
   letter-spacing: -0.01em;
   line-height: 29px;
@@ -3328,7 +3332,7 @@ body.theme-dark .chat-header {
 .issue-detail-header h3 {
   margin: 6px 0 0;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--font-title);
   line-height: 29px;
 }
 

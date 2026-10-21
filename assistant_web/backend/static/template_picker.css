@@ -321,7 +321,7 @@ body.theme-dark .template-picker {
 .template-picker-form-heading h3 {
   margin: 0;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-headline);
 }
 
 .template-picker-form-heading p {

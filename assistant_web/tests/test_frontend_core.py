@@ -266,6 +266,27 @@ class FrontendCoreTests(unittest.TestCase):
                 self.assertIn(height, rule)
                 self.assertIn("font-size: var(--chip-font-size);", rule)
 
+    def test_same_role_headings_share_size_tokens_across_views(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in (
+            "styles.css", "dashboard.css", "admin_center.css", "workspace.css", "template_picker.css")}
+
+        for name, selector, token in (
+            ("styles.css", ".chat-header h2 {", "--font-title"),
+            ("styles.css", ".modal-header h3 {", "--font-title"),
+            ("dashboard.css", ".dashboard-heading h2 { margin", "--font-title"),
+            ("dashboard.css", ".dashboard-detail h3 {", "--font-title"),
+            ("admin_center.css", ".admin-section-header h1 {", "--font-title"),
+            ("admin_center.css", ".admin-drawer h2 {", "--font-title"),
+            ("workspace.css", ".workspace-decision h4 {", "--font-headline"),
+            ("template_picker.css", ".template-picker-form-heading h3 {", "--font-headline"),
+            ("workspace.css", ".workspace-section h4 {", "--font-section"),
+            ("admin_center.css", ".admin-card-head h2 {", "--font-section"),
+        ):
+            with self.subTest(selector=selector):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn(f"font-size: var({token});", rule)
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
