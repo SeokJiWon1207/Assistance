@@ -7,6 +7,7 @@ const vm = require('node:vm');
 async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const calls = [];
   const accountMenuCloses = [];
+  const reveals = [];
   const storage = new Map(stored ? [[`team-ai-assistant-main-view-v1:user-${role}`, stored]] : []);
   let focused;
   const element = (name) => ({
@@ -46,6 +47,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './motion.js': { revealOnScroll: (container, selector) => { reveals.push({ container, selector }); return () => {}; } },
     './sidebar.js': {
       closeMobileSidebar: () => { context.document.body.sidebarOpen = false; },
       closeAccountMenu: () => { accountMenuCloses.push(true); },
@@ -76,7 +78,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const loaderCalls = [];
   module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { loaderCalls, badges, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
+  return { loaderCalls, badges, reveals, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -106,11 +108,17 @@ test('filters and detail use the entire open population beyond the priority prev
   const h = await harness('member', undefined, async () => ({ok: true, payload}));
   await h.api.loadDashboard();
   assert.match(h.els.dashboardBody.innerHTML, /4 \/ 4건/);
+  assert.equal(h.reveals.length, 1);
+  assert.equal(h.reveals[0].container, h.els.dashboardBody);
   for (const [metric, count] of [['overdue', 2], ['aging', 3], ['highRisk', 2]]) {
     h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-metric]', {dashboardMetric: metric})});
     assert.match(h.els.dashboardBody.innerHTML, new RegExp(`${count} / 4건`));
     assert.match(h.els.dashboardBody.innerHTML, /상위 목록 밖/);
   }
+  // 필터로 다시 그릴 때는 등장 효과 없이 바로 보여 준다.
+  assert.equal(h.reveals.length, 1);
+  await h.api.loadDashboard(true);
+  assert.equal(h.reveals.length, 2);
   h.els.dashboardBody.handlers.click({target: clickTarget('[data-dashboard-issue]', {dashboardIssue: '99'})});
   assert.equal(h.els.dashboardDetail.hidden, false);
   assert.match(h.els.dashboardDetailBody.innerHTML, /개발완료 · 보통/);

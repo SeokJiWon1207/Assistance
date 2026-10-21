@@ -5,6 +5,7 @@ import { icon } from "./icons.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { closeAccountMenu, closeMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, showTeamBrief, workspaceStatusLabel } from "./workspace.js?v=20260911-6";
+import { revealOnScroll } from "./motion.js?v=20260911-6";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
@@ -287,8 +288,16 @@ function setRefreshLabel(label) {
   els.dashboardRefreshBtn.innerHTML = `${icon("refresh", 16)}<span>${escapeHtml(label)}</span>`;
 }
 
+// 로딩·오류 화면 다음에 데이터가 처음 보일 때만 구역을 스크롤 등장시킨다.
+// 필터 클릭이나 백그라운드 갱신으로 다시 그릴 때는 바로 보여 준다.
+const DASHBOARD_REVEAL_SELECTOR = ":scope > :not(.dashboard-grid), :scope > .dashboard-grid > *";
+let dashboardContentShown = false;
+let stopDashboardReveal = () => {};
+
 function renderDashboard() {
   if (!els.dashboardBody) return;
+  stopDashboardReveal();
+  stopDashboardReveal = () => {};
   const loading = dashboardState.loading || Boolean(dashboardFreshPromise);
   els.dashboardBody.setAttribute("aria-busy", String(loading));
   els.dashboardRefreshBtn.disabled = loading;
@@ -299,11 +308,13 @@ function renderDashboard() {
     updateSourceMeta(dashboardState.data?.meta, { loading: true });
     els.dashboardSubtitle.textContent = "운영 데이터를 조회하고 있습니다.";
     hideFilterbar();
+    dashboardContentShown = false;
     els.dashboardBody.innerHTML = '<div class="dashboard-state" role="status"><span class="dashboard-spinner" aria-hidden="true"></span><strong>운영 데이터를 불러오고 있습니다.</strong><p>고객사 건강도와 위험 신호를 같은 기준으로 계산합니다.</p></div>';
     return;
   }
   if (dashboardState.error && !dashboardState.data) {
     hideFilterbar();
+    dashboardContentShown = false;
     els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>대시보드를 불러오지 못했습니다.</strong><p>${escapeHtml(dashboardState.error)}</p><button class="dashboard-ai-button is-secondary" type="button" data-dashboard-retry>다시 조회</button></div>`;
     updateSourceMeta({ source: "error" });
     return;
@@ -313,6 +324,7 @@ function renderDashboard() {
   updateSourceMeta(data.meta, { liveFailed: Boolean(dashboardState.error) });
   if (data.meta?.source === "error") {
     hideFilterbar();
+    dashboardContentShown = false;
     els.dashboardBody.innerHTML = `<div class="dashboard-state is-error" role="alert"><strong>업무 데이터를 확인하지 못했습니다.</strong><p>${escapeHtml(data.meta.sourceReason || "잠시 후 다시 조회해 주세요.")}</p><button class="dashboard-ai-button is-secondary" type="button" data-dashboard-retry>다시 조회</button></div>`;
     return;
   }
@@ -337,6 +349,8 @@ function renderDashboard() {
     <div class="dashboard-grid">${renderTodos(data.todos || [])}${renderCustomerHealth(data.customerHealth || [], data.customerHealthSummary || {})}${renderSpikes(data.customerSpikes || [], data.screenSpikes || [])}</div>
     ${renderMembers(data.members || [])}
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>`;
+  if (!dashboardContentShown) stopDashboardReveal = revealOnScroll(els.dashboardBody, DASHBOARD_REVEAL_SELECTOR);
+  dashboardContentShown = true;
 }
 
 async function loadDashboard(force = false, revalidate = false, background = false) {

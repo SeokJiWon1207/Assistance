@@ -138,3 +138,35 @@ export function animateLayoutChange(container, selector, previous, { duration = 
     animate(element, { translateY: [offset, 0], duration, ease: "outCubic", onComplete: clear });
   });
 }
+
+// 스크롤해서 화면에 들어오는 구역부터 차례로 드러낸다. 같은 순간 들어온 구역끼리는
+// 엇갈려 나타난다. 높은 구역도 위쪽이 보이면 바로 시작하도록 면적 비율 대신
+// 화면 아래 10%를 뺀 영역에 닿는 순간을 기준으로 삼는다.
+// 반환한 함수로 감시를 끝내며, 다시 그리기 전에 호출해 떨어져 나간 요소를 놓아준다.
+export function revealOnScroll(container, selector, { distance = 16, duration = 520, interval = 80 } = {}) {
+  if (!container || prefersReducedMotion() || typeof IntersectionObserver !== "function") return () => {};
+  const targets = Array.from(container.querySelectorAll(selector));
+  if (!targets.length) return () => {};
+  targets.forEach((element) => {
+    element.style.opacity = "0";
+    element.style.transform = `translateY(${distance}px)`;
+  });
+  const observer = new IntersectionObserver((entries) => {
+    const entering = entries.filter((entry) => entry.isIntersecting).map((entry) => entry.target);
+    if (!entering.length) return;
+    entering.forEach((element) => observer.unobserve(element));
+    whenDocumentVisible(() => animate(entering, {
+      opacity: [0, 1],
+      translateY: [distance, 0],
+      duration,
+      delay: stagger(interval),
+      ease: "outCubic",
+      onComplete: () => entering.forEach((element) => {
+        element.style.opacity = "";
+        element.style.transform = "";
+      }),
+    }));
+  }, { rootMargin: "0px 0px -10% 0px" });
+  targets.forEach((element) => observer.observe(element));
+  return () => observer.disconnect();
+}
