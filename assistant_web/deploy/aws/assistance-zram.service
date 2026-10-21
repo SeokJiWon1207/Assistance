@@ -1,0 +1,14 @@
+[Unit]
+Description=Compressed swap for Assistance memory bursts
+Before=content-ai-assistant.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe zram num_devices=1
+ExecStart=/usr/sbin/zramctl --algorithm zstd --size 1G /dev/zram0
+ExecStart=/usr/sbin/mkswap /dev/zram0
+ExecStart=/usr/sbin/swapon --priority 100 /dev/zram0
+
+[Install]
+WantedBy=multi-user.target

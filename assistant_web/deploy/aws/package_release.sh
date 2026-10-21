@@ -31,6 +31,9 @@ rsync -az --delete \
   --exclude '*service-account*.json' \
   --exclude '.venv' \
   --exclude '.pycache' \
+  --exclude '.mypy_cache' \
+  --exclude '.ruff_cache' \
+  --exclude '.pytest_cache' \
   --exclude 'artifacts' \
   --exclude 'runtime/' \
   --exclude '.env' \

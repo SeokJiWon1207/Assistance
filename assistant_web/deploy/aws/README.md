@@ -198,3 +198,38 @@ ssh -i KEY ubuntu@EC2_PUBLIC_IP "rm -f /opt/content-ai-assistant/maintenance.on"
 - `/ready`의 `security.modelTransport`에는 HTTP 모델 예외 만료일과 잔여 일수가 포함됩니다.
   기본적으로 D-30부터 `warning` 상태와 기동 경고 로그가 발생합니다.
 - 로컬 스냅샷(`data/mantis_chroma_db`)도 함께 업로드하므로 로컬과 유사한 검색 결과가 나옵니다.
+
+## 소형 서버 자원 복구
+
+운영 원문 전체를 별도 Python 검증 프로세스에 동시에 적재하지 않습니다. 실제 질문은
+기동 중인 서비스에 순차 요청하고, 회귀·실제 모델 사전 검증은 로컬에서 실행합니다.
+
+2026-10-20 복구에서는 디스크를 사용하지 않는 1GiB zram 압축 스왑을 추가했습니다.
+`assistance-zram.service`를 `/etc/systemd/system/`에 설치한 뒤 `systemd-analyze verify`,
+`systemctl enable --now assistance-zram`과 `swapon --show`, `zramctl`로 확인합니다.
+압축 스왑은 물리 RAM 증설을 대신하는 용량 보장이 아니며, 요청 메모리 보호 한도는 유지합니다.
+시스템 로그는 `/etc/systemd/journald.conf.d/assistance-resource-limits.conf`에서
+`SystemMaxUse=64M`, `SystemKeepFree=768M`, `SystemMaxFileSize=16M`로 제한했습니다.
+
+사용자 승인으로 압축한 배포 DB 백업은 각 배포 백업 폴더의 `compressed-backups.json`에
+원본 이름·SHA-256·압축 전후 크기가 기록돼 있습니다. 복구 전 같은 폴더에서 `.gz`를
+원래 `.sqlite3` 이름으로 풀고 SHA-256을 확인해야 합니다. 운영 DB나 현재·직전 릴리스는
+공간 확보를 위해 제거하지 않습니다. 백업 원본 제거가 필요한 작업은 범위를 명시해 승인받습니다.
+
+코드만 바뀌고 잠금 의존성과 검색 스냅샷이 같은 경우에는 새 불변 릴리스를 만든 뒤
+기존 불변 venv를 심볼릭 링크 또는 하드링크로 재사용하고 검색 스냅샷을 연결할 수 있습니다.
+이 경우 하드링크된 환경에서 pip 설치를 실행하면 이전 릴리스도 바뀌므로 실행하지 않습니다.
+심볼릭 링크의 대상 릴리스도 활성 릴리스의 의존 경로로 보존해야 합니다.
+잠금 파일 동일성, 운영 보안 preflight, DB 복제본 호환성 검사 후 기존 원자 링크 전환과
+health/ready 및 실패 시 이전 링크 복구 절차를 적용합니다.
+
+릴리스 패키지에서 `.mypy_cache`·`.ruff_cache`·`.pytest_cache`를 제외합니다. 이 검사
+캐시는 운영 실행에 필요하지 않으며, 2026-10-20 두 배포본에 포함된 mypy 캐시 약
+74MiB를 제거했습니다. 원천 저장본 동기화 중에는 임시 DB 때문에 디스크 여유가 줄 수
+있으므로 완료 후의 여유와 동기화 시각을 함께 확인합니다.
+
+유사 검색의 대체 경로는 `chroma_titles.sqlite3`에 제목·원문 행 위치만 저장합니다.
+Chroma 원문 파일과 WAL의 세대가 일치할 때만 사용하며, 최종 후보는 원문과 Mantis로
+재검증합니다. 새 Chroma 저장본 배포 시 활성화 전에 같은 런타임으로
+`scripts/build_chroma_titles.py --source <CHROMA_DB_PATH> --target <ASSISTANT_RUNTIME_DIR>/chroma_titles.sqlite3`
+를 실행합니다. 실패하거나 원문이 바뀌면 기존 스트리밍 경로를 사용합니다.

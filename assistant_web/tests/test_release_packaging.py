@@ -57,6 +57,9 @@ class ReleasePackagingTests(unittest.TestCase):
             "assistant_web/.venv/bin/python",
             "assistant_web/__pycache__/app.pyc",
             "assistant_web/artifacts/debug.json",
+            "assistant_web/.mypy_cache/3.12/cache.db",
+            "assistant_web/.ruff_cache/cache",
+            "assistant_web/.pytest_cache/cache",
         ]
         for relative in private_paths:
             self.write(relative, "private state")
