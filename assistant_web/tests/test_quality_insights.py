@@ -469,7 +469,7 @@ class AccuracyInsightTests(unittest.TestCase):
                 "project": {"name": "001Test(테스트증권)"},
                 "summary": f"테스트 이슈 {index}",
                 "status": {"name": "closed" if index < 4 else "assigned"},
-                "handler": {"real_name": "테스트담당자"},
+                "handler": {"real_name": "석지원"},
                 "created_at": "2026-08-01",
                 "custom_fields": [
                     {"field": {"name": "매체구분"}, "value": "HTS" if index % 2 == 0 else "MTS"},
@@ -574,6 +574,7 @@ class AccuracyInsightTests(unittest.TestCase):
         execute.return_value = {
             "content": "#30919 상세 내용",
             "sources": [{"issue_id": 30919}],
+            "retrieval": {"query": "0030919 이슈 상세", "constraints": {"issue_ids": [30919]}},
             "auditId": "b" * 32,
         }
         parent_case = AccuracyCase(

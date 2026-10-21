@@ -1,7 +1,10 @@
 """검증된 전체 질의 계획을 기존 읽기 도구와 연결한다."""
 from copy import deepcopy
+from typing import Any
 
 from backend.audit import load_audit_query_plan
+from backend.intent.context import parse_ordinal_reference, resolve_reference_from_context
+from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.intent.unified import plan_question
 from backend.services.contracts import ChatPipelineContext
@@ -18,7 +21,19 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
             if previous:
                 previous = {**previous, 'audit_id': request.contextAuditId}
                 break
-    plan = plan_question(question, model, api_key, user, previous)
+    # 통합 플래너도 실제로 표시했던 출처의 순서/단일 대상을 먼저 복원한다.
+    # 메시지 본문이나 모델이 추측한 ID 대신 동일 사용자·질문의 서버 감사 기록만 쓴다.
+    resolved = resolve_reference_from_context(
+        question, request.contextAuditId, str((user or {}).get('uid') or ''),
+    ) if previous else None
+    retrieval_text = resolved or question
+    plan: dict[str, Any]
+    if (not resolved and parse_ordinal_reference(question) is not None
+            and not has_targeting_constraint(extract_query_constraints(question))):
+        plan = {'planner': 'unified_llm', 'operation': 'clarify',
+                'reason': '이전 답변에서 요청한 순번의 대상을 확인하지 못했습니다. 이슈 번호나 문서 제목을 지정해 주세요.'}
+    else:
+        plan = plan_question(retrieval_text, model, api_key, user, previous)
     if previous and plan.get('operation') == 'explain' and (plan.get('interpretation') or {}).get('followup'):
         # 표시용 질문 문맥도 같은 사용자에게 묶인 서버 기록만 사용한다.
         plan['previous_explanation_questions'] = [
@@ -26,7 +41,7 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
         ][-4:]
     return ChatPipelineContext(
         latest_user_text=question, model=model, api_key=api_key, messages=messages,
-        retrieval_text=question, enabled_tools={'mantis': True, 'vectorDb': True, 'notion': True, **request.tools},
+        retrieval_text=retrieval_text, enabled_tools={'mantis': True, 'vectorDb': True, 'notion': True, **request.tools},
         system_notes=system_notes, query_constraints=deepcopy(plan.get('resolved_constraints') or empty_query_constraints()),
         active_limit=max(1, min(request.searchLimit or 5, 20)), intent_plan=plan,
         authenticated_owner=str((user or {}).get('mantisUsername') or (user or {}).get('displayName') or '').strip(),

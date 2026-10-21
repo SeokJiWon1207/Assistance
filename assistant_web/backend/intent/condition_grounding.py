@@ -52,5 +52,7 @@ def grounded_values(question: str, constraints: dict[str, Any], plan: dict[str, 
                 and audit_id == constraints.get('inherited_from_audit_id')
                 and clause in proof.get('inherited_clauses', [])):
             certified.append(clause)
-    return {(clause['field'], normalize_for_match(value.lstrip('#')))
+    return {(clause['field'], normalize_for_match(
+                str(int(value.lstrip('#'))) if clause['field'] == 'issue_id' and value.lstrip('#').isdigit()
+                else value.lstrip('#')))
             for clause in certified for value in values_for_clause(clause.get('value'))}

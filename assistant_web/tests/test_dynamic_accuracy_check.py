@@ -54,17 +54,85 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
             self.assertEqual(complete_mutable_mantis_ids({"project": "고객A"}, [], 2), [2, 1])
             self.assertEqual(complete_mutable_mantis_ids({"project": "고객A", "scope": "all"}, [], 2), [4, 3])
 
-    def test_generated_structural_cases_explicitly_request_their_company_oracle_scope(self):
+    def test_generated_questions_use_natural_wording_and_default_team_oracle(self):
         rows = [self.issue(i, "고객A", "HTS" if i % 2 else "MTS") for i in range(8, 0, -1)]
+        external = self.issue(9, "고객A", "MTS")
+        external["handler"]["real_name"] = "타팀담당"
+        rows.insert(0, external)
         cases = {case.id: case for case in build_mantis_cases(rows, random.Random(42))}
         for case_id in ("mantis-project-latest", "mantis-project-status", "mantis-project-platform",
                         "mantis-project-platform-exclusion", "mantis-screen", "mantis-month-count",
                         "mantis-screen-no-result"):
             with self.subTest(case_id=case_id):
                 case = cases[case_id]
-                self.assertEqual(extract_query_constraints(case.question).get("mantis_team_scope"), "all")
+                self.assertNotIn("전사", case.question)
+                self.assertNotIn("800건 기준", case.question)
+                self.assertNotIn("confirmed", case.question)
+                self.assertNotEqual(extract_query_constraints(case.question).get("mantis_team_scope"), "all")
                 if case.mutable_oracle:
-                    self.assertEqual(case.oracle_filters.get("scope"), "all")
+                    self.assertEqual(case.oracle_filters.get("scope"), "team")
+                if isinstance(case.expected, list):
+                    self.assertNotIn(9, case.expected)
+        self.assertEqual(cases["mantis-month-count"].expected, 8)
+
+    def test_current_customer_name_groups_project_variants_in_the_independent_oracle(self):
+        rows = [self.issue(4, "159eBest", "HTS"), self.issue(3, "159eBest_Project", "MTS"),
+                self.issue(2, "159eBest", "MTS"), self.issue(1, "159eBest_Project", "HTS")]
+        cases = {case.id: case for case in build_mantis_cases(rows, random.Random(42))}
+        self.assertIn("LS증권", cases["mantis-project-latest"].question)
+        self.assertNotIn("159eBest", cases["mantis-project-latest"].question)
+        self.assertEqual(cases["mantis-project-latest"].expected, [4, 3, 2])
+        self.assertEqual(cases["mantis-project-status"].expected, [4, 3])
+
+    def test_filter_recall_compares_customer_identity_not_alias_spelling(self):
+        self.assertTrue(accuracy.filter_recall_matches(
+            "LS증권 최근 두 개 보여줘", {"customer_key": "이베스트"},
+        ))
+        self.assertFalse(accuracy.filter_recall_matches(
+            "LS증권 최근 두 개 보여줘", {"customer_key": "다올"},
+        ))
+
+    def test_recall_checks_executed_exclusion_clauses_and_date_bounds(self):
+        question = '아이엠증권 이슈에서 MTS는 빼고 최근 세 개만 보여줘'
+        actual = {'customer_key': '하이투자', 'mantis_team_members': list(accuracy.TEAM_MEMBERS), 'filter_clauses': [
+            {'field': 'platform', 'operator': 'not_equals', 'value': 'mts'}]}
+        self.assertTrue(accuracy.filter_recall_matches(question, actual))
+        actual['filter_clauses'][0]['value'] = 'hts'
+        self.assertFalse(accuracy.filter_recall_matches(question, actual))
+        question = '2026년 4월에 유안타증권에서 들어온 이슈가 몇 건이야?'
+        actual = {'customer_key': '유안타', 'mantis_team_members': list(accuracy.TEAM_MEMBERS),
+                  'created_at': {'from': '2026-04-01', 'to': '2026-04-30'}}
+        self.assertTrue(accuracy.filter_recall_matches(question, actual))
+        actual['created_at']['to'] = '2026-04-29'
+        self.assertFalse(accuracy.filter_recall_matches(question, actual))
+
+    def test_recall_accepts_status_aliases_but_not_a_different_state(self):
+        expected = {'statuses': ['need_info']}
+        self.assertTrue(accuracy.filter_recall_matches('정보 부족 상태', {'statuses': ['feedback']}, expected))
+        self.assertFalse(accuracy.filter_recall_matches('정보 부족 상태', {'statuses': ['closed']}, expected))
+
+    def test_notion_followup_grades_inherited_title_from_the_setup_question(self):
+        parent = AccuracyCase('notion-title-1', 'notion', '제목', "노션에서 '주간보고' 문서 좀 찾아줘", 'titles', ['주간보고'])
+        scenario = FollowUpScenario('followup-notion-title', 'notion', '후속', parent.id,
+                                    '그 항목 제목이 정확히 뭐였지?', 'text_any', ['주간보고'])
+        response = {'content': '제목은 주간보고입니다.', 'retrieval': {'query': scenario.question,
+            'stages': [{'source': 'notion', 'status': 'ok', 'meta': {'search_complete': True,
+                'constraints': {'exact_title': '주간보고'}}}]}}
+        with patch.object(accuracy, 'execute_chat', return_value=response):
+            result = run_follow_up_scenario(scenario, parent,
+                {'passed': True, 'audit_id': 'a' * 32, 'answer': '주간보고'}, 'test')
+        self.assertTrue(result['passed'], result.get('failed_checks'))
+
+    def test_team_oracle_rejects_an_unrestricted_execution_even_if_ids_match(self):
+        case = AccuracyCase('team', 'mantis', '고객사', 'LS증권 최근 이슈 하나 알려줘',
+                            'ordered_issue_ids', [1], oracle_filters={'project': '159eBest', 'scope': 'team'})
+        response = {'content': '이슈 1건입니다.', 'sources': [{'issue_id': 1}],
+                    'retrieval': {'constraints': {'customer_key': '이베스트', 'customer_aliases': ['LS증권'],
+                                                  'mantis_team_scope': 'all'}}}
+        self.assertFalse(grade(case, response)['passed'])
+        response['retrieval']['constraints'].update(mantis_team_scope='default',
+                                                     mantis_team_members=list(accuracy.TEAM_MEMBERS))
+        self.assertTrue(grade(case, response)['passed'])
 
     def test_oracle_collection_failure_is_reported_as_incomplete(self):
         with (
@@ -101,7 +169,7 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
     @staticmethod
     def issue(issue_id, project, platform):
         return {"id": issue_id, "project": {"name": project}, "summary": "로그인 오류",
-                "status": {"name": "confirmed"}, "handler": {"real_name": "김담당"},
+                "status": {"name": "confirmed"}, "handler": {"real_name": "석지원"},
                 "created_at": "2025-06-01", "custom_fields": [
                     {"field": {"name": "매체구분"}, "value": platform},
                     {"field": {"name": "화면번호"}, "value": "1234"},

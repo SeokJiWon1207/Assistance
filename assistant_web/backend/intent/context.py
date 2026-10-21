@@ -208,8 +208,13 @@ def resolve_reference_from_context(
         issue_sources = [source for source in sources if source.get("issue_id")]
         unique_ids = {int(source["issue_id"]) for source in issue_sources}
         notion_sources = [source for source in sources if source.get("type") == "notion" and source.get("title")]
-        if not unique_ids and len(notion_sources) == 1:
-            return f'노션에서 "{notion_sources[0]["title"]}" {text}'
+        notion_titles = {source['title'] for source in notion_sources}
+        if not unique_ids and len(notion_titles) == 1 and (
+            len(notion_sources) == 1 or '제목' in text
+        ):
+            # 주간업무처럼 여러 페이지의 제목이 같으면 그 공통 제목 자체는
+            # 확정할 수 있다. 본문/개별 속성 질문에서는 페이지 하나를 추측하지 않는다.
+            return f'노션에서 "{next(iter(notion_titles))}" {text}'
         if len(unique_ids) != 1:
             return None
         return f"{unique_ids.pop():07d} {text}"

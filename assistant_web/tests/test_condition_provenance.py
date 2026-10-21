@@ -10,6 +10,23 @@ USER = {'uid': 'provenance-user', 'mantisUsername': '석지원'}
 
 
 class ConditionProvenanceTests(unittest.TestCase):
+    def test_accuracy_grader_accepts_only_certified_inherited_issue_id(self):
+        from scripts.accuracy.dynamic_accuracy_check import AccuracyCase, grade
+        previous = validate_plan('전사 #31468 이슈 몇 건?', proposal(scope='all',
+            status={'mode': 'unspecified', 'values': [], 'evidence': ''}, filters=[
+                {'field': 'issue_id', 'operator': 'equals', 'value': '31468', 'evidence': '#31468'},
+            ]), USER, {})
+        previous['audit_id'] = 'a' * 32
+        question = '그 기준으로 다시 세어줘'
+        plan = validate_plan(question, proposal(scope='inherit', followup=True,
+            status={'mode': 'inherit', 'values': [], 'evidence': ''}), USER, previous)
+        case = AccuracyCase('followup', 'mantis', '후속', question, 'count', 1)
+        response = {'content': '총 1건입니다.', 'retrieval': {'query': question,
+            'query_plan': plan, 'intent_plan': {'planner': 'legacy'}, 'constraints': plan['resolved_constraints']}}
+        self.assertTrue(grade(case, response)['passed'])
+        response['retrieval']['query_plan'] = {}
+        self.assertFalse(grade(case, response)['passed'])
+
     def labels(self, question, plan):
         return ungrounded_constraint_labels(question, plan['resolved_constraints'], 'mantis', query_plan=plan)
 
@@ -43,6 +60,19 @@ class ConditionProvenanceTests(unittest.TestCase):
             previous = validate_plan(q, proposal(scope='inherit', followup=True,
                 status={'mode': 'inherit', 'values': [], 'evidence': ''}), USER, previous)
             self.assertEqual(self.labels(q, previous), [])
+
+    def test_inherited_zero_padded_issue_id_keeps_its_numeric_identity(self):
+        previous = validate_plan('0031468 이슈 내용 알려줘', proposal(operation='get', scope='target',
+            status={'mode': 'unspecified', 'values': [], 'evidence': ''}, filters=[
+                {'field': 'issue_id', 'operator': 'equals', 'value': '0031468', 'evidence': '0031468'},
+            ]), USER, {})
+        previous['audit_id'] = 'a' * 32
+        q = '이 이슈는 어느 고객사 건이야?'
+        plan = validate_plan(q, proposal(operation='get', scope='inherit', followup=True,
+            status={'mode': 'inherit', 'values': [], 'evidence': ''}), USER, previous)
+        self.assertEqual(self.labels(q, plan), [])
+        plan['resolved_constraints']['issue_ids'] = [31469]
+        self.assertIn('이슈 ID=31469', self.labels(q, plan))
 
     def test_unified_flag_or_inheritance_marker_alone_does_not_silence_warning(self):
         plan = validate_plan('내 이슈 몇 개 남아 있는지 세어줘', proposal(), USER, {})
