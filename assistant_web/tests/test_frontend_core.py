@@ -246,6 +246,26 @@ class FrontendCoreTests(unittest.TestCase):
                 rule = styles[styles.index(selector) : styles.index("}", styles.index(selector))]
                 self.assertIn("font-weight: var(--button-weight);", rule)
 
+    def test_chips_share_height_and_font_tokens(self):
+        sheets = {name: (STATIC_DIR / name).read_text(encoding="utf-8") for name in (
+            "styles.css", "dashboard.css", "admin_center.css", "template_picker.css")}
+
+        self.assertIn("--chip-height: 32px;", sheets["styles.css"])
+        self.assertIn("--chip-height-sm: 28px;", sheets["styles.css"])
+        for name, selector, height in (
+            ("styles.css", ".search-condition-chip {", "var(--chip-height-sm)"),
+            ("styles.css", ".criteria-chip {", "var(--chip-height-sm)"),
+            ("styles.css", ".follow-up-chip {", "var(--chip-height)"),
+            ("dashboard.css", ".dashboard-chip {", "var(--chip-height)"),
+            ("admin_center.css", ".admin-chip {", "var(--chip-height)"),
+            ("template_picker.css", ".template-chip span {", "var(--chip-height)"),
+        ):
+            with self.subTest(selector=selector):
+                css = sheets[name]
+                rule = css[css.index(selector) : css.index("}", css.index(selector))]
+                self.assertIn(height, rule)
+                self.assertIn("font-size: var(--chip-font-size);", rule)
+
     def test_dashboard_rows_use_real_buttons_instead_of_button_roles(self):
         dashboard_js = (STATIC_DIR / "modules" / "dashboard.js").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")

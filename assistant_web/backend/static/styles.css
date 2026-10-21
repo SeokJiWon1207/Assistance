@@ -33,6 +33,10 @@
   --button-height-compact: 36px;
   /* 입력창·선택창은 같은 줄의 큰 버튼과 높이를 맞춘다. */
   --control-height: 44px;
+  /* 칩: 기본 32px(필터·템플릿·후속 질문), 작은 칩 28px(답변 위 검색 조건·기준). 글자는 모두 13px. */
+  --chip-height: 32px;
+  --chip-height-sm: 28px;
+  --chip-font-size: 13px;
   --button-font-size: 14px;
   --button-font-size-compact: 13px;
   --button-weight: 600;
@@ -1826,14 +1830,14 @@ body.theme-dark .chat-header {
   align-items: center;
   gap: 5px;
   min-width: 0;
-  min-height: 28px;
-  padding: 4px 7px 4px 9px;
+  min-height: var(--chip-height-sm);
+  padding: 3px 7px 3px 9px;
   border: 1px solid color-mix(in srgb, var(--blue) 28%, transparent);
   border-radius: 999px;
   background: var(--blue-soft);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
 }
 
 .search-condition-chip.is-readonly {
@@ -2140,15 +2144,15 @@ body.theme-dark .chat-header {
   appearance: none;
   -webkit-appearance: none;
   max-width: 100%;
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: var(--chip-height);
+  padding: 5px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
   line-height: 1.5;
   text-align: left;
@@ -3135,12 +3139,13 @@ body.theme-dark .chat-header {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
+  min-height: var(--chip-height-sm);
+  padding: 3px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-alt);
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
 }
 

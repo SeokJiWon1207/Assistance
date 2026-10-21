@@ -176,20 +176,20 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 }
 
 .dashboard-chip {
-  min-height: 30px;
+  min-height: var(--chip-height);
   padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text-soft);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
 }
 .dashboard-chip:hover { border-color: var(--blue); color: var(--blue); }
 .dashboard-chip-clear { background: var(--blue-soft); color: var(--blue); }
 .dashboard-filter-jump {
-  min-height: 30px;
+  min-height: var(--chip-height);
   margin-left: auto;
   padding: 0 12px;
   border: 1px solid var(--blue);
@@ -198,7 +198,7 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
   color: var(--blue);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--chip-font-size);
   font-weight: 700;
 }
 
