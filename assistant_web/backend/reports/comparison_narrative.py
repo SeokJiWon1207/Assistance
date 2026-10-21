@@ -21,6 +21,7 @@ JSON: {"claims":[{"text":"자연스러운 한국어 결론","fact_ids":["사실I
 계획의 표현은 해당 행동 바로 뒤에 둔다. 예: '롤백 결정·재오픈 예고가 있다'. '롤백 이력이 있으며 다른 방법을 계획 중'처럼 다른 행동의 계획 표현으로 완료 여부를 흐리지 마라.
 현재 질문은 조건을 바꾸는 후속 질문일 수 있다. 조건 변경 확인만 답하지 말고 항상 기준 이슈와 비교 사례의 원인·실제 조치 차이를 요약하라.
 기준 이슈와 비교 사례의 차이에 답하고, 제공된 실제 조치는 빠뜨리지 마라. 같은 원인·같은 해결법이라고 단정하지 마라.
+history의 실패 시도·소스 전달 횟수·추정적 완료는 확정 수정과 별개인 실제 처리 이력이다. 대표 비교 사례는 이런 이력이 있는 사례를 우선한다. 그 사례를 요약하면 실패·전달 횟수·추정적 완료를 모두 짧게 담고 history 사실ID를 연결하라. '처리된 듯하여 완료처리'는 효과가 확정된 기술 수정 완료가 아니다. 이력이 있는데 원인과 조치를 모른다는 말만 하고 끝내지 마라.
 각 문장은 그 문장에 실제 필요한 사실ID만 연결한다. 문장에 #이슈번호를 넣어 어느 사례인지 분명히 한다.
 uncertain_cause는 추정으로 표시하고 unknown은 제공 근거에서 확인되지 않는다는 의미만 갖는다.
 방법 안내는 실제 중지/종료 실행이 아니며 QC·전달은 고객 적용/검증·운영 배포가 아니다. 사실에 '이전 QC/전달'이라고 되어 있으면 '이전'을 반드시 유지하며 최신 수정 후 완료로 바꾸지 마라.
@@ -47,10 +48,13 @@ def comparison_facts(issues: list[dict]) -> list[dict[str, Any]]:
     for issue in issues:
         cause, _ = _recorded_cause(issue)
         action, _ = _recorded_fix(issue)
+        history = ' '.join(_history_lines(issue))
         values = [('cause', cause), ('action', action), ('uncertain_cause', _unconfirmed_cause(issue)),
-                  ('caveat', _latest_resolution_caveat(issue)), ('history', ' '.join(_history_lines(issue)))]
+                  ('caveat', _latest_resolution_caveat(issue)), ('history', history)]
         if not cause and not action:
-            values.append(('unknown', '제공된 근거에서는 확정 원인과 실제 조치를 확인하지 못했습니다.'))
+            missing = '확정 원인과 완료된 기술 수정' if history else '확정 원인과 실제 조치'
+            particle = '을' if history else '를'
+            values.append(('unknown', f'제공된 근거에서는 {missing}{particle} 확인하지 못했습니다.'))
         elif not cause:
             values.append(('unknown', '제공된 근거에서는 확정 원인을 확인하지 못했습니다.'))
         elif not action:
@@ -115,6 +119,9 @@ def validate_claim(claim: Any, catalog: dict[str, dict]) -> bool:
             or any(not isinstance(ref, str) or ref not in catalog for ref in refs) or len(set(refs)) != len(refs)):
         return False
     rows = [catalog[ref] for ref in refs]
+    from backend.reports.comparison_history import history_covered
+    if any(row['kind'] == 'history' and not history_covered(text, row['text']) for row in rows):
+        return False
     if (len({row['issue_id'] for row in rows}) > 1
             and any(row['kind'] != 'unknown' for row in rows)):
         return False
@@ -177,8 +184,11 @@ def summarize_comparison(question: str, issues: list[dict], model, api_key) -> t
         mentioned = {catalog[ref]['issue_id'] for c in claims for ref in c['fact_ids']}
         if issues[0]['id'] not in mentioned or not mentioned.intersection(i['id'] for i in issues[1:]):
             raise ValueError('incomplete comparison')
-        critical = [f for f in facts if f['issue_id'] == issues[0]['id']
-                    and (f['kind'] == 'caveat' or (f['kind'] == 'history' and re.search(r'롤백|부활|재오픈', f['text'])))]
+        critical = [f for f in facts if
+                    (f['issue_id'] == issues[0]['id'] and (f['kind'] == 'caveat' or
+                     (f['kind'] == 'history' and re.search(r'롤백|부활|재오픈', f['text'])))) or
+                    (f['issue_id'] in mentioned and f['kind'] == 'history'
+                     and re.search(r'실패한 시도:|소스 전달:|추정적 완료·행정 처리:', f['text']))]
         used = {ref for claim in claims for ref in claim['fact_ids']}
         text = ' '.join(claim['text'] for claim in claims)
         if any(f['id'] not in used for f in critical) or any(
@@ -199,6 +209,8 @@ def summarize_comparison(question: str, issues: list[dict], model, api_key) -> t
                 fact = catalog[ref]
                 notes = re.findall(r'\[노트 (\d+)\]', fact['text'])
                 label = f"#{fact['issue_id']}" + (' · 노트 ' + ', '.join(dict.fromkeys(notes)) if notes else '')
+                if '(본문)' in fact['text']:
+                    label += ' · 본문'
                 if label not in labels:
                     labels.append(label)
             lines.append('- ' + ' '.join(claim['text'].split()) + ' (' + '; '.join(labels) + ')')

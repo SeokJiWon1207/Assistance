@@ -241,7 +241,23 @@ def _cause_sentences(text: str) -> List[str]:
     return list(dict.fromkeys([*isolated, *wrapped] if labelled else [*wrapped, *isolated]))
 
 
+def _is_experiment(text: str) -> bool:
+    return bool(re.search(r'(?:return|주석\s*처리|비활성|우회|로딩\s*없이|적재\s*없이).{0,100}'
+                          r'(?:하면|되면|경우|때에도|때도)', text, re.I))
+
+
 def _is_consequence(text: str, detail: dict) -> bool:
+    # 특정 기능을 우회·제외한 재현 조건은 증상을 일으킨 메커니즘이 아니다.
+    if _is_experiment(text):
+        return True
+    if re.search(r'이\s*때에도|이\s*때도|그런데도|^되는데', text):
+        # 모델 문단이 줄바꿈으로 나뉘어도 지시어가 참조하는 앞 실험을 확인한다.
+        needle = ' '.join(text.split())
+        for raw in [detail.get('description'), *(note.get('text') for note in _resolution_notes(detail))]:
+            source = ' '.join(str(raw or '').split())
+            position = source.find(needle)
+            if position >= 0 and _is_experiment(source[max(0, position - 250):position + len(needle)]):
+                return True
     title = str(detail.get('summary') or '')
     if _CAUSE_EFFECT.search(text) and not re.search(r'불만|불편', title):
         return True
@@ -435,12 +451,16 @@ def _history_lines(detail: dict) -> list[str]:
         text = _clean_note(str(note.get('text') or ''), detail)
         for sentence in _note_sentences(text):
             if re.search(r'(?:동일|중복).{0,35}(?:종료|처리)', sentence):
-                lines.extend([f"- 기준 이슈 처리 이력{_note_reference(note)}:", f'> {sentence}'])
+                lines.extend([f"- #{detail.get('id')} 처리 이력{_note_reference(note)}:", f'> {sentence}'])
             elif re.search(r'롤백|이슈.{0,20}(?:부활|재오픈)|재확인.{0,30}부활', sentence):
                 label = '조치 계획·결정 기록' if re.search(r'하려고|하기로|예정|하겠|시키도록', sentence) else '조치 이력'
                 lines.extend([f"- #{detail.get('id')} {label}{_note_reference(note)}:",
                               '> ' + compact_text(sentence, 220)])
-    return lines[-8:]
+    from backend.reports.comparison_history import treatment_history
+    lines = lines[-8:]
+    for event in treatment_history(detail):
+        lines.append(f"- #{detail.get('id')} 처리 이력 — {event}")
+    return lines
 
 
 def _unconfirmed_cause(detail: dict) -> str:
@@ -497,16 +517,23 @@ def _clue_terms(text: str) -> set[str]:
 
 def _comparison_lines(base_issue: Dict[str, Any], examples: List[Dict[str, Any]]) -> List[str]:
     """기준 이슈와 사례의 원인·해결을 표로 나란히 놓고, 기록 범위와 겹치는 단서만 짚는다."""
+    from backend.reports.comparison_history import treatment_history
+
+    def action_cell(issue, text, origin):
+        if not text and treatment_history(issue):
+            return '완료된 기술 수정은 확인되지 않음. 처리 이력은 아래 참조'
+        return _table_cell(text, origin, has_evidence=bool(_resolution_notes(issue) or issue.get('description')))
+
     base_cause, base_cause_origin = _recorded_cause(base_issue)
     base_fix, base_fix_origin = _recorded_fix(base_issue)
     rows = [f"| 기준 #{base_issue.get('id')} | {_table_cell(base_cause, base_cause_origin, has_evidence=bool(_resolution_notes(base_issue)))} | "
-            f"{_table_cell(base_fix, base_fix_origin, has_evidence=bool(_resolution_notes(base_issue)))} |"]
+            f"{action_cell(base_issue, base_fix, base_fix_origin)} |"]
     case_causes = []
     for item in examples:
         cause, cause_origin = _recorded_cause(item)
         fix, fix_origin = _recorded_fix(item)
         case_causes.append((item, cause))
-        rows.append(f"| #{item.get('id')} | {_table_cell(cause, cause_origin, has_evidence=bool(_resolution_notes(item)))} | {_table_cell(fix, fix_origin, has_evidence=bool(_resolution_notes(item)))} |")
+        rows.append(f"| #{item.get('id')} | {_table_cell(cause, cause_origin, has_evidence=bool(_resolution_notes(item)))} | {action_cell(item, fix, fix_origin)} |")
 
     recorded = sum(1 for _, cause in case_causes if cause)
     lines = [
@@ -528,7 +555,8 @@ def _comparison_lines(base_issue: Dict[str, Any], examples: List[Dict[str, Any]]
             lines.append(f"- #{item.get('id')}: 미확정 원인 — {uncertain}")
         if caveat := _latest_resolution_caveat(item):
             lines.append(f"- #{item.get('id')}: 후속 상태 — {caveat} (노트).")
-    lines.extend(_history_lines(base_issue))
+    for item in [base_issue, *examples]:
+        lines.extend(_history_lines(item))
     base_terms = _clue_terms(f"{base_cause} {base_issue.get('summary') or ''}")
     for item, cause in case_causes:
         shared = sorted(base_terms & _clue_terms(cause)) if cause else []
