@@ -104,3 +104,37 @@ export function revealSequence(groups, { distance = 8, duration = 420, interval 
     });
   });
 }
+
+// 목록을 통째로 다시 그려도 같은 항목이 이전 자리에서 새 자리로 미끄러지게 하는
+// FLIP 재배치. data-layout-key가 같은 요소를 같은 항목으로 본다.
+// 위치는 컨테이너 내용 기준으로 재므로 다시 그리며 바뀐 스크롤은 움직임에 섞이지 않는다.
+export function captureLayout(container, selector) {
+  const positions = new Map();
+  if (!container) return positions;
+  const origin = container.getBoundingClientRect().top - container.scrollTop;
+  container.querySelectorAll(selector).forEach((element) => {
+    positions.set(element.dataset.layoutKey, element.getBoundingClientRect().top - origin);
+  });
+  return positions;
+}
+
+// captureLayout으로 기억한 위치에서 현재 위치로 옮기고, 새로 생긴 항목은 서서히 보인다.
+// 처음 그릴 때와 탭이 숨겨진 동안에는 재생하지 않는다.
+export function animateLayoutChange(container, selector, previous, { duration = 280 } = {}) {
+  if (!container || !previous?.size || prefersReducedMotion() || document.hidden) return;
+  const current = captureLayout(container, selector);
+  container.querySelectorAll(selector).forEach((element) => {
+    const key = element.dataset.layoutKey;
+    const clear = () => {
+      element.style.opacity = "";
+      element.style.transform = "";
+    };
+    if (!previous.has(key)) {
+      animate(element, { opacity: [0, 1], duration: 200, ease: "outQuad", onComplete: clear });
+      return;
+    }
+    const offset = previous.get(key) - current.get(key);
+    if (Math.abs(offset) < 1) return;
+    animate(element, { translateY: [offset, 0], duration, ease: "outCubic", onComplete: clear });
+  });
+}

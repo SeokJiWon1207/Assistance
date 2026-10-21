@@ -4,6 +4,7 @@ import { cancelMessageEdit } from "./events.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
+import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -240,6 +241,7 @@ function conversationRow(conversation, { titleRange = null, snippet = null } = {
   const active = conversation.id === state.activeConversationId;
   const row = document.createElement("div");
   row.className = `conversation-row${active ? " active" : ""}`;
+  row.dataset.layoutKey = conversation.id;
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = "conversation-open";
@@ -342,22 +344,27 @@ function renderConversationSearch(query) {
   return results.length;
 }
 
+const CONVERSATION_LAYOUT_SELECTOR = ".conversation-row[data-layout-key]";
+
 function renderConversationList() {
   updateActiveConversationTitle();
   if (!els.conversationList) return;
+  // 정렬·즐겨찾기·삭제·검색으로 순서가 바뀌면 행이 새 자리로 미끄러지게 한다.
+  const previousLayout = captureLayout(els.conversationList, CONVERSATION_LAYOUT_SELECTOR);
   els.conversationList.innerHTML = "";
   if (els.conversationCount) els.conversationCount.textContent = `${state.conversations.length}개`;
   const query = conversationListView.query.trim();
   if (!query) {
     if (els.conversationSearchStatus) els.conversationSearchStatus.hidden = true;
     renderConversationGroups();
-    return;
+  } else {
+    const count = renderConversationSearch(query);
+    if (els.conversationSearchStatus) {
+      els.conversationSearchStatus.hidden = false;
+      els.conversationSearchStatus.textContent = `‘${query}’ 검색 결과 ${count}개`;
+    }
   }
-  const count = renderConversationSearch(query);
-  if (els.conversationSearchStatus) {
-    els.conversationSearchStatus.hidden = false;
-    els.conversationSearchStatus.textContent = `‘${query}’ 검색 결과 ${count}개`;
-  }
+  animateLayoutChange(els.conversationList, CONVERSATION_LAYOUT_SELECTOR, previousLayout);
 }
 
 function setConversationQuery(query) {
