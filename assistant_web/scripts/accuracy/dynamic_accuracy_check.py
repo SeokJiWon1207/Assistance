@@ -304,6 +304,11 @@ def fetch_notion_snapshot() -> List[Dict[str, str]]:
     if not database_ids:
         raise RuntimeError("No Notion database is connected to the integration")
 
+    from backend.notion.read_scope import ensure_notion_read_scope
+    _read_scope, scope_complete = ensure_notion_read_scope(database_ids, token)
+    if not scope_complete:
+        raise RuntimeError("Notion child database scope could not be verified completely")
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Notion-Version": os.getenv("NOTION_API_VERSION", "2022-06-28"),

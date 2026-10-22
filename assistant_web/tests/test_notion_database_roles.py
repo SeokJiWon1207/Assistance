@@ -4,8 +4,10 @@ import os
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
@@ -250,6 +252,83 @@ class ChildScopeTests(unittest.TestCase):
         client._page_content_cached.cache_clear()
         self.addCleanup(read_scope._scope_cached.cache_clear)
         self.addCleanup(client._page_content_cached.cache_clear)
+
+    def expired_scope(self):
+        root, child = 'a' * 32, 'b' * 32
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.object(read_scope, 'RUNTIME_DIR', Path(directory)))
+        self.enterContext(patch.dict(os.environ, {
+            'NOTION_INCLUDE_CHILD_DATABASES': 'true', 'NOTION_READ_SCOPE_TTL_SECONDS': '2592000',
+        }))
+        read_scope.save_complete_notion_read_scope([root], {root: root, child: root},
+            (datetime.now(timezone.utc) - timedelta(days=31)).isoformat())
+        return root, child, Path(directory) / read_scope.READ_SCOPE_FILENAME
+
+    def test_background_warmer_refreshes_expired_scope_before_warming_children(self):
+        root, child, _ = self.expired_scope()
+        new_child = 'c' * 32
+        settings = {'token': 'fixture-token', 'database_ids': [root]}
+        with (patch.object(client, 'get_notion_settings', return_value=settings),
+              patch.object(read_scope, 'refresh_notion_read_scope',
+                  return_value=({root: root, child: root, new_child: root}, True)) as refresh,
+              patch.object(client, 'fetch_notion_database_schema', return_value={}) as fetch):
+            self.assertEqual(client.warm_notion_database_cache(), 3)
+        refresh.assert_called_once_with([root], 'fixture-token')
+        scope, complete = read_scope.resolve_notion_read_scope([root], 'fixture-token')
+        self.assertTrue(complete)
+        self.assertEqual(set(scope), {root, child, new_child})
+        self.assertEqual({call.args[0] for call in fetch.call_args_list}, set(scope))
+
+    def test_failed_background_scope_refresh_preserves_last_complete_inventory(self):
+        root, child, saved_path = self.expired_scope()
+        original = saved_path.read_bytes()
+        new_child = 'c' * 32
+        with (patch.object(client, 'get_notion_settings', return_value={
+                  'token': 'fixture-token', 'database_ids': [root]}),
+              patch.object(read_scope, 'refresh_notion_read_scope',
+                  return_value=({root: root, new_child: root}, False)) as refresh,
+              patch.object(client, 'fetch_notion_database_schema', return_value={}) as fetch):
+            self.assertEqual(client.warm_notion_database_cache(), 3)
+        refresh.assert_called_once()
+        self.assertEqual(saved_path.read_bytes(), original)
+        self.assertFalse(read_scope.resolve_notion_read_scope([root], 'fixture-token')[1])
+        self.assertEqual({call.args[0] for call in fetch.call_args_list}, {root, child, new_child})
+
+    def test_refreshed_scope_proves_an_empty_exact_title_query_is_complete(self):
+        root, child, _ = self.expired_scope()
+        settings = {'token': 'fixture-token', 'database_ids': [root]}
+        with (patch.object(client, 'get_notion_settings', return_value=settings),
+              patch.object(read_scope, 'refresh_notion_read_scope', return_value=({root: root, child: root}, True)),
+              patch.object(client, 'fetch_notion_database_schema', return_value={}),
+              patch.object(search, 'get_notion_settings', return_value=settings),
+              patch.object(search, 'fetch_notion_database_title', return_value='업무'),
+              patch.object(search, 'notion_property_schema', return_value={'제목': {'type': 'title'}}),
+              patch.object(search, 'notion_post_json', return_value=response({'results': [], 'has_more': False}))):
+            client.warm_notion_database_cache()
+            stage = search.execute_notion_search("노션에서 '없는 문서' 찾아줘", include_blocks=False)
+        self.assertEqual(stage['notion_pages'], [])
+        self.assertTrue(stage['meta']['search_complete'])
+        self.assertEqual(stage['meta']['incomplete_reasons'], [])
+
+    def test_concurrent_complete_scope_updates_publish_intact_snapshots(self):
+        root, first, second = 'a' * 32, 'b' * 32, 'c' * 32
+        barrier = Barrier(2)
+        original_replace = Path.replace
+        def replace(source, target):
+            barrier.wait(timeout=5)
+            return original_replace(source, target)
+        with (tempfile.TemporaryDirectory() as directory,
+              patch.object(read_scope, 'RUNTIME_DIR', Path(directory)),
+              patch.object(Path, 'replace', replace),
+              ThreadPoolExecutor(max_workers=2) as executor):
+            futures = [executor.submit(read_scope.save_complete_notion_read_scope,
+                [root], {root: root, child: root}, datetime.now(timezone.utc).isoformat())
+                for child in (first, second)]
+            for future in futures:
+                future.result(timeout=10)
+            saved = json.loads((Path(directory) / read_scope.READ_SCOPE_FILENAME).read_text())
+            self.assertIn(saved['read_scope'], ({root: root, first: root}, {root: root, second: root}))
+            self.assertEqual(list(Path(directory).glob('*.tmp')), [])
 
     def test_scope_follows_ownership_not_relations_and_cache_tracks_token(self):
         root, child, outside = 'a' * 32, 'b' * 32, 'c' * 32

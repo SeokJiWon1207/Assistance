@@ -376,13 +376,13 @@ def fetch_notion_database_title(database_id: str) -> str:
 
 def warm_notion_database_cache() -> int:
     """검색 대상 DB의 메타데이터를 사용자 요청 전에 채운다."""
-    from backend.notion.read_scope import resolve_notion_read_scope
+    from backend.notion.read_scope import ensure_notion_read_scope
 
     settings = get_notion_settings()
     database_ids = list(settings.get("database_ids") or [])
     if not settings.get("token") or not database_ids:
         return 0
-    read_scope, _complete = resolve_notion_read_scope(database_ids, settings["token"])
+    read_scope, _complete = ensure_notion_read_scope(database_ids, settings["token"])
     warmed = 0
     for database_id in dict.fromkeys([*read_scope, *(root for root in read_scope.values() if root)]):
         try:
