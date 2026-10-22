@@ -126,6 +126,38 @@ class KeywordTopicIntegrityTests(unittest.TestCase):
         self.assertEqual(result["issues_list"], [])
         self.assertEqual(result["meta"]["found_count"], 0)
 
+    def test_detail_display_requests_preserve_search_results_and_add_summaries(self):
+        issues = [
+            raw_issue(301, "로그인 오류", description="재접속 시 빈 화면이 표시됨"),
+            raw_issue(302, "주문 오류", description="주문 버튼이 동작하지 않음"),
+        ]
+        for detail in ("자세히", "자세하게", "상세히", "상세하게", "요약 포함해서", "요약까지", "요약도"):
+            question = f"로그인 이슈 {detail} 보여줘"
+            with self.subTest(question=question), patch.object(
+                mantis, "stream_complete_store", return_value=nullcontext(issues),
+            ):
+                result = retrieval.run_retrieval_pipeline(question, 5, {"mantis": True}, {"source": "mantis"})
+                self.assertEqual([row["id"] for row in retrieval.collect_retrieved_issues(result, 5)], [301])
+                self.assertEqual(result["keyword"], "로그인")
+                answer = format_deterministic_issue_answer(question, result["constraints"], result, 5)
+                self.assertIn("요약: 재접속 시 빈 화면이 표시됨", answer)
+                self.assertNotIn("주문 오류", answer)
+
+    def test_detail_display_cleanup_preserves_quoted_and_compound_topics(self):
+        cases = (
+            ('로그인 "상세히" 이슈 자세하게 보여줘', "로그인 상세히 안내 오류", "로그인 오류"),
+            ("로그인 '요약도' 이슈 상세하게 보여줘", "로그인 요약도 오류", "로그인 오류"),
+            ("요약도구 이슈 상세히 보여줘", "요약도구 오류", "로그인 오류"),
+            ("상세히보기 이슈 자세하게 보여줘", "상세히보기 오류", "로그인 오류"),
+        )
+        for question, matching_title, other_title in cases:
+            issues = [raw_issue(301, matching_title), raw_issue(302, other_title)]
+            with self.subTest(question=question), patch.object(
+                mantis, "stream_complete_store", return_value=nullcontext(issues),
+            ):
+                result = retrieval.run_retrieval_pipeline(question, 5, {"mantis": True}, {"source": "mantis"})
+                self.assertEqual([row["id"] for row in retrieval.collect_retrieved_issues(result, 5)], [301])
+
     def test_mantis_scan_accepts_script_aliases_in_body_and_notes(self):
         issues = [
             raw_issue(301, "언어 교체", description="VBScript 대신 JavaScript 사용"),
