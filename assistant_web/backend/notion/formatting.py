@@ -356,6 +356,10 @@ def format_deterministic_notion_answer(
         )
     else:
         intro = f"🔍 Notion에서 관련 항목 {len(pages)}건을 찾았어요. {sort_label}으로 정리했습니다."
+    if scope_meta.get("coverage_basis") == "api_properties":
+        criteria += ", 검색 범위: 저장본의 전체 제목·속성 (제목 일치 후보의 현재 속성 재확인)"
+        if scope_meta.get("excluded_document_count"):
+            criteria += " (삭제·범위 밖 이동·접근 불가 문서 제외)"
     if scope_meta.get("coverage_basis") == "api_readable":
         criteria += ", 검색 범위: 저장본의 API 지원 제목·속성·본문 전체"
         excluded = scope_meta.get("excluded_element_count", 0)

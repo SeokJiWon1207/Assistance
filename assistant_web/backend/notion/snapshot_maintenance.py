@@ -82,3 +82,108 @@ def refresh_snapshot(index, database_ids, *, max_seconds=3600, max_pages=1000, r
             refresh_page(index, identifier, database_ids, deadline)
             attempted += 1
     return {**coverage(index, database_ids), 'attempted_page_count': attempted}
+
+
+def _refresh_catalog_properties(index, database_ids, deadline, refresh_age):
+    """DB 목록에 열거되지 않는 자식 속성과 잘린 제목만 보완한다. 본문은 읽지 않는다."""
+    import json
+    from backend.notion.property_snapshot import pending_properties, read_full_properties
+    from backend.notion.complete_snapshot import _time
+    allowed = {identifier.replace('-', '').lower() for identifier in database_ids}
+    now = time.time()
+    with index._database() as db:
+        placeholders, params = index._scope(database_ids)
+        rows = []
+        for row in db.execute(
+            f'SELECT page_id, database_id, raw_page, updated_at FROM pages '
+            f'WHERE fingerprint=? AND database_id IN ({placeholders})', params):
+            raw = json.loads(row['raw_page'])
+            child = raw.get('parent', {}).get('type') != 'database_id'
+            title_pending = any(prop.get('type') == 'title' for _name, prop in pending_properties(raw))
+            if title_pending or (child and not 0 <= now - _time(row['updated_at']) < refresh_age):
+                rows.append({**dict(row), 'raw': raw, 'child': child})
+    budget = _Budget(deadline, max(1000, len(rows) * 8))
+    parents = {}
+    refreshed = failures = 0
+    for row in rows:
+        raw = row['raw']
+        if time.monotonic() >= deadline:
+            return refreshed, failures + 1
+        try:
+            if row['child']:
+                raw = _request(f"pages/{row['page_id']}", budget)
+                if raw.get('archived') or raw.get('in_trash'):
+                    index.exclude_page(row['page_id'], 'archived')
+                    continue
+                parents = _page_ancestors(raw, budget)
+                memberships = [identifier for identifier in allowed if page_belongs_to_database(raw, identifier, parents)]
+                if not memberships:
+                    known_outside = any((obj.get('parent') or {}).get('type') in {'database_id', 'workspace'}
+                                        for obj in [raw, *parents.values()])
+                    if known_outside:
+                        index.exclude_page(row['page_id'], 'outside_scope')
+                        continue
+                    failures += 1
+                    continue
+                row['database_id'] = memberships[0]
+                if not _valid_page(raw, row['page_id'], row['database_id'], allowed, parents):
+                    failures += 1
+                    continue
+            raw = read_full_properties(raw, budget)
+            index.upsert_page(row['database_id'], raw, parent_pages=parents)
+            refreshed += 1
+        except _ReadFailure as exc:
+            if str(exc) in {'http_403', 'http_404'}:
+                index.exclude_page(row['page_id'], str(exc))
+            else:
+                failures += 1
+    return refreshed, failures
+
+
+def refresh_catalog_cache(*, max_seconds=900):
+    """앱의 사전 로딩에서 제목·속성 목록을 유지한다. 운영 타이머와 같은 잠금을 쓴다."""
+    import fcntl
+    import shutil
+    from backend.config import RUNTIME_DIR, get_notion_settings
+    from backend.notion.body_index import BodyIndex, body_index_path, open_body_index
+    from backend.notion.complete_snapshot import _time, catalog_max_age_seconds
+    from backend.notion.read_scope import ensure_notion_read_scope
+    settings = get_notion_settings()
+    if not settings.get('token') or not settings.get('database_ids'):
+        return {'status': 'skipped'}
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    with (RUNTIME_DIR / 'notion-snapshot.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {'status': 'already_running'}
+        mantis = RUNTIME_DIR / 'mantis_complete.sqlite3'
+        size = mantis.stat().st_size if mantis.exists() else 0
+        if shutil.disk_usage(RUNTIME_DIR).free < max(256 * 1024**2, size + size // 4 + 160 * 1024**2):
+            return {'status': 'insufficient_disk_space'}
+        scope, complete = ensure_notion_read_scope(settings['database_ids'], settings['token'])
+        if not complete:
+            return {'status': 'incomplete'}
+        index = open_body_index()
+        if index is None:
+            if body_index_path().exists():
+                return {'status': 'index_unavailable'}
+            index = BodyIndex(body_index_path())
+        database_ids = list(scope)
+        refresh_age = min(3600, catalog_max_age_seconds() / 2)
+        now = time.time()
+        with index._database() as db:
+            placeholders, params = index._scope(database_ids)
+            catalogs = list(db.execute(
+                f'SELECT * FROM catalogs WHERE fingerprint=? AND database_id IN ({placeholders})', params))
+        refresh = len(catalogs) != len(params) - 1 or any(
+            not row['complete'] or not 0 <= now - _time(row['updated_at']) < refresh_age for row in catalogs)
+        deadline = time.monotonic() + max_seconds
+        if refresh:
+            sync_notion_body_index(database_ids, max_pages=0, max_seconds=max_seconds, index=index)
+        refreshed, failures = _refresh_catalog_properties(index, database_ids, deadline, refresh_age)
+        from backend.notion.catalog_search import _catalog_candidates
+        if _catalog_candidates(index, database_ids, '') is None:
+            failures += 1
+        return {'status': 'incomplete' if failures else 'refreshed' if refresh or refreshed else 'fresh',
+                'refreshed_property_count': refreshed, 'failed_property_count': failures}
