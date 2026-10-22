@@ -1,5 +1,6 @@
 # 의존성 감사에서 확인한 취약점의 패치 버전을 유지한다.
 multidict==6.9.1
 oauthlib==4.0.0
+opentelemetry-api==1.45.1
 pyjwt==2.15.0
 urllib3==2.8.0
