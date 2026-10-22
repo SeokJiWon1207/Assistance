@@ -262,10 +262,16 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-chart-legend .is-rest, .dashboard-track .is-rest { background: color-mix(in srgb, var(--blue) 55%, var(--surface)); }
 .dashboard-chart-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .dashboard-chart-note b { color: var(--text-soft); }
-.dashboard-bars { display: grid; gap: 4px; }
+/* 모든 행이 열 너비를 공유해 배지 유무와 숫자 자릿수에 관계없이 끝선을 맞춘다. */
+.dashboard-bars {
+  display: grid;
+  grid-template-columns: minmax(84px, 112px) minmax(0, 1fr) max-content max-content;
+  gap: 4px 10px;
+}
 .dashboard-bar {
   display: grid;
-  grid-template-columns: minmax(84px, 112px) minmax(0, 1fr) minmax(64px, auto);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: 10px;
   min-height: 30px;
@@ -278,8 +284,19 @@ button.workspace-metric.is-active { border-color: color-mix(in srgb, var(--blue)
 .dashboard-track { display: block; height: 14px; overflow: hidden; border-radius: 4px; background: var(--surface-alt); }
 .dashboard-track > span { display: flex; height: 100%; min-width: 2px; }
 .dashboard-track i { display: block; height: 100%; }
-.dashboard-bar-value { display: flex; align-items: center; gap: 4px; color: var(--text-soft); font-size: 12px; white-space: nowrap; }
-.dashboard-spike-badge { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); font-size: 12px; font-weight: 700; }
+.dashboard-bar-value {
+  display: grid;
+  grid-column: span 2;
+  grid-template-columns: subgrid;
+  align-items: center;
+  column-gap: 4px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.dashboard-spike-badge { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); font-size: 12px; font-weight: 700; text-align: center; }
 .dashboard-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .dashboard-column {
   display: grid;
