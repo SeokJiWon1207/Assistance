@@ -90,7 +90,6 @@ export const els = {
   sendBtn: document.querySelector("#sendBtn"),
   temperature: document.querySelector("#temperature"),
   temperatureValue: document.querySelector("#temperatureValue"),
-  answerStyle: document.querySelector("#answerStyle"),
   topP: document.querySelector("#topP"),
   topK: document.querySelector("#topK"),
   minP: document.querySelector("#minP"),
@@ -191,7 +190,6 @@ export const els = {
 
 export const defaultOptions = {
   temperature: "0.3",
-  answerStyle: "normal",
   topP: "",
   topK: "",
   minP: "",

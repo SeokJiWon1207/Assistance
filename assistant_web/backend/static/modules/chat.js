@@ -648,7 +648,6 @@ function autoResizeInput() {
 function resetOptions() {
   els.temperature.value = defaultOptions.temperature;
   els.temperatureValue.textContent = defaultOptions.temperature;
-  els.answerStyle.value = defaultOptions.answerStyle;
   els.topP.value = defaultOptions.topP;
   els.topK.value = defaultOptions.topK;
   els.minP.value = defaultOptions.minP;
@@ -683,7 +682,6 @@ function stopValues() {
 function generationPayload() {
   const payload = {
     temperature: Number(els.temperature.value),
-    answerStyle: els.answerStyle.value,
     responseFormat: "text",
     showSources: showSourcesEnabled(),
     searchLimit: Number(els.searchLimit.value),

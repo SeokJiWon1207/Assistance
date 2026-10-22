@@ -1,3 +1,13 @@
+{"q":"최근 이슈 자세히 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 자세하게 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 상세히 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 상세하게 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 요약 포함해서 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 요약까지 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"최근 이슈 요약도 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
+{"q":"로그인 이슈 상세히 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":["로그인"],"mantis_deterministic":true}
+{"q":"요약도구 이슈 자세하게 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":["요약도구"],"mantis_deterministic":true}
+{"q":"로그인 \"상세히\" 이슈 자세하게 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":["로그인","상세히"],"mantis_deterministic":true}
 {"q":"신입사원 관련 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":["신입"]}
 {"q":"김보람 선임 온보딩 문서 어디 있어","source":"notion","authority":"authoritative","people":["김보람"],"candidate_people":[]}
 {"q":"협력업체 담당자 인수인계 문서","source":"notion","authority":"authoritative","people":[],"candidate_people":[]}

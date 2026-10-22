@@ -493,8 +493,10 @@ class FrontendCoreTests(unittest.TestCase):
             "abTestToggle",
         ):
             self.assertIn(element_id, admin_parser.ids)
-        for element_id in ("answerStyle", "darkModeToggle", "showSources"):
+        for element_id in ("darkModeToggle", "showSources"):
             self.assertIn(element_id, rest_parser.ids)
+        # 답변 형식은 질문 문구로 지정하므로 별도 선택 컨트롤을 두지 않는다.
+        self.assertNotIn("answerStyle", rest_parser.ids)
         self.assertIn("els.adminGenerationSettings.hidden = !adminToolsVisible", bootstrap_js)
 
     def test_query_basis_block_is_drawn_smaller_than_the_answer(self):

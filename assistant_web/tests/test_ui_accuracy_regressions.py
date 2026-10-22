@@ -92,6 +92,18 @@ class UiAccuracyRegressions(unittest.TestCase):
         self.assertIn("기존 플래그의 반대 값을 세팅하지 않음", answer)
         self.assertIn("반대 값을 세팅하도록 수정", answer)
 
+    def test_detail_request_in_question_adds_issue_summaries_without_style_setting(self):
+        rows = [
+            {"id": 31001 + i, "project": "고객사", "summary": f"제목{i}", "status": "confirmed",
+             "handler": "담당자", "created_at": "2026-10-01", "description": f"본문 요약{i}"}
+            for i in range(2)
+        ]
+        retrieval = {"stages": [{"status": "ok", "issues_list": rows}]}
+        for text, expected in (("최근 이슈 자세히 보여줘", True), ("최근 이슈 보여줘", False)):
+            with self.subTest(text=text):
+                answer = format_deterministic_issue_answer(text, extract_query_constraints(text), retrieval, 5)
+                self.assertEqual("   - 요약: 본문 요약0" in answer, expected)
+
     def test_aging_uses_complete_data_and_requested_limit(self):
         rows = [{"id": 30000 + i, "summary": str(i), "created_at": (date.today()-timedelta(days=500-i)).isoformat(),
                  "status": {"name": "confirmed"}, "handler": {"real_name": "권한별"}} for i in range(44)]

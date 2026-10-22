@@ -151,6 +151,14 @@ def without_report_request_terms(terms: List[str], text: str) -> List[str]:
 def build_keyword_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
     # 조건 해제 명령은 원문 검색 주제가 아니다. 인용한 제목·키워드는 보존한다.
     text = remove_report_request(strip_title_date_basis_instruction(without_scope_clear_phrases(text)))
+    # 자세한 출력 요청을 원문 검색의 AND 조건으로 만들지 않는다.
+    # 인용한 검색어와 '요약도구'처럼 더 긴 단어 안의 일치는 보존한다.
+    text = re.sub(
+        r'''["'“‘][^"'”’]*["'”’]|'''
+        r"(?<!\w)(?:자세히|자세하게|상세히|상세하게|요약\s*(?:도|까지|포함(?:해서|하여|해)?))(?!\w)",
+        lambda match: match[0] if match[0][0] in "\"'“‘" else " ",
+        text,
+    )
     text = strip_conditional_presence_instruction(text)
     text = re.sub(r"빠짐\s*없이\s*(?:보여\s*줘|알려\s*줘|정리해\s*줘)?", " ", text)
     text = strip_title_bracket_platform_instruction(text)
