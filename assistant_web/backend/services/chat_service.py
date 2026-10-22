@@ -1252,6 +1252,7 @@ class ChatService:
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         started = perf_counter()
+        verification_question: Optional[str] = None
         def finalize_chat_response(response: Dict[str, Any]) -> Dict[str, Any]:
             response["timings"] = {"stages": dict(TIMINGS.get() or {}),
                                    "beforeFinalizationMs": round((perf_counter() - started) * 1000, 2)}
@@ -1260,6 +1261,7 @@ class ChatService:
                 latest_user_text,
                 response,
                 user_uid=str((user or {}).get("uid") or "").strip(),
+                **({"verification_question": verification_question} if verification_question is not None else {}),
             )
 
         emit_chat_status("질문과 대화 맥락을 분석하고 있습니다", "analysis")
@@ -1280,6 +1282,10 @@ class ChatService:
             )
 
         context = prepare_chat_pipeline(request, latest_user_text, user)
+        if (context.intent_plan or {}).get("planner") == "unified_llm":
+            # 사용자에게 묶인 서버 기록에서 복원한 계획 입력을 검증에도 사용한다.
+            # 응답/모델이 반환한 query나 grounding_text를 검증 근거로 채택하지 않는다.
+            verification_question = context.retrieval_text
         with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
             return self._complete_response(request, context, user, finalize_chat_response)
 

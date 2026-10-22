@@ -42,6 +42,8 @@ def finalize_chat_response(
     question: str,
     response: Dict[str, Any],
     user_uid: str = "",
+    *,
+    verification_question: str | None = None,
 ) -> Dict[str, Any]:
     checkpoint()
     finalization_started = perf_counter()
@@ -72,7 +74,7 @@ def finalize_chat_response(
     mode = (response.get("raw") or {}).get("mode", "model")
     emit_chat_status("근거와 답변을 검증하고 있습니다", "verification")
     verification = build_verification(
-        question,
+        verification_question if verification_question is not None else question,
         response.get("content", ""),
         evidence_sources,
         retrieval_result,
@@ -131,7 +133,8 @@ def finalize_chat_response(
                 str(baseline.get("content") or ""), retrieval_result,
             )}
             baseline_verification = build_verification_report(
-                question, baseline.get("content", ""), baseline.get("sources") or [],
+                verification_question if verification_question is not None else question,
+                baseline.get("content", ""), baseline.get("sources") or [],
                 retrieval_result, "model",
             )
             baseline_delivery = decide_delivery(baseline_verification)

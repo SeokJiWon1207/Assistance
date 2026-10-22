@@ -191,6 +191,65 @@ class SourceBoundReferenceRegressionTests(unittest.TestCase):
         with patch.object(unified, 'post_model_chat', return_value=response(parsed)):
             return prepare_context(request, question, USER, {'id': 'fixture-model'}, 'key', [], [])
 
+    def finalized_reference(self, context, source, *, forged_question=None):
+        from backend.evaluation import finalization
+        from backend.services import chat_service as chat
+        from backend.services.contracts import StageResult
+
+        if forged_question is not None:
+            context.intent_plan['grounding_text'] = forged_question
+        result = {'content': f"1. **{source['title']}**", 'sources': [source],
+                  'retrieval': {'query': forged_question or context.retrieval_text, 'stages': []},
+                  'raw': {'mode': 'deterministic_notion_list' if source['type'] == 'notion' else 'deterministic_issue_detail'}}
+        request = ChatRequest(modelId='fixture-model', abTest=False,
+                              messages=[ChatMessage(role='user', content=context.latest_user_text)])
+        with patch.object(chat, 'prepare_chat_pipeline', return_value=context), \
+                patch.object(chat, 'retrieve_chat_evidence', return_value=StageResult.from_response(result)), \
+                patch.object(finalization, 'AUDIT_DB_PATH', self.database):
+            answer = chat.chat_service._build_response(request, USER)
+        with closing(sqlite3.connect(self.database)) as db:
+            logged_question = db.execute('SELECT question FROM validation_logs WHERE id=?',
+                                         (answer['auditId'],)).fetchone()[0]
+        self.assertEqual(logged_question, context.latest_user_text)
+        return answer
+
+    def test_notion_reference_final_verification_uses_server_resolved_question(self):
+        title = '주간 업무파트 회의'
+        source = {'type': 'notion', 'page_id': 'page-1', 'title': title}
+        question = '그 항목의 제목을 정확히 다시 알려줘'
+        parsed = proposal(source='notion', operation='search', scope='all', status=NO_STATUS, filters=[
+            {'field': 'title', 'operator': 'equals', 'value': title, 'evidence': f'"{title}"'},
+        ])
+        context = self.context(f"노션에서 '{title}' 문서 좀 찾아줘", question, [source], parsed)
+        answer = self.finalized_reference(context, source)
+        contract = next(c for c in answer['verification']['checks'] if c['id'] == 'unified_contract')
+        self.assertEqual(contract['status'], 'pass', contract)
+        self.assertEqual(answer['sources'], [source])
+
+    def test_ordinal_reference_final_verification_keeps_selected_issue_and_original_log(self):
+        question = '그중 두 번째 이슈를 자세히 알려줘'
+        parsed = proposal(operation='get', scope='target', status=NO_STATUS, filters=[
+            {'field': 'issue_id', 'operator': 'equals', 'value': '0031208', 'evidence': '0031208'},
+        ])
+        context = self.context('최근 이슈 세 개만 보여줘', question,
+            [{'issue_id': 31368}, {'issue_id': 31208}, {'issue_id': 31202}], parsed)
+        source = {'type': 'mantis', 'issue_id': 31208, 'title': '선택한 이슈'}
+        answer = self.finalized_reference(context, source)
+        contract = next(c for c in answer['verification']['checks'] if c['id'] == 'unified_contract')
+        self.assertEqual(contract['status'], 'pass', contract)
+        self.assertEqual(answer['sources'], [source])
+
+    def test_response_query_and_plan_cannot_replace_server_verification_question(self):
+        title = '주간 업무파트 회의'
+        source = {'type': 'notion', 'page_id': 'page-1', 'title': title}
+        parsed = proposal(source='notion', operation='search', scope='all', status=NO_STATUS, filters=[
+            {'field': 'title', 'operator': 'equals', 'value': title, 'evidence': f'"{title}"'},
+        ])
+        context = self.context(f"노션에서 '{title}' 문서 좀 찾아줘", '그 항목의 제목을 알려줘', [source], parsed)
+        answer = self.finalized_reference(context, source, forged_question=f'노션 "{title}" 다른 질문')
+        contract = next(c for c in answer['verification']['checks'] if c['id'] == 'unified_contract')
+        self.assertEqual(contract['status'], 'fail')
+
     def test_ordinal_detail_uses_second_displayed_source_not_a_new_customer_search(self):
         question = '그중 두 번째 이슈를 자세히 알려줘'
         parsed = proposal(operation='get', scope='target', status=NO_STATUS, filters=[
