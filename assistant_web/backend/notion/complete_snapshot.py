@@ -297,7 +297,7 @@ def _refresh_pending_inline(index, database_ids, allowed):
 
 
 def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
-                             pre_body_constraints, body_clauses, keyword_clauses, limit):
+                             pre_body_constraints, body_clauses, keyword_clauses, limit, include_blocks=True):
     """전수 대조된 저장본만 사용하고, 불확실하면 기존 API 검색에 맡긴다.
 
     보류·변경 페이지가 몇 건뿐이면 그 페이지만 다시 읽고 한 번 더 검색한다."""
@@ -307,6 +307,15 @@ def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
     try:
         index = open_body_index()
         if index is None or not _scope_current(read_scope):
+            return None
+        blocks_enabled = os.getenv('NOTION_FETCH_PAGE_BLOCKS', 'true').lower() not in {'0', 'false', 'no'}
+        if constraints.get('exact_title') and not body_clauses and not keyword_clauses:
+            from backend.notion.catalog_search import search_catalog_snapshot
+            catalog_result = search_catalog_snapshot(index, database_ids, read_scope=read_scope,
+                constraints=constraints, terms=terms, limit=limit, include_blocks=include_blocks and blocks_enabled)
+            if catalog_result is not None:
+                return catalog_result
+        if not blocks_enabled:
             return None
         refreshed = 0
         for attempt in range(2):

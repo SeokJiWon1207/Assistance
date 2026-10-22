@@ -3,7 +3,7 @@ from copy import deepcopy
 from datetime import date
 import re
 
-from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES
+from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_ALIASES, MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.query_filters import normalize_filter_clause, clause_supported, SUPPORTED_FIELDS, values_for_clause
 from backend.query_planning import extract_relative_created_at_range
@@ -13,6 +13,14 @@ STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|�
 PENDING = re.compile(r'(?:이슈|업무|티켓).{0,20}남(?:았|아)|남(?:은|아\s*있는).{0,20}(?:이슈|업무|티켓)|미종료|미완료|안\s*끝난|못\s*끝낸')
 PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter'}
 STATUS_VALUES = set(MANTIS_STATUS_NAMES)
+_STATUS_LABEL = '(?:' + '|'.join(
+    re.escape(alias).replace(r'\ ', r'\s*')
+    for alias in sorted({alias for names in [*STATUS_ALIASES.values(), *MANTIS_STATUS_NAMES.values()]
+                         for alias in names}, key=len, reverse=True)
+) + ')'
+EXPLICIT_STATUS_REQUEST = re.compile(
+    rf'상태\s*(?:가|는|를|만|=|:)?\s*{_STATUS_LABEL}'
+    rf'|{_STATUS_LABEL}\s*(?:상태|이슈|업무|티켓|건|항목)', re.I)
 # 근거가 상대 등록일 표현 하나로만 된 경우에만 서버 달력 계산과 대조한다.
 # '지난달 15일 이후', '지난주 월요일'처럼 세부 조건이 붙으면 전체 기간과 다르므로 대조하지 않는다.
 # '30일 넘은' 같은 기준일 이전 조건은 상한만 있어 제외한다.
@@ -61,6 +69,11 @@ def check_status(question, status, followup, source, operation=None, report_kind
         require(not values or (mode == 'all' and set(values) == STATUS_VALUES), '상태 의도와 값이 모순됩니다')
     if operation != 'explain' and mode == 'unspecified' and PENDING.search(text) and not STATUS_ALL.search(text):
         require(False, '미종료 표현을 상태 조건 없이 집계할 수 없습니다')
+    if (operation in {'search', 'count', 'aggregate'} and mode == 'unspecified'
+            and EXPLICIT_STATUS_REQUEST.search(text) and not STATUS_ALL.search(text)):
+        from backend.intent.entities import extract_status_constraints
+        explicit = extract_status_constraints(text)
+        require(not explicit, '명시된 상태 조건이 누락됐습니다: ' + ', '.join(explicit))
 
 
 def evidence_is_grounded(evidence, question):

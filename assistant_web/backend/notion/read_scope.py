@@ -6,9 +6,11 @@
 
 import json
 import os
+import tempfile
 import time
 from functools import lru_cache
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Tuple
 
 import requests
@@ -38,7 +40,7 @@ def child_database_search_enabled() -> bool:
 
 def _read_scope_max_age() -> int:
     # Scope discovery is much less volatile than the title catalog and is
-    # refreshed only by maintenance. Keep its lifetime independent from the
+    # refreshed by background warmup and maintenance. Keep its lifetime independent from the
     # 24-hour title-index optimization window.
     try:
         configured = int(os.getenv("NOTION_READ_SCOPE_TTL_SECONDS", "2592000"))
@@ -61,20 +63,20 @@ def save_complete_notion_read_scope(
         raise ValueError("complete Notion read scope must contain every configured root")
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     path = RUNTIME_DIR / READ_SCOPE_FILENAME
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(
-        json.dumps(
-            {
-                "generated_at": generated_at,
-                "scope_complete": True,
-                "root_database_ids": list(normalized_roots),
-                "read_scope": normalized_scope,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    temporary.replace(path)
+    payload = json.dumps({
+        "generated_at": generated_at,
+        "scope_complete": True,
+        "root_database_ids": list(normalized_roots),
+        "read_scope": normalized_scope,
+    }, ensure_ascii=False)
+    fd, name = tempfile.mkstemp(prefix=".notion-read-scope-", suffix=".tmp", dir=RUNTIME_DIR)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def persisted_notion_read_scope(roots: tuple[str, ...]) -> tuple[Dict[str, str], bool]:
@@ -234,6 +236,19 @@ def refresh_notion_read_scope(roots: list[str], token: str) -> tuple[Dict[str, s
     return dict(scope), complete
 
 
+def ensure_notion_read_scope(roots: list[str], token: str) -> tuple[Dict[str, str], bool]:
+    """백그라운드·점검 실행에서 만료된 범위를 새로 확인하고 완전한 결과만 저장한다."""
+    scope, complete = resolve_notion_read_scope(roots, token)
+    if complete:
+        return scope, True
+    discovered, complete = refresh_notion_read_scope(roots, token)
+    if complete:
+        save_complete_notion_read_scope(roots, discovered, datetime.now(timezone.utc).isoformat())
+        return discovered, True
+    # 실패한 탐색으로 마지막 검증 범위나 성공 시각을 덮어쓰지 않는다.
+    return {**scope, **discovered}, False
+
+
 def resolve_notion_read_scope(roots: list[str], token: str) -> tuple[Dict[str, str], bool]:
     normalized = tuple(_id(root) for root in roots)
     if not child_database_search_enabled():
@@ -243,6 +258,6 @@ def resolve_notion_read_scope(roots: list[str], token: str) -> tuple[Dict[str, s
         return persisted, complete
     # User-facing searches must not spend up to 45 seconds rebuilding the
     # descendant inventory while holding the integration-wide request slot.
-    # The maintenance script refreshes it explicitly; until then search only
+    # Background warmup and maintenance refresh it; until then search only
     # configured roots and report that the child scope is incomplete.
     return {identifier: identifier for identifier in normalized}, False

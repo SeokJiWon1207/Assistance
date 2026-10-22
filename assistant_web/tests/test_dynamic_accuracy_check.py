@@ -1,9 +1,13 @@
+import json
+import os
 import random
+import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.accuracy import dynamic_accuracy_check as accuracy
 
@@ -24,6 +28,45 @@ from backend.intent.constraints import extract_query_constraints
 
 
 class IndependentAccuracyOracleTests(unittest.TestCase):
+    def test_notion_accuracy_stops_before_sampling_when_child_scope_is_unverified(self):
+        from backend.notion import read_scope
+        root = 'a' * 32
+        with (patch.dict(os.environ, {'NOTION_API_TOKEN': 'fixture-token'}),
+              patch.object(accuracy, 'parse_notion_database_ids', return_value=[root]),
+              patch.object(read_scope, 'resolve_notion_read_scope', return_value=({root: root}, False)),
+              patch.object(read_scope, 'refresh_notion_read_scope', return_value=({root: root}, False)),
+              patch.object(read_scope, 'save_complete_notion_read_scope') as save,
+              patch.object(accuracy.requests, 'get') as get):
+            with self.assertRaisesRegex(RuntimeError, 'scope'):
+                accuracy.fetch_notion_snapshot()
+        save.assert_not_called()
+        get.assert_not_called()
+
+    def test_notion_accuracy_refreshes_expired_read_scope_before_collecting_questions(self):
+        from backend.notion import read_scope
+        root, child = 'a' * 32, 'b' * 32
+        with (tempfile.TemporaryDirectory() as directory,
+              patch.object(read_scope, 'RUNTIME_DIR', Path(directory)),
+              patch.dict(os.environ, {'NOTION_INCLUDE_CHILD_DATABASES': 'true', 'NOTION_API_TOKEN': 'fixture-token'})):
+            read_scope.save_complete_notion_read_scope([root], {root: root, child: root},
+                (datetime.now(timezone.utc) - timedelta(days=31)).isoformat())
+            events = []
+            def refresh(*_args):
+                events.append('scope')
+                return {root: root, child: root}, True
+            def metadata(*_args, **_kwargs):
+                events.append('metadata')
+                return Mock(json=lambda: {'title': []})
+            with (patch.object(accuracy, 'parse_notion_database_ids', return_value=[root]),
+                  patch.object(read_scope, 'refresh_notion_read_scope', side_effect=refresh),
+                  patch.object(accuracy.requests, 'get', side_effect=metadata),
+                  patch.object(accuracy.requests, 'post', return_value=Mock(json=lambda: {'results': [], 'has_more': False}))):
+                self.assertEqual(accuracy.fetch_notion_snapshot(), [])
+            self.assertEqual(events, ['scope', 'metadata'])
+            saved = json.loads((Path(directory) / read_scope.READ_SCOPE_FILENAME).read_text())
+            self.assertTrue(saved['scope_complete'])
+            self.assertTrue(read_scope.resolve_notion_read_scope([root], 'fixture-token')[1])
+
     def test_platform_oracle_uses_only_the_original_media_field(self):
         row = {"id": 29242, "summary": "MTS 공용 작업", "description": "HTS와 MTS 작업",
                "project": {"name": "공용"}, "custom_fields": []}

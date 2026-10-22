@@ -1510,12 +1510,12 @@ def execute_notion_search(
     database_ids, selected_database_role = select_notion_database_ids(
         database_ids, query_text, terms, notion_constraints,
     )
-    if scope_complete and os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() not in {"0", "false", "no"}:
+    if scope_complete:
         from backend.notion.complete_snapshot import search_complete_snapshot
         snapshot_result = search_complete_snapshot(
             database_ids, terms=terms, read_scope=read_scope, constraints=notion_constraints,
             pre_body_constraints=pre_body_constraints, body_clauses=body_clauses,
-            keyword_clauses=keyword_clauses, limit=limit)
+            keyword_clauses=keyword_clauses, limit=limit, include_blocks=include_blocks)
         if snapshot_result is not None:
             snapshot_result["meta"]["selected_database_role"] = selected_database_role
             return snapshot_result
