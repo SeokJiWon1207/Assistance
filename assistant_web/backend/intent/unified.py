@@ -32,6 +32,7 @@ status: {"mode":"unspecified|all|open|include|exclude|inherit|unclear","values":
 unspecified=상태 요청 없음. all=상태무관/전체 상태/상태 전체/종료도 포함/상태 제한 해제의 명시적 요청. open=아직 끝나지 않아 수행·확인할 일이 남은 업무(남았어/남아 있는/마무리 못 한/미종료). '남아 있는 이슈 모두 몇 개'는 반드시 open이며 모두를 all 근거로 쓰면 안 된다.
 include/exclude의 values는 new,feedback,acknowledged,confirmed,assigned,developed,resolved,closed 중 실제 상태 목록.
 신규=new, 정보부족=feedback, 검토=acknowledged, 확인=confirmed, 할당=assigned, 개발완료=developed, 해결=resolved, 종료/완료=closed.
+'확인된 이슈'는 confirmed, '종료된 이슈'는 closed를 조회하는 명시적 상태 조건이다. '확인된 사실을 설명' 같은 서술 지시와 구분하고, 목록의 상태 표현을 unspecified로 생략하지 않는다.
 open은 resolved와 closed를 제외하고 new/feedback/acknowledged/confirmed/assigned/developed를 포함한다. open/all/unspecified/inherit에서는 values=[]로 둔다.
 '종료만 제외, 해결은 포함'은 exclude [closed]이다. Mantis status를 filters에 중복 생성하지 않는다. 기간·시간·공수가 남은 것은 상태가 아니고, 인용된 제목도 상태 조건이 아니다.
 explain의 '프로그램 종료 원인/처리 완료 여부/노트의 전달일'은 검색 상태/등록일 조건이 아니다. 특정 이슈를 찾아 기록을 설명한다. 개별 상태를 필터로 명시한 경우만 적용한다.

@@ -1,3 +1,4 @@
+{"q":"코스콤에서 확인된 이슈 최근 두 개만 보여줄래?","source":"mantis","authority":"authoritative","statuses":["confirmed"],"people":[],"unified":{"source":"mantis","operation":"search","scope":"team","followup":false,"filters":[{"field":"customer","operator":"equals","value":"코스콤","evidence":"코스콤"}],"status":{"mode":"unspecified","values":[],"evidence":""},"clear_fields":[],"terms":[],"group_by":null,"limit":2},"unified_rejected":"상태","candidate_people":[]}
 {"q":"최근 이슈 자세히 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
 {"q":"최근 이슈 자세하게 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}
 {"q":"최근 이슈 상세히 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"mantis_terms":[],"mantis_deterministic":true}

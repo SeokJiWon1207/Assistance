@@ -28,6 +28,53 @@ def response(parsed):
 
 
 class ExplicitConditionRegressionTests(unittest.TestCase):
+    def test_explicit_status_cannot_be_omitted_from_a_list_plan(self):
+        for question in (
+            '코스콤에서 확인된 이슈 최근 두 개만 보여줄래?',
+            '코스콤에서 확인된 이슈는 빼고 최근 두 개 보여줘',
+            '코스콤에서 상태가 confirmed인 이슈 몇 개야?',
+        ):
+            with self.subTest(question=question), self.assertRaisesRegex(ValueError, '상태'):
+                validate_plan(question, proposal(operation='search', scope='team', status=NO_STATUS,
+                    filters=[{'field': 'customer', 'operator': 'equals', 'value': '코스콤',
+                              'evidence': '코스콤'}]), USER, {})
+
+    def test_planner_retries_an_omitted_display_status_before_searching(self):
+        question = '코스콤에서 확인된 이슈 최근 두 개만 보여줄래?'
+        omitted = proposal(operation='search', scope='team', status=NO_STATUS, limit=2,
+            filters=[{'field': 'customer', 'operator': 'equals', 'value': '코스콤',
+                      'evidence': '코스콤'}])
+        corrected = {**omitted, 'status': {
+            'mode': 'include', 'values': ['confirmed'], 'evidence': '확인된 이슈',
+        }}
+        with patch.object(unified, 'post_model_chat', side_effect=[response(omitted), response(corrected)]) as model:
+            plan = unified.plan_question(question, {'id': 'fixture-model'}, 'key', USER, {})
+        self.assertEqual(model.call_count, 2)
+        constraints = plan['resolved_constraints']
+        self.assertEqual(constraints['statuses'], ['confirmed'])
+        issue = {'project': {'name': '106Koscom(코스콤)'}, 'handler': {'real_name': '석지원'}}
+        self.assertTrue(issue_matches_constraints({**issue, 'status': {'name': 'confirmed'}}, constraints))
+        self.assertFalse(issue_matches_constraints({**issue, 'status': {'name': 'closed'}}, constraints))
+
+    def test_status_omission_check_does_not_filter_quoted_titles_or_explanations(self):
+        for question, operation, filters in (
+            ('제목에 "확인된 이슈"가 포함된 문서를 보여줘', 'search', [
+                {'field': 'title', 'operator': 'contains', 'value': '확인된 이슈',
+                 'evidence': '"확인된 이슈"'},
+            ]),
+            ('#31208 이슈에서 확인된 사실과 해결 내용을 설명해줘', 'explain', [
+                {'field': 'issue_id', 'operator': 'equals', 'value': '31208', 'evidence': '#31208'},
+            ]),
+            ('프로그램 종료 관련 이슈 찾아줘', 'search', [
+                {'field': 'keyword', 'operator': 'contains', 'value': '프로그램 종료',
+                 'evidence': '프로그램 종료'},
+            ]),
+        ):
+            with self.subTest(question=question):
+                plan = validate_plan(question, proposal(operation=operation, scope='target',
+                    status=NO_STATUS, filters=filters), USER, {})
+                self.assertEqual(plan['resolved_constraints']['statuses'], [])
+
     def test_ordinal_grading_requires_selected_id_not_an_implicit_new_team_search(self):
         from scripts.accuracy.dynamic_accuracy_check import (
             AccuracyCase, FollowUpScenario, expected_follow_up_constraints, grade,
