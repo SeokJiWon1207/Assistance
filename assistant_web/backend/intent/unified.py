@@ -32,6 +32,7 @@ field: customer,platform,owner,reporter,registered_reporter,issue_id,screen_numb
 owner는 담당자. registered_reporter는 Mantis 등록자/등록 계정/요청자로 등록된 사람. reporter는 고객 메일 요청자/발신자까지 포함하는 요청자. 이 둘을 혼동하지 않는다. '석지원이 요청자로 등록'은 registered_reporter만 지정하고 owner를 추가하지 않는다.
 operator: equals,not_equals,in,not_in,contains,not_contains,exists,not_exists,gte,lte,between. 빼고/제외/없는은 부정 연산자. 제목에 들어간 것을 빼면 title not_contains만 지정한다. 인물 '또는'은 하나의 in 배열, 서로 다른 필드는 AND.
 customer는 사전 키 또는 질문의 정확한 프로젝트명, platform은 hts/mts. Mantis 매체는 제목 추측이 아니라 매체구분 필드 기준. created_at은 등록일 {operator:between,value:[YYYY-MM-DD,YYYY-MM-DD]}. 상대 날짜는 오늘 기준 계산. 지난달/전월은 지난 달력월 1일~말일이다(오늘 2026-10-20이면 2026-09-01~2026-09-30). 최근 3개월은 이번 달 포함 3개 달력월 첫날~오늘이다. 지난주/이번주는 월요일~일요일이다. 후속 연도 변경은 이전 기간의 월/일을 유지하되 이전이 연간이면 새 연간 범위. 등록일과 개발/QC 완료일은 구분하며 지원하지 않는 조건은 clarify.
+Mantis 건수·목록·그룹 집계에서 '이번 달 미종료 이슈'처럼 조회 기간을 말하면 '등록'을 생략해도 created_at 필터를 반드시 만든다. 해당 기간에 등록되고 현재 지정 상태인 이슈를 뜻한다. 기간 근거는 '이번 달'처럼 실제 표현을 발췌한다. '지난달 것으로/이번 주로 바꿔줘' 후속은 등록 기간만 교체하고 고객사·매체·담당 범위·상태를 보존한다. '오늘 기준 현재 미종료 현황', 등록 기간 무관·해제, 제목/본문의 날짜 문자열은 이 기본 등록 기간이 아니다. 개발/QC 완료일·전달일·수정일·마감일을 명시하면 등록일로 대체하지 말고 지원 여부를 확인한다. 설명·문서의 시간 표현이나 과거 시점의 미종료 잔량도 등록 기간으로 바꾸지 않는다.
 status: {"mode":"unspecified|all|open|include|exclude|inherit|unclear","values":[],"evidence":"현재 질문의 상태 근거 그대로"}.
 unspecified=상태 요청 없음. all=상태무관/전체 상태/상태 전체/종료도 포함/상태 제한 해제의 명시적 요청. open=아직 끝나지 않아 수행·확인할 일이 남은 업무(남았어/남아 있는/마무리 못 한/미종료). '남아 있는 이슈 모두 몇 개'는 반드시 open이며 모두를 all 근거로 쓰면 안 된다.
 include/exclude의 values는 new,feedback,acknowledged,confirmed,assigned,developed,resolved,closed 중 실제 상태 목록.
@@ -104,7 +105,8 @@ def plan_question(question, model, api_key, user, previous):
             if attempt == 0:
                 payload['messages'].append({'role': 'user', 'content':
                     '계획 검증에 실패했습니다: ' + reason[:200] +
-                    '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 요청이 없으면 unspecified이며, '
+                    '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 변경 요청이 없는 후속은 inherit, 상태 요청이 없는 독립 질문은 unspecified입니다. '
+                    '이전 상태·기간을 filters에 반복하지 마세요. 그룹 집계에서 건수로 전환하면 operation=count, group_by=null이며 group_by를 clear_fields에 넣지 마세요. '
                     '보고서에 담을 지표/상태를 검색 조건으로 좁히지 마세요. 검증을 생략하지 마세요.'})
                 continue
         except requests.RequestException as exc:
