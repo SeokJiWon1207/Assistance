@@ -1,3 +1,4 @@
+import { renderProgressSteps } from "./chat_progress.js?v=20261023-1";
 import { appendAnswerContextControls, selectAnswerContext } from "./chat_ab_context.js?v=20261024-1";
 import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { answerSearchPresentation } from "./search_conditions.js?v=20261012-1";
@@ -235,25 +236,6 @@ function revealAnswer(content, bubble, { streamed }) {
   ]);
 }
 
-// 서버 진행 단계(analysis → routing → retrieval → filtering → generation → verification)를
-// 사용자가 읽는 세 단계로 묶어 지금 어디까지 왔는지 보여 준다. 단계를 모르면 그리지 않는다.
-const PROGRESS_STEPS = [
-  ["질문 해석", ["analysis", "routing"]],
-  ["자료 검색", ["retrieval", "filtering"]],
-  ["답변 작성", ["generation", "verification"]],
-];
-
-function renderProgressSteps(stage) {
-  const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
-  if (current < 0) return "";
-  const items = PROGRESS_STEPS.map(([label], index) => {
-    const tone = index < current ? "is-done" : index === current ? "is-current" : "";
-    const marker = index < current ? icon("check", 14, "is-bold") : `<span class="progress-step-dot" aria-hidden="true"></span>`;
-    return `<li class="progress-step ${tone}"${index === current ? ' aria-current="step"' : ""}>${marker}${label}</li>`;
-  }).join("");
-  return `<ol class="progress-steps" aria-label="답변 진행 단계">${items}</ol>`;
-}
-
 function renderMessages() {
   if (!state.busy) els.input.placeholder = state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요";
   els.messages.innerHTML = "";
@@ -317,7 +299,7 @@ function renderMessages() {
     bubble.className = "bubble";
     if (message.loading && !message.content) {
       bubble.innerHTML = `
-        ${renderProgressSteps(message.stage)}
+        ${renderProgressSteps(message)}
         <span class="loading-inline">
           <span>${escapeHtml(message.progress || "요청을 준비하고 있습니다")}</span>
           <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>

@@ -139,9 +139,12 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       } else if (streamEvent.type === "status") {
         assistant.progress = streamEvent.message;
         assistant.stage = streamEvent.stage;
+        assistant.stageHistory = [...new Set([...(assistant.stageHistory || []), streamEvent.stage])];
       } else if (streamEvent.type === "evidence") {
         // 모델 재연결(reset) 뒤에도 같은 검색 근거이므로 유지하고, 최종 응답의 출처로 바꾼다.
         assistant.evidenceSources = Array.isArray(streamEvent.sources) ? streamEvent.sources : [];
+        assistant.evidenceCount = Number.isInteger(streamEvent.sourceCount) && streamEvent.sourceCount >= 0
+          ? streamEvent.sourceCount : assistant.evidenceSources.length;
       } else if (streamEvent.type === "delta") {
         assistant.loading = false;
         assistant.streaming = true;

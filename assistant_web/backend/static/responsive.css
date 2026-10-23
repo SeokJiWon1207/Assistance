@@ -1,14 +1,14 @@
 @media (max-width: 860px) {
-  /* 주 메뉴는 아래 탭바. 입력창에 글을 쓰는 동안에는 탭바를 내려 대화와 키보드에 자리를 준다. */
+  /* 입력창에서 전송·중지 버튼으로 포커스가 이동해도 클릭 중 레이아웃이 움직이지 않는다. */
   :root {
     --rail-h: calc(60px + env(safe-area-inset-bottom));
   }
 
-  body:has(#promptInput:focus) {
+  body:has(#chatForm:focus-within) {
     --rail-h: 0px;
   }
 
-  body:has(#promptInput:focus) .app-rail {
+  body:has(#chatForm:focus-within) .app-rail {
     display: none;
   }
 
