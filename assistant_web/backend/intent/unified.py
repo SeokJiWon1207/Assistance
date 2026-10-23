@@ -83,6 +83,13 @@ def plan_question(question, model, api_key, user, previous):
                     'task_rules': '형식만 변경하면 previous_task의 operation/report_kind를 그대로 사용한다. '
                                   '회의 안건은 기존 사후 분석의 표현 형식이다. '
                                   '비교 종료는 operation 변경이며 clear_fields에는 allowed_clear_fields만 쓴다.',
+                    'filter_contract': {
+                        'similar_base': '유사 비교의 명시 기준 번호는 issue_id equals/in이다. '
+                                        '예전/이전/과거는 비교 후보의 범위이며 issue_id lte/gte/between이 아니다.',
+                        'similar_topic': '비교 주제는 terms에만 쓴다. 정확한 문자열 포함을 요구한 경우만 keyword 필터를 쓴다.',
+                        'followup': '이전 번호·조건을 유지하면 filters에 재출력하지 않는다. '
+                                    '현재 질문에 번호 없이 같은 기준이라고만 하면 기존 issue_id를 서버가 상속한다.',
+                    },
                     'mentioned_people': extract_people_constraints(question).get('names', [])}, ensure_ascii=False)}]}
     for attempt in range(2):
         try:

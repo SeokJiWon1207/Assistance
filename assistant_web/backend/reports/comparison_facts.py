@@ -14,6 +14,7 @@ from backend.execution import RequestStopped
 from backend.intent.constraints import extract_json_object
 from backend.llm import extract_model_content, post_model_chat
 from backend.reports.comparison_passages import passage_parts
+from backend.timing import measured
 
 _CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
 _LOCK = RLock()
@@ -137,7 +138,7 @@ def review_comparison_facts(issues, model, api_key):
                'stream': False, 'messages': [{'role': 'system', 'content': _PROMPT},
                {'role': 'user', 'content': json.dumps({'issue_ids': meta['requested_issue_ids'], 'passages': list(catalog.values())}, ensure_ascii=False)}]}
     try:
-        response = post_model_chat(model, api_key, payload, timeout=4, think=False)
+        response = measured('comparison_facts_model')(post_model_chat)(model, api_key, payload, timeout=4, think=False)
         response.raise_for_status()
         parsed = extract_json_object(extract_model_content(response.json()))
         if not isinstance(parsed, dict):
