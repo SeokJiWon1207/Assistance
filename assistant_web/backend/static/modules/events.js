@@ -545,7 +545,8 @@ els.messages.addEventListener("click", (event) => {
     const message = state.messages[messageIndex];
     if (!message || state.busy) return;
     if (actionButton.dataset.messageAction === "copy") {
-      navigator.clipboard.writeText(customerAnswerText(message.content)).then(() => {
+      const text = actionButton.dataset.answerVariant === "B" ? message.abTest?.variantB?.content : message.content;
+      navigator.clipboard.writeText(customerAnswerText(text || "")).then(() => {
         const original = actionButton.innerHTML;
         actionButton.innerHTML = `${MESSAGE_ACTION_ICONS.check}<span>복사됨</span>`;
         setTimeout(() => { actionButton.innerHTML = original; }, 1200);

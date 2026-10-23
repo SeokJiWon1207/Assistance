@@ -1,3 +1,4 @@
+import { appendAnswerContextControls, selectAnswerContext } from "./chat_ab_context.js?v=20261024-1";
 import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { answerSearchPresentation } from "./search_conditions.js?v=20261012-1";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
@@ -358,7 +359,7 @@ function renderMessages() {
       if (conditionBar) content.appendChild(conditionBar);
       const dataScope = renderAnswerScope(message.verification?.dataScope);
       if (dataScope?.classList.contains("is-warning")) content.appendChild(dataScope);
-      if (message.abTest?.enabled && abComparisonEnabled()) {
+      if (message.abTest?.enabled && (abComparisonEnabled() || message.followupVariant === "B")) {
         content.appendChild(renderAbComparison(message, bubble, messageIndex));
         if (dataScope && !dataScope.classList.contains("is-warning")) content.appendChild(dataScope);
       } else {
@@ -372,11 +373,11 @@ function renderMessages() {
         progress.innerHTML = `<span></span><em>${escapeHtml(message.progress)}</em>`;
         content.appendChild(progress);
       }
-      if (!message.loading && !message.streaming) {
+      if (!message.loading && !message.streaming && !content.querySelector(".ab-comparison")) {
         content.appendChild(renderMessageActions(message, messageIndex));
       }
       const followUps = content.querySelector(".follow-up-panel");
-      if (followUps) content.appendChild(followUps);
+      if (followUps && !content.querySelector(".ab-comparison")) content.appendChild(followUps);
       row.append(avatar, content);
     }
     els.messages.appendChild(row);
@@ -609,6 +610,7 @@ function renderAbComparison(message, aBubble, messageIndex) {
   const bPanel = document.createElement("div");
   aPanel.className = "ab-panel";
   bPanel.className = "ab-panel";
+  (message.followupVariant === "B" ? bPanel : aPanel).classList.add("is-context-selected");
   aPanel.id = `ab-panel-a-${messageIndex}`; bPanel.id = `ab-panel-b-${messageIndex}`;
   aPanel.setAttribute("aria-labelledby", aTab.id); bPanel.setAttribute("aria-labelledby", bTab.id);
   aPanel.setAttribute("role", "tabpanel");
@@ -629,6 +631,8 @@ function renderAbComparison(message, aBubble, messageIndex) {
   aNote.className = "ab-method-note";
   aNote.textContent = variantA.description || "사내 검색과 검증을 적용한 답변입니다.";
   aPanel.append(aTitle, aNote, aBubble);
+  appendAssistantExtras(aPanel, message, messageIndex);
+  aPanel.appendChild(renderMessageActions(message, messageIndex));
 
   const bNote = document.createElement("p");
   bNote.className = `ab-method-note${variantB.status === "error" ? " is-error" : ""}`;
@@ -645,6 +649,13 @@ function renderAbComparison(message, aBubble, messageIndex) {
   if (baselineSources.length && !baselineSources.every((source) => source.type === "notion")) {
     bPanel.appendChild(renderSourceList(baselineSources, messageIndex, "baseline"));
   }
+  if (variantB.status === "ok") {
+    const copyB = document.createElement("button");
+    copyB.type = "button"; copyB.className = "secondary-button"; copyB.textContent = "B 답변 복사";
+    copyB.setAttribute("aria-label", "B 답변 복사");
+    Object.assign(copyB.dataset, { messageAction: "copy", messageIndex: String(messageIndex), answerVariant: "B" });
+    bPanel.appendChild(copyB);
+  }
 
   const select = (selected) => {
     const showA = selected === "a";
@@ -656,6 +667,7 @@ function renderAbComparison(message, aBubble, messageIndex) {
   };
   aTab.addEventListener("click", () => select("a"));
   bTab.addEventListener("click", () => select("b"));
+  select(message.followupVariant === "B" ? "b" : "a");
 
   tabs.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -663,28 +675,21 @@ function renderAbComparison(message, aBubble, messageIndex) {
     const showA = event.key === "Home" || (event.key !== "End" && aTab.getAttribute("aria-selected") !== "true");
     select(showA ? "a" : "b"); (showA ? aTab : bTab).focus();
   });
-  const continueA = document.createElement("button");
-  continueA.type = "button"; continueA.className = "secondary-button"; continueA.textContent = "이 답변으로 계속";
-  continueA.addEventListener("click", () => { els.input.focus(); });
-  // 서버의 후속 문맥은 직전 답변이다. 과거 비교에서 다른 답변을 선택한 것처럼 표시하지 않는다.
-  if (messageIndex === state.messages.length - 1) aPanel.appendChild(continueA);
-  const baselineNotice = document.createElement("p");
-  baselineNotice.className = "ab-method-note";
-  baselineNotice.textContent = "비교용 답변입니다. 후속 질문은 A 답변의 검색 근거를 기준으로 이어집니다.";
-  bPanel.appendChild(baselineNotice);
+  if (messageIndex === state.messages.length - 1 && message.auditId) {
+    appendAnswerContextControls(message, [aPanel, bPanel], { busy: state.busy, onChoose: (variant) => {
+      state.messages = selectAnswerContext(state.messages, messageIndex, variant);
+      persistConversations(); renderMessages(); els.input.focus();
+      showToast(`${variant} 답변과 관련 이슈를 기준으로 다음 질문을 이어갑니다.`);
+    } });
+  }
   const panels = document.createElement("div");
   panels.className = "ab-panels";
   panels.append(aPanel, bPanel);
-  const sharedExtras = document.createElement("div");
-  sharedExtras.className = "ab-shared-extras";
-  appendAssistantExtras(sharedExtras, message, messageIndex);
-
   comparison.append(tabs);
   if (message.abTest.evaluation) {
     comparison.appendChild(renderAbEvaluation(message.abTest.evaluation));
   }
   comparison.append(panels);
-  if (sharedExtras.childElementCount) comparison.append(sharedExtras);
   return comparison;
 }
 

@@ -55,6 +55,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
       abTest: controllerHook("abComparisonEnabled")(),
       stream: true,
       contextAuditId: lastAssistantWithAudit?.auditId || null,
+      contextVariant: lastAssistantWithAudit?.followupVariant === "B" ? "B" : "A",
       messages: chatMessages,
       tools: controllerHook("sourceToolsPayload")(),
     }),

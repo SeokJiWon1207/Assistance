@@ -20,6 +20,7 @@
         templateId: message.templateId || "",
         feedback: message.feedback || null,
         abTest: message.abTest || null,
+        followupVariant: message.followupVariant === "B" ? "B" : "A",
         // 차트 payload 도 함께 저장해야 대화를 다시 열었을 때 차트가 남는다.
         effortChart: message.effortChart || null,
         effortRanking: message.effortRanking || null,
@@ -205,7 +206,10 @@
     const history = messages
       .filter((message) => !message.loading && !message.streaming)
       .slice(0, -1)
-      .map((message) => ({ role: message.role, content: message.content, ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
+      .map((message) => ({ role: message.role,
+        content: message.role === "assistant" && message.followupVariant === "B" && message.abTest?.variantB?.status === "ok"
+          ? message.abTest.variantB.content : message.content,
+        ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
       .slice(-safeLimit);
     const bounded = [];
     let size = currentContent.length;

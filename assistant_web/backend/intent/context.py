@@ -176,6 +176,7 @@ def resolve_reference_from_context(
     text: str,
     audit_id: Optional[str],
     user_uid: str = "",
+    *, variant: str = "A",
 ) -> Optional[str]:
     """서수 참조 후속 질문을 직전 답변의 실제 결과 목록으로 해석한 라우팅 텍스트.
 
@@ -199,7 +200,7 @@ def resolve_reference_from_context(
     ):
         # 자체 조건을 가진 독립 질문이면 서수는 목록 참조가 아닐 가능성이 크다.
         return None
-    sources = audit_source_loader(audit_id, user_uid=user_uid)
+    sources = audit_source_loader(audit_id, user_uid=user_uid, **({"variant": variant} if variant != "A" else {}))
     if not sources:
         return None
     if demonstrative:

@@ -59,6 +59,11 @@ body.theme-dark .app-shell { background: var(--bg); }
 .messages { padding-top: 28px; gap: 28px; }
 .message-content { min-width: 0; }
 .message.assistant .bubble { font-size: 16px; line-height: 1.75; }
+.ab-panel { padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); align-content: start; }
+.ab-panel.is-context-selected { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.message.assistant .ab-panel .bubble { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.ab-panel > .secondary-button { justify-self: start; width: fit-content; max-width: 100%; margin-top: var(--space-2); }
+.ab-panel > .secondary-button[aria-pressed="true"] { background: var(--text); color: var(--surface); border-color: var(--text); }
 .message.user .bubble { font-size: 16px; padding: var(--space-3) var(--space-4); }
 .message-date-divider { color: var(--muted); }
 .empty-state h3 { font-size: clamp(24px, 2.4vw, 30px); letter-spacing: -.6px; }
