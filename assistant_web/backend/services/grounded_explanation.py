@@ -508,6 +508,11 @@ def generate_grounded_explanation(
                         validated['sections'].extend(checked_background['sections'])
                     else:
                         history_complete = False
+                from backend.evaluation.explanation_metadata import current_status_table, is_current_status_item
+                status_table = current_status_table(context.latest_user_text, grounding, selected)
+                if status_table:
+                    validated['answer_items'] = [item for item in validated.get('answer_items', [])
+                                                 if not is_current_status_item(item)]
                 response['content'] = render_quote_answer(
                     validated, grounding, question=context.latest_user_text,
                     previous_questions=(context.intent_plan or {}).get('previous_explanation_questions'))
@@ -515,6 +520,8 @@ def generate_grounded_explanation(
                 summaries = summary_items(validated, grounding, context.latest_user_text)
                 if summaries:
                     response['content'] = render_summary(summaries, response['content'])
+                if status_table:
+                    response['content'] = status_table + '\n\n' + response['content']
                 limits = platform_limits(context.latest_user_text, grounding, selected)
                 if limits:
                     response['content'] = limits + '\n\n' + response['content']
