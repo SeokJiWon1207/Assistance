@@ -231,6 +231,15 @@ function revealAnswer(content, bubble, { streamed }) {
 
 function renderMessages() {
   els.messages.innerHTML = "";
+  const activeHistory = state.conversations?.find((item) => item.id === state.activeConversationId);
+  if (activeHistory?.messageOffset > 0) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "secondary-button";
+    more.dataset.loadEarlierMessages = "true";
+    more.textContent = `이전 메시지 ${activeHistory.messageOffset}개 더 보기`;
+    els.messages.appendChild(more);
+  }
   state.sourceMap.clear();
   let lastDayKey = "";
 

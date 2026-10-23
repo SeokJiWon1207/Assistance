@@ -156,6 +156,7 @@ test('late response from previous account cannot replace the next account histor
   let finish;
   const h = await harness(async () => new Promise((resolve) => { finish = resolve; }));
   const loading = h.api.loadConversations();
+  await new Promise(setImmediate);
   h.state.currentUser = { uid: 'user-b' };
   h.state.conversations = [{ id: 'b-only', messages: [message('B')] }];
   finish({ ok: true, json: async () => ({ conversations: [{ id: 'a-only', messages: [message('A')] }] }) });
@@ -319,4 +320,47 @@ test('weekly report keeps my report and team brief in one tab and clears the new
   assert.ok(calls.includes('POST /team-brief/read'));
   assert.equal(h.els.workspaceTabBriefDot.hidden, true);
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-tab-dot/);
+});
+
+test('long history sync uses bounded batches with contiguous indexes and keeps all local text', async () => {
+  const calls = [];
+  const h = await harness(async (_url, options) => {
+    const body = JSON.parse(options.body); calls.push(body);
+    return { ok: true, json: async () => ({conversation: {updatedAt: `v${calls.length}`, messageCount: body.startIndex + body.messages.length}}) };
+  });
+  const conversation = {id:'long', title:'첫 질문', messages:Array.from({length:184},(_,i)=>message(`원문 ${i}`))};
+  h.state.conversations = [conversation];
+  await h.api.syncConversation(conversation);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map((item)=>item.startIndex), [0,80,160]);
+  assert.deepEqual(calls.map((item)=>item.truncate), [false,false,true]);
+  assert.equal(calls[1].expectedUpdatedAt,'v1');
+  assert.equal(calls.flatMap((item)=>item.messages).length,184);
+  assert.equal(conversation.messages[0].content,'원문 0');
+  assert.equal(conversation.syncPending,false);
+});
+
+test('a paged conversation edits only its loaded tail and preserves the saved prefix', async () => {
+  let request;
+  const h=await harness(async (_url,options)=>{
+    request=JSON.parse(options.body);
+    return {ok:true,json:async()=>({conversation:{updatedAt:'v2',messageCount:124}})};
+  });
+  const conversation={id:'long',title:'첫 질문',messages:Array.from({length:60},(_,i)=>message(`원문 ${i+64}`)),messageOffset:64,serverUpdatedAt:'v1'};
+  h.state.conversations=[conversation];
+  await h.api.syncConversation(conversation);
+  assert.equal(request.startIndex,64);
+  assert.equal(request.messages.length,60);
+  assert.equal(conversation.messageCount,124);
+});
+
+test('loading an earlier page prepends text without dropping recent local messages', async () => {
+  const h=await harness(async (url)=>({ok:true,json:async()=>({conversation:{id:'long',updatedAt:'v1',messageOffset:0,messageCount:122,messages:Array.from({length:60},(_,i)=>message(`원문 ${i}`))}})}));
+  const conversation={id:'long',title:'첫 질문',messages:Array.from({length:62},(_,i)=>message(`원문 ${i+60}`)),messageOffset:60,serverUpdatedAt:'v1'};
+  h.state.conversations=[conversation];h.state.activeConversationId='long';h.state.messages=[...conversation.messages];
+  await h.api.loadEarlierMessages();
+  assert.equal(conversation.messageOffset,0);
+  assert.equal(h.state.messages.length,122);
+  assert.equal(h.state.messages[0].content,'원문 0');
+  assert.equal(h.state.messages.at(-1).content,'원문 121');
 });

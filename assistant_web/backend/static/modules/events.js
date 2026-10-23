@@ -1,5 +1,5 @@
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
-import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief } from "./workspace.js?v=20260911-6";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, loadEarlierMessages, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
 import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSidebarOpen, toggleAccountMenu, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
@@ -55,6 +55,10 @@ els.input.addEventListener("keydown", (event) => {
 });
 
 els.messages.addEventListener("click", (event) => {
+  if (event.target.closest("[data-load-earlier-messages]")) {
+    void loadEarlierMessages();
+    return;
+  }
   const templateCard = event.target.closest("[data-template-id]");
   if (!templateCard || state.busy) return;
   showTemplateForm(templateCard.dataset.templateId);

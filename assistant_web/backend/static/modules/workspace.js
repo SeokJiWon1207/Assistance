@@ -70,7 +70,7 @@ function persistConversations() {
   const activeChanged = active ? conversationContentChanged(active.messages, state.messages) : false;
   if (active) {
     active.messages = storageSafeMessages(state.messages);
-    active.title = deriveConversationTitle(active.messages);
+    if (!(active.messageOffset > 0)) active.title = deriveConversationTitle(active.messages);
     if (activeChanged) { active.updatedAt = new Date().toISOString(); active.syncPending = true; }
   }
   state.conversations.sort((a, b) => (
@@ -83,15 +83,20 @@ function persistConversations() {
 }
 
 const syncQueues = new Map();
+const syncedMessageState = new Map();
 
 // 목록은 서버에서 받은 대화까지 모두 보여 주고, 기기에는 최근 대화와 동기화 대기 중인 대화만 보관한다.
 function saveLocalConversations() {
   const stored = state.conversations.filter((item, index) => item.syncPending || index < maxStoredConversations);
+  const key = conversationsStorageKey();
+  const durable = globalThis.AssistantFrontendCore.conversationCache(key, stored).catch(() => false);
   try {
-    localStorage.setItem(conversationsStorageKey(), JSON.stringify(stored));
+    localStorage.setItem(key, JSON.stringify(stored));
     localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
   } catch {
-    showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했습니다. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
+    void durable.then((saved) => {
+      if (!saved) showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했습니다. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
+    });
   }
 }
 
@@ -109,35 +114,50 @@ function syncConversation(conversation) {
   if (!uid || !conversation?.id) return Promise.resolve();
   return queueConversation(conversation.id, async () => {
     if (state.currentUser?.uid !== uid || !state.conversations.includes(conversation)) return;
-    const body = JSON.stringify({
-      title: conversation.title || "새 대화",
-      messages: storageSafeMessages(conversation.messages || []),
-      favorite: Boolean(conversation.favorite),
-      createdAt: conversation.createdAt || "",
-      expectedUpdatedAt: conversation.serverUpdatedAt || "",
-    });
-    const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}`, {
-      method: "PUT", headers: { "Content-Type": "application/json" }, body,
-    });
-    if (state.currentUser?.uid !== uid) return;
-    if (response.status === 409) {
-      // 최신 서버 버전과 충돌한 로컬 변경은 새 대화로 보존한다.
-      conversation.id = globalThis.crypto.randomUUID();
-      conversation.title = `${conversation.title || "대화"} (복구본)`;
-      conversation.serverUpdatedAt = "";
-      if (state.activeConversationId && !state.conversations.some((item) => item.id === state.activeConversationId)) {
-        state.activeConversationId = conversation.id;
-      }
-      scheduleConversationSync(conversation);
-      showToast("다른 기기의 변경과 겹쳐 현재 기록을 별도 대화로 보존했습니다.", "warning");
-      return;
+    const messages = storageSafeMessages(conversation.messages || []);
+    const offset = Number(conversation.messageOffset || 0);
+    const snapshot = syncedMessageState.get(conversation.id);
+    let changed = 0;
+    if (snapshot && snapshot.version === conversation.serverUpdatedAt && snapshot.offset === offset) {
+      while (changed < Math.min(messages.length, snapshot.messages.length)
+        && JSON.stringify(messages[changed]) === JSON.stringify(snapshot.messages[changed])) changed += 1;
     }
-    if (!response.ok) throw new Error("대화 기록을 서버에 저장하지 못했습니다.");
-    const saved = (await response.json()).conversation;
-    conversation.serverUpdatedAt = saved.updatedAt;
-    const sent = JSON.parse(body);
-    conversation.syncPending = conversationContentChanged(sent.messages, conversation.messages)
-      || sent.title !== conversation.title || sent.favorite !== Boolean(conversation.favorite);
+    const batches = globalThis.AssistantFrontendCore.conversationMessageBatches(messages.slice(changed));
+    let start = offset + changed;
+    const title = conversation.title || "새 대화", favorite = Boolean(conversation.favorite);
+    for (let index = 0; index < batches.length; index += 1) {
+      const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          title, messages: batches[index], favorite, createdAt: conversation.createdAt || "",
+          expectedUpdatedAt: conversation.serverUpdatedAt || "", startIndex: start, truncate: index === batches.length - 1,
+        }),
+      });
+      if (state.currentUser?.uid !== uid) return;
+      if (response.status === 409) {
+        // 서버 기록은 건드리지 않고 현재 기기의 변경 부분을 복구본으로 보존한다.
+        conversation.id = globalThis.crypto.randomUUID();
+        conversation.title = `${conversation.title || "대화"} (복구본)`;
+        conversation.serverUpdatedAt = "";
+        conversation.messageOffset = 0;
+        if (state.activeConversationId && !state.conversations.some((item) => item.id === state.activeConversationId)) {
+          state.activeConversationId = conversation.id;
+        }
+        scheduleConversationSync(conversation);
+        showToast("다른 기기의 변경과 겹쳐 현재 기기에서 읽은 기록을 복구본으로 보존했습니다. 이전 기록은 원래 대화에 남아 있습니다.", "warning");
+        return;
+      }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "대화 기록을 서버에 저장하지 못했습니다. 기존 기록은 보존됩니다.");
+      }
+      const saved = (await response.json()).conversation;
+      conversation.serverUpdatedAt = saved.updatedAt;
+      conversation.messageCount = saved.messageCount ?? offset + messages.length;
+      start += batches[index].length;
+    }
+    syncedMessageState.set(conversation.id, { offset, messages, version: conversation.serverUpdatedAt });
+    conversation.syncPending = conversationContentChanged(messages, conversation.messages)
+      || title !== conversation.title || favorite !== Boolean(conversation.favorite);
     saveLocalConversations();
   });
 }
@@ -182,6 +202,9 @@ async function mergeServerConversations(limit, loadingUid) {
   const response = await apiFetch(`/api/workspace/conversations?limit=${limit}`);
   if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
   const serverItems = (await response.json()).conversations || [];
+  serverItems.forEach((item) => syncedMessageState.set(item.id, {
+    offset: Number(item.messageOffset || 0), messages: storageSafeMessages(item.messages || []), version: item.updatedAt,
+  }));
   if (state.currentUser?.uid !== loadingUid) return false;
   state.conversations = globalThis.AssistantFrontendCore.mergeConversations(state.conversations, serverItems);
   conversationListView.serverHasMore = serverItems.length >= limit && limit < MAX_CONVERSATION_LIMIT;
@@ -198,6 +221,17 @@ async function loadConversations() {
     state.conversations = Array.isArray(parsed) ? parsed : [];
   } catch {
     state.conversations = [];
+  }
+  const cached = await globalThis.AssistantFrontendCore.conversationCache(conversationsStorageKey()).catch(() => null);
+  if (state.currentUser?.uid !== loadingUid) return;
+  if (Array.isArray(cached)) {
+    const records = new Map(state.conversations.map((item) => [item.id, item]));
+    cached.forEach((item) => {
+      const local = records.get(item.id);
+      if (!local || String(item.updatedAt || "") > String(local.updatedAt || "")
+          || (item.updatedAt === local.updatedAt && (item.messages?.length || 0) > (local.messages?.length || 0))) records.set(item.id, item);
+    });
+    state.conversations = [...records.values()];
   }
   if (state.currentUser?.uid) {
     try {
@@ -421,6 +455,30 @@ function openConversation(conversationId) {
   localStorage.setItem(activeConversationStorageKey(), conversationId);
   renderConversationList();
   renderMessages();
+}
+
+async function loadEarlierMessages() {
+  if (state.busy) return;
+  const conversation = state.conversations.find((item) => item.id === state.activeConversationId);
+  if (!conversation || !(conversation.messageOffset > 0)) return;
+  try {
+    const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}?before=${conversation.messageOffset}&limit=60`);
+    if (!response.ok) throw new Error("이전 대화 기록을 불러오지 못했습니다.");
+    const page = (await response.json()).conversation;
+    if (page.updatedAt !== conversation.serverUpdatedAt) throw new Error("다른 기기에서 대화가 바뀌었습니다. 현재 기록을 저장한 뒤 다시 불러와 주세요.");
+    if (state.activeConversationId !== conversation.id) return;
+    const oldHeight = els.messages?.scrollHeight || 0;
+    conversation.messages = [...page.messages, ...storageSafeMessages(state.messages)];
+    conversation.messageOffset = page.messageOffset;
+    state.messages = [...conversation.messages];
+    const snapshot = syncedMessageState.get(conversation.id);
+    if (snapshot) syncedMessageState.set(conversation.id, { ...snapshot, offset: page.messageOffset, messages: [...page.messages, ...snapshot.messages] });
+    saveLocalConversations();
+    renderMessages();
+    if (els.messages) els.messages.scrollTop = Math.max(0, els.messages.scrollHeight - oldHeight);
+  } catch (error) {
+    showToast(error.message, "warning");
+  }
 }
 
 function safeExternalUrl(value) {
@@ -1061,6 +1119,7 @@ export {
   loadMoreConversations,
   startNewConversation,
   openConversation,
+  loadEarlierMessages,
   safeExternalUrl,
   workspaceMetric,
   workspaceEmpty,

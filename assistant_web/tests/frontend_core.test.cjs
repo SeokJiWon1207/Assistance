@@ -55,7 +55,7 @@ test("storageSafeMessages removes transient rows and bounds stored source text",
   assert.equal(stored[0].feedback.rating, "helpful");
 });
 
-test("storageSafeMessages retains only the latest sixty completed messages", () => {
+test("storageSafeMessages preserves all completed messages beyond sixty", () => {
   const messages = Array.from({ length: 70 }, (_, index) => ({
     role: "user",
     content: `question-${index}`,
@@ -63,8 +63,8 @@ test("storageSafeMessages retains only the latest sixty completed messages", () 
 
   const stored = storageSafeMessages(messages);
 
-  assert.equal(stored.length, 60);
-  assert.equal(stored[0].content, "question-10");
+  assert.equal(stored.length, 70);
+  assert.equal(stored[0].content, "question-0");
   assert.equal(stored.at(-1).content, "question-69");
 });
 
@@ -130,7 +130,7 @@ test("saved pagination retains all answer tables and audit IDs while bounding du
   }));
   const original = JSON.stringify(messages);
   const stored = storageSafeMessages(messages);
-  assert.ok(Buffer.byteLength(JSON.stringify(stored), "utf8") <= 900000);
+  assert.ok(globalThis.AssistantFrontendCore.conversationMessageBatches(stored).every((batch) => Buffer.byteLength(JSON.stringify(batch), "utf8") <= 900000));
   assert.deepEqual(stored.map(({ content, auditId }) => ({ content, auditId })),
     messages.map(({ content, auditId }) => ({ content, auditId })));
   assert.equal(stored.at(-1).sources.length, 20);
@@ -439,4 +439,49 @@ test("message and sidebar clocks stay Korean when ICU returns English periods", 
     assert.equal(sandbox.module.exports.messageClockLabel(date.toISOString()), expected);
     assert.equal(sandbox.module.exports.conversationTimeLabel({ updatedAt: date.toISOString() }, date), expected);
   }
+});
+
+
+test("bounded message batches preserve every message and audit ID beyond eighty", () => {
+  const input = Array.from({length: 184}, (_, index) => ({role: index % 2 ? "assistant" : "user", content: `본문 ${index}`, auditId: `audit-${index}`}));
+  const batches = globalThis.AssistantFrontendCore.conversationMessageBatches(input);
+  assert.ok(batches.length >= 3);
+  assert.ok(batches.every((batch) => batch.length <= 80));
+  assert.deepEqual(batches.flat().map((message) => [message.content, message.auditId]), input.map((message) => [message.content, message.auditId]));
+});
+
+test('durable history cache keeps long records under the user-scoped key', async () => {
+  const vm = require('node:vm');
+  const records = new Map();
+  const sandbox = {module:{exports:{}}, TextEncoder, indexedDB:{open() {
+    const request = {};
+    setImmediate(()=>{
+      request.result = { close() {}, transaction() {
+        const transaction = {};
+        transaction.objectStore = ()=>({
+          put(value,key) { records.set(key,JSON.parse(JSON.stringify(value))); setImmediate(()=>transaction.oncomplete()); return {}; },
+          get(key) { const operation={result:records.get(key)}; setImmediate(()=>{operation.onsuccess();transaction.oncomplete();}); return operation; },
+        });
+        return transaction;
+      }};
+      request.onsuccess();
+    });
+    return request;
+  }}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../backend/static/frontend_core.js'),'utf8'),sandbox);
+  const api=sandbox.module.exports;
+  const history=Array.from({length:164},(_,i)=>({role:'user',content:`원문 ${i}`}));
+  assert.equal(await api.conversationCache('chats:user-a',history),true);
+  assert.equal((await api.conversationCache('chats:user-a')).length,164);
+  assert.equal(await api.conversationCache('chats:user-b'),null);
+});
+
+test('model context remains bounded while the archived dialogue remains complete', () => {
+  const input=Array.from({length:164},(_,i)=>({role:i%2?'assistant':'user',content:`원문 ${i}`}));
+  const archived=storageSafeMessages(input);
+  const model=buildChatMessages([...input,{role:'user',content:'다음 질문'}],'다음 질문');
+  assert.equal(archived.length,164);
+  assert.equal(archived[0].content,'원문 0');
+  assert.equal(model.length,21);
+  assert.equal(model.at(-1).content,'다음 질문');
 });
