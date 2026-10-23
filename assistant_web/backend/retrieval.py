@@ -279,7 +279,8 @@ def _explanation_retrieval(query: str, limit: int, tools: Dict[str, bool], plan:
         scoped["semantic_focus_terms"] = technical_terms
     stages: List[Dict[str, Any]] = []
     ids = constraints.get("issue_ids") or []
-    similar = wants_similar_issue_search(query, constraints)
+    similar = (False if plan.get('planner')=='unified_llm'
+               else wants_similar_issue_search(query, constraints))
     if tools.get("mantis") and ids:
         try:
             stages.append(execute_mantis_id_lookup(ids, scoped))
@@ -425,7 +426,9 @@ def run_retrieval_pipeline(
         notion_terms = planned_terms
     keyword = " ".join(planned_terms) if unified else " ".join(mantis_terms or build_keyword_terms(query_text, effective_constraints))
     notion_only = planner_notion
-    similar_issue_search = wants_similar_issue_search(query_text, constraints)
+    # 검증된 조회 작업을 '비교를 끝내고' 같은 원문 단어로 다시 비교 검색하지 않는다.
+    similar_issue_search = ((intent_plan or {}).get('report_kind')=='similar' if unified
+                            else wants_similar_issue_search(query_text, constraints))
     exact_issue_lookup = bool(constraints.get("issue_ids")) and not similar_issue_search and plan_source != "both"
     historical_snapshot_used = False
     complete_raw_search_used = False

@@ -10,6 +10,7 @@ _UNCERTAIN = re.compile(r'확인.{0,12}(?:없|않|못|어렵|불가|필요)|근�
                         r'(?:기록|명시|확정|입증).{0,12}(?:없|않|못|아님|아니)|단정.{0,8}(?:못|않|어렵)')
 _STAGE = {
     'implementation': r'개발|구현|수정', 'qc': r'\bQC\b|검수', 'delivery': r'전달|발송',
+    'reply': r'회신',
     'customer_validation': r'고객.{0,10}(?:검증|테스트|확인)',
     'customer_application': r'고객.{0,10}(?:적용|반영)', 'production': r'운영|실서비스',
 }
@@ -56,6 +57,22 @@ def summary_items(validated: dict[str, Any], grounding: dict[str, Any], question
         return []
     all_rows = [{**e,'issue_id':issue['id']} for issue in grounding.get('issues',[])
                 if issue['id'] in validated['selected_issue_ids'] for e in safe_excerpts(issue)]
+    from backend.evaluation.explanation_direct import reply_question, sent_reply_rows, _facts
+    replies=sent_reply_rows({issue['id']:issue for issue in grounding.get('issues',[])
+                            if issue['id'] in validated['selected_issue_ids']}) if reply_question(question) else []
+    reply_fields={(r['issue_id'],r['field']) for r in replies}
+    if reply_fields:
+        # 실제 회신 질문에 최초 문의의 가설을 답변으로 섞지 않는다.
+        if any((r['issue_id'],r['field']) not in reply_fields for item in items for r in item.get('evidence') or []):
+            return []
+        drafts=' '.join(str(item.get('draft_answer') or '') for item in items)
+        for _row,text in _facts('actors',replies):
+            if (not re.search(r'전달|수정본|적용|검증|완료',question)
+                    and re.search(r'표기|기입|요청드립니다|부탁드립니다|확인\s*바랍니다',text)):
+                # 별도 안내가 요약에서 사라지면 같은 출처의 원문 결론으로 보완한다.
+                overlap=SequenceMatcher(None,re.sub(r'\s','',text),re.sub(r'\s','',drafts),autojunk=False).find_longest_match()
+                if overlap.size<6:
+                    return []
     result=[];total=0
     for item in items:
         answer=item.get('draft_answer');part=item.get('question_part');rows=item.get('evidence') or []
@@ -67,6 +84,8 @@ def summary_items(validated: dict[str, Any], grounding: dict[str, Any], question
             fragment = question[match.b:match.b+match.size].strip()
             part = fragment if len(re.findall(r'[가-힣A-Za-z0-9]',fragment))>=2 else ''
         answer=' '.join(answer.split());total+=len(answer)
+        if reply_fields and re.fullmatch(r'.{0,80}(?:부장|차장|과장|대리|사원|팀장)입니다[.]?',answer):
+            continue
         if total>520 or (item.get('unanswered') and not _UNCERTAIN.search(answer)):
             return []
         if not rows:

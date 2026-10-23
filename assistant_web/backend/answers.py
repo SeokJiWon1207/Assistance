@@ -659,6 +659,15 @@ def format_deterministic_issue_answer(
         intro = build_issue_intro_line(display_constraints, issues, len(issues))
 
     if display_constraints.get("issue_ids"):
+        if (len(issues) == 1 and re.search(r'현재\s*상태만|상태만\s*(?:조회|알려|보여|확인)', query_text)
+                and not re.search(r'원인|본문|조치|노트|이력', query_text)):
+            issue = issues[0]
+            detail = issue.get('detail') or {}
+            lines = [f"**#{issue['id']}** 현재 상태는 **{display_status_label(issue.get('status_label') or issue['status'])}**입니다.",
+                     f"근거: #{issue['id']}의 현재 상태 필드 · 최종수정일 {detail.get('updated_at') or '미상'}"]
+            if snapshot_note:
+                lines.extend(['', snapshot_note])
+            return '\n'.join(lines)
         lines = [intro, "", f"검색 기준: {criteria}, 정렬: 최신 이슈 ID 기준", ""]
         for issue in issues:
             detail = issue.get("detail", {}) or {}

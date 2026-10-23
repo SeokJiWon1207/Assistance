@@ -13,6 +13,7 @@ import requests
 from backend.execution import RequestStopped
 from backend.intent.constraints import extract_json_object
 from backend.llm import extract_model_content, post_model_chat
+from backend.reports.comparison_passages import passage_parts
 
 _CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
 _LOCK = RLock()
@@ -41,8 +42,8 @@ def _catalog(issue):
     for field, text in fields:
         safe = '\n'.join(line for line in _without_access_lines(text).splitlines()
                          if not _NOTE_METADATA.search(line.strip()) and not re.search(r'://|@', line))
-        for part in _note_sentences(safe):
-            if 7 <= len(part) <= 450:
+        for part in (chunk for sentence in _note_sentences(safe) for chunk in passage_parts(sentence)):
+            if len(part) >= 7:
                 rows.append({'id': f"i{issue['id']}p{len(rows)}", 'issue_id': issue['id'],
                              'field': field, 'text': part})
     # 최신 원문 문단을 우선하며 한 이슈가 모델 문맥을 독점하지 못하게 한다.
