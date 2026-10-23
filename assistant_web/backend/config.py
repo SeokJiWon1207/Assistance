@@ -255,6 +255,20 @@ def load_customer_directory() -> Dict[str, Any]:
     return customers
 
 
+def load_customer_project_display_names() -> Dict[str, str]:
+    """기존 질의 별칭에 추가하지 않는 프로젝트 표시명 보정."""
+    path = CONFIG_DIR / "customer_directory.json"
+    entries = json.loads(path.read_text(encoding="utf-8")).get("project_display_names", {}) if path.exists() else {}
+    if not isinstance(entries, dict) or any(
+        not isinstance(key, str) or not isinstance(value, dict)
+        or not isinstance(value.get("name"), str) or not value["name"].strip()
+        for key, value in entries.items()
+    ):
+        raise ValueError("customer_directory.json 프로젝트 표시명 형식이 올바르지 않습니다.")
+    return {key: value["name"] for key, value in entries.items()}
+
+
+CUSTOMER_PROJECT_DISPLAY_NAMES = load_customer_project_display_names()
 CUSTOMER_DIRECTORY = load_customer_directory()
 for _customer_key, _customer_entry in CUSTOMER_DIRECTORY.items():
     CUSTOMER_ALIASES[_customer_key] = list(dict.fromkeys([

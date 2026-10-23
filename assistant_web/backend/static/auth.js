@@ -295,5 +295,18 @@
     }
   }
 
+  // 비밀번호 입력란 오른쪽 눈 버튼으로 입력한 글자를 잠시 보이게 한다. 입력란은 버튼 바로 앞 형제다.
+  document.addEventListener("click", (event) => {
+    const toggle = event.target?.closest?.("[data-password-toggle]");
+    const input = toggle?.previousElementSibling;
+    if (!input) return;
+    const visible = input.type === "password";
+    input.type = visible ? "text" : "password";
+    toggle.setAttribute("aria-pressed", String(visible));
+    toggle.setAttribute("aria-label", visible ? "비밀번호 숨기기" : "비밀번호 보기");
+    toggle.querySelector("use")?.setAttribute("href", visible ? "#i-eye-off" : "#i-eye");
+    input.focus();
+  });
+
   globalScope.AssistantAuthReady = bootstrapAuthentication();
 })(globalThis);

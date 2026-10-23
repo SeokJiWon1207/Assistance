@@ -1,9 +1,11 @@
+import { customerAnswerText } from "./ui_format.js?v=20260911-6";
+import { icon } from "./icons.js?v=20260911-6";
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
-import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, loadEarlierMessages, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief } from "./workspace.js?v=20260911-6";
+import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, loadEarlierMessages, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief, markNotificationsRead } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
 import { showChatView } from "./dashboard.js?v=20260911-6";
 import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSidebarOpen, toggleAccountMenu, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
-import { initTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
+import { initTemplatePicker, openTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
 initTemplatePicker();
 
@@ -47,6 +49,8 @@ els.input.addEventListener("input", () => {
   syncTemplatePickerWithPrompt();
 });
 els.input.addEventListener("keydown", (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
+  if (state.busy && event.key === "Enter" && !event.shiftKey) { event.preventDefault(); return; }
   if (handleTemplatePickerKeydown(event)) return;
   if (shouldSubmitPromptOnKeydown(event)) {
     event.preventDefault();
@@ -59,6 +63,7 @@ els.messages.addEventListener("click", (event) => {
     void loadEarlierMessages();
     return;
   }
+  if (event.target.closest("[data-open-all-templates]")) { openTemplatePicker(); return; }
   const templateCard = event.target.closest("[data-template-id]");
   if (!templateCard || state.busy) return;
   showTemplateForm(templateCard.dataset.templateId);
@@ -287,7 +292,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
   try {
     if (state.workspaceTab === "playbooks") {
       els.workspaceRefreshBtn.disabled = true;
-      els.workspaceRefreshBtn.textContent = "불러오는 중…";
+      els.workspaceRefreshBtn.innerHTML = `${icon("refresh", 16)}<span>불러오는 중…</span>`;
       els.workspaceRefreshBtn.setAttribute("aria-busy", "true");
       await loadPlaybooks(true);
     } else await loadMyWorkspace(true);
@@ -295,7 +300,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
     showToast(error.message, "warning");
   } finally {
     els.workspaceRefreshBtn.disabled = false;
-    els.workspaceRefreshBtn.textContent = "새로고침";
+    els.workspaceRefreshBtn.innerHTML = `${icon("refresh", 16)}<span>새로고침</span>`;
     els.workspaceRefreshBtn.setAttribute("aria-busy", "false");
   }
 });
@@ -348,6 +353,28 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (event.target.closest("[data-playbooks-retry]")) { loadPlaybooks(true).catch((error) => showToast(error.message, "warning")); return; }
+  const notificationFilter = event.target.closest("[data-notification-filter]");
+  if (notificationFilter) { state.notificationFilter = notificationFilter.dataset.notificationFilter; renderWorkspace(); return; }
+  const markAll = event.target.closest("[data-notifications-read-all]");
+  if (markAll) {
+    markAll.disabled = true;
+    try { await markNotificationsRead(); showToast("알림을 읽음으로 표시했어요.", "success"); }
+    catch (error) { showToast(error.message, "warning"); markAll.disabled = false; }
+    return;
+  }
+  if (event.target.closest("[data-workspace-more]")) { state.workspaceIssuesExpanded = !state.workspaceIssuesExpanded; renderWorkspace(); return; }
+  const removeFavorite = event.target.closest("[data-remove-favorite]");
+  if (removeFavorite) {
+    const conversation = state.conversations.find((item) => item.id === removeFavorite.dataset.removeFavorite);
+    if (conversation) { conversation.favorite = false; scheduleConversationSync(conversation); persistConversations(); renderWorkspace(); showToast("즐겨찾기를 해제했어요."); }
+    return;
+  }
+  const selectedPlaybook = event.target.closest("[data-select-playbook]");
+  if (selectedPlaybook) {
+    if (state.playbookEditor) { showToast("편집 내용을 저장하거나 취소한 후 다른 플레이북을 선택해 주세요.", "warning"); return; }
+    state.selectedPlaybookId = selectedPlaybook.dataset.selectPlaybook; renderWorkspace(); return;
+  }
   const newPlaybookButton = event.target.closest("[data-new-playbook]");
   if (newPlaybookButton) {
     state.playbookEditor = { title: "", symptom: "", cause: "", resolution: "", verification: "", tags: [], sourceIssueIds: [] };
@@ -379,6 +406,12 @@ els.workspaceContent?.addEventListener("click", async (event) => {
       showToast(error.message, "warning");
       statusButton.disabled = false;
     }
+    return;
+  }
+  // 업무 탭 옆 칸의 '주간 보고 열기'·'모두 보기'는 해당 탭으로 옮긴다.
+  const goTab = event.target.closest("[data-workspace-go]");
+  if (goTab) {
+    selectWorkspaceTab(goTab.dataset.workspaceGo);
     return;
   }
   const briefKind = event.target.closest("[data-brief-kind]");
@@ -425,6 +458,8 @@ els.workspaceContent?.addEventListener("click", async (event) => {
   }
 });
 els.workspaceContent?.addEventListener("submit", async (event) => {
+  const favoriteForm = event.target.closest("[data-favorite-search]");
+  if (favoriteForm) { event.preventDefault(); state.favoriteQuery = String(new FormData(favoriteForm).get("q") || ""); renderWorkspace(); els.workspaceContent.querySelector('[data-favorite-search] input')?.focus(); return; }
   const searchForm = event.target.closest("[data-playbook-search-form]");
   if (searchForm) {
     event.preventDefault();
@@ -439,15 +474,20 @@ els.workspaceContent?.addEventListener("submit", async (event) => {
   const editorForm = event.target.closest("[data-playbook-editor]");
   if (!editorForm) return;
   event.preventDefault();
-  const submitButton = editorForm.querySelector('[type="submit"]');
-  submitButton.disabled = true;
+  const submitButton = event.submitter || editorForm.querySelector('[type="submit"]');
+  const buttons = [...editorForm.querySelectorAll('[type="submit"]')];
+  buttons.forEach((button) => { button.disabled = true; });
   try {
-    await savePlaybookEditor(editorForm);
-    showToast("플레이북 초안을 저장했어요.", "success");
+    await savePlaybookEditor(editorForm, submitButton.value === "published");
+    showToast(submitButton.value === "published" ? "플레이북을 저장하고 공개했어요." : "플레이북을 저장했어요.", "success");
   } catch (error) {
     showToast(error.message, "warning");
-    submitButton.disabled = false;
+    buttons.forEach((button) => { button.disabled = false; });
   }
+});
+
+els.workspaceContent?.addEventListener("change", (event) => {
+  if (event.target.matches("[data-workspace-sort]")) { state.workspaceSort = event.target.value; renderWorkspace(); }
 });
 
 els.messages.addEventListener("scroll", updateComposerShadow, { passive: true });
@@ -455,7 +495,7 @@ window.addEventListener("scroll", updateComposerShadow, { passive: true });
 window.addEventListener("resize", updateComposerShadow);
 els.scrollToTopBtn?.addEventListener("click", () => {
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const scrollTarget = window.matchMedia?.("(max-width: 860px)").matches ? window : els.messages;
+  const scrollTarget = els.messages;
   scrollTarget.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
 });
 
@@ -505,7 +545,7 @@ els.messages.addEventListener("click", (event) => {
     const message = state.messages[messageIndex];
     if (!message || state.busy) return;
     if (actionButton.dataset.messageAction === "copy") {
-      navigator.clipboard.writeText(message.content || "").then(() => {
+      navigator.clipboard.writeText(customerAnswerText(message.content)).then(() => {
         const original = actionButton.innerHTML;
         actionButton.innerHTML = `${MESSAGE_ACTION_ICONS.check}<span>복사됨</span>`;
         setTimeout(() => { actionButton.innerHTML = original; }, 1200);
@@ -541,6 +581,21 @@ els.messages.addEventListener("click", (event) => {
     return;
   }
 
+  const sourceMore = event.target.closest("[data-source-more]");
+  if (sourceMore) {
+    const expanded = sourceMore.getAttribute("aria-expanded") !== "true";
+    sourceMore.closest(".source-list").querySelectorAll("[data-related-row]").forEach((row) => { row.hidden = !expanded && Number(row.dataset.relatedRow) >= 3; });
+    sourceMore.setAttribute("aria-expanded", String(expanded));
+    sourceMore.textContent = expanded ? "접기" : `${sourceMore.dataset.sourceMore}건 더 보기`;
+    return;
+  }
+  const sourceView = event.target.closest("[data-source-view]");
+  if (sourceView) {
+    const table = sourceView.closest(".source-list").classList.toggle("is-table");
+    sourceView.setAttribute("aria-pressed", String(table));
+    sourceView.textContent = table ? "목록으로 보기" : "표로 보기";
+    return;
+  }
   const toggle = event.target.closest(".source-list-toggle");
   if (toggle) {
     const panel = document.getElementById(toggle.dataset.sourceToggle);
@@ -572,7 +627,7 @@ els.messages.addEventListener("click", (event) => {
     return;
   }
 
-  const card = event.target.closest(".source-card, .related-issue-item, .notion-card");
+  const card = event.target.closest(".source-card, .related-issue-item, .related-issue-table [data-source-key], .notion-card");
   if (!card) return;
   openSourceDetail(state.sourceMap.get(card.dataset.sourceKey));
 });

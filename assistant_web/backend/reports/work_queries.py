@@ -246,7 +246,7 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         if c.get("work_incident_only"):
             repeats = recurrence_candidates(rows)
             body += "\n\n반복 발생 후보(같은 고객사·화면번호·증상에 서로 다른 이슈 2건 이상):\n"
-            body += "\n".join(f"- {g['project']} · 화면 {g['screen']} · {g['symptom']}: {g['count']}건" for g in repeats) or "확정 가능한 후보가 없습니다."
+            body += "\n".join(f"- {_customer(g['project'])} · 화면 {g['screen']} · {g['symptom']}: {g['count']}건" for g in repeats) or "확정 가능한 후보가 없습니다."
             body += "\n동일 원인의 재발인지는 각 이슈의 원인·조치 이력을 대조해야 합니다."
     elif operation == "health":
         opened = [r for r in rows if mantis_status_bucket(r["status"]) == "open"]

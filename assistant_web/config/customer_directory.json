@@ -1,6 +1,11 @@
 {
   "checked_at": "2026-10-21",
   "inventory": {"live_mantis_projects": 78, "stored_issue_projects": 72},
+  "project_display_names": {
+    "106KoscomOil": {"name": "코스콤", "note": "기존 코스콤 파생 프로젝트의 표시 전용 이름. 조회 별칭은 유지한다."},
+    "122KoscomCME": {"name": "코스콤", "note": "기존 코스콤 파생 프로젝트의 표시 전용 이름. 조회 별칭은 유지한다."},
+    "098Itas": {"name": "신한펀드파트너스", "source": "https://www.shinhanfundpartners.com/press/?mod=document&uid=7216", "note": "표시 전용. 신한투자증권과 다른 회사이며 기존 검색 별칭·프로젝트 조건은 변경하지 않는다."}
+  },
   "customers": {
     "db": {"name": "DB증권", "projects": ["101PopcornRenewal"], "aliases": [], "source": "https://www.dbsec.co.kr/company/ko/main/index.do"},
     "유진": {"name": "유진투자증권", "projects": ["104EuGene"], "aliases": [], "source": "https://www.eugenefn.com/"},

@@ -2,6 +2,8 @@
 
 import math
 import re
+
+from backend.display import customer_name
 from collections import Counter, defaultdict
 
 
@@ -115,7 +117,7 @@ def narrowing_question(rows: list[dict], constraints: dict, subject: str) -> str
         return "조건에 맞는 근거를 찾지 못했습니다. 고객사나 화면번호, 기억나는 오류 문구를 알려 주세요."
     if not constraints.get("customer_key") and len({r["project"] for r in rows}) > 1:
         projects = list(dict.fromkeys(r["project"] for r in rows))[:3]
-        return "어느 고객사 건인가요? 후보 고객사는 " + ", ".join(projects) + " 등입니다."
+        return "어느 고객사 건인가요? 후보 고객사는 " + ", ".join(customer_name(project) for project in projects) + " 등입니다."
     if not constraints.get("platform_key") and subject != "아이폰":
         return "모바일(MTS) 건인가요, PC(HTS) 건인가요? 기억나는 화면번호나 오류 문구가 있으면 함께 알려 주세요."
     return "화면번호나 발생 시점, 기억나는 오류 문구를 알려 주세요. 지금 조건만으로 특정 이슈의 진행 상태를 단정할 수 없습니다."

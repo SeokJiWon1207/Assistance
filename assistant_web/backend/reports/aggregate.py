@@ -101,7 +101,7 @@ def format_count_group_lines(group_counts: Dict[str, int], group_by: str) -> Lis
         return format_month_trend_lines(group_counts, label)
     ordered = sorted(group_counts.items(), key=lambda item: (-item[1], item[0]))
     lines = ["", f"{label}별 건수 (많은 순, {len(ordered)}개 {label})"]
-    lines.extend(f"- {name} — {count}건" for name, count in ordered)
+    lines.extend(f"- {customer_name(name) if group_by == 'customer' else name} — {count}건" for name, count in ordered)
     return lines
 
 
@@ -309,12 +309,12 @@ def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
         for item in flagged:
             if item["ratio"] == float("inf"):
                 lines.append(
-                    f"- {item['axis']} — 최근 {recent_month} {item['recent']}건 "
+                    f"- {customer_name(item['axis']) if axis_key == 'customer' else item['axis']} — 최근 {recent_month} {item['recent']}건 "
                     f"(신규 급증, 직전 0건) ▲"
                 )
             else:
                 lines.append(
-                    f"- {item['axis']} — 최근 {recent_month} {item['recent']}건 "
+                    f"- {customer_name(item['axis']) if axis_key == 'customer' else item['axis']} — 최근 {recent_month} {item['recent']}건 "
                     f"(직전 평균 {item['baseline_avg']:.1f}건, {item['ratio']:.1f}배) ▲"
                 )
 
@@ -464,7 +464,7 @@ def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
             col_totals[month] += value
             cells.append(str(value))
         grand_total += row_total
-        table_lines.append(f"| {axis_value} | " + " | ".join(cells) + f" | {row_total} |")
+        table_lines.append(f"| {customer_name(axis_value) if axis_field == 'customer' else axis_value} | " + " | ".join(cells) + f" | {row_total} |")
     total_cells = " | ".join(str(col_totals[month]) for month in shown_months)
     table_lines.append(f"| 합계 | {total_cells} | {grand_total} |")
 
@@ -658,7 +658,7 @@ def build_mantis_count_report(
         for issue in normalized_issues[:display_limit]:
             lines.append(
                 f"- #{issue['id']} {issue['summary']} "
-                f"({issue['project']} · {display_status_label(issue['status'])} · {issue['created_at'] or '미상'})"
+                f"({customer_name(issue['project'])} · {display_status_label(issue['status'])} · {issue['created_at'] or '미상'})"
             )
         if display_limit > 5 and total_count > min(len(normalized_issues), display_limit):
             lines.append(f"나머지 {total_count - min(len(normalized_issues), display_limit)}건은 이 목록에 표시하지 않았습니다.")
@@ -743,7 +743,7 @@ def build_mantis_month_count_report(
         for issue in normalized_issues[:5]:
             lines.append(
                 f"- #{issue['id']} {issue['summary']} "
-                f"({issue['project']} · {display_status_label(issue['status'])} · {issue['created_at'] or '미상'})"
+                f"({customer_name(issue['project'])} · {display_status_label(issue['status'])} · {issue['created_at'] or '미상'})"
             )
 
     retrieval = {
@@ -789,7 +789,7 @@ def format_issue_list_criteria(
         )
     if constraints.get("customer_key"):
         project = issues[0].get("project") if issues else ""
-        customer = customer_name(project) if project else constraints["customer_key"]
+        customer = customer_name(project) if project else customer_name(constraints["customer_key"])
         criteria.append(f"고객사={customer}")
     if constraints.get("platform_key"):
         criteria.append(f"플랫폼={constraints['platform_key'].upper()}")
@@ -798,7 +798,7 @@ def format_issue_list_criteria(
             "플랫폼 제외=" + ", ".join(value.upper() for value in constraints["excluded_platform_keys"])
         )
     if constraints.get("excluded_customer_keys"):
-        criteria.append("고객사 제외=" + ", ".join(constraints["excluded_customer_keys"]))
+        criteria.append("고객사 제외=" + ", ".join(customer_name(key) for key in constraints["excluded_customer_keys"]))
     if constraints.get("people", {}).get("names"):
         role = constraints.get("people", {}).get("role") or "any"
         role_label = "담당자" if role == "handler" else "요청자/본문" if role == "reporter" else "Mantis 등록자" if role == "registered_reporter" else "인물"

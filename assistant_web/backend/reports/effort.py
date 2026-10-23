@@ -12,6 +12,7 @@ from contextlib import closing, nullcontext
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from backend.display import customer_name
 from backend.common import (
     is_valid_person_name,
     normalize_for_match,
@@ -287,7 +288,7 @@ def run_filtered_effort_report(
         else constraints.get("customer_key")
     )
     platform_label = str(constraints.get("platform_key") or "").upper()
-    scope_parts = [str(value) for value in (customer_label, platform_label) if value]
+    scope_parts = [str(value) for value in (customer_name(customer_label) if customer_label else "", platform_label) if value]
     scope_label = " · ".join(scope_parts) or "요청 조건"
 
     lines = [

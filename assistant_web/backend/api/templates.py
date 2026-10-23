@@ -1,11 +1,15 @@
 """팀 공용 질문 템플릿 API."""
 
+import re
+
 from datetime import date
 from threading import Lock
 from typing import Any, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException
 
+from backend.config import CUSTOMER_ALIASES, CUSTOMER_DIRECTORY, CUSTOMER_PROJECT_DISPLAY_NAMES
+from backend.display import customer_name
 from backend.sources.mantis_store import read_complete_store
 from backend.team_templates import (
     TeamTemplateConfigError,
@@ -48,3 +52,22 @@ def list_team_templates() -> Dict[str, Any]:
         return order_customer_options(load_team_templates(), statistics["counts"], statistics=statistics)
     except TeamTemplateConfigError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/api/customer-names")
+def list_customer_names() -> Dict[str, Any]:
+    """표시 전용 이름표. 원본 프로젝트·검색 별칭은 변경하지 않는다."""
+    exact = {alias: customer_name(alias) for key, aliases in CUSTOMER_ALIASES.items()
+             for alias in [key, *aliases]}
+    # 이름표 이전부터 별칭으로만 등록됐던 프로젝트도 같은 표시 함수를 쓴다.
+    projects = {}
+    for alias, name in exact.items():
+        code = re.match(r"^(\d{3}[A-Za-z가-힣][\w-]*)", alias)
+        if code:
+            project = re.sub(r"_Project$", "", code[1], flags=re.IGNORECASE)
+            projects[project] = name
+    projects.update({project: item["name"] for item in CUSTOMER_DIRECTORY.values()
+                     for project in item.get("projects", [])})
+    projects.update(CUSTOMER_PROJECT_DISPLAY_NAMES)
+    exact.update(CUSTOMER_PROJECT_DISPLAY_NAMES)
+    return {"exact": exact, "projects": projects}

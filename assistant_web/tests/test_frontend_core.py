@@ -96,8 +96,8 @@ class FrontendCoreTests(unittest.TestCase):
             "adminDrawerForm",
         ):
             self.assertIn(required_id, parser.ids)
-        self.assertIn('<canvas id="authScene" class="auth-scene" aria-hidden="true">', html)
-        self.assertLess(html.index("/static/auth_scene.js"), html.index("/static/auth.js"))
+        self.assertNotIn('<canvas id="authScene"', html)
+        self.assertIn("/static/design_system.css", html)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
         self.assertIn('type="module" src="/static/app.js', html)
@@ -171,7 +171,9 @@ class FrontendCoreTests(unittest.TestCase):
             with self.subTest(stylesheet=path.name):
                 sizes = {float(value) for value in re.findall(r"font-size:\s*([0-9.]+)px", text)}
                 weights = {int(value) for value in re.findall(r"font-weight:\s*([0-9]+)", text)}
-                self.assertLessEqual(sizes, tds_sizes)
+                # PDF 개선안의 제목·지표 크기는 최종 디자인 시스템에서 확장한다.
+                allowed_sizes = tds_sizes | {18, 24, 30} if path.name == "design_system.css" else tds_sizes
+                self.assertLessEqual(sizes, allowed_sizes)
                 self.assertLessEqual(weights, tds_weights)
                 # 영문 라벨용 대문자 변환은 쓰지 않는다.
                 self.assertNotIn("text-transform: uppercase", text)

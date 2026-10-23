@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from backend.display import customer_name
 from backend.common import extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
 from backend.notion.property_roles import responsible_properties
@@ -193,6 +194,7 @@ def _issue_summary(issue: Dict[str, Any]) -> Dict[str, Any]:
         "id": issue.get("id"),
         "title": issue.get("summary", "제목 없음"),
         "project": issue.get("project", "미상"),
+        "customer_name": customer_name(issue.get("project")),
         "status": issue.get("status", "상태 미상"),
         "priority": issue.get("priority", ""),
         "handler": issue.get("handler", "담당자 미지정"),

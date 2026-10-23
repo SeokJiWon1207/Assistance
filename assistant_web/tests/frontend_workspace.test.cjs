@@ -12,7 +12,7 @@ async function harness(apiFetch) {
   let timerId = 0;
   const element = () => ({ appendChild() {}, setAttribute() {}, classList: { add() {}, remove() {} }, remove() {} });
   const context = vm.createContext({
-    AssistantFrontendCore: core, crypto: { randomUUID: () => 'recovered' },
+    AssistantFrontendCore: core, crypto: { randomUUID: () => 'recovered' }, URLSearchParams,
     document: { createElement: element, body: element() }, requestAnimationFrame: (fn) => fn(),
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; },
@@ -67,6 +67,45 @@ async function harness(apiFetch) {
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
+
+test('playbook refresh failure preserves cached entries and exposes retry', async () => {
+  const h = await harness(async () => ({ ok: false, json: async () => ({ detail: '연결 실패' }) }));
+  h.state.playbooks = [{ id: 'cached', title: '저장된 절차', status: 'published', tags: [] }];
+  await assert.rejects(h.api.loadPlaybooks(true), /연결 실패/);
+  assert.equal(h.state.playbooks[0].id, 'cached');
+  assert.equal(h.state.playbooksLoading, false);
+  assert.match(h.api.renderPlaybooks(), /저장된 절차/);
+  assert.match(h.api.renderPlaybooks(), /data-playbooks-retry/);
+});
+
+test('partial personal counts identify lower bounds and never claim all results', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const html = h.api.renderPersonalOverview({ user: { mantisUsername: 'user-a' }, summary: {open: 1, overdue: 0, aging: 0}, mantis: {search_complete: false, issues: [{id: 1, title: '확인된 업무'}]} });
+  assert.match(html, /건 이상/);
+  assert.doesNotMatch(html, /건 모두 표시|모두 기한 내|장기 업무 없음/);
+});
+
+test('favorite search keeps saved conversations and filters title and question', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.state.conversations = [
+    {id:'a', favorite:true, title:'주간 보고', messages:[message('결제 문제 확인')]},
+    {id:'b', favorite:true, title:'접수 현황', messages:[message('로그인 문제')]},
+  ];
+  h.state.favoriteQuery = '결제';
+  const html = h.api.renderFavoriteConversations();
+  assert.match(html, /주간 보고/);
+  assert.doesNotMatch(html, /접수 현황/);
+  assert.equal(h.state.conversations.length, 2);
+});
+
+test('mark all notifications keeps failed items unread and reports partial failure', async () => {
+  const h = await harness(async (url) => ({ ok: !url.includes('failed') }));
+  h.state.myWorkspace = { summary: {}, notifications: [{id:'ok',read:false},{id:'failed',read:false},{id:'old',read:true}] };
+  await assert.rejects(h.api.markNotificationsRead(), /1/);
+  assert.equal(h.state.myWorkspace.notifications[0].read, true);
+  assert.equal(h.state.myWorkspace.notifications[1].read, false);
+  assert.equal(h.state.myWorkspace.summary.unreadNotifications, 1);
+});
 
 test('refresh retains pending local messages and local-only conversations', async () => {
   const local = { id: 'chat', title: '질문', messages: [message('질문'), message('새 질문')], syncPending: true, serverUpdatedAt: 'old' };
@@ -181,7 +220,7 @@ test('personal workspace joins a single live lookup and hides lists until comple
   const joined = h.api.ensureMyWorkspaceFresh();
   await new Promise(setImmediate);
   assert.equal(h.els.workspaceRefreshBtn.disabled, true);
-  assert.equal(h.els.workspaceRefreshBtn.textContent, '불러오는 중…');
+  assert.match(h.els.workspaceRefreshBtn.innerHTML, /불러오는 중…/);
   assert.match(h.els.workspaceContent.innerHTML, /업무 정보를 불러오는 중입니다/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-overview|workspace-issue-list/);
@@ -199,20 +238,23 @@ test('personal workspace joins a single live lookup and hides lists until comple
   assert.equal(calls.length, 1);
 });
 
-test('personal refresh hides existing list and restores it only after failure', async () => {
+test('personal refresh keeps cached list visible and explains refresh failure', async () => {
   let finish;
   const h = await harness(async () => new Promise((resolve) => { finish = resolve; }));
-  h.state.myWorkspace = { summary: { open: 1 }, mantis: { status: 'snapshot', issues: [{ id: 1, title: '기존 업무' }] } };
+  h.state.myWorkspace = { user: { mantisUsername: 'user-a' }, summary: { open: 1 }, mantis: { status: 'live', search_complete: true, fetchedAt: '2026-10-23T10:00:00Z', issues: [{ id: 1, title: '기존 업무' }] } };
   h.api.renderWorkspace();
   assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
   const loading = h.api.loadMyWorkspace(true);
-  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /기존 업무|workspace-issue-list/);
+  assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   finish({ ok: false, json: async () => ({ detail: '조회 실패' }) });
   await assert.rejects(loading, /조회 실패/);
   assert.match(h.els.workspaceContent.innerHTML, /조회 실패/);
   assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
   assert.equal(h.els.workspaceRefreshBtn.disabled, false);
+  assert.equal(h.els.workspaceDataBadge.badge.state, 'snapshot');
+  assert.equal(h.els.workspaceDataBadge.badge.label, '갱신 실패');
 });
 
 test('personal initial failure exits loading state without showing an empty work list', async () => {

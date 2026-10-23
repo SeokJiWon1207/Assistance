@@ -647,7 +647,7 @@ class EffortIntentTests(unittest.TestCase):
             report = build_effort_report("2025년 NH MTS 공수총합 알려줘")
 
         self.assertNotIn("needsPerson", report)
-        self.assertIn("120NH(NH증권) · MTS 공수 집계", report["content"])
+        self.assertIn("NH투자증권 · MTS 공수 집계", report["content"])
         self.assertIn("총 공수: **3.50**", report["content"])
         self.assertEqual(report["effortChart"]["totalEffort"], 3.5)
         self.assertEqual(report["effortChart"]["issueCount"], 1)
@@ -1299,13 +1299,13 @@ class CountGroupingTests(unittest.TestCase):
         }
         report = self._run_spike("평소보다 이슈 급증한 고객사 알려줘", counts)
         content = report["content"]
-        self.assertIn("유진증권", content)
+        self.assertIn("유진투자증권", content)
         self.assertIn("3.0배", content)
         self.assertIn("신규 급증", content)  # 신한투자증권
         # 평탄한 KB증권(1.1배)은 급증으로 잡히지 않는다.
         self.assertNotIn("KB증권", content)
         # 신규 급증(비율 무한대)이 배수 급증보다 위로 정렬된다.
-        self.assertLess(content.index("신한투자증권"), content.index("유진증권"))
+        self.assertLess(content.index("신한투자증권"), content.index("유진투자증권"))
 
     def test_spike_report_needs_two_months_of_history(self):
         sep = "\x1f"
@@ -1343,9 +1343,9 @@ class CountGroupingTests(unittest.TestCase):
         report = self._run_pivot("고객사별 월별 이슈 건수 표로 보여줘", counts)
         content = report["content"]
         self.assertIn("| 고객사 | 2026-05 | 2026-06 | 2026-07 | 합계 |", content)
-        self.assertIn("| 유진증권 | 5 | 7 | 18 | 30 |", content)
+        self.assertIn("| 유진투자증권 | 5 | 7 | 18 | 30 |", content)
         # 행은 합계가 큰 순으로 정렬된다(KB 33 > 유진 30).
-        self.assertLess(content.index("KB증권"), content.index("유진증권"))
+        self.assertLess(content.index("KB증권"), content.index("유진투자증권"))
         # 열 합계 행이 붙는다.
         self.assertIn("| 합계 | 15 | 18 | 30 | 63 |", content)
 

@@ -4,14 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>컨텐츠서비스 AI 비서</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20261021-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20261023-5" />
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
-    <link rel="stylesheet" href="/static/responsive.css?v=20261002-5" />
-    <link rel="stylesheet" href="/static/workspace.css?v=20261002-1" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20261023-1" />
-    <link rel="stylesheet" href="/static/template_picker.css?v=20261002-1" />
-    <link rel="stylesheet" href="/static/conversation_list.css?v=20260930-1" />
-    <link rel="stylesheet" href="/static/admin_center.css?v=20261002-2" />
+    <link rel="stylesheet" href="/static/responsive.css?v=20261023-2" />
+    <link rel="stylesheet" href="/static/workspace.css?v=20261023-3" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261023-4" />
+    <link rel="stylesheet" href="/static/template_picker.css?v=20261023-3" />
+    <link rel="stylesheet" href="/static/conversation_list.css?v=20261023-2" />
+    <link rel="stylesheet" href="/static/admin_center.css?v=20261023-4" />
+    <link rel="stylesheet" href="/static/design_system.css?v=20261023-1" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -47,13 +48,15 @@
       <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></symbol>
       <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
       <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></symbol>
       <symbol id="i-template" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></symbol>
     </svg>
     <section id="authGate" class="auth-gate" aria-live="polite">
-      <canvas id="authScene" class="auth-scene" aria-hidden="true"></canvas>
       <div class="auth-card">
         <div class="auth-brand">
-          <span class="brand-mark"><img src="/static/assets/company-logo.png" alt="회사 로고" /></span>
+          <span class="brand-mark">AI</span>
           <div>
             <strong>컨텐츠서비스 AI 비서</strong>
             <span>승인된 팀 계정으로 로그인해 주세요.</span>
@@ -69,7 +72,7 @@
             <p>관리자에게 받은 이메일과 비밀번호로 로그인해 주세요.</p>
           </div>
           <label for="loginEmail"><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" required /></label>
-          <label for="loginPassword"><span>비밀번호</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /></label>
+          <label for="loginPassword"><span>비밀번호</span><span class="password-field"><input id="loginPassword" name="password" type="password" autocomplete="current-password" minlength="6" required /><button class="password-toggle" type="button" data-password-toggle aria-label="비밀번호 보기" aria-pressed="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-eye"/></svg></button></span></label>
           <p id="loginError" class="login-error" role="alert" hidden></p>
           <button id="loginSubmit" class="auth-primary-button" type="submit">로그인</button>
           <button id="passwordResetBtn" class="auth-link-button" type="button">비밀번호 재설정 메일 받기</button>
@@ -79,9 +82,9 @@
             <h2>비밀번호 변경 필요</h2>
             <p>관리자에게 받은 임시 비밀번호를 본인만 아는 새 비밀번호로 변경해야 서비스를 이용할 수 있습니다.</p>
           </div>
-          <label for="currentPassword"><span>현재 비밀번호</span><input id="currentPassword" type="password" autocomplete="current-password" maxlength="128" required /></label>
-          <label for="newPassword"><span>새 비밀번호 · 8~128자</span><input id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
-          <label for="confirmPassword"><span>새 비밀번호 확인</span><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /></label>
+          <label for="currentPassword"><span>현재 비밀번호</span><span class="password-field"><input id="currentPassword" type="password" autocomplete="current-password" maxlength="128" required /><button class="password-toggle" type="button" data-password-toggle aria-label="비밀번호 보기" aria-pressed="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-eye"/></svg></button></span></label>
+          <label for="newPassword"><span>새 비밀번호 · 8~128자</span><span class="password-field"><input id="newPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /><button class="password-toggle" type="button" data-password-toggle aria-label="비밀번호 보기" aria-pressed="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-eye"/></svg></button></span></label>
+          <label for="confirmPassword"><span>새 비밀번호 확인</span><span class="password-field"><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required /><button class="password-toggle" type="button" data-password-toggle aria-label="비밀번호 보기" aria-pressed="false"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-eye"/></svg></button></span></label>
           <p id="passwordChangeError" class="login-error" role="alert" hidden></p>
           <button id="passwordChangeSubmit" class="auth-primary-button" type="submit">비밀번호 변경</button>
           <button id="passwordChangeLogout" class="auth-link-button" type="button">로그아웃하고 돌아가기</button>
@@ -92,7 +95,7 @@
       <h1 class="sr-only">컨텐츠서비스 AI 비서</h1>
       <!-- 주 메뉴: 넓은 화면에서는 왼쪽 레일, 좁은 화면에서는 아래 탭바. 대화 목록(.sidebar)은 대화 화면에서만 보인다. -->
       <nav class="app-rail" aria-label="주 메뉴">
-        <button id="brandHome" class="rail-brand" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작"><img src="/static/assets/company-logo.png" alt="" /></button>
+        <button id="brandHome" class="rail-brand" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작">AI</button>
         <div class="rail-items">
           <button id="viewChatBtn" class="rail-item is-active" type="button" aria-current="page">
             <svg class="ui-icon" aria-hidden="true"><use href="#i-chat"/></svg>
@@ -148,7 +151,7 @@
           </div>
           <div class="conversation-search">
             <svg class="ui-icon" aria-hidden="true"><use href="#i-search"/></svg>
-            <input id="conversationSearch" type="search" placeholder="제목·내용으로 대화 검색" autocomplete="off" aria-label="대화 검색" aria-controls="conversationList" />
+            <input id="conversationSearch" type="search" placeholder="대화 검색" autocomplete="off" aria-label="대화 검색" aria-controls="conversationList" />
           </div>
           <p id="conversationSearchStatus" class="conversation-search-status" aria-live="polite" hidden></p>
           <div id="conversationList" class="conversation-list"></div>
@@ -162,7 +165,7 @@
           <div id="modelMeta" class="model-meta"></div>
         </section>
 
-        <details class="sidebar-advanced">
+        <details class="sidebar-advanced" open>
           <summary>답변 표시</summary>
           <div class="sidebar-advanced-body">
             <div class="advanced-section">
@@ -176,8 +179,8 @@
 
         <!-- 생성 파라미터는 답변 품질을 크게 바꾸므로 관리자에게만 보인다.
              bootstrap.js가 역할을 확인한 뒤 hidden을 해제한다. -->
-        <details id="adminGenerationSettings" class="sidebar-advanced" hidden>
-          <summary>관리자 · 생성 파라미터</summary>
+        <details id="adminGenerationSettings" class="sidebar-advanced is-admin" hidden>
+          <summary>생성 파라미터</summary>
           <div class="sidebar-advanced-body">
             <p class="admin-settings-note">여기서 바꾼 값은 내 질문에만 적용됩니다. 팀원에게는 보이지 않으며 항상 기본값으로 답변합니다.</p>
             <div class="advanced-section">
@@ -259,7 +262,7 @@
           </div>
           <div class="workspace-header-actions">
             <span id="workspaceDataBadge" class="data-badge-slot"></span>
-            <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button">새로고침</button>
+            <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="업무 새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
           </div>
         </header>
         <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
@@ -356,9 +359,11 @@
             <svg class="ui-icon" aria-hidden="true"><use href="#i-template"/></svg>
             <span class="template-toggle-label">템플릿</span>
           </button>
+          <span class="composer-hint" id="composerHint">Enter 전송 · Shift+Enter 줄바꿈</span>
           <textarea
             id="promptInput"
             rows="1"
+            aria-describedby="composerHint"
             aria-autocomplete="list"
             placeholder="이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다."
           ></textarea>
@@ -428,7 +433,7 @@
           <button id="logoutConfirmClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </header>
         <div class="modal-form">
-          <p id="logoutConfirmDescription" class="modal-form-description">현재 계정의 세션을 종료하고 로그인 화면으로 이동합니다.</p>
+          <p id="logoutConfirmDescription" class="modal-form-description">이 기기에서 세션을 끝내고 로그인 화면으로 돌아갑니다. 서버에 저장한 대화 기록은 그대로 남아 있습니다.</p>
           <p id="logoutConfirmError" class="login-error" role="alert" hidden></p>
           <div class="modal-form-actions">
             <button id="logoutCancelBtn" class="secondary-button" type="button">취소</button>
@@ -461,6 +466,7 @@
           <label class="feedback-comment-field" for="feedbackComment">
             <span>추가 의견 <small>선택</small></span>
             <textarea id="feedbackComment" rows="3" maxlength="500" placeholder="어떤 부분이 달랐는지 알려주시면 개선에 도움이 됩니다."></textarea>
+            <small id="feedbackCount" class="feedback-count">0 / 500</small>
           </label>
           <div class="modal-form-actions">
             <button id="feedbackCancelBtn" class="secondary-button" type="button">취소</button>
@@ -480,13 +486,13 @@
           <button id="chromaModalClose" class="modal-close" type="button" aria-label="닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </header>
         <div id="chromaModalContent" class="modal-content"></div>
+        <footer id="sourceModalActions" class="source-modal-actions" hidden></footer>
       </section>
     </div>
 
     <script src="/static/frontend_core.js?v=20261007-1"></script>
     <script src="/static/custom_select.js?v=20260918-1"></script>
-    <script src="/static/auth_scene.js?v=20261021-1"></script>
-    <script src="/static/auth.js?v=20261015-password"></script>
+    <script src="/static/auth.js?v=20261023-1"></script>
     <script type="module" src="/static/app.js?v=20260911-6"></script>
   </body>
 </html>

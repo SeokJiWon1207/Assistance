@@ -12,6 +12,7 @@ from backend.sources.mantis import normalize_issue
 from backend.sources.mantis_collection import collection_metadata
 from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
 from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.display import customer_name
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
 from backend.workspace_data import load_workspace_snapshot
@@ -105,7 +106,7 @@ def _decision_summary(
     signals: List[str] = []
     if customer_spikes:
         item = customer_spikes[0]
-        signals.append(f"{item['name']}에서 신규 이슈 {item['count']}건이 집중됐습니다.")
+        signals.append(f"{customer_name(item['name'])}에서 신규 이슈 {item['count']}건이 집중됐습니다.")
     if screen_spikes:
         item = screen_spikes[0]
         signals.append(f"화면번호 {item['name']} 관련 이슈가 {item['count']}건으로 증가했습니다.")
@@ -122,7 +123,7 @@ def _decision_summary(
     if customer_spikes:
         name = customer_spikes[0]["name"]
         actions.append({
-            "title": f"{name} 증가 원인 확인",
+            "title": f"{customer_name(name)} 증가 원인 확인",
             "reason": "동일 고객사의 신규 이슈가 단기간에 집중됐습니다.",
             "question": f"지난주 {name} 이슈가 증가한 공통 원인과 영향 범위, 권장 조치를 분석해줘",
         })

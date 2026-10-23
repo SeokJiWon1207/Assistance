@@ -1,3 +1,4 @@
+import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { answerSearchPresentation } from "./search_conditions.js?v=20261012-1";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
@@ -116,6 +117,7 @@ function applyTheme(theme) {
   const dark = theme === "dark";
   document.body.classList.toggle("theme-dark", dark);
   els.darkModeToggle.setAttribute("aria-pressed", String(dark));
+  els.darkModeToggle.setAttribute("aria-checked", String(dark));
   els.darkModeToggle.setAttribute("aria-label", dark ? "라이트 모드로 변경" : "다크 모드로 변경");
   els.themeModeLabel.textContent = dark ? "켜짐" : "꺼짐";
 }
@@ -138,6 +140,8 @@ function saveTheme(dark) {
 
 function setShowSources(enabled) {
   els.showSources.setAttribute("aria-pressed", String(enabled));
+  els.showSources.setAttribute("aria-checked", String(enabled));
+  document.body.classList.toggle("hide-related-sources", !enabled);
   els.showSources.setAttribute("aria-label", enabled ? "관련 이슈 숨기기" : "관련 이슈 표시하기");
   els.sourceDisplayLabel.textContent = enabled ? "켜짐" : "꺼짐";
 }
@@ -148,6 +152,7 @@ function showSourcesEnabled() {
 
 function setAbComparison(enabled) {
   els.abTestToggle.setAttribute("aria-pressed", String(enabled));
+  els.abTestToggle.setAttribute("aria-checked", String(enabled));
   els.abTestToggle.setAttribute("aria-label", enabled ? "A/B 비교 끄기" : "A/B 비교 켜기");
   els.abTestLabel.textContent = enabled ? "켜짐 · 답변 비교" : "꺼짐 · 현재 답변만";
 }
@@ -229,7 +234,27 @@ function revealAnswer(content, bubble, { streamed }) {
   ]);
 }
 
+// 서버 진행 단계(analysis → routing → retrieval → filtering → generation → verification)를
+// 사용자가 읽는 세 단계로 묶어 지금 어디까지 왔는지 보여 준다. 단계를 모르면 그리지 않는다.
+const PROGRESS_STEPS = [
+  ["질문 해석", ["analysis", "routing"]],
+  ["자료 검색", ["retrieval", "filtering"]],
+  ["답변 작성", ["generation", "verification"]],
+];
+
+function renderProgressSteps(stage) {
+  const current = PROGRESS_STEPS.findIndex(([, stages]) => stages.includes(stage));
+  if (current < 0) return "";
+  const items = PROGRESS_STEPS.map(([label], index) => {
+    const tone = index < current ? "is-done" : index === current ? "is-current" : "";
+    const marker = index < current ? icon("check", 14, "is-bold") : `<span class="progress-step-dot" aria-hidden="true"></span>`;
+    return `<li class="progress-step ${tone}"${index === current ? ' aria-current="step"' : ""}>${marker}${label}</li>`;
+  }).join("");
+  return `<ol class="progress-steps" aria-label="답변 진행 단계">${items}</ol>`;
+}
+
 function renderMessages() {
+  if (!state.busy) els.input.placeholder = state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요";
   els.messages.innerHTML = "";
   const activeHistory = state.conversations?.find((item) => item.id === state.activeConversationId);
   if (activeHistory?.messageOffset > 0) {
@@ -248,14 +273,10 @@ function renderMessages() {
     empty.className = "empty-state";
     empty.innerHTML = `
       <div>
-        <svg class="empty-state-illustration" viewBox="0 0 96 96" width="72" height="72" fill="none" aria-hidden="true">
-          <circle cx="40" cy="40" r="24" stroke="currentColor" stroke-width="4" opacity="0.35"/>
-          <path d="M58 58 L78 78" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-          <path d="M30 40h20M30 48h14" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" opacity="0.6"/>
-        </svg>
-        <p class="empty-state-eyebrow">팀 공용 템플릿 ${TEAM_TEMPLATES.length}개</p>
-        <h3>조건만 고르면 업무 질문이 완성됩니다</h3>
-        <p>팀에서 자주 쓰는 업무를 선택하거나 아래 입력창에 직접 질문해 보세요. 대화 중에는 입력창에 / 를 입력하면 템플릿이 열립니다.</p>
+        <p class="empty-state-eyebrow">${escapeHtml(state.currentUser?.displayName || state.currentUser?.name || "사용자")}님, ${new Date().getHours() < 12 ? "좋은 아침이에요" : new Date().getHours() < 18 ? "좋은 오후예요" : "좋은 저녁이에요"}</p>
+        <h3>어떤 이슈를 찾아드릴까요?</h3>
+        <p>자주 쓰는 업무를 고르거나 아래 입력창에 바로 질문하세요. 입력창에 / 를 입력해도 템플릿이 열려요.</p>
+        <div class="starter-heading"><strong>팀 템플릿</strong><button type="button" data-open-all-templates>전체 ${TEAM_TEMPLATES.length}개 보기</button></div>
         <div class="starter-grid" aria-label="팀 공용 템플릿">
           ${state.teamTemplatesError
             ? `<p class="status-warning">${escapeHtml(state.teamTemplatesError)} 직접 질문은 계속 사용할 수 있습니다.</p>`
@@ -286,7 +307,8 @@ function renderMessages() {
       avatar.textContent = "나";
     } else {
       avatar.classList.add("assistant-avatar");
-      avatar.innerHTML = `<img src="/static/assets/company-logo.png" alt="회사 로고" />`;
+      avatar.textContent = "AI";
+      avatar.setAttribute("aria-label", "AI 답변");
     }
 
     const presentation = message.role === "assistant" ? answerSearchPresentation(message) : null;
@@ -294,6 +316,7 @@ function renderMessages() {
     bubble.className = "bubble";
     if (message.loading && !message.content) {
       bubble.innerHTML = `
+        ${renderProgressSteps(message.stage)}
         <span class="loading-inline">
           <span>${escapeHtml(message.progress || "요청을 준비하고 있습니다")}</span>
           <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -310,7 +333,7 @@ function renderMessages() {
     } else if (message.role === "assistant") {
       const assistantContent = renderAssistantContent(presentation.content, message.sources || [], messageIndex);
       bubble.appendChild(assistantContent);
-      if (assistantContent.querySelector(".issue-table-wrap")) {
+      if (assistantContent.querySelector(".issue-table-wrap, .markdown-table-wrap")) {
         row.classList.add("has-issue-table");
         bubble.classList.add("bubble-wide");
       }
@@ -352,6 +375,8 @@ function renderMessages() {
       if (!message.loading && !message.streaming) {
         content.appendChild(renderMessageActions(message, messageIndex));
       }
+      const followUps = content.querySelector(".follow-up-panel");
+      if (followUps) content.appendChild(followUps);
       row.append(avatar, content);
     }
     els.messages.appendChild(row);
@@ -367,16 +392,15 @@ function renderMessages() {
 }
 
 // 스크롤 위치에 따라 입력창 경계 그림자와 "대화 처음으로" 버튼을 함께 갱신한다.
-// 모바일 레이아웃은 페이지 전체가 스크롤되므로 window.scrollY를 기준으로 삼는다.
+// 모바일에서도 메시지 영역을 스크롤하고 입력창은 하단에 유지한다.
 function updateComposerShadow() {
   const el = els.messages;
   if (!el) return;
   const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 4;
   el.classList.toggle("is-scrolled", !atBottom);
   if (els.scrollToTopBtn) {
-    const pageScrolls = window.matchMedia?.("(max-width: 860px)").matches;
-    const scrollOffset = pageScrolls ? window.scrollY : el.scrollTop;
-    const visibleHeight = pageScrolls ? window.innerHeight : el.clientHeight;
+    const scrollOffset = el.scrollTop;
+    const visibleHeight = el.clientHeight;
     const revealAfter = Math.max(320, visibleHeight * 0.6);
     els.scrollToTopBtn.hidden = scrollOffset < revealAfter;
   }
@@ -431,22 +455,30 @@ function renderSearchConditionChips(conditions, messageIndex) {
   label.textContent = "검색 조건";
   const list = document.createElement("div");
   list.className = "search-condition-list";
+  const provenance = document.createElement("details");
+  provenance.className = "search-provenance";
+  const provenanceLabel = document.createElement("summary");
+  provenanceLabel.textContent = "조회 범위";
+  provenance.appendChild(provenanceLabel);
   conditions.forEach((condition) => {
     const editable = Boolean(condition.removeCondition);
+    const displayValue = /^고객사/.test(condition.label) ? customerLabelText(customerName(condition.value)) : condition.value;
     const button = document.createElement(editable ? "button" : "span");
     button.className = `search-condition-chip${editable ? "" : " is-readonly"}`;
-    button.title = `${condition.label}: ${condition.value}`;
+    button.title = `${condition.label}: ${displayValue}`;
     if (editable) {
       button.type = "button";
       button.dataset.removeCondition = encodeURIComponent(JSON.stringify(condition.removeCondition));
       button.dataset.messageIndex = String(messageIndex);
-      button.setAttribute("aria-label", `${condition.label} ${condition.value} 조건을 제거하고 다시 검색`);
+      button.setAttribute("aria-label", `${condition.label} ${displayValue} 조건을 제거하고 다시 검색`);
       button.title += " · 이 조건을 제외하고 다시 검색";
     }
-    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(condition.value)}</strong>${editable ? `<i aria-hidden="true">${icon("close", 14)}</i>` : ""}`;
-    list.appendChild(button);
+    button.innerHTML = `<span>${escapeHtml(condition.label)}</span><strong>${escapeHtml(displayValue)}</strong>${editable ? `<i aria-hidden="true">${icon("close", 14)}</i>` : ""}`;
+    if (!editable && /조회 범위|저장본 수집 시각/.test(condition.label)) provenance.appendChild(button);
+    else list.appendChild(button);
   });
   section.append(label, list);
+  if (provenance.children.length > 1) section.appendChild(provenance);
   return section;
 }
 
@@ -563,6 +595,10 @@ function renderAbComparison(message, aBubble, messageIndex) {
   bTab.className = "ab-tab";
   aTab.setAttribute("role", "tab");
   bTab.setAttribute("role", "tab");
+  aTab.id = `ab-a-${messageIndex}`; bTab.id = `ab-b-${messageIndex}`;
+  aTab.setAttribute("aria-controls", `ab-panel-a-${messageIndex}`);
+  bTab.setAttribute("aria-controls", `ab-panel-b-${messageIndex}`);
+  bTab.tabIndex = -1;
   aTab.setAttribute("aria-selected", "true");
   bTab.setAttribute("aria-selected", "false");
   aTab.textContent = `A · ${variantA.label || "전처리 적용"}`;
@@ -573,6 +609,8 @@ function renderAbComparison(message, aBubble, messageIndex) {
   const bPanel = document.createElement("div");
   aPanel.className = "ab-panel";
   bPanel.className = "ab-panel";
+  aPanel.id = `ab-panel-a-${messageIndex}`; bPanel.id = `ab-panel-b-${messageIndex}`;
+  aPanel.setAttribute("aria-labelledby", aTab.id); bPanel.setAttribute("aria-labelledby", bTab.id);
   aPanel.setAttribute("role", "tabpanel");
   bPanel.setAttribute("role", "tabpanel");
   // hidden 속성은 브라우저 기본 스타일이 display:none !important로 걸어서 넓은 화면의
@@ -612,12 +650,28 @@ function renderAbComparison(message, aBubble, messageIndex) {
     const showA = selected === "a";
     aTab.setAttribute("aria-selected", String(showA));
     bTab.setAttribute("aria-selected", String(!showA));
+    aTab.tabIndex = showA ? 0 : -1; bTab.tabIndex = showA ? -1 : 0;
     aPanel.classList.toggle("is-collapsed", !showA);
     bPanel.classList.toggle("is-collapsed", showA);
   };
   aTab.addEventListener("click", () => select("a"));
   bTab.addEventListener("click", () => select("b"));
 
+  tabs.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const showA = event.key === "Home" || (event.key !== "End" && aTab.getAttribute("aria-selected") !== "true");
+    select(showA ? "a" : "b"); (showA ? aTab : bTab).focus();
+  });
+  const continueA = document.createElement("button");
+  continueA.type = "button"; continueA.className = "secondary-button"; continueA.textContent = "이 답변으로 계속";
+  continueA.addEventListener("click", () => { els.input.focus(); });
+  // 서버의 후속 문맥은 직전 답변이다. 과거 비교에서 다른 답변을 선택한 것처럼 표시하지 않는다.
+  if (messageIndex === state.messages.length - 1) aPanel.appendChild(continueA);
+  const baselineNotice = document.createElement("p");
+  baselineNotice.className = "ab-method-note";
+  baselineNotice.textContent = "비교용 답변입니다. 후속 질문은 A 답변의 검색 근거를 기준으로 이어집니다.";
+  bPanel.appendChild(baselineNotice);
   const panels = document.createElement("div");
   panels.className = "ab-panels";
   panels.append(aPanel, bPanel);
@@ -636,11 +690,12 @@ function renderAbComparison(message, aBubble, messageIndex) {
 
 function setBusy(busy) {
   state.busy = busy;
-  els.input.disabled = busy;
+  els.input.disabled = false;
+  els.input.placeholder = busy ? "답변을 만드는 동안 다음 질문을 적어 둘 수 있어요" : (state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요");
   if (els.templateToggleBtn) els.templateToggleBtn.disabled = busy;
   // 모델 연결 대기 중에도 준비된 AbortController로 요청을 중지할 수 있다.
   const canStop = busy && state.chatCanAbort;
-  els.sendBtn.disabled = busy && !canStop;
+  els.sendBtn.disabled = busy ? !canStop : !els.input.value.trim();
   els.sendBtn.classList.toggle("stop-mode", canStop);
   els.sendBtn.setAttribute("aria-label", canStop ? "답변 생성 중지" : (busy ? "전송 중" : "전송"));
   const label = els.sendBtn.querySelector("span");
@@ -650,8 +705,9 @@ function setBusy(busy) {
 function autoResizeInput() {
   els.input.style.height = "auto";
   els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
-  // 비어 있으면 전송 버튼을 흐리게 보여 줄 뿐 막지는 않는다(빈 전송은 submit에서 무시).
+  // 빈 질문 전송을 막고 생성 중에는 중지 버튼 상태를 보존한다.
   els.sendBtn?.classList.toggle("is-empty", !els.input.value.trim());
+  if (els.sendBtn && !state.busy) els.sendBtn.disabled = !els.input.value.trim();
 }
 
 function resetOptions() {

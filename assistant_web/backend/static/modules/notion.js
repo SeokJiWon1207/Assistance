@@ -40,10 +40,12 @@ function renderMarkdownTable(headerCells, bodyRows) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  const atomicColumns = headerCells.map(cell => /^(?:ID|번호|이슈\s*(?:ID|번호)|고객사(?:명)?|프로젝트|상태|담당자|등록자|요청자|등록일(?:시)?|수정일(?:시)?|완료일|건수|매체|플랫폼)$/i.test(cell.trim()));
   bodyRows.forEach((cells) => {
     const tr = document.createElement("tr");
-    cells.forEach((cell) => {
+    cells.forEach((cell, index) => {
       const td = document.createElement("td");
+      td.className = atomicColumns[index] ? "table-atomic" : "table-prose";
       td.textContent = cell;
       tr.appendChild(td);
     });

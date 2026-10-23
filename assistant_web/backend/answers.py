@@ -406,7 +406,7 @@ def build_issue_subject_phrase(
     parts: List[str] = []
     if constraints.get("customer_key"):
         project = issues[0].get("project") if issues else ""
-        parts.append(customer_name(project) if project else constraints["customer_key"])
+        parts.append(customer_name(project) if project else customer_name(constraints["customer_key"]))
     if constraints.get("platform_key"):
         parts.append(constraints["platform_key"].upper())
     names = constraints.get("people", {}).get("names")
@@ -876,7 +876,7 @@ def format_model_timeout_fallback(
     for index, issue in enumerate(issues, start=1):
         lines.append(
             f"{index}. #{issue['id']} {issue['summary']} "
-            f"- {issue['project']} / {display_status_label(issue.get('status_label') or issue['status'])} / "
+            f"- {customer_name(issue['project'])} / {display_status_label(issue.get('status_label') or issue['status'])} / "
             f"담당자 {issue['handler']} / 등록일 {issue['created_at'] or '미상'}"
         )
     lines.extend(
