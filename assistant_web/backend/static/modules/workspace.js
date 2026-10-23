@@ -630,7 +630,7 @@ function renderOverviewSide(data) {
       <section class="workspace-side-card">
         <header><h3>최근 알림</h3><button type="button" class="workspace-side-link" data-workspace-go="notifications">모두 보기</button></header>
         ${notifications.length ? `<ul class="workspace-side-notices">${notifications.map((item) => `
-          <li class="${item.read ? "is-read" : ""}"><span aria-hidden="true"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.date || "")}</small></div></li>`).join("")}</ul>`
+          <li class="${item.read ? "is-read" : ""}"><span aria-hidden="true"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(notificationDate(item))}</small></div></li>`).join("")}</ul>`
           : '<p class="workspace-side-empty">새 업무 알림이 없어요.</p>'}
       </section>
     </aside>`;
@@ -785,16 +785,23 @@ function showMyBrief() {
   renderWorkspace();
 }
 
-// 알림 날짜는 받은 시각이 아니라 완료 예정일(일정 지연)·최근 변경일(장기 미종료)이라 날짜 대신 읽음 여부로 묶는다.
+// 일정 알림은 업무 날짜, 배정·노트 알림은 원본을 확인한 로컬 시각으로 표시한다.
 const NOTIFICATION_KINDS = {
   overdue: { icon: "warning", tone: "is-overdue", dateLabel: "완료 예정" },
   aging: { icon: "clock", tone: "is-aging", dateLabel: "최근 변경" },
+  assigned: { icon: "users", tone: "", dateLabel: "확인 시각" },
+  note: { icon: "chat", tone: "", dateLabel: "확인 시각" },
 };
+
+function notificationDate(item) {
+  return ["assigned", "note"].includes(item.type) ? formatUiDateTime(item.date) : formatWorkspaceDate(item.date);
+}
 
 function notificationRow(item) {
   const kind = NOTIFICATION_KINDS[item.type] || { icon: "info", tone: "", dateLabel: "" };
-  const issueId = String(item.id || "").match(/^mantis-(?:overdue|aging)-(\d+)(?:-|$)/)?.[1];
-  const dateText = item.date ? `${kind.dateLabel ? `${kind.dateLabel} ` : ""}${formatWorkspaceDate(item.date)}` : "";
+  const issueId = Number.isInteger(item.issueId) && item.issueId > 0 ? item.issueId
+    : String(item.id || "").match(/^mantis-(?:overdue|aging)-(\d+)(?:-|$)/)?.[1];
+  const dateText = item.date ? `${kind.dateLabel ? `${kind.dateLabel} ` : ""}${notificationDate(item)}` : "";
   return `
         <article class="workspace-notification ${item.read ? "is-read" : ""}">
           <span class="workspace-notification-icon ${kind.tone}" aria-hidden="true">${icon(kind.icon, 18)}</span>
@@ -810,7 +817,7 @@ function renderNotifications(data) {
   const group = (label, items) => (items.length ? `<p class="workspace-group-label">${label} · ${items.length}</p>${items.map(notificationRow).join("")}` : "");
   return `
     <section class="workspace-section workspace-section-single">
-      <header><div><h3>업무 알림</h3><p>확인한 업무에서 발생한 알림입니다.</p></div><button type="button" class="secondary-button" data-notifications-read-all ${unread.length ? "" : "disabled"}>표시된 알림 모두 읽음</button></header>
+      <header><div><h3>업무 알림</h3><p>${escapeHtml(data.notificationScope?.message || "확인한 업무에서 발생한 알림입니다.")}</p></div><button type="button" class="secondary-button" data-notifications-read-all ${unread.length ? "" : "disabled"}>표시된 알림 모두 읽음</button></header>
       <div class="workspace-filter-pills" role="group" aria-label="알림 표시"><button type="button" data-notification-filter="all" aria-pressed="${state.notificationFilter !== "unread"}">전체 ${notifications.length}</button><button type="button" data-notification-filter="unread" aria-pressed="${state.notificationFilter === "unread"}">안 읽음 ${unread.length}</button></div>
       <div class="workspace-list">${notifications.length ? `${group("안 읽음", unread)}${state.notificationFilter === "unread" ? unread.length ? "" : workspaceEmpty("읽지 않은 알림이 없습니다.") : group("읽은 알림", read)}` : workspaceEmpty("새 업무 알림이 없습니다.")}</div>
     </section>`;

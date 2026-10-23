@@ -121,9 +121,11 @@ def _create_playbook_schema(connection: sqlite3.Connection) -> None:
 
 
 def init_workspace_db() -> None:
+    from backend.workspace_notifications import create_notification_schema
     run_sqlite_migrations(
         workspace_db_path(),
-        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, conversation_history.migrate_messages],
+        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, conversation_history.migrate_messages,
+         create_notification_schema],
         database_name="workspace",
     )
 
@@ -345,7 +347,8 @@ def _my_notion_pages(user: Dict[str, Any], limit: int = 12) -> Dict[str, Any]:
         return {"status": "error", "notion_pages": [], "reason": type(exc).__name__}
 
 
-def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: List[Dict[str, Any]],
+                   *, observed_events: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     init_workspace_db()
     with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
         read_ids = {
@@ -355,7 +358,7 @@ def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: Li
                 (user_uid,),
             ).fetchall()
         }
-    notifications: List[Dict[str, Any]] = []
+    notifications: List[Dict[str, Any]] = [dict(event) for event in observed_events or []]
     for issue in issues:
         summary = _issue_summary(issue)
         if summary["overdue"]:
@@ -396,7 +399,8 @@ def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: Li
             )
     for notification in notifications:
         notification["read"] = notification["id"] in read_ids
-    notifications.sort(key=lambda item: (item["read"], item.get("date", "")))
+    notifications.sort(key=lambda item: item.get("date", ""), reverse=True)
+    notifications.sort(key=lambda item: item["read"])
     return notifications[:30]
 
 
@@ -434,7 +438,10 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
     updated_this_week = [item for item in issues if (_parse_date(item["updatedAt"]) or date.min) >= week_start]
     overdue = [item for item in open_issues if item["overdue"]]
     aging = [item for item in open_issues if (item["ageDays"] or 0) >= 30]
-    notifications = _notifications(user["uid"], all_issues, [])
+    from backend.workspace_notifications import collect_workspace_events
+    init_workspace_db()
+    events, notification_scope = collect_workspace_events(workspace_db_path(), user["uid"], person, all_issues, mantis_meta)
+    notifications = _notifications(user["uid"], all_issues, [], observed_events=events)
     return {
         "user": {
             "displayName": user.get("displayName", ""),
@@ -464,6 +471,7 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             "pages": [],
         },
         "notifications": notifications,
+        "notificationScope": notification_scope,
         "weeklyBrief": {
             "period": f"{week_start.isoformat()} ~ {today.isoformat()}",
             "newIssues": len(new_this_week),
