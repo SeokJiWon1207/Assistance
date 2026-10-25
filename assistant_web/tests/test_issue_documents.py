@@ -47,3 +47,52 @@ class IssueDocumentTests(TestCase):
             self.assertNotIn(forbidden,r['content'])
         for expected in ['확인된 사실','고객 영향','진행 상황','다음 안내','확정되지']:
             self.assertIn(expected,r['content'])
+
+class DocumentPresentationTests(TestCase):
+    def build(self, text, kind):
+        from backend.reports.issue_documents import build_issue_document_report
+        raw = {'id': 31003, 'summary': '[1768] 화면 사용자 개체 증가',
+               'project': {'name': '138Meritz'}, 'status': {'name': 'closed'},
+               'notes': [{'id': 11, 'text': '원인: 타이머 해제 누락 때문에 누수 발생. 타이머 삭제 수정함.', 'created_at': '2026-05-01'},
+                         {'id': 12, 'text': '[전달완료]', 'created_at': '2026-05-02'}]}
+        with patch('backend.reports.issue_documents.fetch_mantis_issue_by_id', return_value=raw):
+            return build_issue_document_report(text, {'issue_ids': [31003]}, kind)
+
+    def test_five_line_review_keeps_facts_and_evidence(self):
+        result = self.build('#31003 사후 분석을 5줄 요약 형식으로 작성해줘', 'postmortem')
+        lines = [line for line in result['content'].splitlines() if line.strip()]
+        self.assertEqual(len(lines), 5)
+        self.assertIn('타이머', result['content'])
+        self.assertIn('노트 11', result['content'])
+        self.assertNotIn('운영 반영 완료', result['content'])
+        self.assertEqual(result['sources'][0]['issue_id'], 31003)
+
+    def test_meeting_agenda_is_not_the_full_postmortem(self):
+        meeting = self.build('#31003 사후 분석을 회의 안건 형식으로 작성해줘', 'postmortem')['content']
+        full = self.build('#31003 사후 분석서 형식으로 작성해줘', 'postmortem')['content']
+        self.assertNotEqual(meeting, full)
+        self.assertIn('회의 안건', meeting)
+        self.assertIn('제안', meeting)
+
+    def test_messenger_and_polite_email_have_distinct_forms_without_identifiers(self):
+        messenger = self.build('#31003 간결한 메신저 답변으로 작성해줘', 'notice')['content']
+        email = self.build('#31003 정중한 고객 안내 메일로 작성해줘', 'notice')['content']
+        self.assertNotEqual(messenger, email)
+        self.assertLess(len(messenger), len(email))
+        for answer in [messenger, email]:
+            self.assertNotIn('31003', answer)
+            self.assertIn('확인', answer)
+
+    def test_handoff_audience_changes_focus_without_inventing_done_work(self):
+        dev = self.build('#31003 개발팀 인수인계', 'handoff')['content']
+        lead = self.build('#31003 팀장 인수인계', 'handoff')['content']
+        self.assertNotEqual(dev, lead)
+        self.assertIn('개발팀', dev)
+        self.assertIn('팀장', lead)
+        self.assertIn('타이머', dev)
+        self.assertNotIn('운영 반영 완료', lead)
+
+    def test_meeting_agenda_accepts_descriptive_format_wording(self):
+        result = self.build('#31003 회의에서 다룰 안건 형식으로 바꿔줘', 'postmortem')
+        self.assertIn('회의 안건', result['content'])
+        self.assertIn('검토·결정', result['content'])

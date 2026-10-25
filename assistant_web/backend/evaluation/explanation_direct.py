@@ -7,6 +7,7 @@ _STAGES = {
     'implementation': ('개발·수정', r'(?:개발|구현|수정)(?!\s*(?:안내|가이드|본))', r'개발|구현|수정|로직'),
     'qc': ('내부 QC', r'QC|검수|내부\s*테스트', r'QC|검수|내부\s*테스트'),
     'delivery': ('고객사 전달', r'전달|발송', r'고객사?\s*전달|전달(?:\s*완료|했|하였|함|드|\s*드|\])|발송'),
+    'reply': ('설명·안내 회신', r'회신|답변.{0,15}(?:메일|전달)|메일.{0,15}(?:보냈|발신)', r'회신|발신|발송'),
     'customer_application': ('고객 측 적용', r'고객.{0,18}(?:적용|반영)', r'고객.{0,22}(?:적용|반영)'),
     'customer_validation': ('고객 검증', r'고객.{0,24}(?:검증|테스트|확인)|고객.{0,16}정상',
                             r'고객.{0,24}(?:검증|테스트|확인|정상)'),
@@ -53,6 +54,18 @@ def _completed_stage(stage, text):
 
 
 def _stage_event(stage, row):
+    if stage == 'reply':
+        events = []
+        # 원본 발신 표제와 명시적인 발신 완료만 인정한다. 수신·인용·초안은 제외한다.
+        for line in row['text'].replace('\r\n','\n').splitlines():
+            text = line.strip()
+            header = re.match(r'^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\s+(?:메일|이메일)\s*'
+                              r'(?:회신|발신|발송)\s+To[.:\s]', text, re.I)
+            explicit = re.search(r'(?:고객|담당자).{0,20}(?:메일|설명|안내).{0,20}'
+                                 r'(?:회신|발신|발송)\s*(?:완료|했|하였|함)', text)
+            if (header or explicit) and not re.search(r'예정|초안|미발송|미전송|보류|취소|실패|요청|부탁|하겠|인용|원문', text):
+                events.append(('done',row,text))
+        return events
     _, _, evidence_pattern = _STAGES[stage]
     events = []
     for text in _segments(row):
@@ -98,12 +111,34 @@ def _facts(topic, rows):
     yield from fallback
 
 
+def reply_question(question):
+    return bool(re.search(r'고객.{0,16}(?:답변|회신)|어떤\s*(?:답변|회신)|그\s*회신',question)
+                and not re.search(r'원인|이유|왜|누가|발신자|수신자',question))
+
+
+def sent_reply_rows(issues):
+    from backend.evaluation.explanation_quotes import safe_excerpts
+    result: list[dict[str,Any]]=[]
+    for issue_id,issue in issues.items():
+        rows=[{**row,'issue_id':issue_id} for row in safe_excerpts(issue)]
+        fields={row['field'] for row in rows if _stage_event('reply',row)}
+        result.extend(row for row in rows if row['field'] in fields)
+    return result
+
+
 def direct_conclusion(question: str, plans, selected_ids: list[int], issues: dict[int, dict[str, Any]],
                       previous_questions: list[str] | None = None, answer_items: list[dict[str, Any]] | None = None) -> list[str]:
     """결론은 원문 발췌/보수적인 단계 판정이며 새 모델 호출을 추가하지 않는다."""
     from backend.evaluation.explanation_quotes import _label
     if not question:
         return []
+    if reply_question(question) and not re.search(r'전달|수정본|적용|검증|완료',question):
+        replies=sent_reply_rows({i:issues[i] for i in selected_ids if i in issues})
+        choices=[(row,text) for row,text in _facts('actors',replies)
+                 if not re.fullmatch(r'.{0,80}(?:부장|차장|과장|대리|사원|팀장)입니다[.]?',text)]
+        if choices:
+            return ['### 핵심 결론','',*[line for row,text in choices[:4]
+                    for line in [f'- **고객 회신**: {_label(text)} {_reference(row)}','']]]
     facts = [topic for topic, pattern in [('cause', r'원인|이유|왜'), ('action', r'조치|수정한\s*(?:내용|부분)|수정\s*내용')]
              if re.search(pattern, question)]
     def requested_stages(text):
@@ -149,6 +184,8 @@ def direct_conclusion(question: str, plans, selected_ids: list[int], issues: dic
                 lines.extend([f'- **{title}**: 제공된 #{issue_id} 근거로 확정하지 못했습니다.', ''])
         for stage in stages:
             title = _STAGES[stage][0]
+            if stage == 'delivery' and re.search(r'수정본|패치|모듈|라이브러리|소스',question):
+                title = '수정본 전달'
             events = [event for row in issue_rows for event in _stage_event(stage, row)]
             # 요청·재검수·취소 등 뒤의 기록도 완료 기록과 같은 기준으로 대조한다.
             meaningful = [event for event in events if event[0] != 'unknown']
@@ -162,6 +199,13 @@ def direct_conclusion(question: str, plans, selected_ids: list[int], issues: dic
                 lines.extend([f'- **{title}**: {title}는 실패·재확인 기록이 있습니다. 완료로 단정할 수 없습니다. {_reference(row)}',
                               f'  - 근거: “{_label(text)}”', ''])
             else:
+                replies = [event for row in issue_rows for event in _stage_event('reply',row)] if stage == 'delivery' else []
+                if replies:
+                    _, reply_row, reply_text = replies[-1]
+                    lines.extend([f'- **설명·안내 회신**: 회신 전달 기록이 확인됩니다. {_reference(reply_row)}',
+                                  f'  - 근거: “{_label(reply_text)}”', ''])
+                    if title == '고객사 전달':
+                        title = '수정본 전달'
                 line = f'- **{title}**: 현재 제공된 근거로는 {title} 완료를 확인할 수 없습니다.'
                 if latest:
                     state, row, text = latest

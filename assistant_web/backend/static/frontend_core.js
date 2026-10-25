@@ -4,7 +4,6 @@
   function storageSafeMessages(messages) {
     const stored = messages
       .filter((message) => !message.loading && !message.streaming)
-      .slice(-60)
       .map((message) => ({
         role: message.role,
         content: message.content,
@@ -21,6 +20,7 @@
         templateId: message.templateId || "",
         feedback: message.feedback || null,
         abTest: message.abTest || null,
+        followupVariant: message.followupVariant === "B" ? "B" : "A",
         // 차트 payload 도 함께 저장해야 대화를 다시 열었을 때 차트가 남는다.
         effortChart: message.effortChart || null,
         effortRanking: message.effortRanking || null,
@@ -30,36 +30,52 @@
         createdAt: message.createdAt || "",
         questionAskedAt: message.questionAskedAt || "",
       }));
-    // 원문 목록과 감사 ID는 남기고, 중복 근거 자료부터 줄여 서버의 1MB 제한을 지킨다.
-    // 요청의 제목·시각과 서버 정규화 필드에 사용할 여유 공간도 확보한다.
-    const byteSize = (value) => {
-      const json = JSON.stringify(value);
-      // 서버 json.dumps의 구분자 공백까지 보수적으로 센다(문자열 안의 기호도 포함).
-      return new TextEncoder().encode(json).length + (json.match(/[:,]/g) || []).length;
-    };
-    // 서버 모델이 빈 필드에 붙이는 기본값의 크기도 포함한다.
-    const sourceOverhead = (sources) => sources.reduce((total, source) => total + 700 + (source.detail ? 500 : 0), 0);
-    const messageOverhead = (message) => 512 + sourceOverhead(message.sources);
-    let size = byteSize(stored) + stored.reduce((total, message) => total + messageOverhead(message), 0);
+    // 보관할 메시지는 자르지 않는다. 큰 선택 자료만 단일 전송 한도에 맞춘다.
     for (const message of stored) {
-      if (size <= 900000) break;
-      size -= byteSize(message.sources) + sourceOverhead(message.sources) - 2;
-      message.sources = [];
-    }
-    while (size > 900000 && stored.length > 1) {
-      const removed = stored.shift();
-      size -= byteSize(removed) + messageOverhead(removed) + 2;
-    }
-    // 마지막 답변 하나의 선택 자료가 큰 경우에도 답변 본문과 감사 ID를 지킨다.
-    if (size > 900000) {
+      if (new TextEncoder().encode(JSON.stringify(message)).length <= 800000) continue;
       for (const field of ["verification", "abTest", "effortChart", "effortRanking", "effortTrend", "playbookCandidate"]) {
-        const message = stored[0];
-        size -= byteSize(message[field]) - 4;
         message[field] = null;
-        if (size <= 900000) break;
+        if (new TextEncoder().encode(JSON.stringify(message)).length <= 800000) break;
       }
     }
     return stored;
+  }
+
+  function conversationMessageBatches(messages) {
+    const result = [];
+    let batch = [], bytes = 0;
+    for (const message of storageSafeMessages(messages)) {
+      const encoded = JSON.stringify(message);
+      const size = new TextEncoder().encode(encoded).length + (encoded.match(/[:,]/g) || []).length
+        + 512 + (message.sources || []).length * 1200;
+      if (size > 900000) throw new Error("메시지 한 건의 저장 크기 제한을 초과했습니다. 기존 기록은 보존됩니다.");
+      if (batch.length && (batch.length >= 80 || bytes + size > 900000)) {
+        result.push(batch); batch = []; bytes = 0;
+      }
+      batch.push(message); bytes += size;
+    }
+    if (batch.length || !result.length) result.push(batch);
+    return result;
+  }
+
+  async function conversationCache(key, value) {
+    // 큰 기록과 오프라인 변경은 localStorage의 작은 용량과 분리한다.
+    if (!globalScope.indexedDB) return value === undefined ? null : false;
+    return new Promise((resolve) => {
+      const request = globalScope.indexedDB.open("assistant-conversation-history", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("records");
+      request.onerror = () => resolve(value === undefined ? null : false);
+      request.onsuccess = () => {
+        const db = request.result;
+        const transaction = db.transaction("records", value === undefined ? "readonly" : "readwrite");
+        const store = transaction.objectStore("records");
+        const operation = value === undefined ? store.get(key) : store.put(value, key);
+        let result = value === undefined ? null : true;
+        operation.onsuccess = () => { if (value === undefined) result = operation.result || null; };
+        transaction.oncomplete = () => { db.close(); resolve(result); };
+        transaction.onabort = transaction.onerror = () => { db.close(); resolve(value === undefined ? null : false); };
+      };
+    });
   }
 
   function deriveConversationTitle(messages) {
@@ -190,7 +206,10 @@
     const history = messages
       .filter((message) => !message.loading && !message.streaming)
       .slice(0, -1)
-      .map((message) => ({ role: message.role, content: message.content, ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
+      .map((message) => ({ role: message.role,
+        content: message.role === "assistant" && message.followupVariant === "B" && message.abTest?.variantB?.status === "ok"
+          ? message.abTest.variantB.content : message.content,
+        ...(message.notionActionId ? { notionActionId: message.notionActionId } : {}) }))
       .slice(-safeLimit);
     const bounded = [];
     let size = currentContent.length;
@@ -360,6 +379,8 @@
   const api = Object.freeze({
     attachKoreanParticles,
     storageSafeMessages,
+    conversationMessageBatches,
+    conversationCache,
     mergeConversations,
     deriveConversationTitle,
     conversationContentChanged,

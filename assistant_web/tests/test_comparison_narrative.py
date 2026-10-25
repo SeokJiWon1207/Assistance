@@ -41,6 +41,34 @@ class ComparisonNarrativeTests(unittest.TestCase):
         self.assertIn('노트 9',text)
         self.assertEqual(call.call_count,2)
 
+    def test_repeated_valid_fact_markers_are_formatting_not_new_facts(self):
+        draft=json.loads(json.dumps(self.draft))
+        for claim in draft['claims']:
+            claim['text']+=' ['+', '.join(claim['fact_ids'])+'].'
+        text,meta,call=self.run_narrative(draft)
+        self.assertEqual(meta['status'],'accepted')
+        self.assertEqual(call.call_count,2)
+        self.assertNotIn(self.cause,text)
+        self.assertIn('타이머 해제 누락',text)
+
+    def test_foreign_or_unbound_inline_markers_are_still_rejected(self):
+        for marker in ['invented',self.action]:
+            draft=json.loads(json.dumps(self.draft))
+            draft['claims'][0]['text']+=' ['+marker+']'
+            text,meta,call=self.run_narrative(draft)
+            self.assertEqual(text,'')
+            self.assertEqual(meta['status'],'rejected')
+            self.assertEqual(call.call_count,1)
+
+    def test_review_keeps_all_context_of_mentioned_issues_but_not_unused_candidates(self):
+        self.issues.append({'id':80,'notes':[{'id':8,'text':'별도 메모리 조정 수정 완료'}]})
+        self.issues[1]['notes'].append({'id':11,'text':'그 수정 후에도 오류가 지속되어 추가 확인 요청'})
+        _text,meta,call=self.run_narrative()
+        self.assertEqual(meta['status'],'accepted')
+        data=json.loads(call.call_args_list[1].args[2]['messages'][1]['content'])
+        self.assertEqual({f['issue_id'] for f in data['facts']},{100,90})
+        self.assertTrue(any(f['kind']=='caveat' for f in data['facts']))
+
     def test_unbound_id_or_number_cannot_be_laundered_by_a_positive_review(self):
         for text, refs in [('CPU 사용량이 30% 감소했습니다.',[self.action]),
                            ('원인은 누수입니다.',['invented']),

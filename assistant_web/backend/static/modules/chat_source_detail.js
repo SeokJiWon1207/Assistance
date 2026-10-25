@@ -1,14 +1,61 @@
+import { customerName } from "./ui_format.js?v=20260911-6";
 import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { els, apiFetch } from "./runtime.js?v=20260911-6";
 import { formatNotionDetail } from "./notion.js?v=20260911-6";
 
 let detailRequestId = 0;
 
-function openChromaModal({ issueId, title, content, meta }) {
+function renderSourceActions({ issueId, title, content, url = "", snapshot = false, loading = false, failed = false }) {
+  const footer = document.getElementById("sourceModalActions");
+  if (!footer) return;
+  footer.replaceChildren();
+  footer.hidden = loading;
+  if (loading) return;
+  if (failed) {
+    const retry = document.createElement("button");
+    retry.type = "button"; retry.className = "secondary-button"; retry.textContent = "다시 조회";
+    retry.addEventListener("click", () => openSourceDetail({ type: "chroma", issue_id: issueId }));
+    footer.appendChild(retry);
+    return;
+  }
+  if (/^https?:\/\//i.test(url)) {
+    const link = document.createElement("a");
+    link.href = url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "원본 서비스에서 열기 ↗";
+    footer.appendChild(link);
+  }
+  if (snapshot && /^\d+$/.test(String(issueId))) {
+    const full = document.createElement("button");
+    full.type = "button"; full.className = "secondary-button"; full.textContent = "저장된 전체 원문";
+    full.addEventListener("click", () => openSourceDetail({ type: "chroma", issue_id: issueId }));
+    footer.appendChild(full);
+  }
+  const copy = document.createElement("button");
+  copy.type = "button"; copy.className = "secondary-button"; copy.textContent = "원문 복사";
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(`${title}\n\n${content}`); copy.textContent = "복사됨"; }
+    catch { copy.textContent = "복사 실패 · 다시 시도"; }
+  });
+  footer.appendChild(copy);
+  if (/^\d+$/.test(String(issueId))) {
+    const ask = document.createElement("button");
+    ask.type = "button"; ask.className = "run-evaluation-button"; ask.textContent = "이 이슈로 질문";
+    ask.addEventListener("click", () => {
+      closeChromaModal();
+      document.getElementById("viewChatBtn").click();
+      els.input.value = `#${issueId} 이슈의 현재 상태와 다음 할 일을 요약해줘`;
+      els.input.dispatchEvent(new Event("input", {bubbles: true}));
+      els.input.focus();
+    });
+    footer.appendChild(ask);
+  }
+}
+
+function openChromaModal({ issueId, title, content, meta, url = "", snapshot = false, loading = false, failed = false }) {
   els.chromaModalMeta.textContent = meta || `이슈 상세 · #${issueId}`;
   els.chromaModalTitle.textContent = title || "이슈 상세";
   els.chromaModalContent.replaceChildren(renderDetailContent(content || "내용이 없습니다.", title || ""));
   els.chromaModalContent.scrollTop = 0;
+  renderSourceActions({ issueId, title, content, url, snapshot, loading, failed });
   els.chromaModal.hidden = false;
   openDialogFocus(els.chromaModal, { initialFocus: els.chromaModalClose, onClose: closeChromaModal, fallback: () => els.input });
 }
@@ -49,6 +96,7 @@ function detailBadgeClass(value) {
 }
 
 function buildDetailValue(key, value) {
+  if (/^(?:프로젝트(?:\(고객사\))?|고객사)$/.test(key)) value = customerName(value, "미상");
   const holder = document.createElement("dd");
   holder.className = "detail-value";
   if (/상태/.test(key)) {
@@ -142,7 +190,7 @@ function formatMantisDetail(source) {
   const lines = [
     `[Mantis 이슈 정보]`,
     `- 이슈 ID: #${source.issue_id || ""}`,
-    `- 프로젝트(고객사): ${source.project || "미상"}`,
+    `- 프로젝트(고객사): ${customerName(source, "미상")}`,
     `- 현재 상태: ${displayIssueStatus(source.status)}`,
     `- 담당자: ${source.handler || "담당자 미지정"}`,
     `- 등록일: ${source.created_at || "미상"}`,
@@ -164,8 +212,8 @@ function formatMantisDetail(source) {
     `[제목]`,
     source.title || "제목 없음",
     ``,
-    `[본문 미리보기]`,
-    source.preview || detail.description || "내용 없음",
+    detail.description ? `[조회된 본문]` : `[본문 미리보기]`,
+    detail.description || source.preview || "내용 없음",
   );
   return lines.join("\n");
 }
@@ -195,6 +243,7 @@ async function openSourceDetail(source) {
       title: source.title,
       content: formatNotionDetail(source),
       meta: "Notion DB 항목",
+      url: source.url || "",
     });
     return;
   }
@@ -204,7 +253,9 @@ async function openSourceDetail(source) {
       issueId: source.issue_id,
       title: source.title,
       content: formatMantisDetail(source),
-      meta: `Mantis 이슈 · #${source.issue_id}`,
+      meta: `Mantis 이슈 · #${source.issue_id} · 조회된 원문 범위`,
+      snapshot: true,
+      url: source.url || "",
     });
     return;
   }
@@ -213,6 +264,7 @@ async function openSourceDetail(source) {
     issueId: source.issue_id,
     title: "불러오는 중입니다",
     content: "과거 이슈 원문을 불러오는 중입니다...",
+    loading: true,
     meta: `과거 이슈 원문 · #${source.issue_id}`,
   });
 
@@ -233,6 +285,7 @@ async function openSourceDetail(source) {
     openChromaModal({
       issueId: source.issue_id,
       title: "문서 조회 오류",
+      failed: true,
       content: `오류: ${error.message}`,
       meta: `과거 이슈 원문 · #${source.issue_id}`,
     });

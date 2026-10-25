@@ -1,6 +1,31 @@
 /* 로그인 사용자 워크스페이스 */
+.personal-panel {
+  /* 머리·탭·본문이 같은 1200px 칸 안에서 왼쪽 선을 맞춘다. */
+  --workspace-gutter: max(32px, calc(50% - 600px));
+}
+
+/* 머리와 탭을 한 덩어리로 묶는다. 제목 아래 부제, 그 아래 밑줄 탭. */
 .workspace-modal-header {
   align-items: center;
+  padding: 26px var(--workspace-gutter) 14px;
+  border-bottom: 0;
+  background: var(--bg);
+}
+
+.workspace-modal-header > div:first-of-type {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+
+.workspace-modal-header > div:first-of-type p {
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .workspace-header-actions {
@@ -23,39 +48,60 @@
 
 .workspace-tabs {
   display: flex;
-  gap: 5px;
-  padding: 10px 24px;
+  gap: 24px;
+  /* 밑줄은 머리와 같은 칸 안에서만 긋는다. */
+  margin: 0 var(--workspace-gutter);
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-alt) 55%, var(--surface));
+  background: var(--bg);
 }
 
 .workspace-tabs button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: 0 13px;
+  min-height: 40px;
+  margin-bottom: -1px;
+  padding: 0 0 2px;
   border: 0;
-  border-radius: 8px;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
-  color: var(--text-soft);
+  color: var(--muted);
   cursor: pointer;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.workspace-tabs button.active {
-  background: var(--surface);
-  color: var(--blue);
-  box-shadow: 0 1px 4px rgba(25, 31, 40, 0.08);
+.workspace-tabs button:hover {
+  color: var(--text);
 }
 
-.workspace-tabs em {
-  color: var(--danger);
+.workspace-tabs button.active {
+  border-bottom-color: var(--text);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.workspace-tabs button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 안 읽은 알림 수는 탭 이름 옆 작은 회색 알약 */
+.workspace-tabs em:not(:empty) {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
   font-size: 12px;
   font-style: normal;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
 }
 
 .workspace-content {
@@ -63,10 +109,15 @@
   align-content: start;
   gap: 18px;
   min-height: 0;
-  padding: 22px 24px 28px;
+  padding: 20px var(--workspace-gutter) 32px;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--bg);
+}
+
+/* 스크롤되는 탭에서는 overflow: hidden 구역이 내용 높이보다 눌리지 않게 한다. */
+.workspace-content:not(.is-overview) {
+  grid-auto-rows: max-content;
 }
 
 .workspace-content.is-overview {
@@ -78,19 +129,57 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+/* 업무 탭: 왼쪽은 지표·안내·이슈 목록(목록만 남은 높이에서 스크롤), 오른쪽은 이번 주 요약 칸 */
 .workspace-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px 20px;
   min-height: 0;
   height: 100%;
 }
 
+/* 연결·일부 확인 안내 줄이 있으면 한 줄을 더 둔다. */
+.workspace-overview:has(> .workspace-connection) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.workspace-overview > :not(.workspace-side) {
+  grid-column: 1;
+}
+
 .workspace-overview > .workspace-section {
   display: grid;
-  flex: 1 1 auto;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
+}
+
+.workspace-side { grid-column: 2; grid-row: 1 / -1; display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; }
+.workspace-side-card { display: grid; gap: 12px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+.workspace-side-card > header { display: flex; align-items: center; gap: 8px; }
+.workspace-side-card h3 { margin: 0; color: var(--text); font-size: var(--font-section); }
+.workspace-side-badge { padding: 0 7px; border-radius: var(--radius-sm); background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 700; line-height: 20px; }
+.workspace-side-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; text-align: center; }
+.workspace-side-stats div { display: grid; padding: 10px 0; border-radius: var(--control-radius); background: var(--bg); }
+.workspace-side-stats strong { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
+.workspace-side-stats span { color: var(--muted); font-size: 12px; }
+.workspace-side-link { justify-self: start; min-height: 32px; margin-left: auto; padding: 0 8px; border: 0; border-radius: var(--control-radius); background: transparent; color: var(--blue); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.workspace-side-card > .workspace-side-link { justify-self: center; margin: -4px 0 -6px; }
+.workspace-side-link:hover { background: var(--blue-soft); }
+.workspace-side-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.workspace-side-notices { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.workspace-side-notices li { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 10px; padding: 6px 0; }
+.workspace-side-notices li > span { width: 7px; height: 7px; margin-top: 7px; border-radius: 50%; background: var(--blue); }
+.workspace-side-notices li.is-read > span { background: var(--line-strong); }
+.workspace-side-notices strong { display: block; color: var(--text); font-size: 13px; font-weight: 500; line-height: 1.5; }
+.workspace-side-notices li.is-read strong { color: var(--text-soft); }
+.workspace-side-notices small { color: var(--muted); font-size: 12px; }
+.workspace-side-empty { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* 옆 칸은 넓은 화면에서만 둔다. 좁으면 같은 내용이 주간 보고·알림 탭에 있다. */
+@media (max-width: 1180px) {
+  .workspace-overview { grid-template-columns: minmax(0, 1fr); }
+  .workspace-side { display: none; }
 }
 
 .workspace-loading,
@@ -145,10 +234,15 @@
 
 @keyframes workspace-spin { to { transform: rotate(360deg); } }
 
+/* 지표는 카드 여러 장 대신 구분선이 있는 띠 하나. 숫자는 검정, 상태는 이름 앞 점으로 알린다. */
 .workspace-summary-grid {
   display: grid;
+  flex-shrink: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
 }
 
 .workspace-summary-grid.is-three {
@@ -157,36 +251,62 @@
 
 .workspace-metric {
   display: grid;
-  gap: 4px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
+  align-content: start;
+  gap: 2px;
+  padding: 16px 20px;
+  border: 0;
+  border-left: 1px solid var(--surface-alt);
+  border-radius: 0;
   background: var(--surface);
-  box-shadow: 0 3px 14px rgba(25, 31, 40, 0.035);
+}
+
+.workspace-metric:first-child {
+  border-left: 0;
 }
 
 .workspace-metric strong {
   color: var(--text);
   font-size: 26px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
+/* 마크업은 숫자가 먼저지만 화면에는 이름 → 숫자 → 설명 순으로 읽힌다. */
+.workspace-metric > span {
+  order: -1;
+}
+
+/* 배치 규칙은 우선순위를 0으로 둬 대시보드 지표 머리(.dashboard-metric-top)가 덮을 수 있게 한다. */
+:where(.workspace-metric > span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .workspace-metric span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .workspace-metric small {
-  margin-top: 3px;
-  color: var(--text-soft);
+  color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.workspace-metric.is-blue strong { color: var(--blue); }
-.workspace-metric.is-danger strong { color: var(--danger); }
-.workspace-metric.is-warning strong { color: var(--warning); }
+.workspace-metric:is(.is-danger, .is-warning) > span::before {
+  content: "";
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.workspace-metric.is-danger > span::before { background: var(--danger); }
+.workspace-metric.is-warning > span::before { background: var(--warning); }
+.workspace-metric.is-danger small { color: var(--danger); }
+.workspace-metric.is-warning small { color: var(--warning-strong); }
 
 .workspace-connection {
   display: flex;
@@ -300,6 +420,9 @@
 
 .workspace-list {
   display: grid;
+  /* 목록이 남는 높이를 행 사이에 나눠 갖지 않고 위부터 쌓이게 하고, 행은 내용 높이보다 눌리지 않게 한다. */
+  align-content: start;
+  grid-auto-rows: max-content;
   max-height: 390px;
   overflow-y: auto;
 }
@@ -344,45 +467,21 @@
   border-bottom: 0;
 }
 
-.workspace-item.is-overdue {
-  border-left: 3px solid var(--danger);
-}
-
-.workspace-item.is-aging:not(.is-overdue) {
-  border-left: 3px solid var(--warning);
-}
-
 .workspace-item-main {
   display: grid;
   min-width: 0;
-  gap: 5px;
+  gap: 2px;
 }
 
-.workspace-item-title {
-  display: flex;
-  align-items: baseline;
-  min-width: 0;
-  gap: 6px;
-}
-
-.workspace-item-title strong {
+.workspace-item-main > strong,
+.workspace-item-main a {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.workspace-item-title > span {
-  flex: 0 0 auto;
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.workspace-item-main a {
-  color: var(--text);
-  text-decoration: none;
 }
 
 .workspace-item-main a:hover {
@@ -390,80 +489,98 @@
   text-decoration: underline;
 }
 
-.workspace-item-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
+.workspace-item-main small {
+  color: var(--muted);
+  font-size: 12px;
 }
 
-.workspace-item-meta span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--surface-alt);
-  color: var(--text-soft);
+/* 이슈 행: 번호 · 제목과 한 줄 메타 · 마감 · AI 요약 */
+.workspace-issue-row {
+  grid-template-columns: 64px minmax(0, 1fr) 104px auto;
+  gap: 14px;
+  min-height: 64px;
+  padding: 12px 18px;
+  border-bottom-color: var(--surface-alt);
+}
+
+.workspace-item-id {
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-item-meta {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspace-item-meta .workspace-meta-project {
-  max-width: 280px;
-  overflow: hidden;
-  background: transparent;
-  padding-left: 0;
-  color: var(--muted);
-  text-overflow: ellipsis;
+.workspace-meta-risk {
+  font-weight: 600;
 }
 
-.workspace-item-meta .workspace-meta-status {
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.workspace-item-meta .workspace-meta-due.is-overdue {
-  background: color-mix(in srgb, var(--danger) 11%, transparent);
-  color: var(--danger);
-}
-
-.workspace-item-meta .workspace-meta-age.is-aging {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
-}
-
-.workspace-item-meta .workspace-meta-risk.is-high {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
-}
-
-.workspace-item-meta .workspace-meta-risk.is-attention {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
-}
+.workspace-meta-risk.is-high { color: var(--danger); }
+.workspace-meta-risk.is-attention { color: var(--warning-strong); }
 
 .workspace-item-recommendation {
-  margin: 7px 0 0;
+  margin: 4px 0 0;
   color: var(--text-soft);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.workspace-item-recommendation strong {
-  margin-right: 4px;
-  color: var(--text);
+.workspace-item-due {
+  display: grid;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
 }
 
+.workspace-item-due b {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workspace-item-due small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace-item-due.is-overdue b { color: var(--danger); }
+.workspace-item-due.is-aging b { color: var(--warning-strong); }
+
+/* 기한 지남 · 30일 이상 · 그 외 묶음 제목 */
+.workspace-group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--surface-alt);
+  background: color-mix(in srgb, var(--surface-alt) 45%, var(--surface));
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workspace-group-label.is-overdue { color: var(--danger); }
+.workspace-group-label.is-aging { color: var(--warning-strong); }
+
+/* 행 끝 동작은 테두리 없는 회색 버튼으로 조용하게 둔다. */
 .workspace-item-action,
 .workspace-notification button {
-  min-height: var(--button-height-compact);
-  padding: 0 9px;
-  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
   border-radius: var(--control-radius);
-  background: var(--surface);
-  color: var(--text-soft);
+  background: var(--surface-alt);
+  color: var(--text);
   cursor: pointer;
   font-size: var(--button-font-size-compact);
   font-weight: var(--button-weight);
@@ -472,7 +589,6 @@
 
 .workspace-item-action:hover,
 .workspace-notification button:hover {
-  border-color: var(--blue);
   background: var(--blue-soft);
   color: var(--blue);
 }
@@ -504,41 +620,53 @@
   font-size: 12px;
 }
 
+/* 보고서 머리: 파랑 배너 대신 문서 제목처럼 둔다. */
 .workspace-brief-hero {
-  padding: 24px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--blue), var(--blue-pressed));
-  color: var(--on-accent);
+  display: grid;
+  gap: 4px;
+  padding: 4px 0 2px;
+  color: var(--text);
 }
 
 .workspace-brief-hero span {
-  font-size: 12px;
-  font-weight: 700;
-  opacity: 0.82;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .workspace-brief-hero h3 {
-  margin: 7px 0 5px;
-  font-size: 22px;
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.35;
+  word-break: keep-all;
 }
 
 .workspace-brief-hero p {
   margin: 0;
-  font-size: 12px;
-  opacity: 0.8;
+  color: var(--muted);
+  font-size: 13px;
 }
 
+/* 판단 카드는 위험 단계 색으로만 옅게 칠한다(안정 파랑 · 주의 주황 · 높음 빨강). */
 .workspace-decision {
-  padding: 20px;
+  padding: 20px 22px;
   border: 1px solid color-mix(in srgb, var(--blue) 24%, var(--line));
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--blue) 5%, var(--surface));
+}
+
+.workspace-decision.is-attention {
+  border-color: color-mix(in srgb, var(--warning) 36%, var(--line));
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface));
 }
 
 .workspace-decision.is-high {
   border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
   background: color-mix(in srgb, var(--danger) 4%, var(--surface));
 }
+
+.workspace-decision.is-attention > header span,
+.workspace-decision.is-attention > header em { color: var(--warning-strong); }
 
 .workspace-decision > header {
   display: flex;
@@ -557,8 +685,13 @@
 
 .workspace-decision.is-high > header span,
 .workspace-decision.is-high > header em { color: var(--danger); }
-.workspace-decision h3 { margin: 9px 0 0; color: var(--text); font-size: var(--font-headline); }
-.workspace-decision ul { margin: 12px 0 0; padding-left: 18px; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+.workspace-decision.is-unknown { border-color: var(--line); background: var(--surface-alt); }
+.workspace-decision.is-unknown > header span,
+.workspace-decision.is-unknown > header em { color: var(--muted); }
+.workspace-decision h3 { margin: 8px 0 0; color: var(--text); font-size: var(--font-headline); line-height: 1.45; word-break: keep-all; }
+/* 근거는 목록 대신 칩으로 한 줄에 놓는다. */
+.workspace-decision ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.workspace-decision li { padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text-soft); font-size: 12px; line-height: 1.5; }
 
 .workspace-decision-actions {
   display: grid;
@@ -580,9 +713,9 @@
 }
 
 .workspace-decision-actions button:hover { border-color: var(--blue); }
-.workspace-decision-actions strong { font-size: 12px; }
+.workspace-decision-actions strong { font-size: 14px; }
 .workspace-decision-actions span { color: var(--muted); font-size: 12px; line-height: 1.5; }
-.workspace-decision-actions em { color: var(--blue); font-size: 12px; font-style: normal; font-weight: 700; }
+.workspace-decision-actions em { margin-top: 4px; color: var(--blue); font-size: 13px; font-style: normal; font-weight: 600; }
 
 .workspace-primary-action {
   min-height: var(--button-height);
@@ -619,39 +752,40 @@
 .workspace-insight-list { display: grid; }
 .workspace-insight-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
 .workspace-insight-row:last-child { border-bottom: 0; }
-.workspace-insight-row strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-insight-row span { color: var(--blue); font-size: 12px; font-weight: 700; }
+.workspace-insight-row strong { overflow: hidden; color: var(--text); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-insight-row span { color: var(--text); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .workspace-insight-row small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 
+/* 알림: 안 읽은 항목은 파랑 점과 옅은 바탕, 읽은 항목은 글자만 흐리게 */
 .workspace-notification {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: start; gap: 14px; padding: 14px 18px;
+  border-bottom: 1px solid var(--surface-alt); background: color-mix(in srgb, var(--blue-soft) 30%, var(--surface));
 }
-
 .workspace-notification:last-child { border-bottom: 0; }
-.workspace-notification.is-read { opacity: 0.62; }
-
-.workspace-notification-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-.workspace-notification.is-read .workspace-notification-dot { background: var(--line-strong); }
-
-.workspace-notification div {
-  display: grid;
-  gap: 3px;
-}
-
-.workspace-notification strong { font-size: 12px; }
-.workspace-notification p { margin: 0; color: var(--text-soft); font-size: 12px; }
+.workspace-notification.is-read { background: var(--surface); }
+.workspace-notification.is-read strong { color: var(--text-soft); font-weight: 500; }
+/* 종류 아이콘: 일정 지연은 빨강, 장기 미종료는 주황, 그 외는 회색 */
+.workspace-notification-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--control-radius); background: var(--surface-alt); color: var(--text-soft); }
+.workspace-notification-icon.is-overdue { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.workspace-notification-icon.is-aging { background: color-mix(in srgb, var(--warning) 14%, transparent); color: var(--warning-strong); }
+.workspace-notification.is-read .workspace-notification-icon { background: var(--surface-alt); color: var(--muted); }
+.workspace-notification-dot { display: inline-block; width: 7px; height: 7px; margin-left: 8px; border-radius: 50%; background: var(--blue); vertical-align: middle; }
+.workspace-notification div { display: grid; gap: 2px; min-width: 0; }
+.workspace-notification strong { color: var(--text); font-size: 14px; font-weight: 600; }
+.workspace-notification p { margin: 0; color: var(--text-soft); font-size: 13px; }
 .workspace-notification small { color: var(--muted); font-size: 12px; }
+.workspace-notification button { align-self: center; }
+
+/* 즐겨찾는 대화: 첫 질문이 보이는 카드 그리드 */
+.workspace-favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; padding: 16px; }
+.workspace-favorite-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
+.workspace-favorite-card > strong { overflow: hidden; color: var(--text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-favorite-card > p {
+  display: -webkit-box; margin: 0; padding: 10px 12px; overflow: hidden; border-radius: var(--control-radius); background: var(--bg);
+  color: var(--text-soft); font-size: 13px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.workspace-favorite-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.workspace-favorite-card small { color: var(--muted); font-size: 12px; }
 
 .workspace-table-wrap {
   max-height: 390px;
@@ -769,13 +903,20 @@
   min-height: var(--control-height);
   border-color: var(--line);
 }
-.playbook-list { display: grid; gap: 14px; }
+.playbook-list { display: grid; align-content: start; gap: 14px; }
+/* 편집 중에는 왼쪽 목록 · 오른쪽 편집 폼. 폼은 스크롤해도 화면 위쪽에 붙어 있다. */
+.playbook-layout.has-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; gap: 20px; }
+.playbook-layout.has-editor .playbook-editor { position: sticky; top: 0; order: 2; margin-bottom: 0; }
+.playbook-card.is-editing { border-color: var(--blue); box-shadow: 0 0 0 3px var(--focus-ring-color); }
+@media (max-width: 1100px) {
+  .playbook-layout.has-editor { grid-template-columns: minmax(0, 1fr); }
+  .playbook-layout.has-editor .playbook-editor { position: static; order: -1; }
+}
 .playbook-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
-  padding: 18px;
-  box-shadow: var(--shadow);
+  padding: 20px 22px;
 }
 .playbook-card > header,
 .playbook-card > footer {
@@ -788,15 +929,15 @@
 .playbook-card header small,
 .playbook-card footer span { color: var(--muted); font-size: 12px; }
 .playbook-card section { margin-top: 15px; }
-.playbook-card section strong { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
-.playbook-card section p { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
-.playbook-card > footer { align-items: center; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--line); }
-.playbook-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.playbook-card section strong { display: block; margin-bottom: 4px; color: var(--text-soft); font-size: 13px; font-weight: 600; }
+.playbook-card section p { margin: 0; color: var(--text); font-size: 14px; line-height: 1.65; white-space: pre-wrap; }
+.playbook-card > footer { align-items: center; margin-top: 16px; padding-top: 13px; border-top: 1px solid var(--surface-alt); }
+.playbook-status { display: inline-flex; padding: 1px 7px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 700; line-height: 20px; }
 .playbook-status.is-draft { color: var(--warning-strong); background: color-mix(in srgb, var(--warning) 14%, transparent); }
 .playbook-status.is-published { color: var(--success); background: color-mix(in srgb, var(--success) 12%, transparent); }
 .playbook-status.is-archived { color: var(--muted); background: var(--surface-alt); }
 .playbook-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.playbook-tags span { padding: 4px 8px; border-radius: 999px; background: var(--surface-alt); color: var(--muted); font-size: 12px; font-weight: 700; }
+.playbook-tags span { padding: 2px 8px; border-radius: var(--radius-sm); background: var(--surface-alt); color: var(--text-soft); font-size: 12px; font-weight: 600; }
 .playbook-card-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
 .playbook-card-actions button:hover { border-color: var(--blue); color: var(--blue); }
 
@@ -804,14 +945,15 @@
   display: grid;
   gap: 12px;
   margin-bottom: 18px;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--blue) 30%, var(--line));
+  padding: 20px 22px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--blue) 4%, var(--surface));
+  background: var(--surface);
 }
 .playbook-editor header h3 { margin: 3px 0 0; font-size: var(--font-section); }
-.playbook-editor label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; }
-.playbook-editor textarea { min-height: 82px; resize: vertical; line-height: 1.5; }
+.playbook-editor label { display: grid; gap: 6px; color: var(--text); font-size: 13px; font-weight: 600; }
+.playbook-editor input { min-height: var(--control-height); font-size: 14px; font-weight: 400; }
+.playbook-editor textarea { min-height: 82px; resize: vertical; font-size: 14px; font-weight: 400; line-height: 1.6; box-shadow: none; }
 .playbook-editor-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .playbook-editor-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .playbook-editor-actions .workspace-primary-action,
@@ -851,6 +993,15 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  /* 네 칸 띠가 2×2로 접힐 때 구분선을 줄 기준으로 다시 긋는다. */
+  .workspace-summary-grid:not(.is-three) .workspace-metric:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .workspace-summary-grid:not(.is-three) .workspace-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--surface-alt);
+  }
+
   .workspace-columns {
     grid-template-columns: 1fr;
   }
@@ -861,6 +1012,10 @@
 }
 
 @media (max-width: 520px) {
+  .personal-panel {
+    --workspace-gutter: 16px;
+  }
+
   .workspace-content {
     padding: 16px;
   }
@@ -874,12 +1029,41 @@
     grid-column: 1 / -1;
   }
 
+  .workspace-summary-grid.is-three .workspace-metric:nth-child(2) {
+    border-top: 1px solid var(--surface-alt);
+    border-left: 0;
+  }
+
+  .workspace-summary-grid.is-three .workspace-metric:nth-child(3) {
+    border-top: 1px solid var(--surface-alt);
+    border-left: 1px solid var(--surface-alt);
+  }
+
   .workspace-item {
     grid-template-columns: 1fr;
   }
 
   .workspace-item-action {
     justify-self: stretch;
+  }
+
+  /* 좁은 화면 이슈 행: 위에 번호와 마감, 가운데 제목, 아래 AI 요약 */
+  .workspace-issue-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+
+  .workspace-issue-row .workspace-item-main,
+  .workspace-issue-row .workspace-item-action {
+    grid-column: 1 / -1;
+  }
+
+  .workspace-issue-row .workspace-item-due {
+    grid-row: 1;
+    grid-column: 2;
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
   }
 
   .workspace-issue-header {

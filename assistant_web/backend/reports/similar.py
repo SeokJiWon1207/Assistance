@@ -21,6 +21,7 @@ from backend.sources.chroma_lexical import lexical_ranking_scope
 from backend.sources.mantis_hybrid import hybrid_filter_scope
 from backend.sources.mantis_refresh import short_refresh_scope
 from backend.template_questions import attach_korean_particles
+from backend.reports.comparison_passages import focused_excerpt
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_issue_by_id,
@@ -314,13 +315,13 @@ def _recorded_cause(detail: Dict[str, Any]) -> Tuple[str, str]:
                 if _CAUSE_LIMITATION.search(sentence):
                     limitation = (compact_text(sentence, COMPARE_CELL_CHARS), "note")
                     continue
-                return compact_text(sentence, COMPARE_CELL_CHARS) + _note_reference(note), "note"
+                return compact_text(focused_excerpt(sentence, _CAUSE_SENTENCE, COMPARE_CELL_CHARS), COMPARE_CELL_CHARS) + _note_reference(note), "note"
     description = _clean_note(str(detail.get('description') or ''), detail)
     sentences = _cause_sentences(description)
     for sentence in sentences:
         if (_CAUSE_SENTENCE.search(sentence) and not _NON_CAUSAL_CONTEXT.search(sentence)
                 and not _unconfirmed(sentence, cause=True) and not _is_consequence(sentence, detail)):
-            return compact_text(sentence, COMPARE_CELL_CHARS), 'description'
+            return compact_text(focused_excerpt(sentence, _CAUSE_SENTENCE, COMPARE_CELL_CHARS), COMPARE_CELL_CHARS), 'description'
     return limitation or ("", "")
 
 
@@ -360,7 +361,8 @@ def _progress_evidence(detail: dict, *, after_note_id: int = 0) -> list[str]:
     return stages
 
 
-def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS) -> Tuple[str, str]:
+def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS,
+                  include_progress: bool = True) -> Tuple[str, str]:
     """확인된 조치와 QC/전달 단계만 기록하며 전달을 운영 배포로 바꾸지 않는다."""
     field = _without_access_lines(str((detail.get("resolution_fields") or {}).get(FIX_FIELD) or "")).strip()
     if field and not _unconfirmed(field):
@@ -369,11 +371,11 @@ def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS
         from backend.reports.comparison_facts import render_facts
         action_ids = [int(r['field'].split(':', 1)[1]) for r in facts['action']
                       if re.fullmatch(r'note:\d+', r['field'])]
-        stages = _progress_evidence(detail, after_note_id=max(action_ids, default=0))
+        stages = _progress_evidence(detail, after_note_id=max(action_ids, default=0)) if include_progress else []
         text, origin = render_facts(facts['action'], max_chars - len('. '.join(stages)) - 2)
         return '. '.join(filter(None, [text, *stages])), origin or ('note' if stages else '')
     section = _recorded_section(detail, r"작업\s*내역|조치\s*(?:내용|내역)|수정\s*(?:사항|내역)")
-    stages = _progress_evidence(detail)
+    stages = _progress_evidence(detail) if include_progress else []
     if section and not _unconfirmed(section):
         action = compact_text(section, max(80, max_chars - len('. '.join(stages)) - 2))
         return compact_text('. '.join([action, *stages]), max_chars), 'note'
@@ -398,6 +400,9 @@ def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS
         sentences = _note_sentences(text)
         confirmed = []
         for index, part in enumerate(sentences):
+            if not include_progress and re.fullmatch(
+                    r'(?:수정하여\s*)?(?:소스|수정본|모듈|패치|라이브러리)\s*전달\s*(?:드립니다|드렸습니다|완료|함)', part):
+                continue
             if re.fullmatch(r'(?:현상|원인|조치|조치\s*(?:내용|내역)|작업\s*내역)', part):
                 continue
             if (re.search(r'(?:소스|모듈|패치|수정본).{0,60}적용\s*후.{0,80}(?:확인|측정|테스트)', part)
@@ -412,13 +417,14 @@ def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS
                 continue
             if index and re.search(r'\bclass\b|\bDelete\b|해제\s*누락|(?:로드|적재).{0,12}(?:않|누락)', sentences[index - 1], re.I):
                 part = sentences[index - 1] + ': ' + part
-            confirmed.append(part.lstrip('> '))
+            confirmed.append(focused_excerpt(part.lstrip('> '), re.compile(
+                r'개발|구현|수정|추가|조정|개선|삭제|제거|변경|해제|패치|적용|반영|해결|갱신|조치|복구|로드|재기동|재시작|재부팅|delete|초기화', re.I), max_chars))
         if confirmed:
             actions.append('. '.join(list(dict.fromkeys(confirmed))[:2]) + _note_reference(note))
             if not latest_action_id and str(note.get('id') or '').isdigit():
                 latest_action_id = int(note['id'])
     selected = actions[:2] or ([source_change] if source_change else [])
-    stages = _progress_evidence(detail, after_note_id=latest_action_id)
+    stages = _progress_evidence(detail, after_note_id=latest_action_id) if include_progress else []
     if not selected and not stages:
         return '', ''
     stage_text = '. '.join(stages)
@@ -426,7 +432,7 @@ def _recorded_fix(detail: Dict[str, Any], *, max_chars: int = COMPARE_CELL_CHARS
     return compact_text('. '.join(filter(None, [action_text, stage_text])), max_chars), 'note'
 
 
-def _latest_resolution_caveat(detail: Dict[str, Any]) -> str:
+def _latest_resolution_caveat(detail: Dict[str, Any], *, with_reference: bool = False) -> str:
     """과거 완료 기록을 최신 미해결·배포 예정 상태로 오해하지 않도록 한정한다."""
     for note in reversed(_resolution_notes(detail)):
         sentences = _note_sentences(_clean_note(str(note.get("text") or ""), detail))
@@ -437,7 +443,14 @@ def _latest_resolution_caveat(detail: Dict[str, Any]) -> str:
             r'(?:아직도|여전히).{0,40}(?:메모리|리소스|CPU|증가|오르|발생|지속)|'
             r'추가\s*확인\s*요청\s*수신', part, re.I))
         if pending:
-            return compact_text(". ".join(pending), NOTE_SNIPPET_CHARS)
+            value = compact_text(". ".join(pending), NOTE_SNIPPET_CHARS)
+            if with_reference:
+                value += _note_reference(note) + (' · 노트 기록일 ' + str(note['created_at'])[:10] if note.get('created_at') else '')
+                # 연락일과 노트 등록일이 다르면 둘 다 원문 범위에서 표시한다.
+                contact = re.match(r'\s*(\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*(?:유선|메일|통화)', str(note.get('text') or ''))
+                if contact:
+                    value += ' · 연락일 ' + contact[1]
+            return value
         if (any(_COMPLETED_NOTE.search(part) and not _unconfirmed(part) for part in sentences)
                 or re.search(r'\[\s*(?:고객사\s*)?전달(?:\s*완료)?\s*\]', str(note.get('text') or ''))):
             break

@@ -185,7 +185,15 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                     and not re.search(r"(?:현재|이슈|Mantis)(?:의)?\s*상태\s*[:：]", line, re.I)):
                 continue
             if field != "id":
-                claims.append((current_id, field, match["value"]))
+                value = match["value"]
+                # 설명 답변의 출처는 속성값의 일부가 아니다. 같은 이슈의 정해진
+                # 인용 형식만 벗기며 상태 뒤의 임의 서술·완료 주장은 그대로 검사한다.
+                if field == "status":
+                    value = re.sub(
+                        rf"\s+\(#0*{current_id}\s*·\s*(?:필드\s+[\w가-힣 :.-]+|노트\s+\d+)"
+                        r"(?:\s*·\s*\d{4}-\d{2}-\d{2})?\)$", "", value,
+                    )
+                claims.append((current_id, field, value))
         if len(line_ids) == 1:
             handler = re.search(r"담당자(?:는|가)\s+(.+?)(?:입니다|이에요|예요|이며|이고)(?:[.\s]|$)", line)
             if handler:

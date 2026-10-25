@@ -1,10 +1,14 @@
+import { initUiDetails } from "./ui_details.js?v=20261023-1";
+import { setCustomerNames } from "./ui_format.js?v=20260911-6";
 import "./events.js?v=20260911-6";
-import { state, els, defaultOptions, canUseAdminTools } from "./runtime.js?v=20260911-6";
+import { state, els, defaultOptions, canUseAdminTools, apiFetch } from "./runtime.js?v=20260911-6";
 import { loadConversations, loadMyWorkspace, prefetchTeamBrief, showToast } from "./workspace.js?v=20260911-6";
-import { loadTheme, setAbComparison, renderMessages, loadModels, loadDataStatus, renderChatDataBadge } from "./chat.js?v=20260911-6";
+import { loadTheme, setShowSources, setAbComparison, autoResizeInput, renderMessages, loadModels, loadDataStatus, renderChatDataBadge } from "./chat.js?v=20260911-6";
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
 import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
+
+initUiDetails();
 
 let loadedAppVersion = "";
 let appUpdateNotified = false;
@@ -35,6 +39,9 @@ async function bootstrapApplication(authState = {}) {
   // 템플릿·Notion 상태가 느리거나 실패해도 모델 준비는 바로 시작한다.
   loadModels().catch(() => {});
   // 이전 대화 복원은 새 질문의 메시지 배열을 교체하므로, 완료 전 제출만 막는다.
+  await apiFetch("/api/customer-names").then(async (response) => {
+    if (response.ok) setCustomerNames(await response.json());
+  }).catch(() => {});
   await Promise.all([
     loadConversations().then(() => { state.initializing = false; }),
     loadTeamTemplates().catch(() => {}),
@@ -46,8 +53,10 @@ async function bootstrapApplication(authState = {}) {
   renderChatDataBadge({ loading: true });
   loadDataStatus().catch(() => renderChatDataBadge({ failed: true }));
   loadTheme();
+  setShowSources(defaultOptions.showSources);
   setAbComparison(defaultOptions.abTest);
   renderMessages();
+  autoResizeInput();
   initAdminCenter();
   initDashboard();
   // 승인 대기 배지는 관리자 센터를 열기 전에도 보여야 하므로 미리 불러 둔다.

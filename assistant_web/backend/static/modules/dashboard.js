@@ -1,4 +1,4 @@
-import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
@@ -10,7 +10,7 @@ import { revealOnScroll } from "./motion.js?v=20260911-6";
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
 const metricFilterLabels = { overdue: "일정 지연", aging: "장기 미종료", highRisk: "고위험" };
-const decisionLabels = { high: "위험", attention: "주의", stable: "안정" };
+const decisionLabels = { high: "위험", attention: "주의", stable: "안정", unknown: "판단 보류" };
 // 장기 미종료 지표(30일 이상)와 같은 경계로 나눠 차트와 지표 카드의 숫자가 맞게 한다.
 const AGING_DAYS = 30;
 const AGE_BUCKETS = [
@@ -82,63 +82,67 @@ function priorityLabel(value) {
   return { none: "없음", low: "낮음", normal: "보통", high: "높음", urgent: "긴급", immediate: "즉시" }[raw.toLowerCase()] || raw || "미상";
 }
 
-function emptyBlock(message) {
+function emptyBlock(message, partialMessage = "표시할 항목을 찾지 못했습니다. 전체 결과는 미확정입니다.") {
   const complete = dashboardState.data?.meta?.search_complete === true;
-  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(complete ? message : `확인한 범위 기준 · ${message}`)}</p></div>`;
+  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(complete ? message : `확인한 범위 기준 · ${partialMessage}`)}</p></div>`;
 }
 
 function sectionHeader(title, meta = "") {
   return `<header><div><h3>${escapeHtml(title)}</h3></div>${meta ? `<em>${escapeHtml(meta)}</em>` : ""}</header>`;
 }
 
-function metricCard(key, label, value, helper, tone = "", delta = "") {
+// 일부 이슈만 확인한 경우 숫자 옆에 '건 이상'을 붙여 하한값이라는 것을 지표 자체에서 알린다.
+function metricCard(key, label, value, helper, tone = "", delta = "", lowerBound = false) {
   // '미종료 이슈'는 걸 조건이 없으므로 지표 필터를 푸는 '전체 보기' 카드로 쓴다.
   const pressed = key === "open" ? !dashboardState.metric : dashboardState.metric === key;
   const active = pressed ? " is-active" : "";
   return `
     <button class="workspace-metric ${tone}${active}" type="button" data-dashboard-metric="${key}" aria-pressed="${pressed}">
       <span class="dashboard-metric-top"><span>${escapeHtml(label)}</span>${delta}</span>
-      <strong>${formatNumber(value)}</strong>
+      <strong>${formatNumber(value)}${lowerBound ? '<span class="dashboard-lower-bound">건 이상</span>' : ""}</strong>
       <small>${escapeHtml(helper)}</small>
     </button>`;
 }
 
 // closedNow는 기간 중 처리한 전체 건수가 아니라 이번 기간 신규 이슈 중 지금 종료된 건수다.
-function renderIntakeCard(summary) {
+function renderIntakeCard(summary, complete = true) {
   const total = Number(summary.newIssues || 0);
   const closed = Math.min(Number(summary.closedNow || 0), total);
-  const open = total - closed;
+  const unknown = Number(summary.unknownStatus || 0);
+  const open = Number(summary.newOpen ?? Math.max(0, total - closed - unknown));
   const closedShare = total ? Math.round((closed / total) * 1000) / 10 : 0;
+  const openShare = total ? Math.round((open / total) * 1000) / 10 : 0;
+  const unknownShare = total ? Math.round((unknown / total) * 1000) / 10 : 0;
   const rate = summary.changeRate;
-  const delta = rate == null
+  const delta = !complete ? '<em class="dashboard-delta">확인 범위 · 비교 미확정</em>' : rate == null
     ? '<em class="dashboard-delta">직전 기간 비교 없음</em>'
     : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">신규 ${rate > 0 ? "증가" : rate < 0 ? "감소" : "변동"} ${Math.abs(rate)}%</em>`;
   return `
-    <div class="workspace-metric dashboard-intake" role="group" aria-label="이번 기간 신규 이슈 ${total}건 중 종료 ${closed}건, 미종료 ${open}건">
+    <div class="workspace-metric dashboard-intake" role="group" aria-label="이번 기간 신규 이슈 ${total}건${complete ? "" : " 이상 · 확인 범위"} 중 종료 ${closed}건, 미종료 ${open}건${unknown ? `, 상태 미상 ${unknown}건` : ""}">
       <span class="dashboard-metric-top"><span>이번 기간 신규 이슈</span>${delta}</span>
-      <strong>${formatNumber(total)}</strong>
-      <span class="dashboard-intake-bar" aria-hidden="true"><i class="is-closed" style="width:${closedShare}%"></i><i class="is-open" style="width:${100 - closedShare}%"></i></span>
-      <small class="dashboard-new-change"><b class="is-closed">종료 ${formatNumber(closed)}</b> · <b class="is-open">미종료 ${formatNumber(open)}</b> · 직전 기간 ${formatNumber(summary.previousNewIssues)}건</small>
+      <strong>${formatNumber(total)}${complete ? "" : '<span class="dashboard-lower-bound">건 이상</span>'}</strong>
+      <span class="dashboard-intake-bar" aria-hidden="true"><i class="is-closed" style="width:${closedShare}%"></i><i class="is-open" style="width:${openShare}%"></i>${unknown ? `<i class="is-unknown" style="width:${unknownShare}%"></i>` : ""}</span>
+      <small class="dashboard-new-change"><b class="is-closed">종료 ${formatNumber(closed)}</b> · <b class="is-open">미종료 ${formatNumber(open)}</b>${unknown ? ` · <b>상태 미상 ${formatNumber(unknown)}</b>` : ""} · ${complete ? `직전 기간 ${formatNumber(summary.previousNewIssues)}건` : "확인된 이슈만 집계"}</small>
     </div>`;
 }
 
 function renderMetrics(summary, complete = true) {
   return `
     <section class="workspace-summary-grid dashboard-metrics" aria-label="핵심 운영 지표">
-      ${metricCard("open", complete ? "미종료 이슈" : "확인된 미종료", summary.open, `${complete ? "전체 보기" : "전체 미확정"} · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue")}
-      ${metricCard("overdue", "일정 지연", summary.overdue, "완료 예정일 경과", "is-danger")}
-      ${metricCard("aging", "장기 미종료", summary.aging, "30일 이상 미종료", "is-warning")}
-      ${metricCard("highRisk", "고위험", summary.highRisk, `우선순위 높음 ${formatNumber(summary.highPriority)}건`, "is-danger")}
-      ${renderIntakeCard(summary)}
+      ${metricCard("open", complete ? "미종료 이슈" : "확인된 미종료", summary.open, `${complete ? "전체 보기" : "전체 미확정"} · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue", "", !complete)}
+      ${metricCard("overdue", "일정 지연", summary.overdue, "완료 예정일 경과", "is-danger", "", !complete)}
+      ${metricCard("aging", "장기 미종료", summary.aging, "30일 이상 미종료", "is-warning", "", !complete)}
+      ${metricCard("highRisk", "고위험", summary.highRisk, `우선순위 높음 ${formatNumber(summary.highPriority)}건`, "is-danger", "", !complete)}
+      ${renderIntakeCard(summary, complete)}
     </section>`;
 }
 
 // 결론을 지표 바로 아래 한 줄로 둔다. 근거는 칩, 다음 행동은 AI 분석 버튼으로 줄인다.
 function renderDecision(decision, periodDays) {
-  const level = decisionLabels[decision.riskLevel] ? decision.riskLevel : "stable";
-  const signals = (decision.signals || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const level = decisionLabels[decision.riskLevel] ? decision.riskLevel : "unknown";
+  const signals = (decision.signals || []).map((item) => `<li>${escapeHtml(customerLabelText(item))}</li>`).join("");
   const actions = (decision.recommendedActions || []).map((item) => `
-    <button type="button" class="dashboard-decision-action" data-dashboard-question="${escapeHtml(item.question)}" title="${escapeHtml(item.reason)}">${escapeHtml(item.title)} →<span class="sr-only"> AI에게 분석 요청 · ${escapeHtml(item.reason)}</span></button>`).join("");
+    <button type="button" class="dashboard-decision-action" data-dashboard-question="${escapeHtml(item.question)}" title="${escapeHtml(customerLabelText(item.reason))}">${escapeHtml(customerLabelText(item.title))} →<span class="sr-only"> AI에게 분석 요청 · ${escapeHtml(customerLabelText(item.reason))}</span></button>`).join("");
   return `
     <section class="dashboard-decision is-${level}" aria-label="${periodDays}일 운영 판단">
       <span class="dashboard-decision-badge">${decisionLabels[level]}</span>
@@ -167,8 +171,12 @@ function segmentTotal(counts) {
   return counts.overdue + counts.aging + counts.rest;
 }
 
+function observedCount(value) {
+  return `${formatNumber(value)}건${dashboardState.data?.meta?.search_complete === true ? "" : " 이상"}`;
+}
+
 function segmentText(counts) {
-  return Object.entries(SEGMENT_LABELS).map(([key, label]) => `${label} ${counts[key]}건`).join(", ");
+  return Object.entries(SEGMENT_LABELS).map(([key, label]) => `${label} ${observedCount(counts[key])}`).join(", ");
 }
 
 function stackedTrack(counts, max) {
@@ -184,8 +192,8 @@ function chartLegend() {
     .map(([key, label]) => `<span><i class="is-${key}"></i>${label}</span>`).join("")}</div>`;
 }
 
-function spikeSummary(item) {
-  return `${item.name} ${formatNumber(item.count)}건(직전 ${formatNumber(item.previousCount)}건)`;
+function spikeSummary(item, customer = false) {
+  return `${customer ? customerName(item.name) : item.name} ${formatNumber(item.count)}건(직전 ${formatNumber(item.previousCount)}건)`;
 }
 
 function renderCustomerChart(openIssues, health, customerSpikes, screenSpikes) {
@@ -207,19 +215,19 @@ function renderCustomerChart(openIssues, health, customerSpikes, screenSpikes) {
     const spike = spikes.get(name);
     const spikeText = spike ? (spike.ratio == null ? "신규 급증" : `급증 ×${spike.ratio}`) : "";
     const selected = dashboardState.customer === name;
-    const label = [`${name} 미종료 ${segmentTotal(counts)}건`, segmentText(counts), customerHealth?.label,
+    const label = [`${customerName(name)} 미종료 ${observedCount(segmentTotal(counts))}`, segmentText(counts), customerHealth?.label,
       spike ? `급증 직전 ${spike.previousCount}건에서 ${spike.count}건` : ""].filter(Boolean).join(", ");
     return `
       <button type="button" class="dashboard-bar dashboard-clickable${selected ? " is-selected" : ""}" data-dashboard-customer="${escapeHtml(name)}" aria-pressed="${selected}" aria-label="${escapeHtml(label)}">
-        <span class="dashboard-bar-name"><i class="health-status is-${escapeHtml(customerHealth?.level || "stable")}" aria-hidden="true"></i><span>${escapeHtml(name)}</span></span>
+        <span class="dashboard-bar-name"><i class="health-status is-${escapeHtml(customerHealth?.level || "unknown")}" aria-hidden="true"></i><span>${escapeHtml(customerName(name))}</span></span>
         ${stackedTrack(counts, max)}
-        <span class="dashboard-bar-value">${formatNumber(segmentTotal(counts))}건${spikeText ? `<b class="dashboard-spike-badge" title="${escapeHtml(spikeSummary(spike))}">${escapeHtml(spikeText)}</b>` : ""}</span>
+        <span class="dashboard-bar-value">${observedCount(segmentTotal(counts))}${spikeText ? `<b class="dashboard-spike-badge" title="${escapeHtml(spikeSummary(spike, true))}">${escapeHtml(spikeText)}</b>` : ""}</span>
       </button>`;
   }).join("");
   // 막대에 배지로 붙지 못한 급증 신호도 사라지지 않게 한 줄로 남긴다.
   const shown = new Set(rows.map(([name]) => name));
   const otherSpikes = [
-    ...customerSpikes.filter((item) => !shown.has(item.name)).map((item) => `고객사 ${spikeSummary(item)}`),
+    ...customerSpikes.filter((item) => !shown.has(item.name)).map((item) => `고객사 ${spikeSummary(item, true)}`),
     ...screenSpikes.map((item) => `화면 ${spikeSummary(item)}`),
   ];
   const hidden = groups.size - rows.length;
@@ -227,7 +235,7 @@ function renderCustomerChart(openIssues, health, customerSpikes, screenSpikes) {
     <section class="workspace-section dashboard-chart" aria-label="고객사별 미종료">
       ${sectionHeader("고객사별 미종료", "막대를 누르면 목록이 걸러집니다")}
       <div class="dashboard-chart-body">
-        ${rows.length ? `${chartLegend()}<div class="dashboard-bars">${bars}</div>` : emptyBlock("미종료 이슈가 없습니다.")}
+        ${rows.length ? `<div class="dashboard-bars">${bars}</div>` : emptyBlock("미종료 이슈가 없습니다.")}
         ${hidden > 0 ? `<p class="dashboard-chart-note">그 외 고객사 ${hidden}곳은 우선 확인 이슈 목록에서 볼 수 있습니다.</p>` : ""}
         ${otherSpikes.length ? `<p class="dashboard-chart-note"><b>급증 신호</b> ${escapeHtml(otherSpikes.join(" · "))}</p>` : ""}
       </div>
@@ -249,8 +257,8 @@ function renderAgeChart(openIssues) {
     const selected = dashboardState.age === bucket.key;
     const height = max && count ? Math.max(4, Math.round((count / max) * 100)) : 0;
     return `
-      <button type="button" class="dashboard-column dashboard-clickable is-${bucket.tone}${selected ? " is-selected" : ""}" data-dashboard-age="${bucket.key}" aria-pressed="${selected}" aria-label="경과 ${bucket.label} 미종료 ${count}건">
-        <b>${formatNumber(count)}</b>
+      <button type="button" class="dashboard-column dashboard-clickable is-${bucket.tone}${selected ? " is-selected" : ""}" data-dashboard-age="${bucket.key}" aria-pressed="${selected}" aria-label="경과 ${bucket.label} 미종료 ${observedCount(count)}">
+        <b>${dashboardState.data?.meta?.search_complete === true ? formatNumber(count) : observedCount(count)}</b>
         <span class="dashboard-column-bar" aria-hidden="true"><i style="height:${height}%"></i></span>
         <small>${bucket.label}</small>
       </button>`;
@@ -260,7 +268,7 @@ function renderAgeChart(openIssues) {
       ${sectionHeader("미종료 경과일", "등록 후 지난 일수")}
       <div class="dashboard-chart-body">
         ${openIssues.length ? `<div class="dashboard-columns">${columns}</div>
-        <p class="dashboard-chart-note">30일 이상 ${formatNumber(aging)}건이 장기 미종료입니다.${unknown ? ` 등록일을 확인하지 못한 ${formatNumber(unknown)}건은 제외했습니다.` : ""}</p>` : emptyBlock("미종료 이슈가 없습니다.")}
+        <p class="dashboard-chart-note">30일 이상 ${observedCount(aging)}이 장기 미종료입니다.${unknown ? ` 등록일을 확인하지 못한 ${formatNumber(unknown)}건은 제외했습니다.` : ""}</p>` : emptyBlock("미종료 이슈가 없습니다.")}
       </div>
     </section>`;
 }
@@ -275,18 +283,18 @@ function renderMemberChart(members) {
   const max = Math.max(0, ...rows.map((row) => segmentTotal(row.counts)));
   const bars = rows.map((row) => {
     const role = roleLabels[row.role] || row.role;
-    const label = `${row.displayName} ${role} 미종료 ${segmentTotal(row.counts)}건, ${segmentText(row.counts)}, 고위험 ${row.highRisk || 0}건`;
+    const label = `${row.displayName} ${role} 미종료 ${observedCount(segmentTotal(row.counts))}, ${segmentText(row.counts)}, 고위험 ${observedCount(row.highRisk || 0)}`;
     return `
       <div class="dashboard-bar" role="img" aria-label="${escapeHtml(label)}">
         <span class="dashboard-bar-name"><span>${escapeHtml(row.displayName)}</span></span>
         ${stackedTrack(row.counts, max)}
-        <span class="dashboard-bar-value">${formatNumber(segmentTotal(row.counts))}건${row.highRisk ? `<b class="dashboard-spike-badge">고위험 ${formatNumber(row.highRisk)}</b>` : ""}</span>
+        <span class="dashboard-bar-value">${observedCount(segmentTotal(row.counts))}${row.highRisk ? `<b class="dashboard-spike-badge">고위험 ${observedCount(row.highRisk)}</b>` : ""}</span>
       </div>`;
   }).join("");
   return `
     <section class="workspace-section dashboard-chart" aria-label="팀원별 업무 부하">
       ${sectionHeader("팀원별 부하", `미종료 기준 · ${members.length}명`)}
-      <div class="dashboard-chart-body">${chartLegend()}<div class="dashboard-bars">${bars}</div></div>
+      <div class="dashboard-chart-body"><div class="dashboard-bars">${bars}</div></div>
     </section>`;
 }
 
@@ -310,7 +318,7 @@ function renderFilterbar(filteredCount = 0) {
     chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="metric" aria-label="${escapeHtml(label)} 필터 해제">${escapeHtml(label)}${icon("close", 14)}</button>`);
   }
   if (dashboardState.customer) {
-    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(dashboardState.customer)} 필터 해제">고객사: ${escapeHtml(dashboardState.customer)}${icon("close", 14)}</button>`);
+    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(customerName(dashboardState.customer))} 필터 해제">고객사: ${escapeHtml(customerName(dashboardState.customer))}${icon("close", 14)}</button>`);
   }
   const age = AGE_BUCKETS.find((bucket) => bucket.key === dashboardState.age);
   if (age) {
@@ -338,16 +346,15 @@ function renderPriorities(priorities, filtered) {
     : (dashboardState.prioritiesExpanded && filtered.length > PRIORITY_PREVIEW_LIMIT
       ? `<button type="button" class="dashboard-more" data-dashboard-more aria-expanded="true">상위 ${PRIORITY_PREVIEW_LIMIT}건만 보기</button>` : "");
   const rows = shown.map((issue) => `
-    <tr class="dashboard-clickable" data-dashboard-row-issue="${escapeHtml(issue.id)}">
-      <td><span class="dashboard-risk-badge is-${escapeHtml(issue.riskLevel)}">${riskLabel(issue.riskLevel)}</span></td>
-      <td><button type="button" class="dashboard-issue-button" data-dashboard-issue="${escapeHtml(issue.id)}"><strong class="dashboard-issue-title">#${escapeHtml(issue.id)} ${escapeHtml(issue.title)}</strong></button><small>${escapeHtml((issue.riskReasons || []).join(" · "))}</small></td>
-      <td>${escapeHtml(issue.project || "-")}</td><td>${escapeHtml(issue.handler || "미지정")}</td>
-      <td>${issue.ageDays == null ? "-" : `${formatNumber(issue.ageDays)}일`}</td><td>${escapeHtml(workspaceStatusLabel(issue.status))}${issue.overdue ? ' · <span class="danger-text">지연</span>' : ""}</td>
+    <tr class="dashboard-clickable${String(issue.id) === dashboardState.selectedIssueId ? " is-selected" : ""}" data-dashboard-row-issue="${escapeHtml(issue.id)}" aria-selected="${String(issue.id) === dashboardState.selectedIssueId}">
+      <td><button type="button" class="dashboard-issue-button" data-dashboard-issue="${escapeHtml(issue.id)}"><strong class="dashboard-issue-title">#${escapeHtml(issue.id)} ${escapeHtml(issue.title)}</strong></button><small>${escapeHtml(workspaceStatusLabel(issue.status))} · ${escapeHtml((issue.riskReasons || []).join(" · "))}</small></td>
+      <td>${escapeHtml(customerName(issue, "-"))}</td><td>${escapeHtml(issue.handler || "미지정")}</td>
+      <td>${issue.ageDays == null ? "-" : `${formatNumber(issue.ageDays)}일`}</td><td><span class="dashboard-risk-badge is-${escapeHtml(issue.riskLevel)}">${riskLabel(issue.riskLevel)}</span></td>
     </tr>`).join("");
   return `
     <section class="workspace-section dashboard-priority-section${filtering ? " is-filtered" : ""}" tabindex="-1" aria-label="우선 확인 이슈">
       ${sectionHeader("우선 확인 이슈", `${filtered.length} / ${priorities.length}건`)}
-      ${filtered.length ? `<div class="workspace-table-wrap"><table class="workspace-table dashboard-priority-table"><thead><tr><th>위험도</th><th>이슈</th><th>고객사</th><th>담당자</th><th>경과</th><th>상태</th></tr></thead><tbody>${rows}</tbody></table></div>${toggle}` : emptyBlock("현재 필터에 해당하는 우선 이슈가 없습니다.")}
+      ${filtered.length ? `<div class="workspace-table-wrap"><table class="workspace-table dashboard-priority-table"><thead><tr><th>이슈</th><th>고객사</th><th>담당자</th><th>경과</th><th>위험</th></tr></thead><tbody>${rows}</tbody></table></div>${toggle}` : emptyBlock("현재 필터에 해당하는 우선 이슈가 없습니다.")}
     </section>`;
 }
 
@@ -399,12 +406,17 @@ function renderDashboard() {
   setRefreshLabel(loading ? "불러오는 중…" : "새로고침");
   els.dashboardRefreshBtn.setAttribute("aria-busy", String(loading));
   els.dashboardPeriod.disabled = loading;
-  if (loading) {
+  if (loading && !dashboardState.data) {
     updateSourceMeta(dashboardState.data?.meta, { loading: true });
     els.dashboardSubtitle.textContent = "운영 데이터를 조회하고 있습니다.";
     hideFilterbar();
     dashboardContentShown = false;
-    els.dashboardBody.innerHTML = '<div class="dashboard-state" role="status"><span class="dashboard-spinner" aria-hidden="true"></span><strong>운영 데이터를 불러오고 있습니다.</strong><p>고객사 건강도와 위험 신호를 같은 기준으로 계산합니다.</p></div>';
+    // 숫자 대신 실제 화면과 같은 자리·크기의 뼈대를 둬 다 불러왔을 때 화면이 튀지 않게 한다.
+    els.dashboardBody.innerHTML = `
+      <div class="dashboard-loading" role="status">
+        <p class="dashboard-loading-status"><span class="dashboard-spinner" aria-hidden="true"></span><span><strong>운영 데이터를 불러오고 있습니다.</strong><small>고객사 건강도와 위험 신호를 같은 기준으로 계산합니다.</small></span></p>
+        <div class="dashboard-skel" aria-hidden="true"><i class="is-banner"></i><i class="is-strip"></i><span><i></i><i></i><i></i></span><i class="is-table"></i></div>
+      </div>`;
     return;
   }
   if (dashboardState.error && !dashboardState.data) {
@@ -416,7 +428,7 @@ function renderDashboard() {
   }
   const data = dashboardState.data;
   if (!data) return;
-  updateSourceMeta(data.meta, { liveFailed: Boolean(dashboardState.error) });
+  updateSourceMeta(data.meta, { loading, liveFailed: Boolean(dashboardState.error) });
   if (data.meta?.source === "error") {
     hideFilterbar();
     dashboardContentShown = false;
@@ -432,15 +444,17 @@ function renderDashboard() {
   const priorities = data.openIssues || data.priorities || [];
   const filtered = filteredPriorities(priorities);
   renderFilterbar(filtered.length);
-  // 결론(판단) → 분포(차트) → 개별 이슈(목록) 순으로 둔다. 차트·지표를 누르면 목록으로 이동해 걸러진 결과를 보여 준다.
+  // 결론(판단) → 지표 → 분포(차트) → 개별 이슈(목록) 순으로 둔다. 차트·지표를 누르면 목록으로 이동해 걸러진 결과를 보여 준다.
+  // 지연·장기·그 외 범례는 차트마다 반복하지 않고 분포 제목 옆에 한 번만 둔다.
   const memberChart = renderMemberChart(data.members || []);
   els.dashboardBody.innerHTML = `
     ${dashboardState.error
-        ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시합니다.</strong></div>`
+        ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시합니다.</strong><span>${escapeHtml(formatDateTime(data.meta.fetchedAt))} 기준</span><button type="button" class="secondary-button" data-dashboard-retry>다시 시도</button></div>`
         : ""}
     ${!complete ? '<div class="dashboard-refresh-status is-warning" role="status"><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>' : ""}
+    ${renderDecision(data.decisionSummary || {}, data.meta.periodDays)}
     ${renderMetrics(data.summary, complete)}
-    ${renderDecision(data.decisionSummary, data.meta.periodDays)}
+    <div class="dashboard-dist-head"><h3>미종료 분포</h3>${chartLegend()}</div>
     <div class="dashboard-grid${memberChart ? "" : " is-two"}">${renderCustomerChart(priorities, data.customerHealth || [], data.customerSpikes || [], data.screenSpikes || [])}${renderAgeChart(priorities)}${memberChart}</div>
     ${renderPriorities(priorities, filtered)}
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>`;
@@ -560,11 +574,8 @@ function setActiveView(view, { remember = true, load = true } = {}) {
   if (view === "dashboard" && load) ensureDashboardFresh();
   if (load) mainViewLoaders.get(view)?.();
   if (view === "personal" && load) {
-    ensureMyWorkspaceFresh().catch((error) => {
-      if (!state.myWorkspace) {
-        els.workspaceContent.innerHTML = `<div class="workspace-error"><strong>업무 정보를 불러오지 못했습니다.</strong><p>${escapeHtml(error.message)}</p></div>`;
-      }
-    });
+    // 워크스페이스가 만든 오류·재시도 UI를 유지한다.
+    ensureMyWorkspaceFresh().catch(() => {});
   }
 }
 
@@ -597,15 +608,25 @@ function issueById(id) {
   return items.find((item) => String(item.id) === String(id));
 }
 
-function openIssueDetail(id) {
+// 상세 드로어의 이전/다음은 지금 필터가 걸린 우선 확인 목록 순서를 따른다.
+function detailNavigation(id) {
+  const list = filteredPriorities(dashboardState.data?.openIssues || dashboardState.data?.priorities || []);
+  const index = list.findIndex((item) => String(item.id) === String(id));
+  if (index < 0 || list.length < 2) return "";
+  const step = (offset, label, iconName) => `<button type="button" class="dashboard-detail-step" data-dashboard-detail-step="${escapeHtml(String(list[index + offset]?.id ?? ""))}" aria-label="${label}"${list[index + offset] ? "" : " disabled"}>${icon(iconName, 16)}</button>`;
+  return `<div class="dashboard-detail-nav"><span>우선 확인 이슈 ${index + 1} / ${list.length}</span>${step(-1, "이전 이슈", "chevron-left")}${step(1, "다음 이슈", "chevron-right")}</div>`;
+}
+
+function openIssueDetail(id, { focusSelector = "" } = {}) {
   const issue = issueById(id);
   if (!issue) return;
   dashboardState.selectedIssueId = String(id);
   els.dashboardDetailTitle.textContent = `#${issue.id} 이슈 상세`;
   els.dashboardDetailBody.innerHTML = `
+    ${detailNavigation(issue.id)}
     <p class="dashboard-detail-summary">${escapeHtml(issue.title)}</p>
     <div class="dashboard-detail-meta">
-      <div><span>고객사</span><strong>${escapeHtml(issue.project || "-")}</strong></div>
+      <div><span>고객사</span><strong>${escapeHtml(customerName(issue, "-"))}</strong></div>
       <div><span>담당자</span><strong>${escapeHtml(issue.handler || "미지정")}</strong></div>
       <div><span>상태 / 우선순위</span><strong>${escapeHtml(workspaceStatusLabel(issue.status))} · ${escapeHtml(priorityLabel(issue.priority))}</strong></div>
       <div><span>화면번호</span><strong>${escapeHtml(issue.screenNumber || "-")}</strong></div>
@@ -614,13 +635,39 @@ function openIssueDetail(id) {
     </div>
     <div class="dashboard-detail-reason"><strong>${riskLabel(issue.riskLevel)} 판단 근거</strong><p>${escapeHtml((issue.riskReasons || []).join(" · ") || "우선 확인 대상으로 분류")}</p></div>
     <div class="dashboard-detail-reason"><strong>권장 다음 행동</strong><p>${escapeHtml(issue.recommendedAction || "현재 상태와 다음 처리 단계를 확인하세요.")}</p></div>
+    <div class="dashboard-detail-actions"><button type="button" class="secondary-button" data-dashboard-source="${escapeHtml(issue.id)}">저장된 원문 보기</button><button type="button" class="secondary-button" data-dashboard-question="#${escapeHtml(issue.id)} 이슈와 유사한 과거 사례의 원인과 해결 방법을 찾아줘">유사 이슈 찾기</button></div>
     <button class="dashboard-ai-button" type="button" data-dashboard-question="#${escapeHtml(issue.id)} 이슈의 현재 위험, 막힌 점과 다음 행동을 정리해줘">AI에게 이 이슈 질문하기</button>`;
   els.dashboardDetail.hidden = false;
-  els.dashboardDetailClose.focus();
+  els.dashboardPanel.classList.add?.("has-detail");
+  els.dashboardBody.querySelectorAll?.("[data-dashboard-row-issue]").forEach((row) => {
+    const selected = row.dataset.dashboardRowIssue === String(id);
+    row.classList.toggle("is-selected", selected);
+    row.setAttribute("aria-selected", String(selected));
+  });
+  els.dashboardBody.querySelector(`[data-dashboard-row-issue="${CSS.escape(String(id))}"]`)?.scrollIntoView?.({ block: "nearest" });
+  if (globalThis.matchMedia?.("(max-width: 1399px)").matches) {
+    import("./dialog_focus.js?v=20260911-6").then(({ openDialogFocus }) => {
+      if (els.dashboardDetail.hidden) return;
+      els.dashboardDetail.setAttribute("role", "dialog");
+      els.dashboardDetail.setAttribute("aria-modal", "true");
+      openDialogFocus(els.dashboardDetail, { initialFocus: els.dashboardDetailClose, onClose: closeIssueDetail });
+    });
+  }
+  // 이전/다음으로 넘길 때는 누른 버튼에 포커스를 두고, 끝에 닿아 비활성화되면 닫기 버튼으로 옮긴다.
+  const focusTarget = focusSelector ? els.dashboardDetailBody.querySelector(focusSelector) : null;
+  if (focusTarget && !focusTarget.disabled) focusTarget.focus();
+  else els.dashboardDetailClose.focus();
 }
 
 function closeIssueDetail() {
   els.dashboardDetail.hidden = true;
+  if (els.dashboardDetail.getAttribute?.("aria-modal") === "true") {
+    import("./dialog_focus.js?v=20260911-6").then(({ closeDialogFocus }) => closeDialogFocus(els.dashboardDetail));
+    els.dashboardDetail.removeAttribute("aria-modal");
+    els.dashboardDetail.removeAttribute("role");
+  }
+  els.dashboardPanel.classList.remove("has-detail");
+  els.dashboardBody.querySelectorAll?.("[data-dashboard-row-issue]").forEach((row) => { row.classList.remove("is-selected"); row.setAttribute("aria-selected", "false"); });
   const trigger = els.dashboardBody.querySelector(`[data-dashboard-issue="${CSS.escape(dashboardState.selectedIssueId)}"]`);
   dashboardState.selectedIssueId = "";
   trigger?.focus();
@@ -638,6 +685,8 @@ function refocusDashboard(selector) {
 }
 
 function handleDashboardAction(target) {
+  const source = target.closest("[data-dashboard-source]");
+  if (source) return import("./chat_source_detail.js?v=20260911-6").then(({ openSourceDetail }) => openSourceDetail({ type: "chroma", issue_id: source.dataset.dashboardSource }));
   // 주간 브리핑은 내 업무 › 주간 보고 한 곳에서만 보여 준다.
   if (target.closest("[data-open-team-brief]")) {
     showPersonalView();
@@ -693,6 +742,11 @@ function handleDashboardAction(target) {
     renderDashboard();
     refocusDashboard("[data-dashboard-more]");
     return;
+  }
+  const detailStep = target.closest("[data-dashboard-detail-step]");
+  if (detailStep && !detailStep.disabled) {
+    const label = detailStep.getAttribute("aria-label");
+    return openIssueDetail(detailStep.dataset.dashboardDetailStep, { focusSelector: `[aria-label="${label}"]` });
   }
   const issue = target.closest("[data-dashboard-issue]");
   if (issue) return openIssueDetail(issue.dataset.dashboardIssue);

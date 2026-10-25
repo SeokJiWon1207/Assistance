@@ -14,6 +14,27 @@ from backend.reports import team_brief
 
 
 class TeamBriefTests(unittest.TestCase):
+    def test_partial_weekly_source_withholds_spikes_comparisons_and_stability(self):
+        issues = [{'id': i, 'handler': '석지원', 'status': 'closed', 'project': '고객사',
+                   'screen_number': '1000', 'created_at': '2026-08-05'} for i in (1, 2)]
+        for rows in ([], issues):
+            with self.subTest(rows=len(rows)), patch.object(
+                team_brief, '_load_issues', return_value=(rows, {'status': 'snapshot', 'search_complete': False})
+            ):
+                result = team_brief._generate_team_brief(date(2026, 8, 10))
+            self.assertIsNone(result['summary']['changeRate'])
+            self.assertEqual(result['customerSpikes'], [])
+            self.assertEqual(result['screenSpikes'], [])
+            self.assertNotEqual(result['decisionSummary']['riskLevel'], 'stable')
+            self.assertIn('확인', result['decisionSummary']['headline'])
+
+    def test_unknown_status_does_not_count_as_closed(self):
+        issues = [{'id': i, 'handler': '석지원', 'status': status, 'created_at': '2026-08-05'}
+                  for i, status in enumerate(('closed', 'resolved', 'unrecognized', 'developed'))]
+        with patch.object(team_brief, '_load_issues', return_value=(issues, {'search_complete': True})):
+            result = team_brief._generate_team_brief(date(2026, 8, 10))
+        self.assertEqual(result['summary']['closedNow'], 2)
+
     def test_weekly_brief_compares_previous_week_and_prioritizes_risks(self):
         issues = [
             {"id": 101, "summary": "지난주 신규", "project": "신한", "screen_number": "7600", "status": "confirmed",
@@ -25,7 +46,7 @@ class TeamBriefTests(unittest.TestCase):
             {"id": 80, "summary": "장기 이월", "project": "신한", "screen_number": "7000", "status": "assigned",
              "handler": "석지원", "created_at": "2026-05-01", "updated_at": "2026-08-01", "date_fields": {}},
         ]
-        with patch.object(team_brief, "_load_issues", return_value=(issues, {"status": "live", "reason": ""})):
+        with patch.object(team_brief, "_load_issues", return_value=(issues, {"status": "live", "reason": "", "search_complete": True})):
             result = team_brief._generate_team_brief(date(2026, 8, 10))
 
         self.assertEqual(result["summaryPeriod"], "2026-08-03 ~ 2026-08-09")

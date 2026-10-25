@@ -312,7 +312,7 @@ def _build_duration_report(
         lines.extend(["", f"{axis_label}별 평균 처리기간 (느린 순)"])
         for name, days_list in ranked:
             lines.append(
-                f"- {name} — 평균 {sum(days_list) / len(days_list):.1f}일 ({len(days_list)}건)"
+                f"- {customer_name(name) if _axis_field == 'customer' else name} — 평균 {sum(days_list) / len(days_list):.1f}일 ({len(days_list)}건)"
             )
 
     if "공수" in str(text or ""):
@@ -418,7 +418,7 @@ def _build_aging_report(
         ranked = sorted(buckets.items(), key=lambda item: (-item[1], item[0]))[:SLA_TOP_N]
         lines.extend(["", f"{axis_label}별 적체 건수 (많은 순)"])
         for name, count in ranked:
-            lines.append(f"- {name} — {count}건")
+            lines.append(f"- {customer_name(name) if _axis_field == 'customer' else name} — {count}건")
 
     over_threshold.sort(key=lambda row: row["age_days"], reverse=True)
     display_limit = extract_requested_limit(text) or SLA_TOP_N

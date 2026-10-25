@@ -9,7 +9,7 @@ from backend.query_filters import normalize_filter_clause, clause_supported, SUP
 from backend.query_planning import extract_relative_created_at_range
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 
-STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함')
+STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함|종료\s*여부(?:와|에)?\s*(?:관계|상관)\s*없이')
 PENDING = re.compile(r'(?:이슈|업무|티켓).{0,20}남(?:았|아)|남(?:은|아\s*있는).{0,20}(?:이슈|업무|티켓)|미종료|미완료|안\s*끝난|못\s*끝낸')
 PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter'}
 STATUS_VALUES = set(MANTIS_STATUS_NAMES)
@@ -92,7 +92,21 @@ def effective_statuses(included, excluded):
     return (expand(included) if included else set(STATUS_VALUES)) - expand(excluded)
 
 
-def normalize_status_clauses(parsed, previous=None):
+def declared_statuses(status):
+    """명시 상태 계획의 유효한 범위만 비교한다. 잘못된 값은 동치로 인정하지 않는다."""
+    mode, values = status.get('mode'), status.get('values')
+    require(isinstance(values, list) and all(isinstance(v, str) and v in STATUS_VALUES for v in values),
+            '지원하지 않는 상태값')
+    if mode == 'open':
+        require(not values or set(values) == MANTIS_OPEN_STATUSES, '미종료 상태 정의 불일치')
+        return set(MANTIS_OPEN_STATUSES)
+    if mode in {'include', 'exclude'}:
+        require(bool(values), '포함/제외 상태가 없습니다')
+        return effective_statuses(values if mode == 'include' else [], values if mode == 'exclude' else [])
+    return None
+
+
+def normalize_status_clauses(parsed, previous=None, question=''):
     parsed = deepcopy(parsed)
     raw = parsed.get('filters')
     if not isinstance(raw, list) or parsed.get('source') not in {'mantis', 'both'}:
@@ -109,12 +123,29 @@ def normalize_status_clauses(parsed, previous=None):
                  'values': values, 'evidence': item.get('evidence')}
     status = parsed.get('status') or {}
     require(isinstance(status, dict), '상태 계획 형식 오류')
+    clause_range = effective_statuses(values if converted['mode'] == 'include' else [],
+                                      values if converted['mode'] == 'exclude' else [])
     # 같은 사용자에게 묶인 이전 실행 조건을 확보한 뒤에만 반복 상태를 상속으로 인정한다.
     if (previous and status.get('mode') == 'inherit' and status.get('values') == [] and values
             and isinstance(parsed.get('clear_fields'), list) and 'status' not in parsed['clear_fields']
-            and effective_statuses(values if converted['mode'] == 'include' else [],
-                                   values if converted['mode'] == 'exclude' else []) ==
+            and clause_range ==
                 effective_statuses(previous.get('statuses') or [], previous.get('excluded_statuses') or [])):
+        parsed['filters'] = [f for f in raw if f not in items]
+        return parsed
+    if values and declared_statuses(status) == clause_range:
+        # open과 여섯 상태의 in / 해결·종료의 not_in은 같은 조건이다.
+        # 현재 상태 요청이 없고 이전 확정 범위까지 같을 때만 이전 근거를 상속한다.
+        from backend.intent.entities import extract_status_constraints
+        text = unquoted(question)
+        if (previous and parsed.get('followup') is True
+                and isinstance(parsed.get('clear_fields'), list) and 'status' not in parsed['clear_fields']
+                and clause_range == effective_statuses(previous.get('statuses') or [], previous.get('excluded_statuses') or [])
+                and isinstance(status.get('evidence'), str)
+                and not evidence_is_grounded(status['evidence'], text)
+                and not (PENDING.search(text) or STATUS_ALL.search(text) or EXPLICIT_STATUS_REQUEST.search(text)
+                         or re.search(rf'{_STATUS_LABEL}\s*(?:만|도|으로|로)', text)
+                         or extract_status_constraints(text))):
+            parsed['status'] = {'mode': 'inherit', 'values': [], 'evidence': ''}
         parsed['filters'] = [f for f in raw if f not in items]
         return parsed
     require(status.get('mode') == 'unspecified' or
@@ -186,6 +217,41 @@ def check_relative_created_at(clause, evidence):
     expected_range = (expected['from'], clip(expected['to']))
     require((start, clip(end)) == expected_range,
             f"'{evidence.strip()}' 기간은 달력 기준 {expected_range[0]}~{expected_range[1]}입니다")
+
+
+def check_query_period(question, source, operation, clauses):
+    """명확한 조회 기간의 누락·잘못된 상속만 거부한다. 필터를 생성하지 않는다."""
+    if source != 'mantis' or operation not in {'count', 'search', 'aggregate'}:
+        return
+    text = unquoted(question)
+    # 따옴표 없이 쓴 제목/본문 검색어도 날짜 조건으로 승격하지 않는다.
+    for clause in clauses:
+        if clause['field'] in {'title', 'keyword'}:
+            for value in values_for_clause(clause.get('value')):
+                text = text.replace(value, ' ')
+    if re.search(r'(?:기간|등록일|날짜).{0,12}(?:해제|제거|풀|빼|무관|관계없|상관없|제한\s*없이)', text):
+        return
+    if re.search(r'(?:개발|QC|전달|배포|마감|수정|해결|종료|완료)\s*(?:일|날짜|기한)|'
+                 r'(?:완료|해결|종료|수정|변경|전달|배포|처리)(?:된|한|했|됐|할|해야)', text, re.I):
+        return
+    periods = list(re.finditer(
+        r'(?<![A-Za-z가-힣0-9])(?:최근\s*\d{1,3}\s*(?:일|개월|달)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
+        r'|지난\s*주|저번\s*주|전\s*주(?!차)|이번\s*주|금주(?!차)|그저께|엊그제|그제|어제|전일(?!\s*정산)|오늘|금일)'
+        r'(?=$|[\s,.?!:~()]|에|의|만|도|로|부터|까지|것|건|중|분|은|는|자)', text))
+    if len(periods) != 1:
+        return
+    period = periods[0]
+    suffix = text[period.end():]
+    if re.match(r'\s*(?:(?:현재|말|말일|초|초일|\d{1,2}\s*일)\s*)?(?:기준|시점)', suffix):
+        return
+    if re.match(r'\s*(?:의\s*)?(?:조건|제한|필터|기간).{0,8}(?:해제|제거|풀|빼|제외)', suffix):
+        return
+    dates = [clause for clause in clauses if clause['field'] == 'created_at']
+    require(bool(dates), f"'{period.group()}' 조회의 등록 기간이 누락됐습니다. created_at과 현재 질문의 기간 근거를 포함하세요")
+    # '지난달 15일 이후'처럼 범위가 세분화된 요청은 기존 필터 근거 검증에 맡긴다.
+    if not re.match(r'\s*(?:\d{1,2}\s*일|[월화수목금토일]요일|이전|이후|부터|까지)', suffix):
+        for clause in dates:
+            check_relative_created_at(clause, period.group())
 
 
 def constraints_from_clauses(clauses, status, scope, user, previous):
@@ -283,7 +349,30 @@ def validate_plan(question, parsed, user, previous):
     require(scope != 'inherit' or followup, '상속할 범위가 없습니다')
     if followup:
         require(previous.get('source') == source, '후속 조회의 원천이 바뀌었습니다')
-    parsed = normalize_status_clauses(parsed, base)
+    document_text = unquoted(question)
+    from backend.intent.entities import extract_issue_ids
+    document_ids = extract_issue_ids(document_text) or (base.get('issue_ids') if followup else []) or []
+    if (source == 'mantis' and len(document_ids) == 1 and re.search(r'사후\s*분석|회고', document_text)
+            and re.search(r'작성|형식|(?:5|다섯)\s*줄|요약으로', document_text)):
+        require(operation == 'report' and parsed.get('report_kind') == 'postmortem',
+                '사후 분석·회고 문서의 분량과 형식은 postmortem 보고서로 작성해야 합니다')
+    # 조회 조건만 바꾸라는 요청에서는 비교 과업도 확정 문맥의 일부다.
+    # 명시적인 기준 유지 요청은 followup 플래그 자체가 빠져도 거절한다.
+    condition_edit = re.search(r'그대로|유지|좁혀|한정|제한.{0,8}(?:풀|해제)|조건.{0,8}(?:풀|해제)', question)
+    explicit_switch = re.search(r'비교.{0,12}(?:끝내|그만|마치|중단|종료|말고|대신)|상세\s*(?:조회|알려|보여)|상태만\s*(?:알려|보여)', question)
+    if previous.get('report_kind') == 'similar' and condition_edit and not explicit_switch:
+        require(followup and operation == 'report' and (parsed.get('report_kind') or 'similar') == 'similar',
+                '조건 변경 후에도 기준 이슈와 유사 사례 비교 작업을 유지해야 합니다')
+    document_kinds = {'postmortem', 'handoff', 'notice'}
+    presentation_edit = re.search(r'형식|말투|회의.{0,20}안건|메일|메신저|(?:5|다섯)\s*줄|간결|정중', question)
+    if followup and previous.get('report_kind') in document_kinds and presentation_edit:
+        requested_kind = ('notice' if re.search(r'고객.{0,15}(?:안내|메일)|메신저|점검\s*공지', question)
+                          else 'handoff' if '인수인계' in question
+                          else 'postmortem' if re.search(r'사후\s*분석|회고', question)
+                          else previous['report_kind'])
+        require(operation == 'report' and (parsed.get('report_kind') or previous['report_kind']) == requested_kind,
+                f'문서 형식 변경은 {requested_kind} 문서의 이슈와 근거를 유지해야 합니다. report_kind를 확인하세요')
+    parsed = normalize_status_clauses(parsed, base, question)
     status = parsed['status']
     report = parsed.get('report_kind') or (previous.get('report_kind') if followup and operation == 'report' else None)
     soft_topics = []
@@ -301,7 +390,15 @@ def validate_plan(question, parsed, user, previous):
         base['filter_clauses'] = retained
     check_status(question, status, followup, source, operation, report)
     clear = parsed['clear_fields']
-    require(isinstance(clear, list) and all(f in SUPPORTED_FIELDS | {'terms', 'team'} for f in clear), '해제 조건 오류')
+    require(isinstance(clear, list), '해제 조건은 검색 필드 배열이어야 합니다')
+    # 그룹 집계를 단일 건수로 바꾸는 출력 지시는 검색 필드를 해제하지 않는다.
+    if (followup and previous.get('operation') == 'aggregate' and operation == 'count'
+            and parsed.get('group_by') is None):
+        clear = [field for field in clear if field != 'group_by']
+        parsed['clear_fields'] = clear
+    invalid_clear = [f for f in clear if not isinstance(f, str) or f not in SUPPORTED_FIELDS | {'terms', 'team'}]
+    require(not invalid_clear, '해제 조건 오류: ' + ', '.join(str(f)[:30] for f in invalid_clear) +
+            '. report_kind/group_by/sort는 clear_fields가 아닙니다. 과업은 operation으로 바꾸고 검색 주제만 terms로 해제하세요')
     require(not clear or followup, '해제할 이전 조건이 없습니다')
     raw = parsed['filters']
     require(isinstance(raw, list) and len(raw) <= 20, '필터 개수 오류')
@@ -337,6 +434,7 @@ def validate_plan(question, parsed, user, previous):
         clauses = [f for f in clauses if f['field'] not in PERSON_FIELDS]
     if 'team' in clear:
         scope = 'all'
+    check_query_period(question, source, operation, clauses)
     # 포함과 제외를 AND로 합쳐 빈 집합을 만드는 계획을 실행하지 않는다.
     for a in clauses:
         for b in clauses:
@@ -347,6 +445,12 @@ def validate_plan(question, parsed, user, previous):
     effective_scope = scope if source in {'mantis', 'both'} or scope == 'self' else 'all'
     scoped_user = {**user, 'mantisUsername': user.get('displayName')} if source == 'notion' else user
     c = constraints_from_clauses(clauses, status, effective_scope, scoped_user, base)
+    if (previous.get('report_kind')=='similar' and followup and operation=='get'
+            and explicit_switch and re.search(r'기준.{0,12}(?:하나|한\s*건|상태만)',question)):
+        require(c.get('issue_ids')==base.get('issue_ids'), '비교 종료 후에도 기준 이슈 번호를 유지해야 합니다')
+        inherited_candidate_fields={f['field'] for f in clauses if f['field']!='issue_id'}-{f['field'] for f in incoming}
+        require(not inherited_candidate_fields,
+                '기준 이슈 하나를 조회할 때 비교 후보 조건은 상속하지 않습니다. clear_fields로 후보 조건을 해제하세요: '+', '.join(sorted(inherited_candidate_fields)))
     # 계획에 없는 조건을 추측해 추가하지는 않되, 원문이 명시한 대상을 조용히
     # 버린 계획은 거부한다. 모델이 수정해도 끝내 확정하지 못하면 조회하지 않는다.
     if source in {'mantis', 'both'}:

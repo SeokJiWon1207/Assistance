@@ -3,30 +3,27 @@
   position: relative;
 }
 
-.composer {
-  grid-template-columns: auto minmax(0, 1fr) 88px;
-}
-
+/* 입력창 카드 안 왼쪽 아래의 작은 회색 버튼 */
 .template-toggle-button {
+  grid-area: template;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 54px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--surface);
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
   color: var(--text-soft);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: var(--button-weight);
   cursor: pointer;
-  box-shadow: var(--shadow);
 }
 
 .template-toggle-button svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -36,15 +33,13 @@
 
 .template-toggle-button:hover,
 .template-toggle-button.is-active {
-  border-color: var(--blue);
   background: var(--blue-soft);
   color: var(--blue);
 }
 
 .template-toggle-button:focus-visible {
-  border-color: var(--blue);
   outline: none;
-  box-shadow: var(--focus-ring), var(--shadow);
+  box-shadow: 0 0 0 2px var(--blue);
 }
 
 .template-toggle-button:disabled {
@@ -59,15 +54,17 @@
 .template-picker {
   position: absolute;
   bottom: var(--template-picker-bottom, 96px);
-  left: 36px;
+  /* 입력창 카드와 같은 폭·같은 왼쪽 선에 맞춘다. */
+  left: max(28px, calc(50% - 380px));
   z-index: 20;
   display: flex;
   flex-direction: column;
-  width: min(600px, calc(100% - 72px));
+  width: min(760px, calc(100% - 56px));
+  margin-bottom: 8px;
   max-height: calc(100% - var(--template-picker-bottom, 96px) - 16px);
   overflow: hidden;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: 0 18px 44px rgba(25, 31, 40, 0.16);
 }
@@ -169,7 +166,7 @@ body.theme-dark .template-picker {
 }
 
 .template-picker-option.is-active {
-  background: var(--blue-soft);
+  background: color-mix(in srgb, var(--blue-soft) 70%, var(--surface));
 }
 
 .template-picker-option-icon {
@@ -227,7 +224,7 @@ body.theme-dark .template-picker {
   display: none;
   padding: 1px 6px;
   border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
-  border-radius: 5px;
+  border-radius: var(--radius-badge);
   color: var(--blue);
   font: inherit;
   font-size: 12px;
@@ -263,8 +260,8 @@ body.theme-dark .template-picker {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 16px;
-  border-top: 1px solid var(--line);
-  background: var(--surface-alt);
+  border-top: 1px solid var(--surface-alt);
+  background: color-mix(in srgb, var(--surface-alt) 40%, var(--surface));
   color: var(--muted);
   font-size: 12px;
 }
@@ -372,10 +369,15 @@ body.theme-dark .template-picker {
   min-height: 40px;
 }
 
+/* 하나만 고르는 조건은 회색 칸 안의 버튼 묶음으로, 고른 값만 흰 바탕으로 떠 보이게 한다. */
 .template-chips {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 6px;
+  justify-self: start;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
 }
 
 .template-chip {
@@ -398,9 +400,9 @@ body.theme-dark .template-picker {
   align-items: center;
   min-height: var(--chip-height);
   padding: 0 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-soft);
   font-size: var(--chip-font-size);
   font-weight: 600;
@@ -408,18 +410,41 @@ body.theme-dark .template-picker {
 }
 
 .template-chip span:hover {
-  border-color: var(--blue);
+  color: var(--text);
 }
 
 .template-chip input:checked + span {
-  border-color: var(--blue);
-  background: var(--blue-soft);
-  color: var(--blue);
+  background: var(--surface);
+  color: var(--text);
   font-weight: 700;
+  box-shadow: 0 1px 2px rgba(25, 31, 40, 0.1);
 }
 
 .template-chip input:focus-visible + span {
   box-shadow: var(--focus-ring);
+}
+
+/* 완성 질문 미리보기: 파랑 상자 대신 회색 바탕에 질문 문장만 또렷하게 */
+.template-preview {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-card);
+  background: var(--surface-alt);
+}
+
+.template-preview span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.template-preview p {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.55;
 }
 
 .template-picker-form-footer {
@@ -479,13 +504,9 @@ body.theme-dark .template-missing-hint.is-missing {
 }
 
 @media (max-width: 860px) {
-  .composer {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
   .template-picker {
-    right: 20px;
-    left: 20px;
+    right: 12px;
+    left: 12px;
     width: auto;
   }
 }

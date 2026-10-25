@@ -21,6 +21,7 @@ import requests
 from fastapi import HTTPException
 
 from backend.execution import bounded_timeout, interruptible_sleep, execution_slot
+from backend.display import customer_name
 from backend.common import (
     format_mantis_custom_date,
     normalize_chroma_issue_document,
@@ -561,6 +562,7 @@ def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str
             "issue_id": issue.get("id"),
             "title": issue.get("summary", "제목 없음"),
             "project": issue.get("project", "미상"),
+            "customer_name": customer_name(issue.get("project")),
             "status": issue.get("status", "상태 미상"),
             "status_label": issue.get("status_label") or (issue.get("detail") or {}).get("status_label", ""),
             "priority": issue.get("priority", ""),

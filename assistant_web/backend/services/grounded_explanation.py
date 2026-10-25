@@ -11,6 +11,8 @@ from backend.evaluation.explanation_quotes import safe_excerpts
 from backend.evaluation.explanation_relations import validate_related_selection
 from backend.schemas import ChatRequest
 from backend.services.contracts import ChatPipelineContext
+from backend.evaluation.explanation_selection import expand_selection
+from backend.timing import measured
 
 TOPICS = {
     'cause': r'원인|왜|이유',
@@ -18,7 +20,7 @@ TOPICS = {
     'timeline': r'이력|경과|마지막|진행|완료|배포|전달|반영|결국|이후|끝났|종료',
     'conditions': r'재현|조건|환경|단말|플랫폼|안드로이드|아이폰|iOS|Android',
     'technical': r'수식|공식|계산|필드|배열|함수|코드|FID|TR|값|기간|범위|메시지',
-    'actors': r'작성자|등록자|발신자|수신자|누가|담당자',
+    'actors': r'작성자|등록자|발신자|수신자|누가|담당자|고객.{0,16}(?:답변|회신)|어떤\s*(?:답변|회신)|그\s*회신',
 }
 
 
@@ -324,29 +326,42 @@ def generate_grounded_explanation(
         '완료 기록이 없다는 것과 실제로 하지 않았다는 것은 다르다. 미확인 전달·반영을 "전달되지 않았다", '
         '"반영되지 않았다"로 단정하지 마라. 보류·종료 기록도 실제 고객 적용 여부의 증거와 구분해라. '
         '전달·QC 완료를 고객 검증·운영 반영 완료로 바꾸지 말고 질문에 없는 완료 여부를 덧붙이지 마라. '
+        '날짜와 To가 있는 메일 회신·발신은 설명을 보낸 기록이다. 수신 From·접수 답변·설명 회신과 '
+        '수정본/소스/라이브러리 전달은 구분한다. 설명 회신만으로 수정본 전달이나 고객 적용을 확정하지 마라. '
+        '고객에게 어떤 답변을 했는지 묻는 질문에는 실제 발신 회신의 접수·안내·추가 요청을 답하라. '
+        '고객 최초 문의의 추정 원인을 회사 회신 내용처럼 섞지 말고 회신의 별도 안내 조건을 생략하지 마라. '
         'selected 이슈의 누락 노트가 있어야 답할 수 있으면 investigate에 해당 issue_id를 최대 2개만 넣어라. '
         '이미 전체 근거가 있거나 제공된 근거로 충분하면 investigate는 빈 배열이다. 근거에 없는 사실을 찾으려고 같은 자료를 반복 조회하지 마라. '
         f'필수 topic: {json.dumps(topics)}. 필요한 topic만 포함하되 모든 필수 topic에 답해라. '
-        '형식: {"selected_issue_ids":[12345],"sections":[{"topic":"action",'
-        '"evidence_ids":["p3","p7"],'
-        '"unanswered":false}],"answer_items":[{"question_part":"현재 질문의 일부","evidence_ids":["p3"],"unanswered":false,"answer":"짧은 답"}],"investigate":[]}. '
+        '반복 키를 줄인 배열 형식으로 출력한다. sections의 각 배열은 '
+        '[topic,evidence_ids,unanswered], answer_items의 각 배열은 '
+        '[question_part,evidence_ids,unanswered,answer] 순서다. 위치를 바꾸거나 값을 생략하지 마라. '
+        '형식: {"selected_issue_ids":[12345],"sections":[["action",["p3","p7"],false]],'
+        '"answer_items":[["현재 질문의 일부",["p3"],false,"짧은 답"]],"investigate":[]}. '
         '허용 topic은 cause,action,timeline,conditions,technical,actors다.\n\n'
         f'[검색 파이프라인 결과]\n{json.dumps(shown, ensure_ascii=False, separators=(",", ":"))}'
     )
     messages = [{'role': 'system', 'content': instruction},
-                {'role': 'user', 'content': f'질문: {context.latest_user_text}\n조회 맥락: {context.retrieval_text}'}]
+                {'role': 'user', 'content': f'질문: {context.latest_user_text}\n조회 맥락: {context.retrieval_text}'
+                 f'\nsections에 반드시 포함할 topic: {json.dumps(topics)}. '
+                 '질문에 답하는 근거를 각 topic에 연결하고, 근거가 없으면 unanswered=true로 남겨라.'}]
     response: dict[str, Any] = {}
     errors: list[str] = []
+    retry_reasons: list[list[str]] = []
+    model_calls = {'selection': 0, 'review': 0}
+    select = measured('explanation_selection_model')(generate)
+    review_model = measured('explanation_review_model')(generate)
     supplement_meta: dict[str, Any] | None = None
     for attempt in range(2):
-        response = generate(request, context.model, messages, context.retrieval_result,
-                            context.query_constraints, context.active_limit)
+        model_calls['selection'] += 1
+        response = select(request, context.model, messages, context.retrieval_result,
+                          context.query_constraints, context.active_limit)
         raw_content = response.get('content', '')
         try:
             payload = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', raw_content.strip()))
         except (ValueError, TypeError):
             payload = {}
-        payload = resolve_selections(payload, catalog)
+        payload = resolve_selections(expand_selection(payload), catalog)
         primary_scope = primary_final_scope(context.latest_user_text, grounding,
                                             payload.get('selected_issue_ids', []),
                                             context.query_constraints, comparison=multiple)
@@ -440,8 +455,9 @@ def generate_grounded_explanation(
                      '[검색 파이프라인 결과]\n' + json.dumps(focused, ensure_ascii=False, separators=(',', ':'))},
                     {'role': 'user', 'content': messages[1]['content'] + '\n기존 선택:\n' + raw_content},
                 ]
-                review_response = generate(request, context.model, review_messages, context.retrieval_result,
-                                           context.query_constraints, context.active_limit)
+                model_calls['review'] += 1
+                review_response = review_model(request, context.model, review_messages, context.retrieval_result,
+                                              context.query_constraints, context.active_limit)
                 try:
                     review_payload = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', review_response.get('content', '').strip()))
                 except (ValueError, TypeError):
@@ -452,13 +468,14 @@ def generate_grounded_explanation(
                 if unchanged:
                     review, review_multiple = deepcopy(validated), allowed_multiple
                 else:
-                    resolved_review = restrict_to_primary(resolve_selections(review_payload, catalog), primary_scope)
+                    resolved_review = restrict_to_primary(resolve_selections(expand_selection(review_payload), catalog), primary_scope)
                     review_multiple = multiple or validate_related_selection(grounding, resolved_review.get('selected_issue_ids', []))
                     review = validate_quote_answer(resolved_review, grounding, allow_multiple=review_multiple)
                 reviewed = merge_reviewed_selection(validated, review, grounding=grounding,
                                                     allow_resolved=bool(supplement_meta.get('added_chars')))
                 if not reviewed['valid']:
                     errors = reviewed['errors']
+                    retry_reasons.append(list(errors))
                     messages.extend([{'role': 'assistant', 'content': raw_content},
                                      {'role': 'user', 'content': '대상 이슈를 유지하고 필수 세부 근거를 다시 선택해라.'}])
                     continue
@@ -491,6 +508,11 @@ def generate_grounded_explanation(
                         validated['sections'].extend(checked_background['sections'])
                     else:
                         history_complete = False
+                from backend.evaluation.explanation_metadata import current_status_table, is_current_status_item
+                status_table = current_status_table(context.latest_user_text, grounding, selected)
+                if status_table:
+                    validated['answer_items'] = [item for item in validated.get('answer_items', [])
+                                                 if not is_current_status_item(item)]
                 response['content'] = render_quote_answer(
                     validated, grounding, question=context.latest_user_text,
                     previous_questions=(context.intent_plan or {}).get('previous_explanation_questions'))
@@ -498,6 +520,8 @@ def generate_grounded_explanation(
                 summaries = summary_items(validated, grounding, context.latest_user_text)
                 if summaries:
                     response['content'] = render_summary(summaries, response['content'])
+                if status_table:
+                    response['content'] = status_table + '\n\n' + response['content']
                 limits = platform_limits(context.latest_user_text, grounding, selected)
                 if limits:
                     response['content'] = limits + '\n\n' + response['content']
@@ -513,8 +537,10 @@ def generate_grounded_explanation(
                                               'attempts': attempt + 1, 'selectedIssueIds': selected,
                                               'focusedCoverageReview': True, 'focusedReviewUnchanged': unchanged,
                                               'historyComplete': history_complete, 'summaryAccepted': bool(summaries),
+                                              'modelCalls': model_calls, 'retryReasons': retry_reasons,
                                               'noteSupplement': supplement_meta}
                 return response
+        retry_reasons.append(list(errors))
         messages.extend([{'role': 'assistant', 'content': raw_content},
                          {'role': 'user', 'content': '검증 오류: ' + '; '.join(errors[:8]) +
                           '. 같은 원문에서 정확한 인용과 필수 항목을 선택해 JSON을 수정해라.'}])
@@ -522,4 +548,5 @@ def generate_grounded_explanation(
             'sources': [], 'sourcesForFollowUps': [],
             'raw': {'mode': 'explanation_evidence_incomplete'},
             'groundingReview': {'completed': False, 'method': 'validated_source_quotes', 'errors': errors,
+                                'modelCalls': model_calls, 'retryReasons': retry_reasons,
                                 'noteSupplement': supplement_meta}}

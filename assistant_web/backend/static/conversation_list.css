@@ -98,8 +98,10 @@
   border-radius: var(--control-radius);
 }
 
+/* 선택한 대화는 파랑 채움 대신 살짝 떠 있는 흰 행으로 구분한다. */
 .conversation-row.active {
-  background: var(--blue-soft);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(25, 31, 40, 0.06), 0 0 0 1px var(--line);
 }
 
 .conversation-row:hover,
@@ -109,7 +111,12 @@
 
 .conversation-row.active:hover,
 .conversation-row.active:focus-within {
-  background: var(--blue-soft);
+  background: var(--surface);
+}
+
+body.theme-dark .conversation-row.active {
+  background: var(--surface-alt);
+  box-shadow: 0 0 0 1px var(--line-strong);
 }
 
 .conversation-open {
@@ -134,7 +141,7 @@
 
 .conversation-title {
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .conversation-row.active .conversation-title {

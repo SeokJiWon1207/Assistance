@@ -6,9 +6,12 @@
 - 시각: 2026-10-07T05:35:39+00:00 → 10월 7일 오후 2:35(한국 시간)
 """
 
+import re
+
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
+from backend.config import CUSTOMER_PROJECT_DISPLAY_NAMES
 from backend.common import display_mantis_status_label
 from backend.team_templates import customer_display_for_project
 
@@ -19,7 +22,10 @@ def customer_name(project: Any) -> str:
     raw = str(project or "").strip()
     if not raw:
         return "고객사 미상"
-    return customer_display_for_project(raw) or raw
+    code = re.split(r"[\s(]", raw, maxsplit=1)[0]
+    code = re.sub(r"_Project$", "", code, flags=re.IGNORECASE)
+    override = next((name for key, name in CUSTOMER_PROJECT_DISPLAY_NAMES.items() if key.casefold() == code.casefold()), None)
+    return override or customer_display_for_project(raw) or raw
 
 
 def status_name(status: Any) -> str:

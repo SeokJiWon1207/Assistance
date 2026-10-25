@@ -12,7 +12,7 @@ async function harness(apiFetch) {
   let timerId = 0;
   const element = () => ({ appendChild() {}, setAttribute() {}, classList: { add() {}, remove() {} }, remove() {} });
   const context = vm.createContext({
-    AssistantFrontendCore: core, crypto: { randomUUID: () => 'recovered' },
+    AssistantFrontendCore: core, crypto: { randomUUID: () => 'recovered' }, URLSearchParams,
     document: { createElement: element, body: element() }, requestAnimationFrame: (fn) => fn(),
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; },
@@ -67,6 +67,45 @@ async function harness(apiFetch) {
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
+
+test('playbook refresh failure preserves cached entries and exposes retry', async () => {
+  const h = await harness(async () => ({ ok: false, json: async () => ({ detail: '연결 실패' }) }));
+  h.state.playbooks = [{ id: 'cached', title: '저장된 절차', status: 'published', tags: [] }];
+  await assert.rejects(h.api.loadPlaybooks(true), /연결 실패/);
+  assert.equal(h.state.playbooks[0].id, 'cached');
+  assert.equal(h.state.playbooksLoading, false);
+  assert.match(h.api.renderPlaybooks(), /저장된 절차/);
+  assert.match(h.api.renderPlaybooks(), /data-playbooks-retry/);
+});
+
+test('partial personal counts identify lower bounds and never claim all results', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const html = h.api.renderPersonalOverview({ user: { mantisUsername: 'user-a' }, summary: {open: 1, overdue: 0, aging: 0}, mantis: {search_complete: false, issues: [{id: 1, title: '확인된 업무'}]} });
+  assert.match(html, /건 이상/);
+  assert.doesNotMatch(html, /건 모두 표시|모두 기한 내|장기 업무 없음/);
+});
+
+test('favorite search keeps saved conversations and filters title and question', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.state.conversations = [
+    {id:'a', favorite:true, title:'주간 보고', messages:[message('결제 문제 확인')]},
+    {id:'b', favorite:true, title:'접수 현황', messages:[message('로그인 문제')]},
+  ];
+  h.state.favoriteQuery = '결제';
+  const html = h.api.renderFavoriteConversations();
+  assert.match(html, /주간 보고/);
+  assert.doesNotMatch(html, /접수 현황/);
+  assert.equal(h.state.conversations.length, 2);
+});
+
+test('mark all notifications keeps failed items unread and reports partial failure', async () => {
+  const h = await harness(async (url) => ({ ok: !url.includes('failed') }));
+  h.state.myWorkspace = { summary: {}, notifications: [{id:'ok',read:false},{id:'failed',read:false},{id:'old',read:true}] };
+  await assert.rejects(h.api.markNotificationsRead(), /1/);
+  assert.equal(h.state.myWorkspace.notifications[0].read, true);
+  assert.equal(h.state.myWorkspace.notifications[1].read, false);
+  assert.equal(h.state.myWorkspace.summary.unreadNotifications, 1);
+});
 
 test('refresh retains pending local messages and local-only conversations', async () => {
   const local = { id: 'chat', title: '질문', messages: [message('질문'), message('새 질문')], syncPending: true, serverUpdatedAt: 'old' };
@@ -156,6 +195,7 @@ test('late response from previous account cannot replace the next account histor
   let finish;
   const h = await harness(async () => new Promise((resolve) => { finish = resolve; }));
   const loading = h.api.loadConversations();
+  await new Promise(setImmediate);
   h.state.currentUser = { uid: 'user-b' };
   h.state.conversations = [{ id: 'b-only', messages: [message('B')] }];
   finish({ ok: true, json: async () => ({ conversations: [{ id: 'a-only', messages: [message('A')] }] }) });
@@ -180,7 +220,7 @@ test('personal workspace joins a single live lookup and hides lists until comple
   const joined = h.api.ensureMyWorkspaceFresh();
   await new Promise(setImmediate);
   assert.equal(h.els.workspaceRefreshBtn.disabled, true);
-  assert.equal(h.els.workspaceRefreshBtn.textContent, '불러오는 중…');
+  assert.match(h.els.workspaceRefreshBtn.innerHTML, /불러오는 중…/);
   assert.match(h.els.workspaceContent.innerHTML, /업무 정보를 불러오는 중입니다/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-overview|workspace-issue-list/);
@@ -198,20 +238,23 @@ test('personal workspace joins a single live lookup and hides lists until comple
   assert.equal(calls.length, 1);
 });
 
-test('personal refresh hides existing list and restores it only after failure', async () => {
+test('personal refresh keeps cached list visible and explains refresh failure', async () => {
   let finish;
   const h = await harness(async () => new Promise((resolve) => { finish = resolve; }));
-  h.state.myWorkspace = { summary: { open: 1 }, mantis: { status: 'snapshot', issues: [{ id: 1, title: '기존 업무' }] } };
+  h.state.myWorkspace = { user: { mantisUsername: 'user-a' }, summary: { open: 1 }, mantis: { status: 'live', search_complete: true, fetchedAt: '2026-10-23T10:00:00Z', issues: [{ id: 1, title: '기존 업무' }] } };
   h.api.renderWorkspace();
   assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
   const loading = h.api.loadMyWorkspace(true);
-  assert.doesNotMatch(h.els.workspaceContent.innerHTML, /기존 업무|workspace-issue-list/);
+  assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
+  assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   finish({ ok: false, json: async () => ({ detail: '조회 실패' }) });
   await assert.rejects(loading, /조회 실패/);
   assert.match(h.els.workspaceContent.innerHTML, /조회 실패/);
   assert.match(h.els.workspaceContent.innerHTML, /기존 업무/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
   assert.equal(h.els.workspaceRefreshBtn.disabled, false);
+  assert.equal(h.els.workspaceDataBadge.badge.state, 'snapshot');
+  assert.equal(h.els.workspaceDataBadge.badge.label, '갱신 실패');
 });
 
 test('personal initial failure exits loading state without showing an empty work list', async () => {
@@ -319,4 +362,79 @@ test('weekly report keeps my report and team brief in one tab and clears the new
   assert.ok(calls.includes('POST /team-brief/read'));
   assert.equal(h.els.workspaceTabBriefDot.hidden, true);
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-tab-dot/);
+});
+
+test('long history sync uses bounded batches with contiguous indexes and keeps all local text', async () => {
+  const calls = [];
+  const h = await harness(async (_url, options) => {
+    const body = JSON.parse(options.body); calls.push(body);
+    return { ok: true, json: async () => ({conversation: {updatedAt: `v${calls.length}`, messageCount: body.startIndex + body.messages.length}}) };
+  });
+  const conversation = {id:'long', title:'첫 질문', messages:Array.from({length:184},(_,i)=>message(`원문 ${i}`))};
+  h.state.conversations = [conversation];
+  await h.api.syncConversation(conversation);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls.map((item)=>item.startIndex), [0,80,160]);
+  assert.deepEqual(calls.map((item)=>item.truncate), [false,false,true]);
+  assert.equal(calls[1].expectedUpdatedAt,'v1');
+  assert.equal(calls.flatMap((item)=>item.messages).length,184);
+  assert.equal(conversation.messages[0].content,'원문 0');
+  assert.equal(conversation.syncPending,false);
+});
+
+test('a paged conversation edits only its loaded tail and preserves the saved prefix', async () => {
+  let request;
+  const h=await harness(async (_url,options)=>{
+    request=JSON.parse(options.body);
+    return {ok:true,json:async()=>({conversation:{updatedAt:'v2',messageCount:124}})};
+  });
+  const conversation={id:'long',title:'첫 질문',messages:Array.from({length:60},(_,i)=>message(`원문 ${i+64}`)),messageOffset:64,serverUpdatedAt:'v1'};
+  h.state.conversations=[conversation];
+  await h.api.syncConversation(conversation);
+  assert.equal(request.startIndex,64);
+  assert.equal(request.messages.length,60);
+  assert.equal(conversation.messageCount,124);
+});
+
+test('loading an earlier page prepends text without dropping recent local messages', async () => {
+  const h=await harness(async (url)=>({ok:true,json:async()=>({conversation:{id:'long',updatedAt:'v1',messageOffset:0,messageCount:122,messages:Array.from({length:60},(_,i)=>message(`원문 ${i}`))}})}));
+  const conversation={id:'long',title:'첫 질문',messages:Array.from({length:62},(_,i)=>message(`원문 ${i+60}`)),messageOffset:60,serverUpdatedAt:'v1'};
+  h.state.conversations=[conversation];h.state.activeConversationId='long';h.state.messages=[...conversation.messages];
+  await h.api.loadEarlierMessages();
+  assert.equal(conversation.messageOffset,0);
+  assert.equal(h.state.messages.length,122);
+  assert.equal(h.state.messages[0].content,'원문 0');
+  assert.equal(h.state.messages.at(-1).content,'원문 121');
+});
+
+test('closed and unknown highlights never receive active overdue or aging styling', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  for (const status of ['closed', 'resolved', '종료된 이슈', '해결된 이슈', 'unrecognized']) {
+    for (const dueDate of ['2020-01-01', '']) {
+      const html = h.api.issueWorkspaceRow({ id: 1, status, ageDays: 90, dueDate, overdue: false });
+      assert.doesNotMatch(html, /is-overdue|is-aging|일 지남|일 남음|오늘까지/);
+    }
+  }
+  assert.match(h.api.issueWorkspaceRow({id: 2, status: 'assigned', ageDays: 90, dueDate: '2020-01-01', overdue: true}), /is-overdue/);
+  assert.match(h.api.issueWorkspaceRow({id: 3, status: 'developed', ageDays: 90, overdue: false}), /is-aging/);
+});
+
+test('partial team brief does not assert no spikes or no priority issues', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.state.teamWeeklyBrief = {source: {search_complete: false}, summary: {}, priorities: [], customerSpikes: [], screenSpikes: []};
+  const html = h.api.renderTeamWeeklyBrief();
+  assert.doesNotMatch(html, /급증한 고객사가 없습니다|급증한 화면번호가 없습니다|우선 확인할 이슈가 없습니다/);
+  assert.match(html, /비교 미확정/);
+});
+
+test('expanded personal list and sorting cover more than thirty issues', async () => {
+  const h = await harness(async () => ({ok: true}));
+  const data = {user: {mantisUsername:'석지원'}, summary: {open:35}, mantis: {search_complete:true,
+    issues:Array.from({length:35}, (_, i) => ({id:i+1, title:`업무 ${i+1}`, status:'assigned', ageDays:i+1}))}};
+  assert.equal((h.api.renderPersonalOverview(data).match(/class="workspace-item-id"/g) || []).length, 8);
+  h.state.workspaceIssuesExpanded = true;
+  h.state.workspaceSort = 'oldest';
+  const html = h.api.renderPersonalOverview(data);
+  assert.equal((html.match(/class="workspace-item-id"/g) || []).length, 35);
+  assert.ok(html.indexOf('>#35<') < html.indexOf('>#1<'));
 });

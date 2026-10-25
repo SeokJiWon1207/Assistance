@@ -1,3 +1,4 @@
+import { customerName, customerLabelText, customerAnswerText } from "./ui_format.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
@@ -33,11 +34,7 @@ function shouldHideSourceList(content, sources = []) {
   const text = String(content || "");
   if (sources.length && sources.every((source) => source.type === "notion")) return true;
   if (hasIssueSummaryList(text)) return true;
-  return sources.some((source) => {
-    if (!source.issue_id) return false;
-    const issueIdPattern = new RegExp(`#?0*${String(source.issue_id)}\\b`);
-    return issueIdPattern.test(text);
-  });
+  return /\|[^\n]+\|\s*\n\|[ :|-]+\|/.test(text);
 }
 
 // 상태 라벨을 색상 톤 클래스로 매핑한다. 부분 문자열 기준이라 "종료된 이슈",
@@ -247,6 +244,7 @@ function appendAnswerParagraph(container, rawBlock, sources = [], messageIndex =
 }
 
 function renderAssistantContent(content, sources = [], messageIndex = 0) {
+  content = customerAnswerText(content);
   const wrap = document.createElement("div");
   wrap.className = "assistant-answer";
   if (sources.length && sources.every((source) => source.type === "notion")) {
@@ -424,7 +422,7 @@ function renderIssueDetailCard(issue, sources = [], messageIndex = 0) {
   card.appendChild(header);
 
   const metaItems = [
-    ["프로젝트", issue.project],
+    ["고객사", customerName(issue)],
     ["담당자", issue.handler],
     ["등록일", issue.createdAt],
     ["화면번호", issue.screenNumber],
@@ -528,7 +526,7 @@ function renderFollowUps(followUps = []) {
     button.type = "button";
     button.className = "follow-up-chip";
     button.dataset.followUp = question;
-    button.textContent = question;
+    button.textContent = customerLabelText(question);
     list.appendChild(button);
   });
 
@@ -587,7 +585,7 @@ function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
 
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  ["이슈 번호", "프로젝트", "제목", "상태", "중요도", "담당자", "등록일"].forEach((label) => {
+  ["이슈 번호", "고객사", "제목", "상태", "중요도", "담당자", "등록일"].forEach((label) => {
     const th = document.createElement("th");
     th.textContent = label;
     headRow.appendChild(th);
@@ -617,7 +615,7 @@ function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
 
     const projectCell = document.createElement("td");
     projectCell.className = "issue-table-project";
-    projectCell.textContent = issueValue(issue, source, "project", "미상");
+    projectCell.textContent = customerName(issueValue(issue, source, "project", "미상"));
 
     const titleCell = document.createElement("td");
     titleCell.className = "issue-table-title";
@@ -657,26 +655,13 @@ function renderIssueSummaryList(issues, sources = [], messageIndex = 0) {
 function renderSourceList(sources, messageIndex, keyPrefix = "source") {
   const wrap = document.createElement("div");
   wrap.className = "source-list";
-  const isLongList = sources.length > 5;
-  const panelId = `${keyPrefix}-panel-${messageIndex}`;
-  const sourceLabel = sources.every((source) => source.type === "notion") ? "관련 Notion" : "관련 자료";
-  const toggle = document.createElement("button");
-  toggle.className = "source-list-toggle";
-  toggle.type = "button";
-  toggle.dataset.sourceToggle = panelId;
-  toggle.setAttribute("aria-expanded", String(!isLongList));
-  toggle.innerHTML = `
-    <span>${sourceLabel} <strong>${sources.length}</strong>건</span>
-    <em>${isLongList ? "펼치기" : "접기"}${icon("chevron-down")}</em>
-  `;
-
+  const sourceLabel = sources.every((source) => source.type === "notion") ? "관련 Notion" : "관련 이슈";
+  const header = document.createElement("div");
+  header.className = "table-tools";
+  header.innerHTML = `<strong>${sourceLabel} ${sources.length}건</strong><button type="button" class="source-list-view" data-source-view aria-pressed="false">표로 보기</button>`;
+  wrap.appendChild(header);
   const panel = document.createElement("div");
-  panel.id = panelId;
   panel.className = "source-list-panel";
-  panel.hidden = isLongList;
-
-  wrap.appendChild(toggle);
-
   sources.forEach((source, sourceIndex) => {
     const key = `${keyPrefix}-${messageIndex}-${sourceIndex}`;
     state.sourceMap.set(key, source);
@@ -684,25 +669,30 @@ function renderSourceList(sources, messageIndex, keyPrefix = "source") {
     button.className = "related-issue-item";
     button.type = "button";
     button.dataset.sourceKey = key;
-    const typeLabel = source.type === "notion" ? "Notion" : source.type === "chroma" ? "과거 이슈" : "Mantis";
-    const primaryId = source.type === "notion" ? (source.database_label || "Notion") : `#${source.issue_id || "-"}`;
+    button.dataset.relatedRow = String(sourceIndex);
+    button.hidden = sourceIndex >= 3;
+    const primaryId = source.type === "notion" ? "Notion" : `#${source.issue_id || "-"}`;
     const secondary = source.type === "notion"
-      ? [source.status, source.owner].filter(Boolean).join(" · ") || "Notion DB"
-      : source.project || "프로젝트 미상";
-    button.innerHTML = `
-      <div class="related-issue-main">
-        <div class="related-issue-top">
-          <strong>${escapeHtml(primaryId)}</strong>
-          <span>${escapeHtml(secondary)}</span>
-          <em>${escapeHtml(typeLabel)}</em>
-        </div>
-        <h3>${escapeHtml(source.title || "제목 없음")}</h3>
-      </div>
-      <span class="related-issue-action">상세</span>
-    `;
+      ? [source.database_label, source.owner].filter(Boolean).join(" · ")
+      : [customerName(source), source.handler ? `담당 ${source.handler}` : "", source.created_at ? `등록 ${String(source.created_at).slice(0,10)}` : ""].filter(Boolean).join(" · ");
+    const status = source.status_label || (source.status ? displayIssueStatus(source.status) : "");
+    button.innerHTML = `<span class="related-issue-id">${escapeHtml(primaryId)}</span><div class="related-issue-main"><h3>${escapeHtml(source.title || "제목 없음")}</h3><small>${escapeHtml(secondary)}</small></div>${status ? `<span class="status-badge ${statusToneClass(status)}">${escapeHtml(status)}</span>` : '<span class="related-issue-action">원문 보기</span>'}`;
     panel.appendChild(button);
   });
   wrap.appendChild(panel);
+  const table = document.createElement("div");
+  table.className = "related-issue-table";
+  table.innerHTML = `<table><caption class="sr-only">${sourceLabel}</caption><thead><tr><th>이슈</th><th>고객사 / 출처</th><th>상태</th></tr></thead><tbody>${sources.map((source, index) => `<tr data-related-row="${index}" ${index >= 3 ? "hidden" : ""}><td><button type="button" data-source-key="${keyPrefix}-${messageIndex}-${index}">${source.type === "notion" ? "" : `#${escapeHtml(source.issue_id || "")} `}${escapeHtml(source.title || "제목 없음")}</button></td><td>${escapeHtml(source.type === "notion" ? source.database_label || "Notion" : customerName(source))}</td><td>${escapeHtml(source.status_label || displayIssueStatus(source.status))}</td></tr>`).join("")}</tbody></table>`;
+  wrap.appendChild(table);
+  if (sources.length > 3) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "source-list-more";
+    more.dataset.sourceMore = String(sources.length - 3);
+    more.setAttribute("aria-expanded", "false");
+    more.textContent = `${sources.length - 3}건 더 보기`;
+    wrap.appendChild(more);
+  }
   return wrap;
 }
 
@@ -736,7 +726,7 @@ function renderVerificationPanel(report, auditId = "") {
     chips.className = "verification-chips";
     report.constraints.forEach((item) => {
       const chip = document.createElement("span");
-      chip.innerHTML = `<small>${escapeHtml(item.label)}</small>${escapeHtml(item.value)}`;
+      chip.innerHTML = `<small>${escapeHtml(item.label)}</small>${escapeHtml(/^고객사/.test(item.label) ? customerLabelText(customerName(item.value)) : item.value)}`;
       chips.appendChild(chip);
     });
     body.appendChild(chips);

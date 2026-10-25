@@ -1,14 +1,14 @@
 @media (max-width: 860px) {
-  /* 주 메뉴는 아래 탭바. 입력창에 글을 쓰는 동안에는 탭바를 내려 대화와 키보드에 자리를 준다. */
+  /* 입력창에서 전송·중지 버튼으로 포커스가 이동해도 클릭 중 레이아웃이 움직이지 않는다. */
   :root {
     --rail-h: calc(60px + env(safe-area-inset-bottom));
   }
 
-  body:has(#promptInput:focus) {
+  body:has(#chatForm:focus-within) {
     --rail-h: 0px;
   }
 
-  body:has(#promptInput:focus) .app-rail {
+  body:has(#chatForm:focus-within) .app-rail {
     display: none;
   }
 
@@ -52,6 +52,10 @@
     padding: 4px 2px;
   }
 
+  .rail-item .ui-icon {
+    padding: 4px 14px;
+  }
+
   .rail-account {
     display: flex;
     flex: 1 1 0;
@@ -89,8 +93,8 @@
   }
 
   .chat-header {
-    min-height: 76px;
-    padding: 18px 20px;
+    min-height: 60px;
+    padding: 10px 20px;
     justify-content: flex-start;
   }
 
@@ -149,16 +153,11 @@
   }
 
   .message {
-    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
   }
 
-  .message.user {
-    grid-template-columns: minmax(0, 1fr) 34px;
-    justify-content: stretch;
-  }
-
-  .message.user .avatar {
-    grid-column: 2;
+  .user-message-content {
+    max-width: 88%;
   }
 
   .issue-detail-header {
@@ -173,54 +172,20 @@
     grid-template-columns: 1fr;
   }
 
+  /* 좁은 화면에서는 카드 바깥 여백을 줄이고, 원형 전송 버튼은 손가락 크기에 맞춰 키운다. */
   .composer {
-    grid-template-columns: 1fr;
-    padding: 14px 20px 20px;
+    --composer-gutter: 12px;
+    padding-bottom: 25px;
   }
 
-  /* 전송은 입력창 안 오른쪽의 원형 버튼. 입력창 아래 한 줄을 대화에 돌려준다. */
-  .composer textarea {
-    padding-right: 52px;
+  .composer::before {
+    bottom: 14px;
   }
 
   .composer .send-button {
-    position: absolute;
-    right: 28px;
-    bottom: 29px;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    min-height: 36px;
-    padding: 0;
+    width: 40px;
+    height: 40px;
     border-radius: 999px;
-    box-shadow: none;
-  }
-
-  .composer .send-button > span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-
-  .composer .send-button .send-icon {
-    display: block;
-  }
-
-  .composer .send-button.stop-mode .send-icon {
-    display: none;
-  }
-
-  .composer .send-button.stop-mode .stop-icon {
-    display: block;
-  }
-
-  .composer .send-button.is-empty:not(.stop-mode):not(:disabled) {
-    background: color-mix(in srgb, var(--blue) 35%, var(--surface));
   }
 
   .scroll-to-top-button {
@@ -247,8 +212,8 @@
     margin-top: 22px;
   }
 
-  .starter-card {
-    min-height: 96px;
+  .starter-card:nth-child(odd) {
+    border-right: 0;
   }
 
   .data-status-line {

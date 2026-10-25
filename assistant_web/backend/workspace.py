@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
-from backend.common import clamp_int, extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
+from backend.display import customer_name
+from backend.common import extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
 from backend.notion.property_roles import responsible_properties
 from backend.db_migrations import run_sqlite_migrations
@@ -23,7 +23,8 @@ from backend.sources.notion import (
     fetch_notion_users,
     normalize_notion_page,
 )
-from backend.schemas import ConversationMessage
+from backend import conversation_history
+from backend.conversation_history import ConversationConflictError, ConversationQuotaError  # noqa: F401
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.workspace_data import load_workspace_snapshot
 from backend.team_scope import filter_team_issues, team_member_profiles
@@ -36,14 +37,6 @@ def workspace_db_path() -> Path:
 
 def _now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-
-
-class ConversationConflictError(ValueError):
-    """다른 기기에서 변경된 대화를 덮어쓰지 않는다."""
-
-
-class ConversationQuotaError(ValueError):
-    """A user exceeded the configured server-side conversation storage quota."""
 
 
 def _create_workspace_schema(connection: sqlite3.Connection) -> None:
@@ -128,155 +121,39 @@ def _create_playbook_schema(connection: sqlite3.Connection) -> None:
 
 
 def init_workspace_db() -> None:
+    from backend.workspace_notifications import create_notification_schema
     run_sqlite_migrations(
         workspace_db_path(),
-        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema],
+        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, conversation_history.migrate_messages,
+         create_notification_schema],
         database_name="workspace",
     )
 
 
-def _safe_messages(messages: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    safe: List[Dict[str, Any]] = []
-    for raw in list(messages)[:80]:
-        try:
-            item = ConversationMessage.model_validate(raw)
-        except (TypeError, ValueError):
-            continue
-        safe.append(item.model_dump(exclude_none=True))
-    return safe
+def _safe_messages(messages):
+    return conversation_history.safe_messages(messages)
 
 
-def _conversation_from_row(row: sqlite3.Row) -> Dict[str, Any]:
-    try:
-        messages = json.loads(row["messages_json"])
-    except (TypeError, ValueError):
-        messages = []
-    return {
-        "id": row["conversation_id"],
-        "title": row["title"],
-        "messages": _safe_messages(messages) if isinstance(messages, list) else [],
-        "favorite": bool(row["favorite"]),
-        "createdAt": row["created_at"],
-        "updatedAt": row["updated_at"],
-    }
-
-
-def list_conversations(user_uid: str, limit: int = 40) -> List[Dict[str, Any]]:
+def list_conversations(user_uid: str, limit: int = 40):
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-        connection.row_factory = sqlite3.Row
-        rows = connection.execute(
-            """
-            SELECT conversation_id, title, messages_json, favorite, created_at, updated_at
-            FROM conversations WHERE user_uid = ?
-            ORDER BY favorite DESC, updated_at DESC LIMIT ?
-            """,
-            (user_uid, max(1, min(limit, 100))),
-        ).fetchall()
-    return [_conversation_from_row(row) for row in rows]
+    return conversation_history.list_conversations(workspace_db_path(), user_uid, limit)
 
 
-def save_conversation(
-    user_uid: str,
-    conversation_id: str,
-    title: str,
-    messages: Iterable[Dict[str, Any]],
-    favorite: bool,
-    created_at: str = "",
-    expected_updated_at: Optional[str] = None,
-) -> Dict[str, Any]:
+def get_conversation(user_uid: str, conversation_id: str, *, before=None, limit=60):
     init_workspace_db()
-    now = _now()
-    safe_messages = _safe_messages(messages)
-    safe_title = str(title or "새 대화").strip()[:120] or "새 대화"
-    safe_created_at = str(created_at or now)[:40]
-    messages_json = json.dumps(safe_messages, ensure_ascii=False)
-    max_conversations = clamp_int(
-        os.getenv("CONVERSATION_MAX_PER_USER", "200"), 1, 5000
-    ) or 200
-    max_total_bytes = clamp_int(
-        os.getenv("CONVERSATION_MAX_TOTAL_BYTES_PER_USER", "50000000"),
-        1_000_000,
-        1_000_000_000,
-    ) or 50_000_000
-    max_conversation_bytes = clamp_int(
-        os.getenv("CONVERSATION_MAX_BYTES", "1000000"), 100_000, 10_000_000
-    ) or 1_000_000
-    new_bytes = len(messages_json.encode("utf-8")) + len(safe_title.encode("utf-8"))
-    if new_bytes > max_conversation_bytes:
-        raise ConversationQuotaError("대화 한 건의 저장 크기 제한을 초과했습니다.")
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-        connection.execute("BEGIN IMMEDIATE")
-        revision = connection.execute(
-            "SELECT updated_at FROM conversations WHERE user_uid=? AND conversation_id=?",
-            (user_uid, conversation_id),
-        ).fetchone()
-        if expected_updated_at is not None and expected_updated_at != (revision[0] if revision else ""):
-            raise ConversationConflictError("다른 기기에서 대화가 변경되었습니다. 현재 기록을 보존한 뒤 다시 동기화해 주세요.")
-        now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
-        current = connection.execute(
-            """
-            SELECT COUNT(*), COALESCE(SUM(
-                length(CAST(messages_json AS BLOB)) + length(CAST(title AS BLOB))
-            ), 0)
-            FROM conversations WHERE user_uid = ?
-            """,
-            (user_uid,),
-        ).fetchone()
-        existing = connection.execute(
-            """
-            SELECT length(CAST(messages_json AS BLOB)) + length(CAST(title AS BLOB))
-            FROM conversations WHERE user_uid = ? AND conversation_id = ?
-            """,
-            (user_uid, conversation_id),
-        ).fetchone()
-        existing_bytes = int(existing[0]) if existing else 0
-        if not existing and int(current[0]) >= max_conversations:
-            raise ConversationQuotaError("사용자별 대화 저장 개수 제한을 초과했습니다.")
-        if int(current[1]) - existing_bytes + new_bytes > max_total_bytes:
-            raise ConversationQuotaError("사용자별 대화 저장 용량 제한을 초과했습니다.")
-        connection.execute(
-            """
-            INSERT INTO conversations (
-                user_uid, conversation_id, title, messages_json, favorite, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_uid, conversation_id) DO UPDATE SET
-                title = excluded.title,
-                messages_json = excluded.messages_json,
-                favorite = excluded.favorite,
-                updated_at = excluded.updated_at
-            """,
-            (
-                user_uid,
-                conversation_id,
-                safe_title,
-                messages_json,
-                int(bool(favorite)),
-                safe_created_at,
-                now,
-            ),
-        )
-        connection.row_factory = sqlite3.Row
-        row = connection.execute(
-            """
-            SELECT conversation_id, title, messages_json, favorite, created_at, updated_at
-            FROM conversations WHERE user_uid = ? AND conversation_id = ?
-            """,
-            (user_uid, conversation_id),
-        ).fetchone()
-    if row is None:
-        raise RuntimeError("Saved conversation could not be read back")
-    return _conversation_from_row(row)
+    return conversation_history.get_conversation(workspace_db_path(), user_uid, conversation_id, before=before, limit=limit)
 
 
-def delete_conversation(user_uid: str, conversation_id: str) -> bool:
+def save_conversation(user_uid, conversation_id, title, messages, favorite, created_at='',
+                      expected_updated_at=None, *, start_index=None, truncate=True):
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-        cursor = connection.execute(
-            "DELETE FROM conversations WHERE user_uid = ? AND conversation_id = ?",
-            (user_uid, conversation_id),
-        )
-    return cursor.rowcount > 0
+    return conversation_history.save_conversation(workspace_db_path(), user_uid, conversation_id,
+        title, messages, favorite, created_at, expected_updated_at, start_index=start_index, truncate=truncate)
+
+
+def delete_conversation(user_uid: str, conversation_id: str):
+    init_workspace_db()
+    return conversation_history.delete_conversation(workspace_db_path(), user_uid, conversation_id)
 
 
 def _parse_date(value: Any) -> Optional[date]:
@@ -319,7 +196,9 @@ def _issue_summary(issue: Dict[str, Any]) -> Dict[str, Any]:
         "id": issue.get("id"),
         "title": issue.get("summary", "제목 없음"),
         "project": issue.get("project", "미상"),
+        "customer_name": customer_name(issue.get("project")),
         "status": issue.get("status", "상태 미상"),
+        "isOpen": _is_open(issue.get("status", "")),
         "priority": issue.get("priority", ""),
         "handler": issue.get("handler", "담당자 미지정"),
         "createdAt": issue.get("created_at", ""),
@@ -469,7 +348,8 @@ def _my_notion_pages(user: Dict[str, Any], limit: int = 12) -> Dict[str, Any]:
         return {"status": "error", "notion_pages": [], "reason": type(exc).__name__}
 
 
-def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: List[Dict[str, Any]],
+                   *, observed_events: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     init_workspace_db()
     with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
         read_ids = {
@@ -479,7 +359,7 @@ def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: Li
                 (user_uid,),
             ).fetchall()
         }
-    notifications: List[Dict[str, Any]] = []
+    notifications: List[Dict[str, Any]] = [dict(event) for event in observed_events or []]
     for issue in issues:
         summary = _issue_summary(issue)
         if summary["overdue"]:
@@ -520,7 +400,8 @@ def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: Li
             )
     for notification in notifications:
         notification["read"] = notification["id"] in read_ids
-    notifications.sort(key=lambda item: (item["read"], item.get("date", "")))
+    notifications.sort(key=lambda item: item.get("date", ""), reverse=True)
+    notifications.sort(key=lambda item: item["read"])
     return notifications[:30]
 
 
@@ -554,11 +435,14 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
     open_issues = [item for item in issues if _is_open(item["status"])]
     today = date.today()
     week_start = today - timedelta(days=6)
-    new_this_week = [item for item in issues if (_parse_date(item["createdAt"]) or date.min) >= week_start]
-    updated_this_week = [item for item in issues if (_parse_date(item["updatedAt"]) or date.min) >= week_start]
+    new_this_week = [item for item in issues if week_start <= (_parse_date(item["createdAt"]) or date.min) <= today]
+    updated_this_week = [item for item in issues if week_start <= (_parse_date(item["updatedAt"]) or date.min) <= today]
     overdue = [item for item in open_issues if item["overdue"]]
     aging = [item for item in open_issues if (item["ageDays"] or 0) >= 30]
-    notifications = _notifications(user["uid"], all_issues, [])
+    from backend.workspace_notifications import collect_workspace_events
+    init_workspace_db()
+    events, notification_scope = collect_workspace_events(workspace_db_path(), user["uid"], person, all_issues, mantis_meta)
+    notifications = _notifications(user["uid"], all_issues, [], observed_events=events)
     return {
         "user": {
             "displayName": user.get("displayName", ""),
@@ -580,7 +464,7 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             # 개인 워크스페이스의 기본 목록은 현재 할 일이다. 담당 이력 전체를
             # 내려보내면 상단의 '미종료' 수와 목록 건수가 어긋나고 종료된 이슈가
             # 할 일처럼 보이므로 미종료 이슈만 표시한다.
-            "issues": open_issues[:30],
+            "issues": open_issues,
         },
         "notion": {
             "status": "hidden",
@@ -588,6 +472,7 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             "pages": [],
         },
         "notifications": notifications,
+        "notificationScope": notification_scope,
         "weeklyBrief": {
             "period": f"{week_start.isoformat()} ~ {today.isoformat()}",
             "newIssues": len(new_this_week),

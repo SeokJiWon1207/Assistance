@@ -17,7 +17,8 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
         for message in reversed(request.messages[:-1]):
             if message.role != 'user':
                 continue
-            previous = load_audit_query_plan(request.contextAuditId, str(user.get('uid') or ''), message.content)
+            previous = load_audit_query_plan(request.contextAuditId, str(user.get('uid') or ''), message.content,
+                                             **({'variant': request.contextVariant} if request.contextVariant != 'A' else {}))
             if previous:
                 previous = {**previous, 'audit_id': request.contextAuditId}
                 break
@@ -25,6 +26,7 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
     # 메시지 본문이나 모델이 추측한 ID 대신 동일 사용자·질문의 서버 감사 기록만 쓴다.
     resolved = resolve_reference_from_context(
         question, request.contextAuditId, str((user or {}).get('uid') or ''),
+        **({'variant': request.contextVariant} if request.contextVariant != 'A' else {}),
     ) if previous else None
     retrieval_text = resolved or question
     plan: dict[str, Any]

@@ -576,14 +576,15 @@ def prepare_chat_pipeline(
             break
     prior_plan = load_audit_query_plan(
         request.contextAuditId or "", str((user or {}).get("uid") or ""),
-        prior_question,
+        prior_question, **({"variant": request.contextVariant} if request.contextVariant != "A" else {}),
     ) if (status_choice or lookup_reply or is_follow_up_question(latest_user_text)) else {}
     if not prior_plan and request.contextAuditId and (status_choice or lookup_reply or is_follow_up_question(latest_user_text)):
         # 큰 답변이 전송 문맥에서 제외된 경우에도 대화에 실제로 남은 질문만 감사 원문과 대조한다.
         for candidate in dict.fromkeys(prior_questions[1:]):
             if candidate == prior_question:
                 continue
-            prior_plan = load_audit_query_plan(request.contextAuditId, str((user or {}).get("uid") or ""), candidate)
+            prior_plan = load_audit_query_plan(request.contextAuditId, str((user or {}).get("uid") or ""), candidate,
+                                               **({"variant": request.contextVariant} if request.contextVariant != "A" else {}))
             if prior_plan:
                 break
     prior_resolution = prior_plan.get("status_resolution") or {}
@@ -617,6 +618,7 @@ def prepare_chat_pipeline(
         latest_user_text,
         request.contextAuditId,
         user_uid=str((user or {}).get("uid") or "").strip(),
+        **({"variant": request.contextVariant} if request.contextVariant != "A" else {}),
     )
     if resolved_reference:
         retrieval_text = resolved_reference
@@ -728,6 +730,7 @@ def prepare_chat_pipeline(
             scoped_constraints["list_continuation"] = confirmed_list_continuation(
                 latest_user_text, prior_plan, load_audit_sources(
                     request.contextAuditId or "", str((user or {}).get("uid") or ""),
+                    **({"variant": request.contextVariant} if request.contextVariant != "A" else {}),
                 ),
             )
         else:
@@ -1191,9 +1194,10 @@ def _retrieve_chat_evidence(
                 "content": f"질문 조건에 맞는 원문 근거를 확보하지 못했습니다. {guidance}",
                 "sources": [], "retrieval": context.retrieval_result, "raw": {"mode": "empty_evidence"}}
     append_retrieval_system_note(context, limit)
+    # 표시할 근거 목록의 실제 건수이며 전체 검색 결과 건수나 완료율이 아니다.
     if request.showSources:
-        # 모델이 답변을 쓰는 동안 같은 근거를 먼저 보여준다. 최종 응답의 출처가 이 목록을 대체한다.
-        emit_chat_event("evidence", sources=build_model_evidence_sources(context.retrieval_result, limit))
+        evidence = build_model_evidence_sources(context.retrieval_result, limit)
+        emit_chat_event("evidence", sources=evidence, sourceCount=len(evidence))
     return None
 
 
@@ -1252,6 +1256,8 @@ class ChatService:
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         started = perf_counter()
+        from backend.services.answer_context import bind_answer_context
+        request = bind_answer_context(request, user)
         verification_question: Optional[str] = None
         def finalize_chat_response(response: Dict[str, Any]) -> Dict[str, Any]:
             response["timings"] = {"stages": dict(TIMINGS.get() or {}),

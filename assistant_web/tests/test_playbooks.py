@@ -47,7 +47,7 @@ class ResolutionPlaybookTests(unittest.TestCase):
             self.assertEqual(archived["status"], "archived")
             self.assertEqual(playbooks.list_playbooks("세션"), [])
 
-    def test_workspace_migration_adds_playbook_schema_as_version_three(self):
+    def test_workspace_migration_keeps_playbooks_with_notifications_version_five(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
             {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")},
@@ -61,7 +61,7 @@ class ResolutionPlaybookTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE name = 'resolution_playbooks'"
                 ).fetchone()
 
-        self.assertEqual(version, 3)
+        self.assertEqual(version, 5)
         self.assertEqual(table[0], "resolution_playbooks")
 
 

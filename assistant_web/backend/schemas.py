@@ -99,6 +99,7 @@ class ChatRequest(BaseModel):
     # 직전 assistant 답변의 감사 로그 ID. "그중 3번째" 같은 서수 참조를
     # 그 답변에서 실제로 표시한 결과 목록으로 해석하는 데 사용한다(선택).
     contextAuditId: Optional[str] = None
+    contextVariant: Literal["A", "B"] = "A"
 
     @model_validator(mode="after")
     def validate_total_message_size(self):
@@ -179,6 +180,7 @@ class ConversationMessage(BaseModel):
     templateId: str = Field(default="", max_length=64)
     feedback: Optional[Dict[str, Any]] = None
     abTest: Optional[Dict[str, Any]] = None
+    followupVariant: Literal["A", "B"] = "A"
     # 차트 payload 를 스키마에 두지 않으면 서버 저장 시 버려져
     # 다른 기기나 재로그인 후 차트가 사라진다.
     effortChart: Optional[Dict[str, Any]] = None

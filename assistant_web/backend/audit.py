@@ -179,7 +179,20 @@ def prune_audit_logs(retention_days: int | None = None) -> Dict[str, int]:
     }
 
 
-def load_audit_sources(audit_id: str, user_uid: str = "") -> List[Dict[str, Any]]:
+def _select_audit_variant(payload: Dict[str, Any], variant: str) -> Dict[str, Any]:
+    if variant == "A":
+        return payload
+    comparison = payload.get("abTest") or {}
+    baseline = comparison.get("variantB") or {}
+    if (variant != "B" or not comparison.get("enabled") or baseline.get("status") != "ok"
+            or (payload.get("verification") or {}).get("delivery") != "allowed"
+            or not isinstance(baseline.get("content"), str) or not baseline["content"].strip()):
+        return {}
+    # B도 동일 조회 계획에 대해 전송 전 검증을 통과한 경우만 후속 문맥으로 사용한다.
+    return {**payload, "answer": baseline["content"], "sources": baseline.get("sources") or []}
+
+
+def load_audit_sources(audit_id: str, user_uid: str = "", *, variant: str = "A") -> List[Dict[str, Any]]:
     """감사 로그에서 해당 답변이 실제로 표시했던 근거 목록을 그대로 가져온다."""
     if not audit_id or not re.fullmatch(r"[0-9a-f]{32}", audit_id):
         return []
@@ -198,11 +211,11 @@ def load_audit_sources(audit_id: str, user_uid: str = "") -> List[Dict[str, Any]
         payload = json.loads(row[0])
     except (TypeError, ValueError):
         return []
-    sources = payload.get("sources")
+    sources = _select_audit_variant(payload, variant).get("sources")
     return sources if isinstance(sources, list) else []
 
 
-def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str) -> Dict[str, Any]:
+def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str, *, variant: str = "A") -> Dict[str, Any]:
     """동일 사용자·직전 질문에 묶인 확정 계획만 상속한다."""
     if not user_uid or not expected_question or not re.fullmatch(r"[0-9a-f]{32}", audit_id or ""):
         return {}
@@ -214,7 +227,24 @@ def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str) 
                 (audit_id, user_uid, expected_question),
             ).fetchone()
         payload = json.loads(row[0]) if row else {}
-        plan = payload.get("queryPlan")
+        plan = _select_audit_variant(payload, variant).get("queryPlan")
         return plan if isinstance(plan, dict) else {}
     except (sqlite3.Error, ValueError, TypeError):
         return {}
+
+
+def load_audit_answer(audit_id: str, user_uid: str, expected_question: str, *, variant: str) -> str | None:
+    if not user_uid or not expected_question or not re.fullmatch(r"[0-9a-f]{32}", audit_id or ""):
+        return None
+    try:
+        init_audit_db()
+        with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection:
+            row = connection.execute(
+                "SELECT payload FROM validation_logs WHERE id = ? AND user_uid = ? AND question = ?",
+                (audit_id, user_uid, expected_question),
+            ).fetchone()
+        payload = _select_audit_variant(json.loads(row[0]) if row else {}, variant)
+        answer = payload.get("answer")
+        return answer if isinstance(answer, str) and answer else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return None

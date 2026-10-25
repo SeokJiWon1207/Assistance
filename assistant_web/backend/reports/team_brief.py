@@ -12,6 +12,8 @@ from backend.sources.mantis import normalize_issue
 from backend.sources.mantis_collection import collection_metadata
 from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
 from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.display import customer_name
+from backend.mantis_status import mantis_status_bucket
 from backend.common import normalize_chroma_issue_document
 from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
 from backend.workspace_data import load_workspace_snapshot
@@ -22,7 +24,7 @@ TEAM_BRIEF_FETCH_LIMIT = 1000
 TEAM_BRIEF_AGING_DAYS = 30
 TEAM_BRIEF_SPIKE_MIN = 2
 TEAM_BRIEF_SPIKE_RATIO = 2.0
-TEAM_BRIEF_CONTENT_VERSION = 3
+TEAM_BRIEF_CONTENT_VERSION = 4
 
 
 def _parse_issue_date(value: Any) -> date | None:
@@ -90,10 +92,13 @@ def _decision_summary(
     customer_spikes: List[Dict[str, Any]],
     screen_spikes: List[Dict[str, Any]],
     priorities: List[Dict[str, Any]],
+    *, complete: bool = True,
 ) -> Dict[str, Any]:
     """숫자 나열을 한 문장 해석과 실행 항목으로 변환한다."""
     change_rate = summary.get("changeRate")
-    if change_rate is None:
+    if not complete:
+        headline = f"확인한 범위에서 지난주 신규 이슈 {summary['newIssues']}건 이상입니다. 전체 증감은 미확정입니다."
+    elif change_rate is None:
         headline = f"지난주 신규 이슈 {summary['newIssues']}건이 등록됐습니다."
     elif change_rate > 0:
         headline = f"지난주 신규 이슈가 직전 주보다 {change_rate:g}% 증가했습니다."
@@ -105,7 +110,7 @@ def _decision_summary(
     signals: List[str] = []
     if customer_spikes:
         item = customer_spikes[0]
-        signals.append(f"{item['name']}에서 신규 이슈 {item['count']}건이 집중됐습니다.")
+        signals.append(f"{customer_name(item['name'])}에서 신규 이슈 {item['count']}건이 집중됐습니다.")
     if screen_spikes:
         item = screen_spikes[0]
         signals.append(f"화면번호 {item['name']} 관련 이슈가 {item['count']}건으로 증가했습니다.")
@@ -115,14 +120,17 @@ def _decision_summary(
         signals.append(f"담당자 미지정 이슈가 {summary['unassigned']}건 있습니다.")
     if summary.get("highPriority"):
         signals.append(f"높은 우선순위의 미종료 이슈가 {summary['highPriority']}건 있습니다.")
-    if not signals:
+    if not complete:
+        signals = [f"확인한 범위 · {signal}" for signal in signals]
+        signals.append("일부 데이터만 확인해 전체 위험과 급증 여부는 판단을 보류합니다.")
+    elif not signals:
         signals.append("특별한 급증이나 일정 위험 신호는 확인되지 않았습니다.")
 
     actions: List[Dict[str, str]] = []
     if customer_spikes:
         name = customer_spikes[0]["name"]
         actions.append({
-            "title": f"{name} 증가 원인 확인",
+            "title": f"{customer_name(name)} 증가 원인 확인",
             "reason": "동일 고객사의 신규 이슈가 단기간에 집중됐습니다.",
             "question": f"지난주 {name} 이슈가 증가한 공통 원인과 영향 범위, 권장 조치를 분석해줘",
         })
@@ -142,7 +150,7 @@ def _decision_summary(
         })
 
     overall_risk = "high" if any(item.get("riskLevel") == "high" for item in priorities) else (
-        "attention" if priorities or customer_spikes or screen_spikes else "stable"
+        "attention" if priorities or customer_spikes or screen_spikes else "stable" if complete else "unknown"
     )
     return {
         "riskLevel": overall_risk,
@@ -225,6 +233,7 @@ def _spikes(
 def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[str, Any]:
     current_start, previous_start, previous_end, baseline_start, baseline_end = _week_bounds(today)
     issues, source = _load_issues(force_refresh=force_refresh)
+    complete = source.get("search_complete") is True
     issues = filter_team_issues(issues)
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
     baseline = [issue for issue in issues if _inside(issue, baseline_start, baseline_end)]
@@ -251,18 +260,18 @@ def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[st
 
     new_count = len(previous)
     previous_count = len(baseline)
-    change_rate = None if previous_count == 0 else round((new_count - previous_count) / previous_count * 100, 1)
+    change_rate = None if not complete or previous_count == 0 else round((new_count - previous_count) / previous_count * 100, 1)
     priorities = sorted(
         (_priority_content(item, today) for item in priorities_by_id.values()),
         key=lambda item: (-int(item.get("riskScore") or 0), -int(item.get("ageDays") or 0)),
     )[:10]
-    customer_spikes = _spikes(previous, baseline, "project")
-    screen_spikes = _spikes(previous, baseline, "screen_number")
+    customer_spikes = _spikes(previous, baseline, "project") if complete else []
+    screen_spikes = _spikes(previous, baseline, "screen_number") if complete else []
     summary = {
         "newIssues": new_count,
         "previousNewIssues": previous_count,
         "changeRate": change_rate,
-        "closedNow": sum(not _is_open(str(issue.get("status") or "")) for issue in previous),
+        "closedNow": sum(mantis_status_bucket(str(issue.get("status") or "")) == "done" for issue in previous),
         "carriedOpen": len(carried),
         "aging": len(aging),
         "overdue": len(overdue),
@@ -277,7 +286,7 @@ def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[st
         "summaryPeriod": f"{previous_start.isoformat()} ~ {previous_end.isoformat()}",
         "comparisonPeriod": f"{baseline_start.isoformat()} ~ {baseline_end.isoformat()}",
         "summary": summary,
-        "decisionSummary": _decision_summary(summary, customer_spikes, screen_spikes, priorities),
+        "decisionSummary": _decision_summary(summary, customer_spikes, screen_spikes, priorities, complete=complete),
         "customerSpikes": customer_spikes,
         "screenSpikes": screen_spikes,
         "priorities": priorities,

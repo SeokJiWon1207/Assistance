@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from backend.auth import current_request_user, list_users
+from backend.common import clamp_int
 from backend.schemas import ConversationMessage
 from backend.workspace import (
     ConversationQuotaError,
@@ -17,6 +19,7 @@ from backend.workspace import (
     build_team_dashboard,
     delete_conversation,
     list_conversations,
+    get_conversation,
     mark_notification_read,
     save_conversation,
 )
@@ -29,6 +32,8 @@ ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 class ConversationWriteRequest(BaseModel):
+    startIndex: int | None = Field(default=None, ge=0)
+    truncate: bool = True
     expectedUpdatedAt: str = Field(default="", max_length=64)
     title: str = Field(default="새 대화", max_length=120)
     messages: List[ConversationMessage] = Field(default_factory=list, max_length=80)
@@ -37,7 +42,8 @@ class ConversationWriteRequest(BaseModel):
 
     @model_validator(mode="after")
     def cap_serialized_size(self):
-        if len(self.model_dump_json().encode("utf-8")) > 1_000_000:
+        limit = min(1_000_000, clamp_int(os.getenv('CONVERSATION_MAX_BYTES', '1000000'), 100_000, 10_000_000) or 1_000_000)
+        if len(self.model_dump_json().encode("utf-8")) > limit:
             raise ValueError("대화 저장 요청은 1MB를 넘을 수 없습니다.")
         return self
 
@@ -93,12 +99,24 @@ def put_conversation(
             payload.favorite,
             payload.createdAt,
             payload.expectedUpdatedAt,
+            start_index=payload.startIndex,
+            truncate=payload.truncate,
         )
     except ConversationConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ConversationQuotaError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     return {"conversation": conversation}
+
+
+@router.get("/conversations/{conversation_id}")
+def conversation_page(conversation_id: str, request: Request, before: int | None = None, limit: int = 60):
+    if before is not None and before < 0:
+        raise HTTPException(status_code=422, detail="메시지 순번은 0 이상이어야 합니다.")
+    result = get_conversation(_user(request)["uid"], _valid_id(conversation_id, "대화 ID"), before=before, limit=limit)
+    if result is None:
+        raise HTTPException(status_code=404, detail="대화를 찾지 못했습니다.")
+    return {"conversation": result}
 
 
 @router.delete("/conversations/{conversation_id}")

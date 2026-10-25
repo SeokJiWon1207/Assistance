@@ -32,17 +32,21 @@ function descendants(element, tagName) {
   ]);
 }
 
-async function rendering() {
+async function rendering({allowHtml = false} = {}) {
+  class HtmlElement extends Element {
+    set innerHTML(value) { this._html = value; this.children = []; }
+    get innerHTML() { return this._html || ""; }
+  }
   const directory = path.join(__dirname, '../backend/static/modules');
   const document = {
-    createElement: tagName => new Element(tagName),
+    createElement: tagName => allowHtml ? new HtmlElement(tagName) : new Element(tagName),
     createTextNode: text => { const node = new Element('#text'); node.textContent = text; return node; },
   };
   const context = vm.createContext({ document });
   const modules = new Map();
   const imports = new Map();
   const state = { sourceMap: new Map() };
-  for (const filename of ['chat_rendering.js', 'chat_source_quote.js', 'notion.js', 'issue_text.js']) {
+  for (const filename of ['chat_rendering.js', 'chat_source_quote.js', 'notion.js', 'issue_text.js', 'ui_format.js']) {
     const source = fs.readFileSync(path.join(directory, filename), 'utf8');
     modules.set(filename, new vm.SourceTextModule(source, { context }));
     for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g)) {
@@ -65,8 +69,22 @@ async function rendering() {
     return modules.get(filename);
   });
   await module.evaluate();
+  modules.get("ui_format.js").namespace.setCustomerNames({exact: {}, projects: {"159eBest": "LS증권", "147MiraeAsset": "미래에셋증권"}});
   return { api: module.namespace, state };
 }
+
+test('answer tables keep identifiers together while titles and explanations may wrap', async () => {
+  const { api } = await rendering();
+  const rendered = api.renderAssistantContent(
+    '| ID | 고객사 | 제목 | 상태 | 담당자 | 등록일 | 원인 |\n' +
+    '|---|---|---|---|---|---|---|\n' +
+    '| 31668 | 미래에셋증권 | SDK 대응 요청 | 확인된 이슈 | 이영희 | 2026-10-23 | 긴 설명 원문 |', [], 0);
+  const cells = descendants(rendered, 'td');
+  assert.deepEqual(cells.map(cell => cell.textContent),
+    ['31668', '미래에셋증권', 'SDK 대응 요청', '확인된 이슈', '이영희', '2026-10-23', '긴 설명 원문']);
+  assert.deepEqual(cells.map(cell => cell.className),
+    ['table-atomic', 'table-atomic', 'table-prose', 'table-atomic', 'table-atomic', 'table-atomic', 'table-prose']);
+});
 
 test('quoted fenced source stays literal including HTML, Markdown, issue IDs and whitespace', async () => {
   const { api, state } = await rendering();
@@ -215,4 +233,18 @@ test('concise summary remains visible while its entire original evidence stays i
   assert.match(disclosure[0].textContent, /QC NG로 재요청/);
   assert.ok(rendered.children.some(child => child.tagName === 'ul' && child.textContent.includes('캐시 크기')));
   assert.equal(rendered.children.filter(child => child.tagName === 'blockquote').length, 0);
+});
+
+
+test('source list shows customer names for both Mantis and Chroma while its source map keeps raw projects', async () => {
+  const {api,state}=await rendering({allowHtml:true});
+  const sources=[{type:'mantis',issue_id:1,project:'159eBest',title:'첫 제목'},
+    {type:'chroma',issue_id:2,project:'147MiraeAsset(미래에셋증권)',title:'다음 제목'}];
+  const rendered=api.renderSourceList(sources,4);
+  const html=descendants(rendered,'button').map(button=>button.innerHTML||'').join('');
+  assert.match(html, /LS증권/);
+  assert.match(html, /미래에셋증권/);
+  assert.doesNotMatch(html, /159eBest|147MiraeAsset/);
+  assert.equal(state.sourceMap.get('source-4-0'),sources[0]);
+  assert.equal(state.sourceMap.get('source-4-1'),sources[1]);
 });

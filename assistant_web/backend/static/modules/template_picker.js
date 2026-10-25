@@ -41,7 +41,10 @@ function templateIconSvg(template) {
 }
 
 function renderTeamTemplates() {
-  return TEAM_TEMPLATES.map((item) => `
+  const starterIds = ["daily-operations", "aging-issues", "similar-issues", "incident-triage", "weekly-report", "customer-profile"];
+  const preferred = starterIds.map((id) => TEAM_TEMPLATES.find((item) => item.id === id)).filter(Boolean);
+  const starters = [...preferred, ...TEAM_TEMPLATES.filter((item) => !starterIds.includes(item.id))].slice(0, 6);
+  return starters.map((item) => `
     <button type="button" class="starter-card" data-template-id="${escapeHtml(item.id)}">
       <span class="starter-card-icon" aria-hidden="true">
         ${templateIconSvg(item)}
