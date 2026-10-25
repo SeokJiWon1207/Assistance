@@ -556,3 +556,36 @@ test('customer labels never change dashboard filter identities or merge equal di
   assert.match(h.els.dashboardDetailBody.innerHTML, /<strong>LS증권<\/strong>/);
   assert.equal(payload.openIssues[2].project, '159eBest');
 });
+
+test('partial empty charts do not assert absence of open issues', async () => {
+  const payload = dashboard('snapshot', 0);
+  payload.meta.search_complete = false;
+  payload.decisionSummary = {riskLevel:'unknown', headline:'일부 데이터만 확인했습니다.'};
+  const h = await harness('member', null, async () => ({ok:true, payload}));
+  await h.api.loadDashboard();
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /미종료 이슈가 없습니다\.|dashboard-decision-badge">안정/);
+  assert.match(h.els.dashboardBody.innerHTML, /판단 보류/);
+});
+
+test('new cohort unknown status is shown separately from open and closed', async () => {
+  const payload = dashboard('live', 0);
+  payload.summary = {...payload.summary, newIssues:3, closedNow:1, newOpen:1, unknownStatus:1};
+  const h = await harness('member', null, async () => ({ok:true, payload}));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.match(html, /종료 1건, 미종료 1건, 상태 미상 1건/);
+  assert.doesNotMatch(html, /미종료 2<\/b>/);
+});
+
+
+test('partial distribution charts identify observed counts as lower bounds', async () => {
+  const payload = filterableDashboard();
+  payload.meta.search_complete = false;
+  payload.members = [{displayName:'검증 팀원', role:'member', open:0, overdue:0, agingOnly:0, highRisk:0}];
+  const h = await harness('member', null, async () => ({ok:true, payload}));
+  await h.api.loadDashboard();
+  const html = h.els.dashboardBody.innerHTML;
+  assert.match(html, /aria-label="고객사 A 미종료 2건 이상/);
+  assert.match(html, /aria-label="경과 30–59일 미종료 2건 이상/);
+  assert.match(html, /aria-label="검증 팀원 팀원 미종료 0건 이상/);
+});

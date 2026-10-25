@@ -417,3 +417,30 @@ class TeamDashboardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PersonalAccuracyBoundaryTests(unittest.TestCase):
+    def build(self, issues):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {'WORKSPACE_DB_PATH': str(Path(directory) / 'workspace.sqlite3')}
+        ), patch.object(workspace, '_my_mantis_issues', return_value=(
+            '석지원', issues, {'status': 'live', 'search_complete': True}
+        )):
+            return workspace.build_my_workspace({'uid': 'boundary-user'})
+
+    def test_all_open_issues_are_available_beyond_thirty(self):
+        issues = [{'id': i, 'summary': f'업무 {i}', 'status': 'assigned', 'handler': '석지원',
+                   'created_at': '2026-01-01'} for i in range(1, 36)]
+        result = self.build(issues)
+        self.assertEqual(result['summary']['open'], 35)
+        self.assertEqual({item['id'] for item in result['mantis']['issues']}, set(range(1, 36)))
+
+    def test_weekly_dates_exclude_future_and_include_both_boundaries(self):
+        today = workspace.date.today()
+        issues = [{'id': i, 'status': 'closed', 'handler': '석지원',
+                   'created_at': (today + workspace.timedelta(days=days)).isoformat(),
+                   'updated_at': (today + workspace.timedelta(days=days)).isoformat()}
+                  for i, days in enumerate((-7, -6, 0, 1))]
+        result = self.build(issues)
+        self.assertEqual(result['weeklyBrief']['newIssues'], 2)
+        self.assertEqual(result['weeklyBrief']['updatedIssues'], 2)

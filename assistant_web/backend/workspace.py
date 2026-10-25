@@ -198,6 +198,7 @@ def _issue_summary(issue: Dict[str, Any]) -> Dict[str, Any]:
         "project": issue.get("project", "미상"),
         "customer_name": customer_name(issue.get("project")),
         "status": issue.get("status", "상태 미상"),
+        "isOpen": _is_open(issue.get("status", "")),
         "priority": issue.get("priority", ""),
         "handler": issue.get("handler", "담당자 미지정"),
         "createdAt": issue.get("created_at", ""),
@@ -434,8 +435,8 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
     open_issues = [item for item in issues if _is_open(item["status"])]
     today = date.today()
     week_start = today - timedelta(days=6)
-    new_this_week = [item for item in issues if (_parse_date(item["createdAt"]) or date.min) >= week_start]
-    updated_this_week = [item for item in issues if (_parse_date(item["updatedAt"]) or date.min) >= week_start]
+    new_this_week = [item for item in issues if week_start <= (_parse_date(item["createdAt"]) or date.min) <= today]
+    updated_this_week = [item for item in issues if week_start <= (_parse_date(item["updatedAt"]) or date.min) <= today]
     overdue = [item for item in open_issues if item["overdue"]]
     aging = [item for item in open_issues if (item["ageDays"] or 0) >= 30]
     from backend.workspace_notifications import collect_workspace_events
@@ -463,7 +464,7 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             # 개인 워크스페이스의 기본 목록은 현재 할 일이다. 담당 이력 전체를
             # 내려보내면 상단의 '미종료' 수와 목록 건수가 어긋나고 종료된 이슈가
             # 할 일처럼 보이므로 미종료 이슈만 표시한다.
-            "issues": open_issues[:30],
+            "issues": open_issues,
         },
         "notion": {
             "status": "hidden",

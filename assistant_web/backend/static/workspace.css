@@ -685,6 +685,9 @@
 
 .workspace-decision.is-high > header span,
 .workspace-decision.is-high > header em { color: var(--danger); }
+.workspace-decision.is-unknown { border-color: var(--line); background: var(--surface-alt); }
+.workspace-decision.is-unknown > header span,
+.workspace-decision.is-unknown > header em { color: var(--muted); }
 .workspace-decision h3 { margin: 8px 0 0; color: var(--text); font-size: var(--font-headline); line-height: 1.45; word-break: keep-all; }
 /* 근거는 목록 대신 칩으로 한 줄에 놓는다. */
 .workspace-decision ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }

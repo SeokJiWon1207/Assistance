@@ -8,6 +8,30 @@ from backend.reports import dashboard
 
 
 class OperationsDashboardTests(unittest.TestCase):
+    def test_partial_source_withholds_comparisons_and_stability(self):
+        for issues in ([], self.issues, [self.issues[-1]]):
+            with self.subTest(ids=[row['id'] for row in issues]), patch.object(
+                dashboard, '_load_issues', return_value=(issues, {'status': 'snapshot', 'search_complete': False})
+            ):
+                result = dashboard.build_operations_dashboard({'role': 'member'}, today=date(2026, 8, 27))
+            self.assertIsNone(result['summary']['changeRate'])
+            self.assertEqual(result['customerSpikes'], [])
+            self.assertEqual(result['screenSpikes'], [])
+            self.assertNotEqual(result['decisionSummary']['riskLevel'], 'stable')
+            self.assertNotIn('%', result['decisionSummary']['headline'])
+            self.assertIn('확인', result['decisionSummary']['headline'])
+            for health in result['customerHealth']:
+                self.assertEqual(health['trend'], 'unknown')
+                self.assertEqual(health['level'], 'unknown')
+
+    def test_unknown_status_is_neither_closed_nor_open_in_new_cohort(self):
+        self.issues += [{**self.issues[2], 'id': 104, 'status': 'unrecognized'}]
+        result = self._build({'role': 'member'})
+        self.assertEqual(result['summary']['newIssues'], 2)
+        self.assertEqual(result['summary']['closedNow'], 1)
+        self.assertEqual(result['summary']['newOpen'], 0)
+        self.assertEqual(result['summary']['unknownStatus'], 1)
+
     def setUp(self):
         self.issues = [
             {
@@ -64,7 +88,7 @@ class OperationsDashboardTests(unittest.TestCase):
         with patch.object(
             dashboard,
             "_load_issues",
-            return_value=(self.issues, {"status": "live", "reason": ""}),
+            return_value=(self.issues, {"status": "live", "reason": "", "search_complete": True}),
         ):
             return dashboard.build_operations_dashboard(
                 user,

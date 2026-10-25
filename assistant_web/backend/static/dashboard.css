@@ -143,6 +143,7 @@
 .dashboard-intake .is-open { color: var(--blue); }
 .dashboard-intake-bar i.is-closed { background: var(--success); }
 .dashboard-intake-bar i.is-open { background: color-mix(in srgb, var(--blue) 30%, var(--surface)); }
+.dashboard-intake-bar i.is-unknown { background: var(--muted); }
 .dashboard-intake small b { font-weight: 700; }
 button.workspace-metric {
   width: 100%;
@@ -245,6 +246,8 @@ button.workspace-metric.is-active { background: color-mix(in srgb, var(--blue-so
 .dashboard-decision.is-high .dashboard-decision-badge { color: var(--danger); }
 .dashboard-decision.is-attention .dashboard-decision-badge { color: var(--warning-strong); }
 .dashboard-decision.is-attention .dashboard-decision-badge::before { background: var(--warning); }
+.dashboard-decision.is-unknown { border-color: var(--line); background: var(--surface-alt); }
+.dashboard-decision.is-unknown .dashboard-decision-badge { color: var(--muted); }
 .dashboard-decision-main { grid-area: main; display: grid; min-width: 0; gap: 4px; }
 .dashboard-decision-period { color: var(--muted); font-size: 12px; font-weight: 600; }
 .dashboard-decision h3 { margin: 0; color: var(--text); font-size: var(--font-headline); line-height: 1.45; word-break: keep-all; }
@@ -408,6 +411,7 @@ button.dashboard-column,
 .health-status { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--success); }
 .health-status.is-attention { background: var(--warning); }
 .health-status.is-high { background: var(--danger); }
+.health-status.is-unknown { background: var(--muted); }
 
 .dashboard-priority-section > header { align-items: flex-end; }
 .dashboard-priority-table { min-width: 820px; color: var(--text); font-size: 13px; }

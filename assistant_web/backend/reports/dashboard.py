@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 
 from backend.common import normalize_for_match
+from backend.mantis_status import mantis_status_bucket
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
 from backend.reports.customer import _health_content, _is_closed
 from backend.reports.team_brief import (
@@ -237,9 +238,10 @@ def _period_decision_summary(
     screen_spikes: List[Dict[str, Any]],
     priorities: List[Dict[str, Any]],
     days: int,
+    *, complete: bool = True,
 ) -> Dict[str, Any]:
     """주간 브리핑 문구를 선택한 비교 기간에 맞게 조정한다."""
-    decision = _decision_summary(summary, customer_spikes, screen_spikes, priorities)
+    decision = _decision_summary(summary, customer_spikes, screen_spikes, priorities, complete=complete)
 
     def period_copy(value: Any) -> str:
         return str(value or "").replace("지난주", f"최근 {days}일").replace("직전 주", "직전 동일 기간")
@@ -267,6 +269,7 @@ def build_operations_dashboard(
     base = today or date.today()
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
     issues, source = _load_issues(prefer_snapshot=not (refresh or live), force_refresh=refresh)
+    complete = source.get("search_complete") is True
     issues = filter_team_issues(issues)
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
@@ -274,13 +277,13 @@ def build_operations_dashboard(
     priority_ids = {str(item["id"]) for item in priorities}
     recent = [issue for issue in issues if _inside(issue, current_start, current_end)]
     previous = [issue for issue in issues if _inside(issue, previous_start, previous_end)]
-    customer_spikes = _spikes(recent, previous, "project")
-    screen_spikes = _spikes(recent, previous, "screen_number")
+    customer_spikes = _spikes(recent, previous, "project") if complete else []
+    screen_spikes = _spikes(recent, previous, "screen_number") if complete else []
     scoped_recent = [issue for issue in scoped_issues if _inside(issue, current_start, current_end)]
     scoped_previous = [issue for issue in scoped_issues if _inside(issue, previous_start, previous_end)]
     change_rate = (
         None
-        if not scoped_previous
+        if not complete or not scoped_previous
         else round((len(scoped_recent) - len(scoped_previous)) / len(scoped_previous) * 100, 1)
     )
     summary = {
@@ -294,12 +297,19 @@ def build_operations_dashboard(
         "previousNewIssues": len(scoped_previous),
         "changeRate": change_rate,
         "carriedOpen": sum((_parse_issue_date(row.get("createdAt")) or base) < current_start for row in scoped_open),
-        "closedNow": sum(not _is_open(str(issue.get("status") or "")) for issue in scoped_recent),
+        "closedNow": sum(_is_closed(issue.get("status")) for issue in scoped_recent),
+        "newOpen": sum(_is_open(str(issue.get("status") or "")) for issue in scoped_recent),
+        "unknownStatus": sum(mantis_status_bucket(str(issue.get("status") or "")) == "unknown" for issue in scoped_recent),
     }
-    decision = _period_decision_summary(summary, customer_spikes, screen_spikes, priorities, days)
+    decision = _period_decision_summary(summary, customer_spikes, screen_spikes, priorities, days, complete=complete)
     role = str(user.get("role") or "member")
     member_rows = _member_rows(users or [], issues, base)
     health = _customer_health(issues, base, current_start, previous_start, previous_end)
+    if not complete:
+        # 고객사 건강도도 전체 추세/비율을 전제로 하므로 일부 표본으로 확정하지 않는다.
+        health = [{**row, "level": "unknown", "label": "판단 보류", "trend": "unknown",
+                   "reasons": ["일부 데이터만 확인해 고객사 전체 추세와 건강도는 미확정입니다."]}
+                  for row in health]
     health_counts = Counter(str(row.get("level") or "stable") for row in health)
     return {
         "meta": {
@@ -342,6 +352,7 @@ def build_operations_dashboard(
             "high": health_counts.get("high", 0),
             "attention": health_counts.get("attention", 0),
             "stable": health_counts.get("stable", 0),
+            "unknown": health_counts.get("unknown", 0),
         },
         "members": member_rows,
     }

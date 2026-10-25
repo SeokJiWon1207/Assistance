@@ -525,7 +525,17 @@ function formatWorkspaceDate(value) {
 }
 
 // 완료 예정일까지 남은(지난) 날을 오른쪽 칸 한 줄로 보여 준다. 예정일이 없으면 등록 경과일을 쓴다.
+function workspaceIssueIsOpen(issue) {
+  if (typeof issue.isOpen === "boolean") return issue.isOpen;
+  // 이전 저장본도 서버에서 쓰는 상태 표시명으로 판별한다. 미상은 진행 중으로 추정하지 않는다.
+  return ["신규 이슈", "정보 부족", "이슈 검토", "확인된 이슈", "할당된 이슈", "개발완료"].includes(workspaceStatusLabel(issue.status));
+}
+
 function issueDueLabel(issue, ageDays) {
+  if (!workspaceIssueIsOpen(issue)) {
+    return issue.dueDate ? { main: formatWorkspaceDate(issue.dueDate), sub: "기록된 예정일", tone: "" }
+      : ageDays ? { main: `등록 ${ageDays}일`, sub: "예정일 없음", tone: "" } : null;
+  }
   const match = String(issue.dueDate || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     const due = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
@@ -533,16 +543,16 @@ function issueDueLabel(issue, ageDays) {
     today.setHours(0, 0, 0, 0);
     const days = Math.round((today - due) / 86400000);
     const main = days > 0 ? `${days}일 지남` : days === 0 ? "오늘까지" : `${-days}일 남음`;
-    return { main, sub: `${formatWorkspaceDate(issue.dueDate)} 예정`, tone: issue.overdue || days > 0 ? "is-overdue" : "" };
+    return { main, sub: `${formatWorkspaceDate(issue.dueDate)} 예정`, tone: issue.overdue ? "is-overdue" : "" };
   }
   return ageDays ? { main: `${ageDays}일째`, sub: "예정일 없음", tone: ageDays >= 30 ? "is-aging" : "" } : null;
 }
 
 function issueWorkspaceRow(issue) {
   const ageDays = Number(issue.ageDays || 0);
-  const aging = ageDays >= 30;
+  const aging = workspaceIssueIsOpen(issue) && ageDays >= 30;
   const status = workspaceStatusLabel(issue.status);
-  const rowTone = issue.overdue ? "is-overdue" : aging ? "is-aging" : "";
+  const rowTone = workspaceIssueIsOpen(issue) && issue.overdue ? "is-overdue" : aging ? "is-aging" : "";
   const riskLabel = { high: "높은 위험", attention: "주의", watch: "관찰" }[issue.riskLevel] || "";
   const due = issueDueLabel(issue, ageDays);
   const meta = [customerName(issue), status, issue.dueDate && ageDays ? `등록 ${ageDays}일` : ""].filter(Boolean)
@@ -681,7 +691,7 @@ function renderTeamWeeklyBrief() {
     : `${summary.changeRate > 0 ? "+" : ""}${summary.changeRate}%`;
   const canRefresh = ["manager", "admin"].includes(state.currentUser?.role);
   const decision = brief.decisionSummary || {};
-  const riskLabel = { high: "높은 위험", attention: "주의 필요", stable: "안정" }[decision.riskLevel] || "판단 대기";
+  const riskLabel = { high: "높은 위험", attention: "주의 필요", stable: "안정", unknown: "판단 보류" }[decision.riskLevel] || "판단 대기";
   const decisionSignals = (decision.signals || []).map((signal) => `<li>${escapeHtml(customerLabelText(signal))}</li>`).join("");
   const decisionActions = (decision.recommendedActions || []).map((action) => `
     <button type="button" data-workspace-question="${encodeURIComponent(action.question || action.title || "")}">
@@ -711,16 +721,16 @@ function renderTeamWeeklyBrief() {
     <div class="workspace-columns">
       <section class="workspace-section">
         <header><div><h3>급증 고객사</h3></div></header>
-        <div class="workspace-insight-list">${briefSpikeRows(brief.customerSpikes || [], "급증한 고객사가 없습니다.", true)}</div>
+        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.customerSpikes || [], "급증한 고객사가 없습니다.", true) : workspaceEmpty("일부 조회 · 고객사 급증 여부는 비교 미확정입니다.", false)}</div>
       </section>
       <section class="workspace-section">
         <header><div><h3>급증 화면번호</h3></div></header>
-        <div class="workspace-insight-list">${briefSpikeRows(brief.screenSpikes || [], "급증한 화면번호가 없습니다.")}</div>
+        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.screenSpikes || [], "급증한 화면번호가 없습니다.") : workspaceEmpty("일부 조회 · 화면번호 급증 여부는 비교 미확정입니다.", false)}</div>
       </section>
     </div>
     <section class="workspace-section workspace-section-single">
       <header><div><h3>이번 주 우선 확인</h3></div><em>${priorities.length}건 표시</em></header>
-      <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty("우선 확인할 이슈가 없습니다.")}</div>
+      <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "우선 확인할 이슈가 없습니다." : "일부만 확인했습니다. 우선 확인할 이슈의 유무는 미확정입니다.", complete)}</div>
     </section>
     ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 데이터로 다시 만들기</button>' : ""}`;
 }

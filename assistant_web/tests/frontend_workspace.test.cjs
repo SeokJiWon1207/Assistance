@@ -406,3 +406,35 @@ test('loading an earlier page prepends text without dropping recent local messag
   assert.equal(h.state.messages[0].content,'원문 0');
   assert.equal(h.state.messages.at(-1).content,'원문 121');
 });
+
+test('closed and unknown highlights never receive active overdue or aging styling', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  for (const status of ['closed', 'resolved', '종료된 이슈', '해결된 이슈', 'unrecognized']) {
+    for (const dueDate of ['2020-01-01', '']) {
+      const html = h.api.issueWorkspaceRow({ id: 1, status, ageDays: 90, dueDate, overdue: false });
+      assert.doesNotMatch(html, /is-overdue|is-aging|일 지남|일 남음|오늘까지/);
+    }
+  }
+  assert.match(h.api.issueWorkspaceRow({id: 2, status: 'assigned', ageDays: 90, dueDate: '2020-01-01', overdue: true}), /is-overdue/);
+  assert.match(h.api.issueWorkspaceRow({id: 3, status: 'developed', ageDays: 90, overdue: false}), /is-aging/);
+});
+
+test('partial team brief does not assert no spikes or no priority issues', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.state.teamWeeklyBrief = {source: {search_complete: false}, summary: {}, priorities: [], customerSpikes: [], screenSpikes: []};
+  const html = h.api.renderTeamWeeklyBrief();
+  assert.doesNotMatch(html, /급증한 고객사가 없습니다|급증한 화면번호가 없습니다|우선 확인할 이슈가 없습니다/);
+  assert.match(html, /비교 미확정/);
+});
+
+test('expanded personal list and sorting cover more than thirty issues', async () => {
+  const h = await harness(async () => ({ok: true}));
+  const data = {user: {mantisUsername:'석지원'}, summary: {open:35}, mantis: {search_complete:true,
+    issues:Array.from({length:35}, (_, i) => ({id:i+1, title:`업무 ${i+1}`, status:'assigned', ageDays:i+1}))}};
+  assert.equal((h.api.renderPersonalOverview(data).match(/class="workspace-item-id"/g) || []).length, 8);
+  h.state.workspaceIssuesExpanded = true;
+  h.state.workspaceSort = 'oldest';
+  const html = h.api.renderPersonalOverview(data);
+  assert.equal((html.match(/class="workspace-item-id"/g) || []).length, 35);
+  assert.ok(html.indexOf('>#35<') < html.indexOf('>#1<'));
+});

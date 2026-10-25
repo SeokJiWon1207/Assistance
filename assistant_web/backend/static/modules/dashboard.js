@@ -10,7 +10,7 @@ import { revealOnScroll } from "./motion.js?v=20260911-6";
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
 const metricFilterLabels = { overdue: "일정 지연", aging: "장기 미종료", highRisk: "고위험" };
-const decisionLabels = { high: "위험", attention: "주의", stable: "안정" };
+const decisionLabels = { high: "위험", attention: "주의", stable: "안정", unknown: "판단 보류" };
 // 장기 미종료 지표(30일 이상)와 같은 경계로 나눠 차트와 지표 카드의 숫자가 맞게 한다.
 const AGING_DAYS = 30;
 const AGE_BUCKETS = [
@@ -82,9 +82,9 @@ function priorityLabel(value) {
   return { none: "없음", low: "낮음", normal: "보통", high: "높음", urgent: "긴급", immediate: "즉시" }[raw.toLowerCase()] || raw || "미상";
 }
 
-function emptyBlock(message) {
+function emptyBlock(message, partialMessage = "표시할 항목을 찾지 못했습니다. 전체 결과는 미확정입니다.") {
   const complete = dashboardState.data?.meta?.search_complete === true;
-  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(complete ? message : `확인한 범위 기준 · ${message}`)}</p></div>`;
+  return `<div class="workspace-empty${complete ? "" : " is-warning"}"><span aria-hidden="true">${icon(complete ? "check" : "warning", 20)}</span><p>${escapeHtml(complete ? message : `확인한 범위 기준 · ${partialMessage}`)}</p></div>`;
 }
 
 function sectionHeader(title, meta = "") {
@@ -108,18 +108,21 @@ function metricCard(key, label, value, helper, tone = "", delta = "", lowerBound
 function renderIntakeCard(summary, complete = true) {
   const total = Number(summary.newIssues || 0);
   const closed = Math.min(Number(summary.closedNow || 0), total);
-  const open = total - closed;
+  const unknown = Number(summary.unknownStatus || 0);
+  const open = Number(summary.newOpen ?? Math.max(0, total - closed - unknown));
   const closedShare = total ? Math.round((closed / total) * 1000) / 10 : 0;
+  const openShare = total ? Math.round((open / total) * 1000) / 10 : 0;
+  const unknownShare = total ? Math.round((unknown / total) * 1000) / 10 : 0;
   const rate = summary.changeRate;
   const delta = !complete ? '<em class="dashboard-delta">확인 범위 · 비교 미확정</em>' : rate == null
     ? '<em class="dashboard-delta">직전 기간 비교 없음</em>'
     : `<em class="dashboard-delta ${rate > 0 ? "is-up" : rate < 0 ? "is-down" : ""}">신규 ${rate > 0 ? "증가" : rate < 0 ? "감소" : "변동"} ${Math.abs(rate)}%</em>`;
   return `
-    <div class="workspace-metric dashboard-intake" role="group" aria-label="이번 기간 신규 이슈 ${total}건${complete ? "" : " 이상 · 확인 범위"} 중 종료 ${closed}건, 미종료 ${open}건">
+    <div class="workspace-metric dashboard-intake" role="group" aria-label="이번 기간 신규 이슈 ${total}건${complete ? "" : " 이상 · 확인 범위"} 중 종료 ${closed}건, 미종료 ${open}건${unknown ? `, 상태 미상 ${unknown}건` : ""}">
       <span class="dashboard-metric-top"><span>이번 기간 신규 이슈</span>${delta}</span>
       <strong>${formatNumber(total)}${complete ? "" : '<span class="dashboard-lower-bound">건 이상</span>'}</strong>
-      <span class="dashboard-intake-bar" aria-hidden="true"><i class="is-closed" style="width:${closedShare}%"></i><i class="is-open" style="width:${100 - closedShare}%"></i></span>
-      <small class="dashboard-new-change"><b class="is-closed">종료 ${formatNumber(closed)}</b> · <b class="is-open">미종료 ${formatNumber(open)}</b> · ${complete ? `직전 기간 ${formatNumber(summary.previousNewIssues)}건` : "확인된 이슈만 집계"}</small>
+      <span class="dashboard-intake-bar" aria-hidden="true"><i class="is-closed" style="width:${closedShare}%"></i><i class="is-open" style="width:${openShare}%"></i>${unknown ? `<i class="is-unknown" style="width:${unknownShare}%"></i>` : ""}</span>
+      <small class="dashboard-new-change"><b class="is-closed">종료 ${formatNumber(closed)}</b> · <b class="is-open">미종료 ${formatNumber(open)}</b>${unknown ? ` · <b>상태 미상 ${formatNumber(unknown)}</b>` : ""} · ${complete ? `직전 기간 ${formatNumber(summary.previousNewIssues)}건` : "확인된 이슈만 집계"}</small>
     </div>`;
 }
 
@@ -136,7 +139,7 @@ function renderMetrics(summary, complete = true) {
 
 // 결론을 지표 바로 아래 한 줄로 둔다. 근거는 칩, 다음 행동은 AI 분석 버튼으로 줄인다.
 function renderDecision(decision, periodDays) {
-  const level = decisionLabels[decision.riskLevel] ? decision.riskLevel : "stable";
+  const level = decisionLabels[decision.riskLevel] ? decision.riskLevel : "unknown";
   const signals = (decision.signals || []).map((item) => `<li>${escapeHtml(customerLabelText(item))}</li>`).join("");
   const actions = (decision.recommendedActions || []).map((item) => `
     <button type="button" class="dashboard-decision-action" data-dashboard-question="${escapeHtml(item.question)}" title="${escapeHtml(customerLabelText(item.reason))}">${escapeHtml(customerLabelText(item.title))} →<span class="sr-only"> AI에게 분석 요청 · ${escapeHtml(customerLabelText(item.reason))}</span></button>`).join("");
@@ -168,8 +171,12 @@ function segmentTotal(counts) {
   return counts.overdue + counts.aging + counts.rest;
 }
 
+function observedCount(value) {
+  return `${formatNumber(value)}건${dashboardState.data?.meta?.search_complete === true ? "" : " 이상"}`;
+}
+
 function segmentText(counts) {
-  return Object.entries(SEGMENT_LABELS).map(([key, label]) => `${label} ${counts[key]}건`).join(", ");
+  return Object.entries(SEGMENT_LABELS).map(([key, label]) => `${label} ${observedCount(counts[key])}`).join(", ");
 }
 
 function stackedTrack(counts, max) {
@@ -208,13 +215,13 @@ function renderCustomerChart(openIssues, health, customerSpikes, screenSpikes) {
     const spike = spikes.get(name);
     const spikeText = spike ? (spike.ratio == null ? "신규 급증" : `급증 ×${spike.ratio}`) : "";
     const selected = dashboardState.customer === name;
-    const label = [`${customerName(name)} 미종료 ${segmentTotal(counts)}건`, segmentText(counts), customerHealth?.label,
+    const label = [`${customerName(name)} 미종료 ${observedCount(segmentTotal(counts))}`, segmentText(counts), customerHealth?.label,
       spike ? `급증 직전 ${spike.previousCount}건에서 ${spike.count}건` : ""].filter(Boolean).join(", ");
     return `
       <button type="button" class="dashboard-bar dashboard-clickable${selected ? " is-selected" : ""}" data-dashboard-customer="${escapeHtml(name)}" aria-pressed="${selected}" aria-label="${escapeHtml(label)}">
-        <span class="dashboard-bar-name"><i class="health-status is-${escapeHtml(customerHealth?.level || "stable")}" aria-hidden="true"></i><span>${escapeHtml(customerName(name))}</span></span>
+        <span class="dashboard-bar-name"><i class="health-status is-${escapeHtml(customerHealth?.level || "unknown")}" aria-hidden="true"></i><span>${escapeHtml(customerName(name))}</span></span>
         ${stackedTrack(counts, max)}
-        <span class="dashboard-bar-value">${formatNumber(segmentTotal(counts))}건${spikeText ? `<b class="dashboard-spike-badge" title="${escapeHtml(spikeSummary(spike, true))}">${escapeHtml(spikeText)}</b>` : ""}</span>
+        <span class="dashboard-bar-value">${observedCount(segmentTotal(counts))}${spikeText ? `<b class="dashboard-spike-badge" title="${escapeHtml(spikeSummary(spike, true))}">${escapeHtml(spikeText)}</b>` : ""}</span>
       </button>`;
   }).join("");
   // 막대에 배지로 붙지 못한 급증 신호도 사라지지 않게 한 줄로 남긴다.
@@ -250,8 +257,8 @@ function renderAgeChart(openIssues) {
     const selected = dashboardState.age === bucket.key;
     const height = max && count ? Math.max(4, Math.round((count / max) * 100)) : 0;
     return `
-      <button type="button" class="dashboard-column dashboard-clickable is-${bucket.tone}${selected ? " is-selected" : ""}" data-dashboard-age="${bucket.key}" aria-pressed="${selected}" aria-label="경과 ${bucket.label} 미종료 ${count}건">
-        <b>${formatNumber(count)}</b>
+      <button type="button" class="dashboard-column dashboard-clickable is-${bucket.tone}${selected ? " is-selected" : ""}" data-dashboard-age="${bucket.key}" aria-pressed="${selected}" aria-label="경과 ${bucket.label} 미종료 ${observedCount(count)}">
+        <b>${dashboardState.data?.meta?.search_complete === true ? formatNumber(count) : observedCount(count)}</b>
         <span class="dashboard-column-bar" aria-hidden="true"><i style="height:${height}%"></i></span>
         <small>${bucket.label}</small>
       </button>`;
@@ -261,7 +268,7 @@ function renderAgeChart(openIssues) {
       ${sectionHeader("미종료 경과일", "등록 후 지난 일수")}
       <div class="dashboard-chart-body">
         ${openIssues.length ? `<div class="dashboard-columns">${columns}</div>
-        <p class="dashboard-chart-note">30일 이상 ${formatNumber(aging)}건이 장기 미종료입니다.${unknown ? ` 등록일을 확인하지 못한 ${formatNumber(unknown)}건은 제외했습니다.` : ""}</p>` : emptyBlock("미종료 이슈가 없습니다.")}
+        <p class="dashboard-chart-note">30일 이상 ${observedCount(aging)}이 장기 미종료입니다.${unknown ? ` 등록일을 확인하지 못한 ${formatNumber(unknown)}건은 제외했습니다.` : ""}</p>` : emptyBlock("미종료 이슈가 없습니다.")}
       </div>
     </section>`;
 }
@@ -276,12 +283,12 @@ function renderMemberChart(members) {
   const max = Math.max(0, ...rows.map((row) => segmentTotal(row.counts)));
   const bars = rows.map((row) => {
     const role = roleLabels[row.role] || row.role;
-    const label = `${row.displayName} ${role} 미종료 ${segmentTotal(row.counts)}건, ${segmentText(row.counts)}, 고위험 ${row.highRisk || 0}건`;
+    const label = `${row.displayName} ${role} 미종료 ${observedCount(segmentTotal(row.counts))}, ${segmentText(row.counts)}, 고위험 ${observedCount(row.highRisk || 0)}`;
     return `
       <div class="dashboard-bar" role="img" aria-label="${escapeHtml(label)}">
         <span class="dashboard-bar-name"><span>${escapeHtml(row.displayName)}</span></span>
         ${stackedTrack(row.counts, max)}
-        <span class="dashboard-bar-value">${formatNumber(segmentTotal(row.counts))}건${row.highRisk ? `<b class="dashboard-spike-badge">고위험 ${formatNumber(row.highRisk)}</b>` : ""}</span>
+        <span class="dashboard-bar-value">${observedCount(segmentTotal(row.counts))}${row.highRisk ? `<b class="dashboard-spike-badge">고위험 ${observedCount(row.highRisk)}</b>` : ""}</span>
       </div>`;
   }).join("");
   return `
