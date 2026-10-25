@@ -224,7 +224,7 @@ body.theme-dark .template-picker {
   display: none;
   padding: 1px 6px;
   border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
-  border-radius: 5px;
+  border-radius: var(--radius-badge);
   color: var(--blue);
   font: inherit;
   font-size: 12px;

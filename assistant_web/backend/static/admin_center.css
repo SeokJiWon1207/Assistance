@@ -608,9 +608,9 @@ button.admin-metric:hover { background: var(--surface-alt); }
 }
 
 .admin-chip[aria-pressed="true"] {
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--surface);
+  border-color: transparent;
+  background: var(--blue-soft);
+  color: var(--blue);
   font-weight: 600;
 }
 

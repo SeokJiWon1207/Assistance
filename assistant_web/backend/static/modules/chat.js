@@ -632,11 +632,17 @@ function renderAbComparison(message, aBubble, messageIndex) {
     bPanel.appendChild(renderSourceList(baselineSources, messageIndex, "baseline"));
   }
   if (variantB.status === "ok") {
+    const bActions = document.createElement("div");
+    bActions.className = "message-actions";
     const copyB = document.createElement("button");
-    copyB.type = "button"; copyB.className = "secondary-button"; copyB.textContent = "B 답변 복사";
+    copyB.type = "button";
+    copyB.className = "message-action-btn";
+    copyB.innerHTML = `${MESSAGE_ACTION_ICONS.copy}<span>복사</span>`;
     copyB.setAttribute("aria-label", "B 답변 복사");
+    copyB.title = "B 답변 복사";
     Object.assign(copyB.dataset, { messageAction: "copy", messageIndex: String(messageIndex), answerVariant: "B" });
-    bPanel.appendChild(copyB);
+    bActions.appendChild(copyB);
+    bPanel.appendChild(bActions);
   }
 
   const select = (selected) => {

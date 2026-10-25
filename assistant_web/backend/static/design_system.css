@@ -95,6 +95,7 @@ body.theme-dark .app-shell { background: var(--bg); }
 .search-condition-chip.is-readonly:has(strong) { max-width: 100%; }
 .message-feedback-label, .follow-up-panel > h3 { display: none; }
 .message-actions { margin-top: var(--space-4); }
+.message-action-btn { border-radius: var(--radius-button); }
 .message.assistant .message-action-btn { width: 32px; height: 32px; padding: var(--space-2); justify-content: center; }
 .message.assistant .message-action-btn > span { display: none; }
 .message-time { opacity: 1; }
@@ -188,7 +189,8 @@ button:disabled { cursor: not-allowed; }
 .workspace-metric strong { font-size: 30px; }
 .workspace-side-stats.is-partial strong { font-size: 16px; }
 .workspace-list-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
-.workspace-list-controls select { height: 34px; min-width: 100px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: var(--radius-button); font-size: 13px; }
+.workspace-list-controls select, .workspace-list-controls .custom-select-trigger { min-height: 36px; height: 36px; min-width: 100px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--radius-button); font-size: 13px; }
+.workspace-list-controls .custom-select-value { font-size: 13px; font-weight: 500; }
 .workspace-show-more { min-height: 42px; margin-top: -18px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--radius-card) var(--radius-card); background: var(--surface); color: var(--text-soft); font: inherit; font-size: 14px; cursor: pointer; }
 .workspace-item-main > .workspace-item-name { font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
 .workspace-issue-row { padding-top: 18px; padding-bottom: 18px; }
@@ -198,7 +200,7 @@ button:disabled { cursor: not-allowed; }
 .workspace-notification .notification-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .workspace-notification .notification-actions button { border: 0; background: var(--surface-alt); padding: 6px 10px; }
 .workspace-search { display: flex; gap: var(--space-2); padding: var(--space-4); }
-.workspace-search input { width: 100%; max-width: 440px; border-radius: var(--radius-button); }
+.workspace-search input { width: 100%; max-width: 440px; border-radius: var(--radius-input); }
 .workspace-favorite-grid { padding-top: var(--space-1); }
 .workspace-favorite-card > header { display: flex; align-items: flex-start; gap: var(--space-3); border: 0; padding: 0; }
 .workspace-favorite-card > header strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
@@ -237,7 +239,7 @@ button:disabled { cursor: not-allowed; }
 .auth-brand { flex-direction: column; text-align: center; margin-bottom: var(--space-5); gap: var(--space-4); }
 .auth-brand .brand-mark { width: 48px; height: 48px; font-size: 18px; border-radius: var(--radius-card); }
 .auth-brand strong { font-size: 20px; }
-.auth-card input { border-radius: var(--radius-button); }
+.auth-card input:not([type="checkbox"]) { border-radius: var(--radius-input); }
 .auth-primary-button { border-radius: var(--radius-button); }
 @media (min-width: 1400px) {
   .dashboard-panel.has-detail { padding-right: 400px; --dashboard-gutter: 24px; }
@@ -308,4 +310,100 @@ button:disabled { cursor: not-allowed; }
   .composer-hint { min-width: 0; }
   .follow-up-chip { white-space: normal; overflow-wrap: anywhere; }
   .source-list { min-width: 0; }
+}
+
+/* 같은 역할의 입력·배지·선택 컨트롤은 화면에 관계없이 같은 토큰을 사용한다. */
+.data-badge { border-radius: var(--radius-badge); }
+.admin-search input, .admin-field input, .playbook-editor input, .playbook-editor textarea,
+.workspace-search input, .conversation-search input,
+.template-field input:not([type="radio"]):not([type="checkbox"]),
+.template-field .custom-select-trigger, .feedback-comment-field textarea {
+  border-radius: var(--radius-input);
+}
+.custom-select-trigger { box-shadow: var(--shadow-sm); }
+.custom-select-trigger:focus-visible, .custom-select.is-open .custom-select-trigger { box-shadow: var(--focus-ring); }
+.dashboard-period button[aria-pressed="true"] { box-shadow: var(--shadow-sm); }
+.inline-code { border-radius: var(--radius-badge); }
+
+/* 본문·설명·제목의 위계. 업무 데이터의 행 구조는 유지하면서 읽는 간격을 넓힌다. */
+:root {
+  --font-body: 16px;
+  --font-caption: 13px;
+  --font-section: 16px;
+  --font-headline: 20px;
+  --content-padding: var(--space-5);
+}
+.workspace-modal-header h2, .dashboard-heading h2, .admin-section-header h2 { font-size: 26px; letter-spacing: -.5px; }
+.workspace-section > header { padding: 20px var(--content-padding); }
+.workspace-section > header div { gap: var(--space-2); }
+.workspace-section > header p, .workspace-section > header em,
+.workspace-item-meta, .workspace-item-main small, .workspace-item-recommendation,
+.workspace-metric small, .workspace-side-empty, .workspace-insight-row small,
+.dashboard-chart-note, .dashboard-chart-legend, .dashboard-decision-period,
+.dashboard-priority-table td small, .playbook-list-item small, .playbook-list-item time {
+  font-size: var(--font-caption);
+  line-height: 1.6;
+}
+.workspace-item-main { gap: var(--space-1); }
+.workspace-item-main > .workspace-item-name { font-size: var(--font-body); line-height: 1.6; }
+.workspace-item-meta { white-space: normal; overflow-wrap: anywhere; }
+.workspace-issue-row { padding: 20px var(--content-padding); }
+.workspace-side-card { padding: var(--content-padding); gap: var(--space-4); }
+.workspace-metric { gap: 6px; padding: var(--content-padding); }
+.dashboard-body { gap: var(--space-5); padding-top: var(--space-5); }
+.dashboard-chart-body { padding: 0 var(--content-padding) var(--content-padding); }
+.dashboard-bar { min-height: 36px; }
+.dashboard-decision { padding: var(--content-padding); gap: var(--space-2) var(--space-5); }
+.dashboard-decision-main { gap: var(--space-2); }
+.dashboard-decision h3, .workspace-decision h3 { font-size: var(--font-headline); line-height: 1.5; overflow-wrap: anywhere; }
+.dashboard-decision li, .workspace-decision li { font-size: var(--font-caption); line-height: 1.6; }
+.related-issue-main small { font-size: var(--font-caption); line-height: 1.5; }
+.related-issue-main h3 { font-size: 15px; }
+.admin-metric { padding: var(--content-padding); gap: var(--space-1); }
+@media (max-width: 860px) {
+  .workspace-modal-header h2, .dashboard-heading h2, .admin-section-header h2 { font-size: 24px; }
+}
+@media (max-width: 540px) {
+  :root { --content-padding: var(--space-4); --font-headline: 18px; }
+  .workspace-modal-header h2, .dashboard-heading h2, .admin-section-header h2 { font-size: 22px; }
+  .workspace-section > header, .workspace-issue-row { padding: var(--content-padding); }
+  .dashboard-body { gap: var(--space-4); padding-top: var(--space-4); }
+  .workspace-metric strong { font-size: 26px; }
+}
+
+/* 목록과 표의 경계는 남기고, 그 안의 헤더와 요약 카드에는 선을 겹치지 않는다. */
+.workspace-section > header { border-bottom: 0; }
+.dashboard-chart, .workspace-side-card, .workspace-summary-grid, .admin-metrics,
+.admin-card, .effort-chart, .effort-trend { border-color: transparent; }
+.dashboard-decision, .workspace-decision { border-color: transparent; }
+.dashboard-decision li, .workspace-decision li { border: 0; padding: 4px 10px; }
+.dashboard-chart .workspace-empty { min-height: 140px; }
+.workspace-filter-pills { border-bottom: 0; }
+
+/* 실제 다음 행동은 채운 파랑, 보조 행동은 회색 바탕으로 구분한다. */
+.dashboard-decision-action { border-color: transparent; background: var(--surface-alt); color: var(--text-soft); white-space: normal; line-height: 1.5; padding: 10px 16px; }
+.dashboard-decision-action:first-child { border-color: transparent; background: var(--blue); color: var(--on-accent); }
+.dashboard-decision-action:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--text) 9%, var(--surface)); }
+.dashboard-decision-action:first-child:hover:not(:disabled) { border-color: transparent; background: var(--blue-pressed); filter: none; }
+.workspace-decision-actions button { border-color: transparent; border-radius: var(--radius-button); background: var(--surface-alt); padding: var(--space-4); }
+.workspace-decision-actions button:first-child { background: var(--blue); color: var(--on-accent); }
+.workspace-decision-actions button:first-child :is(strong, span, em) { color: inherit; }
+.workspace-decision-actions button:hover { border-color: transparent; background: color-mix(in srgb, var(--text) 9%, var(--surface)); }
+.workspace-decision-actions button:first-child:hover { background: var(--blue-pressed); }
+.admin-secondary:not(.is-accent):not(.is-danger), .modal-form-actions .secondary-button,
+.template-picker-form-actions .secondary-button, .ab-panel > .secondary-button {
+  border-color: transparent;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+}
+.admin-secondary:not(.is-accent):not(.is-danger):hover:not(:disabled), .modal-form-actions .secondary-button:hover:not(:disabled),
+.template-picker-form-actions .secondary-button:hover:not(:disabled), .ab-panel > .secondary-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 9%, var(--surface));
+}
+.ab-panel > .secondary-button[aria-pressed="true"] { border-color: transparent; background: var(--blue-soft); color: var(--blue); }
+.workspace-primary-action, .auth-primary-button, .admin-primary { line-height: 1.5; }
+.workspace-primary-action:disabled { opacity: .5; }
+@media (max-width: 540px) {
+  .dashboard-decision-actions { width: 100%; }
+  .dashboard-decision-action { width: 100%; }
 }
