@@ -56,8 +56,10 @@ durationpy==0.10
     # via kubernetes
 fastapi==0.140.7
     # via -r assistant_web/requirements.txt
-filelock==3.32.2
-    # via huggingface-hub
+filelock==4.2.1
+    # via
+    #   -c assistant_web/constraints-security.txt
+    #   huggingface-hub
 firebase-admin==7.5.0
     # via -r assistant_web/requirements.txt
 flatbuffers==25.12.19
