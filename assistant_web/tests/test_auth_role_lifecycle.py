@@ -52,3 +52,15 @@ class AuthRoleLifecycleTests(TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertNotIn("__Host-ai_session", self.client.cookies)
         self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
+
+    def test_bulk_conversation_delete_requires_authenticated_csrf(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            "WORKSPACE_DB_PATH": str(Path(folder) / "workspace.sqlite3")
+        }):
+            self.login("member")
+            endpoint = "/api/workspace/conversations/bulk-delete"
+            self.assertEqual(self.client.post(endpoint, json={"all": True}).status_code, 403)
+            result = self.client.post(endpoint, json={"all": True},
+                                      headers={"X-CSRF-Token": self.client.cookies.get("ai_csrf")})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json()["deletedCount"], 0)

@@ -138,3 +138,21 @@ def delete_conversation(path: Path, user, conversation):
         if deleted:
             db.execute('DELETE FROM conversation_messages WHERE user_uid=? AND conversation_id=?',(user,conversation))
         return bool(deleted)
+
+
+def delete_conversations(path: Path, user: str, ids: list[str], *, all_conversations: bool = False) -> list[str]:
+    if not user or (all_conversations and ids) or (not all_conversations and not ids):
+        raise ValueError('삭제할 대화 범위가 올바르지 않습니다.')
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute('BEGIN IMMEDIATE')
+        parameters: list[str] = [user]
+        condition = 'user_uid=?'
+        if not all_conversations:
+            unique = list(dict.fromkeys(ids))
+            condition += ' AND conversation_id IN (' + ','.join('?' for _ in unique) + ')'
+            parameters.extend(unique)
+        deleted = [row[0] for row in db.execute('SELECT conversation_id FROM conversations WHERE ' + condition,
+                                               parameters)]
+        db.execute('DELETE FROM conversation_messages WHERE ' + condition, parameters)
+        db.execute('DELETE FROM conversations WHERE ' + condition, parameters)
+        return sorted(deleted)

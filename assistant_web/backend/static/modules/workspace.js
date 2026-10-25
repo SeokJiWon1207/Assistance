@@ -65,6 +65,7 @@ function showToast(message, tone = "default", action = null) {
 }
 
 function persistConversations() {
+  if (state.conversationDeleting) return;
   const active = state.conversations.find((item) => item.id === state.activeConversationId);
   // 대화를 열기만 해도 updatedAt 을 올리면 목록 순서가 바뀌므로 내용 변경 여부를 먼저 판단한다.
   const activeChanged = active ? conversationContentChanged(active.messages, state.messages) : false;
@@ -84,12 +85,15 @@ function persistConversations() {
 
 const syncQueues = new Map();
 const syncedMessageState = new Map();
+let conversationCacheWrite = Promise.resolve();
+let conversationMutation = 0;
 
 // 목록은 서버에서 받은 대화까지 모두 보여 주고, 기기에는 최근 대화와 동기화 대기 중인 대화만 보관한다.
 function saveLocalConversations() {
   const stored = state.conversations.filter((item, index) => item.syncPending || index < maxStoredConversations);
   const key = conversationsStorageKey();
-  const durable = globalThis.AssistantFrontendCore.conversationCache(key, stored).catch(() => false);
+  const durable = conversationCacheWrite = conversationCacheWrite.catch(() => {}).then(() =>
+    globalThis.AssistantFrontendCore.conversationCache(key, stored)).catch(() => false);
   try {
     localStorage.setItem(key, JSON.stringify(stored));
     localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
@@ -98,6 +102,7 @@ function saveLocalConversations() {
       if (!saved) showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했습니다. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
     });
   }
+  return durable;
 }
 
 function queueConversation(id, operation) {
@@ -188,6 +193,66 @@ function deleteConversationFromServer(conversation) {
   });
 }
 
+async function bulkDeleteConversations({ ids = [], all = false } = {}) {
+  if (state.busy || state.conversationDeleting) throw new Error("진행 중인 작업이 끝난 뒤 삭제해 주세요.");
+  const uid = state.currentUser?.uid;
+  if (!uid || (!all && !ids.length)) throw new Error("삭제할 대화를 선택해 주세요.");
+  const selected = new Set(ids);
+  const previous = state.conversations;
+  const previousActive = state.activeConversationId;
+  const previousMessages = state.messages;
+  const targets = previous.filter((item) => all || selected.has(item.id));
+  state.conversationDeleting = true;
+  conversationMutation += 1;
+  // 큐에 남은 저장은 목록에서 제외된 항목을 건너뛴다. 이미 시작한 저장은 삭제보다 먼저 끝낸다.
+  state.conversations = previous.filter((item) => !all && !selected.has(item.id));
+  for (const item of targets) {
+    clearTimeout(conversationSyncTimers.get(item.id));
+    conversationSyncTimers.delete(item.id);
+  }
+  try {
+    await Promise.allSettled(targets.map((item) => syncQueues.get(`${uid}:${item.id}`)).filter(Boolean));
+    if (state.currentUser?.uid !== uid) return null;
+    const response = await apiFetch("/api/workspace/conversations/bulk-delete", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: all ? [] : ids, all }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "대화를 삭제하지 못했습니다. 다시 시도해 주세요.");
+    if (state.currentUser?.uid !== uid) return null;
+    targets.forEach((item) => syncedMessageState.delete(item.id));
+    if (!state.conversations.length) state.conversations.push(createConversation());
+    if (!state.conversations.some((item) => item.id === previousActive)) {
+      state.activeConversationId = state.conversations[0].id;
+      state.messages = [...(state.conversations[0].messages || [])];
+      cancelMessageEdit();
+    }
+    state.selectedConversationIds?.clear();
+    state.conversationSelectionMode = false;
+    if (all) {
+      conversationListView.query = "";
+      conversationListView.serverHasMore = false;
+      conversationListView.expanded = false;
+      if (els.conversationSearch) els.conversationSearch.value = "";
+    }
+    await saveLocalConversations();
+    return { ...data, localDeletedCount: targets.length };
+  } catch (error) {
+    if (state.currentUser?.uid === uid) {
+      state.conversations = previous;
+      state.activeConversationId = previousActive;
+      state.messages = previousMessages;
+      await saveLocalConversations();
+    }
+    throw error;
+  } finally {
+    if (state.currentUser?.uid === uid) {
+      state.conversationDeleting = false;
+      renderConversationList();
+      renderMessages();
+    }
+  }
+}
+
 globalThis.addEventListener?.("online", () => {
   state.conversations.filter((item) => item.syncPending).forEach(scheduleConversationSync);
 });
@@ -199,13 +264,15 @@ const VISIBLE_RECENT_CONVERSATIONS = 8;
 const conversationListView = { query: "", expanded: false, serverHasMore: false, loadingMore: false };
 
 async function mergeServerConversations(limit, loadingUid) {
+  if (state.conversationDeleting) return false;
+  const generation = conversationMutation;
   const response = await apiFetch(`/api/workspace/conversations?limit=${limit}`);
   if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
   const serverItems = (await response.json()).conversations || [];
+  if (state.currentUser?.uid !== loadingUid || conversationMutation !== generation) return false;
   serverItems.forEach((item) => syncedMessageState.set(item.id, {
     offset: Number(item.messageOffset || 0), messages: storageSafeMessages(item.messages || []), version: item.updatedAt,
   }));
-  if (state.currentUser?.uid !== loadingUid) return false;
   state.conversations = globalThis.AssistantFrontendCore.mergeConversations(state.conversations, serverItems);
   conversationListView.serverHasMore = serverItems.length >= limit && limit < MAX_CONVERSATION_LIMIT;
   state.conversations.filter((item) => item.syncPending || (!item.serverUpdatedAt && item.messages?.length))
@@ -216,12 +283,16 @@ async function mergeServerConversations(limit, loadingUid) {
 
 async function loadConversations() {
   const loadingUid = state.currentUser?.uid;
+  state.conversationDeleting = false;
+  state.conversationSelectionMode = false;
+  state.selectedConversationIds?.clear();
   try {
     const parsed = JSON.parse(localStorage.getItem(conversationsStorageKey()) || "[]");
     state.conversations = Array.isArray(parsed) ? parsed : [];
   } catch {
     state.conversations = [];
   }
+  await conversationCacheWrite;
   const cached = await globalThis.AssistantFrontendCore.conversationCache(conversationsStorageKey()).catch(() => null);
   if (state.currentUser?.uid !== loadingUid) return;
   if (Array.isArray(cached)) {
@@ -276,11 +347,23 @@ function conversationRow(conversation, { titleRange = null, snippet = null } = {
   const row = document.createElement("div");
   row.className = `conversation-row${active ? " active" : ""}`;
   row.dataset.layoutKey = conversation.id;
+  if (state.conversationSelectionMode) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "conversation-selection";
+    checkbox.dataset.selectConversationId = conversation.id;
+    checkbox.checked = state.selectedConversationIds.has(conversation.id);
+    checkbox.disabled = state.conversationDeleting;
+    checkbox.setAttribute("aria-label", `${title} 선택`);
+    row.appendChild(checkbox);
+    row.classList.add("is-selecting");
+  }
   const openButton = document.createElement("button");
   openButton.type = "button";
   openButton.className = "conversation-open";
   openButton.dataset.conversationId = conversation.id;
   openButton.title = title;
+  openButton.disabled = state.conversationDeleting;
   if (active) openButton.setAttribute("aria-current", "true");
   const titleLine = document.createElement("span");
   titleLine.className = "conversation-title";
@@ -399,6 +482,7 @@ function renderConversationList() {
     }
   }
   animateLayoutChange(els.conversationList, CONVERSATION_LAYOUT_SELECTOR, previousLayout);
+  globalThis.dispatchEvent?.(new Event("conversations:rendered"));
 }
 
 function setConversationQuery(query) {
@@ -431,6 +515,7 @@ async function loadMoreConversations() {
 }
 
 function startNewConversation() {
+  if (state.conversationDeleting) return;
   persistConversations();
   const conversation = createConversation();
   state.conversations.unshift(conversation);
@@ -445,7 +530,7 @@ function startNewConversation() {
 }
 
 function openConversation(conversationId) {
-  if (state.busy || conversationId === state.activeConversationId) return;
+  if (state.busy || state.conversationDeleting || conversationId === state.activeConversationId) return;
   persistConversations();
   const conversation = state.conversations.find((item) => item.id === conversationId);
   if (!conversation) return;
@@ -1254,6 +1339,7 @@ export {
   persistConversations,
   syncConversation,
   deleteConversationFromServer,
+  bulkDeleteConversations,
   scheduleConversationSync,
   loadConversations,
   updateActiveConversationTitle,

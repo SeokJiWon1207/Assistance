@@ -36,7 +36,6 @@ body.theme-dark .app-shell { background: var(--bg); }
 .app-rail { gap: 18px; }
 .rail-items { gap: var(--space-2); }
 .conversation-section { border: 0; padding-top: 0; gap: 14px; }
-.conversation-heading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .conversation-search input { border-color: transparent; }
 .conversation-row { min-height: 40px; position: relative; }
 .conversation-row.active { box-shadow: var(--shadow-sm); border: 1px solid var(--line); }

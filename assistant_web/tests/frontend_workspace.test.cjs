@@ -5,14 +5,14 @@ const path = require('node:path');
 const vm = require('node:vm');
 const core = require('../backend/static/frontend_core.js');
 
-async function harness(apiFetch) {
+async function harness(apiFetch, cache = core.conversationCache) {
   const state = { currentUser: { uid: 'user-a' }, conversations: [], messages: [], activeConversationId: null, workspaceTab: 'overview' };
   const storage = new Map();
   const timers = new Map();
   let timerId = 0;
   const element = () => ({ appendChild() {}, setAttribute() {}, classList: { add() {}, remove() {} }, remove() {} });
   const context = vm.createContext({
-    AssistantFrontendCore: core, crypto: { randomUUID: () => 'recovered' }, URLSearchParams,
+    AssistantFrontendCore: { ...core, conversationCache: cache }, crypto: { randomUUID: () => 'recovered' }, URLSearchParams,
     document: { createElement: element, body: element() }, requestAnimationFrame: (fn) => fn(),
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     setTimeout: (fn, ms) => { timers.set(++timerId, { fn, ms }); return timerId; },
@@ -437,4 +437,104 @@ test('expanded personal list and sorting cover more than thirty issues', async (
   const html = h.api.renderPersonalOverview(data);
   assert.equal((html.match(/class="workspace-item-id"/g) || []).length, 35);
   assert.ok(html.indexOf('>#35<') < html.indexOf('>#1<'));
+});
+
+test('bulk selected deletion waits for pending PUT and removes only selected local history', async () => {
+  const calls = [];
+  let finish;
+  const h = await harness(async (url, options) => {
+    calls.push({ url, method: options.method, body: JSON.parse(options.body) });
+    if (options.method === 'PUT') {
+      await new Promise((resolve) => { finish = resolve; });
+      return { ok: true, json: async () => ({ conversation: { updatedAt: 'v2' } }) };
+    }
+    return { ok: true, json: async () => ({ deletedIds: ['delete'], deletedCount: 1 }) };
+  });
+  const removed = {id:'delete', messages:[message('원문')], syncPending:true};
+  const kept = {id:'keep', messages:[message('보존')], messageOffset:12};
+  h.state.conversations=[removed,kept]; h.state.activeConversationId='delete'; h.state.messages=removed.messages;
+  const saving=h.api.syncConversation(removed); await new Promise(setImmediate);
+  h.api.scheduleConversationSync(removed);
+  const deleting=h.api.bulkDeleteConversations({ids:['delete']});
+  await new Promise(setImmediate);
+  assert.equal(calls.length,1);
+  assert.equal([...h.timers.values()].filter(t=>t.ms===350).length,0);
+  finish();await saving;await deleting;
+  assert.deepEqual(calls.map(c=>c.method),['PUT','POST']);
+  assert.deepEqual(calls[1].body,{ids:['delete'],all:false});
+  assert.deepEqual(h.state.conversations.map(c=>c.id),['keep']);
+  assert.equal(h.state.activeConversationId,'keep');
+  assert.equal(h.state.messages[0].content,'보존');
+  assert.equal(JSON.parse(h.storage.get('chats:user-a'))[0].id,'keep');
+  assert.equal(h.state.conversationDeleting,false);
+});
+
+test('bulk all deletion covers unloaded server records and creates an unsaved empty conversation',async()=>{
+  let body;
+  const h=await harness(async(_url,options)=>{
+    body=JSON.parse(options.body);
+    return {ok:true,json:async()=>({deletedIds:['local','unloaded'],deletedCount:2})};
+  });
+  h.state.conversations=[{id:'local',messages:[message('원문')]}];
+  h.state.activeConversationId='local';h.state.messages=[message('원문')];
+  const result=await h.api.bulkDeleteConversations({all:true});
+  assert.deepEqual(body,{ids:[],all:true});
+  assert.equal(result.deletedCount,2);
+  assert.equal(h.state.conversations.length,1);
+  assert.equal(h.state.conversations[0].id,'new');
+  assert.equal(h.state.conversations[0].syncPending,undefined);
+  assert.deepEqual(json(h.state.messages),[]);
+  assert.equal([...h.timers.values()].filter(t=>t.ms===350).length,0);
+});
+
+test('bulk delete failure restores local and active history without retrying saves',async()=>{
+  const h=await harness(async()=>({ok:false,json:async()=>({detail:'삭제 실패'})}));
+  const rows=[{id:'one',messages:[message('보존')],syncPending:true}];
+  h.state.conversations=rows;h.state.activeConversationId='one';h.state.messages=rows[0].messages;
+  await assert.rejects(h.api.bulkDeleteConversations({all:true}),/삭제 실패/);
+  assert.equal(h.state.conversations[0],rows[0]);
+  assert.equal(h.state.activeConversationId,'one');
+  assert.equal(h.state.messages[0].content,'보존');
+  assert.equal(h.state.conversationDeleting,false);
+});
+
+test('bulk deletion response from previous account does not change the next account records',async()=>{
+  let finish;
+  const h=await harness(async()=>new Promise(resolve=>{finish=resolve;}));
+  h.state.conversations=[{id:'a',messages:[message('A')]}];h.state.activeConversationId='a';
+  const pending=h.api.bulkDeleteConversations({all:true});await new Promise(setImmediate);
+  h.state.currentUser={uid:'user-b'};h.state.conversations=[{id:'b',messages:[message('B')]}];h.state.activeConversationId='b';
+  finish({ok:true,json:async()=>({deletedIds:['a'],deletedCount:1})});await pending;
+  assert.equal(h.state.conversations[0].id,'b');assert.equal(h.state.activeConversationId,'b');
+  assert.equal(h.storage.has('chats:user-b'),false);
+});
+
+test('bulk deletion persists after older asynchronous cache writes finish',async()=>{
+  let finishFirst;let cached;let writes=0;
+  const cache=async(_key,value)=>{
+    if(value===undefined)return cached;
+    if(++writes===1)await new Promise(resolve=>{finishFirst=resolve;});
+    cached=json(value);return true;
+  };
+    const h=await harness(async()=>({ok:true,json:async()=>({deletedIds:['old'],deletedCount:1})}),cache);
+    h.state.conversations=[{id:'old',messages:[message('원문')]}];h.state.activeConversationId='old';h.state.messages=h.state.conversations[0].messages;
+    h.api.persistConversations();await new Promise(setImmediate);
+    const deleting=h.api.bulkDeleteConversations({all:true});await new Promise(setImmediate);
+    assert.equal(writes,1);finishFirst();await deleting;
+    assert.equal(cached.some(item=>item.id==='old'),false);
+    assert.equal(cached[0].id,'new');
+});
+
+test('a list response started before bulk deletion cannot reintroduce deleted conversations',async()=>{
+  let finishList;
+  const h=await harness(async(_url,options)=>{
+    if(options?.method==='POST')return{ok:true,json:async()=>({deletedIds:['old'],deletedCount:1})};
+    return new Promise(resolve=>{finishList=resolve;});
+  });
+  h.storage.set('chats:user-a',JSON.stringify([{id:'old',messages:[message('원문')]}]));
+  const loading=h.api.loadConversations();await new Promise(setImmediate);
+  await h.api.bulkDeleteConversations({all:true});
+  finishList({ok:true,json:async()=>({conversations:[{id:'old',messages:[message('원문')],updatedAt:'old'}]})});
+  await loading;
+  assert.equal(h.state.conversations.some(item=>item.id==='old'),false);
 });

@@ -286,3 +286,37 @@ body.theme-dark .conversation-row.active {
     max-height: 40vh;
   }
 }
+
+/* 일괄 관리: 기존 목록의 크기와 공통 버튼 토큰을 유지한다. */
+.conversation-manage, .conversation-bulk-buttons button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.conversation-manage[aria-expanded="true"] { background: var(--blue-soft); color: var(--blue); }
+.conversation-bulk-actions { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-card); background: var(--surface); }
+.conversation-bulk-actions[hidden] { display: none; }
+.conversation-select-loaded { display: flex; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--text-soft); line-height: 1.5; }
+.conversation-select-loaded input, .conversation-row .conversation-selection { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--blue); cursor: pointer; }
+.conversation-bulk-actions p { margin: 0; font-size: 13px; color: var(--muted); }
+.conversation-bulk-buttons { display: flex; gap: var(--space-2); }
+.conversation-bulk-buttons button { flex: 1; color: var(--danger); }
+.conversation-manage:hover:not(:disabled), .conversation-bulk-buttons button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 9%, var(--surface)); }
+.conversation-bulk-actions button:disabled, .conversation-manage:disabled { opacity: .5; cursor: not-allowed; }
+.conversation-row.is-selecting { grid-template-columns: 18px minmax(0, 1fr); gap: var(--space-2); align-items: center; padding-left: var(--space-2); }
+.conversation-list .conversation-row.is-selecting .conversation-open { grid-column: 2; grid-row: 1; padding: 8px 6px; }
+.conversation-row.is-selecting .conversation-selection { grid-column: 1; grid-row: 1; }
+.conversation-row.is-selecting .conversation-actions, .conversation-row.is-selecting .conversation-time { display: none; }
+.conversation-delete-modal { width: min(480px, calc(100vw - 32px)); }
+#conversationDeleteModal { z-index: 90; }
+.conversation-danger-button { min-height: 44px; border: 0; border-radius: var(--radius-button); padding: 10px 16px; background: color-mix(in srgb, var(--danger) 85%, #000); color: var(--on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.conversation-danger-button:hover:not(:disabled) { filter: brightness(.9); }
+.conversation-danger-button:disabled { opacity: .5; cursor: not-allowed; }
+.conversation-delete-modal .modal-form-description { white-space: normal; overflow-wrap: anywhere; }

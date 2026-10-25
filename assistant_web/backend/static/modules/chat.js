@@ -683,6 +683,7 @@ function renderAbComparison(message, aBubble, messageIndex) {
 
 function setBusy(busy) {
   state.busy = busy;
+  globalThis.dispatchEvent?.(new Event("conversations:rendered"));
   els.input.disabled = false;
   els.input.placeholder = busy ? "답변을 만드는 동안 다음 질문을 적어 둘 수 있어요" : (state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요");
   if (els.templateToggleBtn) els.templateToggleBtn.disabled = busy;
@@ -700,7 +701,7 @@ function autoResizeInput() {
   els.input.style.height = `${Math.min(els.input.scrollHeight, 180)}px`;
   // 빈 질문 전송을 막고 생성 중에는 중지 버튼 상태를 보존한다.
   els.sendBtn?.classList.toggle("is-empty", !els.input.value.trim());
-  if (els.sendBtn && !state.busy) els.sendBtn.disabled = !els.input.value.trim();
+  if (els.sendBtn && !state.busy) els.sendBtn.disabled = state.conversationDeleting || !els.input.value.trim();
 }
 
 function resetOptions() {

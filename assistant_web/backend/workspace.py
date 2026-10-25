@@ -156,6 +156,12 @@ def delete_conversation(user_uid: str, conversation_id: str):
     return conversation_history.delete_conversation(workspace_db_path(), user_uid, conversation_id)
 
 
+def delete_conversations(user_uid: str, ids: list[str], *, all_conversations: bool = False) -> list[str]:
+    init_workspace_db()
+    return conversation_history.delete_conversations(workspace_db_path(), user_uid, ids,
+                                                     all_conversations=all_conversations)
+
+
 def _parse_date(value: Any) -> Optional[date]:
     raw = str(value or "")[:10]
     try:

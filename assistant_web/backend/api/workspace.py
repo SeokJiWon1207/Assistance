@@ -18,6 +18,7 @@ from backend.workspace import (
     build_my_workspace,
     build_team_dashboard,
     delete_conversation,
+    delete_conversations,
     list_conversations,
     get_conversation,
     mark_notification_read,
@@ -45,6 +46,19 @@ class ConversationWriteRequest(BaseModel):
         limit = min(1_000_000, clamp_int(os.getenv('CONVERSATION_MAX_BYTES', '1000000'), 100_000, 10_000_000) or 1_000_000)
         if len(self.model_dump_json().encode("utf-8")) > limit:
             raise ValueError("대화 저장 요청은 1MB를 넘을 수 없습니다.")
+        return self
+
+
+class ConversationBulkDeleteRequest(BaseModel):
+    ids: List[str] = Field(default_factory=list, max_length=5000)
+    all: bool = False
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        if (self.all and self.ids) or (not self.all and not self.ids):
+            raise ValueError("선택한 대화 또는 전체 삭제 중 하나를 지정해 주세요.")
+        if any(not ID_PATTERN.fullmatch(value) for value in self.ids):
+            raise ValueError("올바르지 않은 대화 ID입니다.")
         return self
 
 
@@ -107,6 +121,12 @@ def put_conversation(
     except ConversationQuotaError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     return {"conversation": conversation}
+
+
+@router.post("/conversations/bulk-delete")
+def remove_conversations(payload: ConversationBulkDeleteRequest, request: Request) -> Dict[str, Any]:
+    deleted = delete_conversations(_user(request)["uid"], payload.ids, all_conversations=payload.all)
+    return {"deletedIds": deleted, "deletedCount": len(deleted)}
 
 
 @router.get("/conversations/{conversation_id}")

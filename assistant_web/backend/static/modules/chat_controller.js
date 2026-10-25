@@ -104,6 +104,7 @@ async function sendChat(content, onEvent = () => {}, signal = undefined) {
 }
 
 async function requestAssistant(content, questionAskedAt = "", templateId = "") {
+  if (state.conversationDeleting) return;
   state.messages.push({
     role: "assistant",
     content: "",

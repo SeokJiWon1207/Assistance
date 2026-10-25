@@ -43,7 +43,10 @@ async function bootstrapApplication(authState = {}) {
     if (response.ok) setCustomerNames(await response.json());
   }).catch(() => {});
   await Promise.all([
-    loadConversations().then(() => { state.initializing = false; }),
+    loadConversations().then(() => {
+      state.initializing = false;
+      globalThis.dispatchEvent?.(new Event("conversations:rendered"));
+    }),
     loadTeamTemplates().catch(() => {}),
     checkAppVersion().catch(() => {}),
   ]);

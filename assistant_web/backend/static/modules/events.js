@@ -7,7 +7,11 @@ import { showChatView } from "./dashboard.js?v=20260911-6";
 import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSidebarOpen, toggleAccountMenu, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { initTemplatePicker, openTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
+import { initConversationBulkActions } from "./conversation_bulk.js?v=20261026-1";
+import { renderConversationList } from "./workspace.js?v=20260911-6";
+
 initTemplatePicker();
+initConversationBulkActions();
 
 function cancelMessageEdit() {
   state.editingMessageIndex = null;
@@ -17,6 +21,7 @@ function cancelMessageEdit() {
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.conversationDeleting) return;
   if (state.initializing) {
     showToast("이전 대화를 불러오고 있습니다. 잠시 후 전송해 주세요.", "warning");
     return;
@@ -188,6 +193,18 @@ els.conversationSearch?.addEventListener("keydown", (event) => {
   }
 });
 els.conversationList.addEventListener("click", (event) => {
+  if (state.conversationDeleting) return;
+  const selection = event.target.closest("[data-select-conversation-id]");
+  const selectingRow = state.conversationSelectionMode && event.target.closest("[data-conversation-id]");
+  if (selection || selectingRow) {
+    if (state.busy) return;
+    const id = selection?.dataset.selectConversationId || selectingRow.dataset.conversationId;
+    if (state.selectedConversationIds.has(id)) state.selectedConversationIds.delete(id);
+    else state.selectedConversationIds.add(id);
+    renderConversationList();
+    els.conversationList.querySelector(`[data-select-conversation-id="${CSS.escape(id)}"]`)?.focus();
+    return;
+  }
   if (event.target.closest("[data-conversation-more]")) {
     toggleConversationListExpanded();
     return;
