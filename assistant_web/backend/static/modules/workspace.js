@@ -751,7 +751,8 @@ function renderOverviewSide(data) {
         <header><h3>최근 알림</h3><button type="button" class="workspace-side-link" data-workspace-go="notifications">모두 보기</button></header>
         ${notifications.length ? `<ul class="workspace-side-notices">${notifications.map((item) => `
           <li class="${item.read ? "is-read" : ""}"><span aria-hidden="true"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(notificationDate(item))}</small></div></li>`).join("")}</ul>`
-          : '<p class="workspace-side-empty">새 업무 알림이 없어요.</p>'}
+          : `<p class="workspace-side-empty">${escapeHtml(notificationEmptyText(data))}</p>`}
+        ${data.notificationScope?.status === "unavailable" ? `<p class="workspace-side-empty">${escapeHtml(data.notificationScope.message || "배정·노트 변경 수집이 보류되었습니다.")}</p>` : ""}
       </section>
     </aside>`;
 }
@@ -813,7 +814,7 @@ function renderTeamWeeklyBrief() {
     <section class="workspace-brief-hero">
       <span>주간 팀 브리핑</span>
       <h3>${escapeHtml(brief.title || "이번 주 팀 브리핑")}</h3>
-      <p>지난주 ${escapeHtml(brief.summaryPeriod || "")} · 생성 ${escapeHtml(String(brief.generatedAt || "").slice(0, 16).replace("T", " "))}</p>
+      <p>지난주 ${escapeHtml(brief.summaryPeriod || "")} · 생성 ${escapeHtml(formatUiDateTime(brief.generatedAt) || "시각 미확인")}</p>
     </section>
     <section class="workspace-summary-grid">
       ${workspaceMetric("지난주 신규", count(summary.newIssues))}
@@ -930,6 +931,14 @@ function notificationRow(item) {
         </article>`;
 }
 
+function notificationEmptyText(data, unreadOnly = false) {
+  if (data.notificationScope?.status === "unavailable") {
+    return unreadOnly ? "확인한 알림 중 안 읽은 항목이 없습니다. 새 알림 수집은 보류 중입니다."
+      : "새 업무 알림을 아직 확인하지 못했어요. 수집이 보류된 상태입니다.";
+  }
+  return unreadOnly ? "읽지 않은 알림이 없습니다." : "새 업무 알림이 없습니다.";
+}
+
 function renderNotifications(data) {
   const notifications = data.notifications || [];
   const unread = notifications.filter((item) => !item.read);
@@ -938,8 +947,8 @@ function renderNotifications(data) {
   return `
     <section class="workspace-section workspace-section-single">
       <header><div><h3>업무 알림</h3><p>${escapeHtml(data.notificationScope?.message || "확인한 업무에서 발생한 알림입니다.")}</p></div><button type="button" class="secondary-button" data-notifications-read-all ${unread.length ? "" : "disabled"}>표시된 알림 모두 읽음</button></header>
-      <div class="workspace-filter-pills" role="group" aria-label="알림 표시"><button type="button" data-notification-filter="all" aria-pressed="${state.notificationFilter !== "unread"}">전체 ${notifications.length}</button><button type="button" data-notification-filter="unread" aria-pressed="${state.notificationFilter === "unread"}">안 읽음 ${unread.length}</button></div>
-      <div class="workspace-list">${notifications.length ? `${group("안 읽음", unread)}${state.notificationFilter === "unread" ? unread.length ? "" : workspaceEmpty("읽지 않은 알림이 없습니다.") : group("읽은 알림", read)}` : workspaceEmpty("새 업무 알림이 없습니다.")}</div>
+      <div class="workspace-filter-pills" role="group" aria-label="알림 표시"><button type="button" data-notification-filter="all" aria-pressed="${state.notificationFilter !== "unread"}">${data.notificationScope?.status === "unavailable" ? "확인한 알림" : "전체"} ${notifications.length}</button><button type="button" data-notification-filter="unread" aria-pressed="${state.notificationFilter === "unread"}">안 읽음 ${unread.length}</button></div>
+      <div class="workspace-list">${notifications.length ? `${group("안 읽음", unread)}${state.notificationFilter === "unread" ? unread.length ? "" : workspaceEmpty(notificationEmptyText(data, true)) : group("읽은 알림", read)}` : workspaceEmpty(notificationEmptyText(data), data.notificationScope?.status !== "unavailable")}</div>
     </section>`;
 }
 

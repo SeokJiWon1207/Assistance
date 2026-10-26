@@ -68,6 +68,40 @@ async function harness(apiFetch, cache = core.conversationCache) {
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
 
+test('team brief converts the stored UTC generation instant to user local time', async () => {
+  const previous = process.env.TZ;
+  process.env.TZ = 'Asia/Seoul';
+  try {
+    const h = await harness(async () => ({ ok: true }));
+    h.state.teamWeeklyBrief = { generatedAt: '2026-10-26T00:00:31+00:00' };
+    const html = h.api.renderTeamWeeklyBrief();
+    assert.match(html, /생성 .*10월 26일 오전 9:00/);
+    assert.doesNotMatch(html, /생성 .*00:00/);
+  } finally {
+    if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
+  }
+});
+
+test('unavailable notification collection does not present an empty result as no events', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const data = { notifications: [], notificationScope: { status: 'unavailable', message: '수집 보류' } };
+  for (const html of [h.api.renderNotifications(data), h.api.renderPersonalOverview(data)]) {
+    assert.match(html, /알림.*확인하지 못/);
+    assert.doesNotMatch(html, /새 업무 알림이 없/);
+  }
+  const collected = { ...data, notificationScope: { status: 'ready' } };
+  assert.match(h.api.renderNotifications(collected), /새 업무 알림이 없습니다/);
+});
+
+test('unavailable collection preserves known notifications and qualifies the unread empty filter', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const data = { notifications: [{id:'saved',title:'기존 알림',read:true}], notificationScope: { status:'unavailable',message:'수집 보류' } };
+  assert.match(h.api.renderNotifications(data), /기존 알림/);
+  h.state.notificationFilter = 'unread';
+  assert.doesNotMatch(h.api.renderNotifications(data), /읽지 않은 알림이 없습니다/);
+  assert.match(h.api.renderNotifications(data), /확인한 알림/);
+});
+
 test('playbook refresh failure preserves cached entries and exposes retry', async () => {
   const h = await harness(async () => ({ ok: false, json: async () => ({ detail: '연결 실패' }) }));
   h.state.playbooks = [{ id: 'cached', title: '저장된 절차', status: 'published', tags: [] }];

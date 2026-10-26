@@ -1,4 +1,4 @@
-import { customerName } from "./ui_format.js?v=20260911-6";
+import { customerName, formatUiDateTime } from "./ui_format.js?v=20260911-6";
 import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { els, apiFetch } from "./runtime.js?v=20260911-6";
 import { formatNotionDetail } from "./notion.js?v=20260911-6";
@@ -25,7 +25,7 @@ function renderSourceActions({ issueId, title, content, url = "", snapshot = fal
   }
   if (snapshot && /^\d+$/.test(String(issueId))) {
     const full = document.createElement("button");
-    full.type = "button"; full.className = "secondary-button"; full.textContent = "저장된 전체 원문";
+    full.type = "button"; full.className = "secondary-button"; full.textContent = "전체 원문 조회";
     full.addEventListener("click", () => openSourceDetail({ type: "chroma", issue_id: issueId }));
     footer.appendChild(full);
   }
@@ -263,9 +263,9 @@ async function openSourceDetail(source) {
   openChromaModal({
     issueId: source.issue_id,
     title: "불러오는 중입니다",
-    content: "과거 이슈 원문을 불러오는 중입니다...",
+    content: "이슈 원문을 불러오는 중입니다...",
     loading: true,
-    meta: `과거 이슈 원문 · #${source.issue_id}`,
+    meta: `이슈 원문 · #${source.issue_id}`,
   });
 
   try {
@@ -278,7 +278,9 @@ async function openSourceDetail(source) {
       issueId: source.issue_id,
       title: titleMatch ? titleMatch[1].trim() : "이슈 상세",
       content: data.content,
-      meta: `과거 이슈 원문 · #${source.issue_id}`,
+      meta: data.source === "mantis"
+        ? `Mantis 현재 원문 · #${source.issue_id} · ${formatUiDateTime(data.fetchedAt)} 조회 · 과거 저장본 없음`
+        : `과거 이슈 원문 · #${source.issue_id} · 검색 저장본 기준`,
     });
   } catch (error) {
     if (requestId !== detailRequestId || els.chromaModal.hidden) return;
@@ -287,7 +289,7 @@ async function openSourceDetail(source) {
       title: "문서 조회 오류",
       failed: true,
       content: `오류: ${error.message}`,
-      meta: `과거 이슈 원문 · #${source.issue_id}`,
+      meta: `이슈 원문 · #${source.issue_id}`,
     });
   }
 }
