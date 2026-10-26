@@ -30,6 +30,7 @@ rsync -az --delete \
   --exclude 'firebase-service-account*.json' \
   --exclude '*service-account*.json' \
   --exclude '.venv' \
+  --exclude 'node_modules/' \
   --exclude '.pycache' \
   --exclude '.mypy_cache' \
   --exclude '.ruff_cache' \

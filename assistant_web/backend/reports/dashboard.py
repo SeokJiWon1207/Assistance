@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 
+from backend.chart_data import daily_registrations
 from backend.common import normalize_for_match
 from backend.mantis_status import mantis_status_bucket
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
@@ -337,6 +338,7 @@ def build_operations_dashboard(
             "linked": bool(person),
         },
         "summary": summary,
+        "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),
         "priorities": priorities[:DASHBOARD_PRIORITY_LIMIT],

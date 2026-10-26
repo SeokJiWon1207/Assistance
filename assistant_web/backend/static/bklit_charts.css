@@ -1,0 +1,119 @@
+/* Bklit islands inherit service tokens. Tailwind utilities are scoped by build.mjs. */
+.bklit-root {
+  --bklit-calendar-low: color-mix(in srgb, var(--blue) 58%, var(--surface));
+  --bklit-calendar-medium: color-mix(in srgb, var(--blue) 80%, var(--surface));
+  --foreground: var(--text); --background: var(--surface); --muted-foreground: var(--muted);
+  --chart-background: var(--surface); --chart-foreground: var(--text); --chart-foreground-muted: var(--muted);
+  --chart-label: var(--muted); --chart-line-primary: var(--chart-1); --chart-line-secondary: var(--chart-2);
+  --chart-grid: var(--line); --chart-crosshair: var(--muted); --chart-tooltip-background: var(--surface);
+  --chart-indicator-color: var(--blue); --chart-indicator-secondary-color: var(--line);
+  --chart-brush-border: var(--blue); --chart-segment-background: var(--blue-soft); --chart-segment-line: var(--blue);
+  --legend: var(--surface); --legend-foreground: var(--text-soft); --legend-muted: var(--surface-alt);
+  --legend-muted-foreground: var(--muted); --legend-track: var(--line);
+  min-width: 0; width: 100%; color: var(--text); font-size: 12px; line-height: 1.5;
+}
+.bklit-root *, .bklit-root *::before, .bklit-root *::after { box-sizing: border-box; }
+.bklit-root svg { max-width: 100%; }
+.bklit-root button, .bklit-root input { font: inherit; }
+.bklit-root button { cursor: pointer; }
+.bklit-root button:disabled { cursor: default; opacity: .45; }
+.bklit-root :is(button, input, summary):focus-visible, [data-bklit-values] summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.bklit-host { min-width: 0; width: 100%; }
+.bklit-host:not([data-ready]) .bklit-root:empty { display: none; }
+.bklit-host[data-ready]:not([data-bklit-kind="bar"]) > [data-bklit-fallback] { display: none; }
+[data-bklit-values] summary { display: none; color: var(--muted); cursor: pointer; padding: 8px 0; font-size: 12px; }
+[data-ready] [data-bklit-values] summary { display: list-item; margin-left: 16px; }
+[data-ready] [data-bklit-values] .dashboard-track, [data-ready] [data-bklit-values] .dashboard-column-bar { display: none; }
+[data-ready] [data-bklit-values] .dashboard-bar { grid-template-columns: minmax(0,1fr) auto; }
+[data-ready] [data-bklit-values] .dashboard-columns { height: auto; }
+.bklit-host[data-chart-error]::before { content: "차트 대신 확인한 수치를 표시합니다."; color: var(--muted); font-size: 12px; }
+.bklit-host[data-bklit-kind="bar"] { container: bklit-bar / inline-size; }
+/* 원본 차트는 폭에서 좌우 여백을 빼므로 리사이즈 중에도 양의 그리기 폭을 보장한다. */
+.bklit-bar-frame { width: 100%; min-width: 220px; }
+@container bklit-bar (max-width:219px) {
+  .bklit-root { display:none; }
+}
+.bklit-bar-frame > div { height: 100%; }
+.bklit-root .bklit-legend { display: flex; flex-flow: row wrap; gap: 4px 8px; margin-top: 10px; }
+.bklit-root .bklit-legend.is-vertical { flex-direction: column; }
+.bklit-root .bklit-legend-item { padding: 0; border-radius: 6px; }
+.bklit-legend-item button { display:flex; align-items:center; gap:6px; padding:5px 4px; border:0; border-radius:6px; background:transparent; color:var(--text-soft); }
+.bklit-legend-item button:hover, .bklit-legend-item button:focus-visible { background: var(--surface-alt); }
+.bklit-legend-item :is(span,button) { font-size: 12px; }
+.bklit-tooltip { min-width: 140px; max-width: min(260px,70vw); padding: 4px; color: var(--text); }
+.bklit-tooltip > strong { display: block; font-size: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
+.bklit-tooltip > div { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 5px 0; }
+.bklit-tooltip i { width: 7px; height: 7px; border-radius: 50%; }
+.bklit-tooltip b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+.bklit-tooltip small { color: var(--muted); }
+.bklit-insights-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(260px,1fr); gap: 14px; margin: 16px 0; align-items: start; }
+.bklit-sparkline { margin: 12px 0; }
+.bklit-sparkline-label { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
+.bklit-sparkline-label strong { color: var(--text-soft); white-space: nowrap; }
+.bklit-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.bklit-range label { display: grid; gap: 4px; color: var(--muted); min-width: 0; }
+.bklit-range input { width: 132px; max-width:100%; min-width:0; padding:6px 7px; height:34px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--surface); }
+.bklit-range button { height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-soft); background: var(--surface); }
+.bklit-range button:hover:not(:disabled) { background: var(--surface-alt); }
+.bklit-selection { font-size:13px; color:var(--text-soft); margin:14px 0 4px; }
+.bklit-selection strong { color:var(--text); font-variant-numeric:tabular-nums; }
+.bklit-selection span { font-size:12px; color:var(--muted); }
+.bklit-brush { border-radius:8px; background:var(--surface-alt); margin:8px 0; }
+.bklit-note { font-size:12px; line-height:1.6; color:var(--muted); margin:8px 0; overflow-wrap:anywhere; }
+.bklit-empty { font-size:12px; color:var(--muted); padding:12px 0; margin:0; }
+.bklit-data { margin-top:8px; color:var(--text-soft); font-size:12px; }
+.bklit-data summary { cursor:pointer; padding:6px 0; }
+.bklit-data table { width:100%; border-collapse:collapse; font-size:12px; }
+.bklit-data :is(td,th) { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+.bklit-data th { font-weight:600; }
+.bklit-cohort { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; }
+.bklit-cohort > .bklit-note { flex-basis:100%; }
+.bklit-calendar-grid { display:flex; gap:8px; align-items:flex-start; margin:12px 0; }
+.bklit-weekdays { display:grid; grid-template-rows:repeat(7,22px); gap:5px; width:16px; flex-shrink:0; color:var(--muted); font-size:12px; text-align:center; }
+.bklit-weekdays span { line-height:22px; }
+.bklit-calendar-grid > div:last-child { flex:1; min-width:0; }
+.bklit-due-day { display:grid; gap:5px; padding:8px 0; border-top:1px solid var(--line); }
+.bklit-due-day button { border:0; background:var(--surface-alt); color:var(--blue); padding:7px; border-radius:8px; text-align:left; overflow-wrap:anywhere; }
+.workspace-side { overflow-y:auto; min-height:0; }
+@media(max-width:1100px){ .bklit-insights-grid { grid-template-columns:1fr; } }
+@media(max-width:600px){ .bklit-range label { flex:1; } .bklit-range input { width:100%; } .bklit-insights-grid { gap:12px; } }
+@media(prefers-reduced-motion:reduce){ .bklit-root *, .bklit-root *::before, .bklit-root *::after { animation-duration:0s !important; transition-duration:0s !important; } }
+/* 기존 작은 차트의 높이 제한은 새 추이·범례를 자르지 않도록 해제한다. */
+.dashboard-chart .dashboard-chart-body:has(.bklit-host) { max-height:none; overflow:visible; }
+.dashboard-grid:has(.bklit-host) { align-items:start; }
+.workspace-overview:has(.bklit-host) { grid-template-rows:min-content minmax(0,1fr); }
+.workspace-overview:has(.bklit-host):has(> .workspace-connection) { grid-template-rows:min-content min-content minmax(0,1fr); }
+.workspace-overview:has(.bklit-host) .workspace-side-card { flex-shrink:0; }
+@media(max-width:1180px){
+  .workspace-content.is-overview:has(.bklit-host) { display:block; overflow-y:auto; }
+  .workspace-overview:has(.bklit-host) { display:flex; flex-direction:column; height:auto; gap:16px; }
+  .workspace-overview:has(.bklit-host) > .workspace-section { min-height:220px; max-height:480px; }
+  .workspace-overview:has(.bklit-host) .workspace-side { display:flex; overflow:visible; }
+}
+
+/* 대화/관리자에서도 동일 원본을 쓰되 기존 본문·카드 폭을 따른다. */
+.bklit-report-chart { min-width:0; width:100%; margin:12px 0; }
+.bklit-metric-pie { display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
+.bklit-metric-pie > .bklit-legend { flex:1; min-width:160px; }
+.bklit-root .bklit-legend-item button { overflow-wrap:anywhere; text-align:left; max-width:100%; }
+.bklit-root .bklit-legend-item button.is-muted { opacity:.45; text-decoration:line-through; }
+.bklit-metric-tabs { display:flex; flex-wrap:wrap; gap:6px; }
+.bklit-metric-tabs button { padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--text-soft); }
+.bklit-metric-tabs button[aria-selected="true"] { color:var(--blue); background:var(--blue-soft); border-color:var(--blue); }
+.bklit-metric-tabs button:hover { background:var(--surface-alt); }
+.bklit-table-scroll { width:100%; min-width:0; overflow-x:auto; }
+.bklit-native-table { width:100%; border-collapse:collapse; font-size:12px; }
+.bklit-native-table :is(th,td) { padding:8px; text-align:left; border-bottom:1px solid var(--line); }
+.bklit-monthly .bklit-data :is(td,th) { white-space:nowrap; }
+.bklit-report-chart [data-bklit-fallback] { min-width:0; overflow-x:auto; }
+.admin-card:has(.bklit-host) { min-width:0; }
+.admin-card [data-bklit-fallback] .admin-bar-row { grid-template-columns:minmax(0,1fr) auto; }
+.bklit-value-label { font-size:12px; fill:var(--text-soft); font-variant-numeric:tabular-nums; }
+@media (max-width:600px) {
+  .bklit-metric-pie { justify-content:center; }
+  .bklit-metric-pie > .bklit-legend { flex-basis:100%; }
+}
+/* 관리자 아이콘용 SVG 선 스타일이 차트의 글자·막대에 상속되지 않도록 한다. */
+.admin-panel .bklit-root svg { stroke:none; stroke-width:0; }
+.bklit-report-chart .bklit-bar-frame .truncate.text-right,
+.admin-card .bklit-bar-frame .truncate.text-right { max-width:110px !important; }

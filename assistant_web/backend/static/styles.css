@@ -1806,7 +1806,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
   align-items: center;
   gap: 12px;
   width: 100%;
-  max-width: 802px;
+  max-width: calc(var(--chat-width) + 42px);
   margin: 4px auto;
   color: var(--muted);
   font-size: 12px;
@@ -2910,27 +2910,27 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 .chat-panel:has(> .messages > .empty-state) > .messages,
 .messages > .empty-state,
 .messages > .empty-state > div { display: contents; }
-.empty-state > div > * { box-sizing: border-box; width: min(760px, calc(100% - 56px)); margin-inline: auto; }
+.empty-state > div > * { box-sizing: border-box; width: min(var(--composer-width), calc(100% - 56px)); margin-inline: auto; }
 .empty-state-eyebrow { order: 1; margin-top: clamp(32px, 16vh, 160px) !important; }
 .empty-state h3 { order: 2; }
 .empty-state > div > p:not(.empty-state-eyebrow) { order: 3; }
 .chat-panel:has(> .messages > .empty-state) > .composer { order: 4; padding-top: 24px; }
-.chat-panel:has(> .messages > .empty-state) > .template-picker { position: static; order: 5; width: min(760px, calc(100% - 56px)); max-height: min(460px, 60vh); margin: -14px auto 8px; }
+.chat-panel:has(> .messages > .empty-state) > .template-picker { position: static; order: 5; width: min(var(--composer-width), calc(100% - 56px)); max-height: min(460px, 60vh); margin: -14px auto 8px; }
 .empty-state .starter-grid { order: 6; margin-top: 4px; margin-bottom: 40px; }
 
-/* 질문·답변은 입력창과 같은 760px 칸에 가운데 정렬한다. 표가 있는 답변만 넓게 편다. */
+/* 질문·답변·로딩은 같은 넓은 칸에 정렬한다. 아바타와 간격은 본문 폭 밖에 둔다. */
 .message {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
   width: 100%;
-  max-width: 802px;
+  max-width: calc(var(--chat-width) + 42px);
   margin-inline: auto;
 }
 
 .message.assistant.has-issue-table {
-  max-width: 1322px;
+  max-width: calc(var(--chat-width) + 42px);
 }
 
 /* 질문은 아바타 없이 오른쪽 말풍선으로 둔다. */
@@ -3001,7 +3001,7 @@ button.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
 }
 
 .wide-message-content {
-  width: min(100%, 1280px);
+  width: 100%;
 }
 
 .assistant-answer {
@@ -3885,10 +3885,10 @@ body.theme-dark .message.user .bubble {
   }
 }
 
-/* 입력창은 메시지 칸(760px)과 같은 폭의 떠 있는 카드다. 폼은 전체 폭을 유지해
+/* 입력창은 넓은 대화 칸 안에 놓인 떠 있는 카드다. 폼은 전체 폭을 유지해
    템플릿 팝오버가 폼 높이로 위치를 잡고, 카드 모양은 ::before가 그린다. */
 .composer {
-  --composer-gutter: max(28px, calc(50% - 380px));
+  --composer-gutter: max(28px, calc((100% - var(--composer-width)) / 2));
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

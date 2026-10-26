@@ -358,6 +358,11 @@ els.workspaceTabs?.addEventListener("keydown", (event) => {
   tabs[next].focus();
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
+  const calendarIssue = event.target.closest("[data-workspace-issue]");
+  if (calendarIssue) {
+    const { openSourceDetail } = await import("./chat_source_detail.js?v=20260911-6");
+    return openSourceDetail({ type: "chroma", issue_id: calendarIssue.dataset.workspaceIssue });
+  }
   const retry = event.target.closest("[data-workspace-retry]");
   if (retry) {
     retry.disabled = true;

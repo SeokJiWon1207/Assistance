@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from backend.chart_data import daily_registrations
 from backend.display import customer_name
 from backend.common import extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
 from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
@@ -487,6 +488,9 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
         "weeklyBrief": {
             "period": f"{week_start.isoformat()} ~ {today.isoformat()}",
             "newIssues": len(new_this_week),
+            "intakeTrend": daily_registrations(all_issues, week_start, today),
+            "periodFrom": week_start.isoformat(),
+            "periodTo": today.isoformat(),
             "updatedIssues": len(updated_this_week),
             "openIssues": len(open_issues),
             "overdueIssues": len(overdue),

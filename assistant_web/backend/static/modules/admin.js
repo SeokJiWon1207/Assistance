@@ -1,3 +1,5 @@
+import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
+import { metricChartSpec } from "./chart_models.js?v=20261026-1";
 // 관리자 센터: 품질 현황 · 검증 실행 · 답변 피드백 · 감사 로그 화면과 검증 실행 흐름.
 // 사용자 관리는 admin_users.js 가 맡고, 이 모듈은 섹션 전환과 품질 데이터만 다룬다.
 import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
@@ -91,13 +93,13 @@ function sectionHeader(title, description, aside = "") {
   return `<header class="admin-section-header"><div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p></div>${aside}</header>`;
 }
 
-function barList(entries, tone = "") {
+function barList(entries, tone = "", title = "항목별 건수") {
   if (!entries.length) return `<p class="admin-empty">아직 집계할 항목이 없습니다.</p>`;
-  const max = Math.max(1, ...entries.map(([, count]) => Number(count) || 0));
-  return `<div class="admin-bars">${entries.map(([label, count]) => `
-    <div class="admin-bar-row"><span>${escapeHtml(label)}</span>
-      <span class="admin-bar ${tone}"><i style="width:${Math.round(((Number(count) || 0) / max) * 100)}%"></i></span>
-      <b>${Number(count) || 0}</b></div>`).join("")}</div>`;
+  const items = entries.map(([label, count]) => ({label, amount:Number(count) || 0}));
+  const spec = metricChartSpec(items, {title});
+  spec.series[0].color = tone === "is-danger" ? "var(--danger)" : "var(--chart-1)";
+  const fallback = `<div class="admin-bars">${items.map(item=>`<div class="admin-bar-row"><span>${escapeHtml(item.label)}</span><b>${item.amount}건</b></div>`).join("")}</div>`;
+  return chartHost(spec, fallback);
 }
 
 function chips(group, options, active) {
@@ -273,7 +275,7 @@ function renderOverview() {
       </section>
       <section class="admin-card" aria-labelledby="adminFailureTitle">
         <div class="admin-card-head"><h3 id="adminFailureTitle">반복 실패 유형</h3><span>최근 정확도 검사 기준</span></div>
-        ${failures.length ? barList(failures, "is-danger") : `<p class="admin-empty">최근 정확도 검사에서 반복된 실패가 없어요.</p>`}
+        ${failures.length ? barList(failures, "is-danger", "최근 정확도 실패 유형") : `<p class="admin-empty">최근 정확도 검사에서 반복된 실패가 없어요.</p>`}
       </section>
     </div>`;  renderFreshnessBadge();
 }
@@ -424,7 +426,7 @@ function renderFeedbackSection() {
     </div>
     <div class="admin-columns is-even">
       <section class="admin-card"><div class="admin-card-head"><h3>개선 필요 사유</h3></div>
-        ${barList((summary.reasonCounts || []).map((item) => [item.label, item.count]))}</section>
+        ${barList((summary.reasonCounts || []).map((item) => [item.label, item.count]), "", "개선 필요 사유")}</section>
       <section class="admin-card admin-list-card"><div class="admin-card-head"><h3>템플릿별 만족도</h3></div>
         ${templates.length ? templates.map((item) => `<div class="admin-row admin-template-row"><span>${escapeHtml(teamTemplateLabel(item.templateId))}</span><span class="admin-muted admin-num">${Number(item.total) || 0}건</span><strong class="admin-num${(Number(item.helpfulRate) || 0) < 70 ? " is-danger" : ""}">${Number(item.helpfulRate) || 0}%</strong></div>`).join("") : `<p class="admin-empty">템플릿으로 한 질문의 피드백이 아직 없어요.</p>`}</section>
     </div>
@@ -469,9 +471,9 @@ function renderLogsSection() {
       }).join("") : `<p class="admin-empty">${logs.length ? "실패하거나 확인이 필요한 답변이 없어요." : "아직 저장된 답변 로그가 없어요."}</p>`}
     </section>
     ${summary.total ? `<div class="admin-columns is-three">
-      <section class="admin-card"><div class="admin-card-head"><h3>답변 방식별</h3></div>${barList(Object.entries(summary.modeCounts || {}).map(([mode, count]) => [modeLabel(mode), count]))}</section>
-      <section class="admin-card"><div class="admin-card-head"><h3>모델별</h3></div>${barList(Object.entries(summary.modelCounts || {}))}</section>
-      <section class="admin-card"><div class="admin-card-head"><h3>자주 실패하는 검사 항목</h3></div>${barList((summary.topFailingChecks || []).map((item) => [item.label, item.count]), "is-danger")}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>답변 방식별</h3></div>${barList(Object.entries(summary.modeCounts || {}).map(([mode, count]) => [modeLabel(mode), count]), "", "답변 방식별")}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>모델별</h3></div>${barList(Object.entries(summary.modelCounts || {}), "", "모델별")}</section>
+      <section class="admin-card"><div class="admin-card-head"><h3>자주 실패하는 검사 항목</h3></div>${barList((summary.topFailingChecks || []).map((item) => [item.label, item.count]), "is-danger", "자주 실패하는 검사 항목")}</section>
     </div>` : ""}`;
 }
 
@@ -489,6 +491,7 @@ function syncAdminBadges() {
 
 function renderEvaluationContent() {
   if (!els.adminContent) return;
+  releaseCharts(els.adminContent);
   if (state.adminSection === "users" && !usersSectionAvailable()) state.adminSection = "overview";
   els.adminPanel.querySelectorAll("[data-admin-section]").forEach((button) => {
     const current = button.dataset.adminSection === state.adminSection;
@@ -506,6 +509,7 @@ function renderEvaluationContent() {
   else if (state.adminSection === "logs") renderLogsSection();
   else if (state.adminSection === "users") renderUsersSection(els.adminContent);
   else renderOverview();
+  mountCharts(els.adminContent);
 }
 
 function showAdminSection(section, { filter, kind, open } = {}) {
@@ -539,6 +543,7 @@ function loadAdminCenter() {
       renderEvaluationContent();
     })
     .catch((error) => {
+      releaseCharts(els.adminContent);
       els.adminContent.innerHTML = `<div class="admin-card admin-empty"><strong>관리자 정보를 불러오지 못했어요.</strong><p>${escapeHtml(error.message)}</p><button type="button" class="admin-secondary" data-admin-retry>다시 시도</button></div>`;
     })
     .finally(() => {

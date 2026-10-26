@@ -1,3 +1,4 @@
+import { mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { renderProgressSteps } from "./chat_progress.js?v=20261023-1";
 import { appendAnswerContextControls, selectAnswerContext } from "./chat_ab_context.js?v=20261024-1";
 import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
@@ -237,6 +238,7 @@ function revealAnswer(content, bubble, { streamed }) {
 }
 
 function renderMessages() {
+  releaseCharts(els.messages);
   if (!state.busy) els.input.placeholder = state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요";
   els.messages.innerHTML = "";
   const activeHistory = state.conversations?.find((item) => item.id === state.activeConversationId);
@@ -370,6 +372,7 @@ function renderMessages() {
     }
   });
 
+  mountCharts(els.messages);
   els.messages.scrollTop = els.messages.scrollHeight;
   updateComposerShadow();
 }
@@ -393,9 +396,10 @@ function updateComposerShadow() {
 // 외부 아이콘 폰트/라이브러리 의존성 없이 인라인 SVG(currentColor)로 구현해
 // 버튼 색상(hover 등)이 아이콘에도 그대로 적용되게 한다.
 function appendAssistantExtras(container, message, messageIndex) {
-  if (message.effortChart) container.appendChild(renderEffortChart(message.effortChart));
-  if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking));
-  if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend));
+  const complete = !(message.verification?.dataScope || []).some(row => ["부분 조회", "범위 미확인"].includes(row.coverage));
+  if (message.effortChart) container.appendChild(renderEffortChart(message.effortChart, { complete }));
+  if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking, { complete }));
+  if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend, { complete }));
   if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {
     container.appendChild(renderSourceList(message.sources, messageIndex));
   }

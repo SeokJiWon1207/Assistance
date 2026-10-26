@@ -40,6 +40,7 @@ async function harness(apiFetch, cache = core.conversationCache) {
     ...core, scopedStorageKey: (base, uid) => `${base}:${uid}`,
     createConversationRecord: () => ({ id: 'new', messages: [] }), WORKSPACE_ENDPOINTS: { personal: '/personal', teamBrief: '/team-brief', teamBriefRead: '/team-brief/read', teamBriefRefresh: '/team-brief/refresh' } };
   const modules = {
+    "./bklit_charts.js": {chartHost: (_spec, fallback) => fallback || "", mountCharts() {}, releaseCharts() {}},
     './runtime.js': runtime,
     './chat.js': { renderMessages() {}, escapeHtml: String, autoResizeInput() {} },
     './events.js': { cancelMessageEdit() {} },

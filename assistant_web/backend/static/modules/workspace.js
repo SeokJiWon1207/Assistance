@@ -1,3 +1,4 @@
+import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBase, maxStoredConversations, conversationSyncTimers, apiFetch, conversationContentChanged, conversationListSections, conversationTimeLabel, deriveConversationTitle, searchConversations, storageSafeMessages, scopedStorageKey, createConversationRecord, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
@@ -744,8 +745,12 @@ function renderOverviewSide(data) {
       <section class="workspace-side-card">
         <header><h3>이번 주 브리핑</h3>${teamBriefUnread() ? '<span class="workspace-side-badge">새 팀 브리핑</span>' : ""}</header>
         <div class="workspace-side-stats${partial ? " is-partial" : ""}">${stat(brief.newIssues, "신규")}${stat(brief.updatedIssues, "변경")}${stat(brief.overdueIssues, "지연")}</div>
+        ${chartHost({kind: "sparkline", title: "최근 7일 신규 추이", complete: !partial, points: brief.intakeTrend || []}, `<p>최근 7일 신규 ${Number(brief.newIssues || 0)}건${partial ? " 이상" : ""}</p>`)}
         <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>
         <button type="button" class="workspace-side-link" data-workspace-go="brief">주간 보고 열기 ›</button>
+      </section>
+      <section class="workspace-side-card"><header><h3>앞으로 28일 마감 일정</h3></header>
+        ${chartHost({kind: "calendar", title: "완료예정일 달력", complete: !partial, today: brief.periodTo || "", issues: (data.mantis?.issues || []).map(({id, title, dueDate}) => ({id, title, dueDate}))}, '<p>마감 일정은 업무 목록의 완료예정일에서 확인할 수 있습니다.</p>')}
       </section>
       <section class="workspace-side-card">
         <header><h3>최근 알림</h3><button type="button" class="workspace-side-link" data-workspace-go="notifications">모두 보기</button></header>
@@ -1230,6 +1235,7 @@ function updateWorkspaceDataBadge(loading) {
 
 function renderWorkspace() {
   if (!els.workspaceContent) return;
+  releaseCharts(els.workspaceContent);
   const loading = workspaceLoading || Boolean(workspaceFreshPromise);
   updateWorkspaceDataBadge(loading);
   els.workspaceContent.setAttribute("aria-busy", String(loading));
@@ -1269,6 +1275,7 @@ function renderWorkspace() {
       ? `<div class="workspace-refresh-status is-error" role="status"><strong>${escapeHtml(workspaceLoadingError)}</strong><span>마지막으로 확인한 데이터를 표시합니다.</span><button type="button" class="secondary-button" data-workspace-retry>다시 시도</button></div>`
       : "";
   els.workspaceContent.innerHTML = `${loadingStatus}${(renderers[state.workspaceTab] || renderers.overview)()}`;
+  mountCharts(els.workspaceContent);
   updateWorkspaceUnread();
 }
 

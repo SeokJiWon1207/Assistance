@@ -42,6 +42,8 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     document: { body: { classList: { remove() {} } }, addEventListener() {} },
     CSS: { escape: (value) => String(value) },
   });
+  const bridge = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/bklit_charts.js'), 'utf8'), {context});
+  await bridge.link(() => {}); await bridge.evaluate();
   const dependencies = {
     './runtime.js': { state, els, WORKSPACE_ENDPOINTS: { dashboard: '/dashboard' },
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
@@ -70,6 +72,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   formatModule.namespace.setCustomerNames({projects: {'159eBest':'LS증권', '143WooriFuture':'NH선물', '164NHFuture':'NH선물'}, exact:{}});
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard.js'), 'utf8'), { context });
   await module.link((specifier) => {
+    if (specifier.startsWith('./bklit_charts.js')) return bridge;
     if (specifier.startsWith('./ui_format.js')) return formatModule;
     const values = dependencies[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(values), function () {
@@ -342,8 +345,9 @@ test('priority queue follows the metrics and filters stay above the scrolling bo
   // 판단 배너(결론) → 지표 → 분포 차트 → 우선 확인 목록 순서로 읽힌다.
   assert.ok(html.indexOf('dashboard-decision') < html.indexOf('dashboard-metrics'));
   assert.ok(html.indexOf('dashboard-metrics') < html.indexOf('dashboard-grid'));
-  // 지연·장기·그 외 범례는 분포 제목 옆에 한 번만 둔다.
-  assert.equal(html.split('dashboard-chart-legend').length - 1, 1);
+  // 중복 집계 기준은 한 번 안내하고 각 차트에는 실제 값의 Bklit 범례를 둔다.
+  assert.equal(html.split('지연과 장기가 겹치면 지연으로 집계합니다.').length - 1, 1);
+  assert.match(html, /data-bklit-kind="bar"/);
   assert.ok(html.indexOf('dashboard-grid') < html.indexOf('dashboard-priority-section'));
   assert.doesNotMatch(html, /dashboard-filterbar/);
   assert.equal(h.els.dashboardFilterbar.hidden, false);
@@ -524,7 +528,8 @@ test('dashboard points to the single weekly report instead of repeating the team
   const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
   await h.api.loadDashboard();
   const html = h.els.dashboardBody.innerHTML;
-  assert.doesNotMatch(html, /team-brief-section|<details/);
+  assert.doesNotMatch(html, /team-brief-section/);
+  assert.match(html, /data-bklit-values/);
   assert.match(html, /data-open-team-brief/);
   await h.els.dashboardBody.handlers.click({ target: clickTarget('[data-open-team-brief]', {}) });
   assert.equal(h.els.personalPanel.hidden, false);

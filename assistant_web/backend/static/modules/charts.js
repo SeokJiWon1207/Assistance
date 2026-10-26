@@ -1,3 +1,5 @@
+import { chartHost } from "./bklit_charts.js?v=20261026-1";
+import { metricChartSpec } from "./chart_models.js?v=20261026-1";
 import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js?v=20260911-6";
 
 function escapeHtml(value) {
@@ -36,7 +38,7 @@ function shouldAnimateChart(chart) {
 
 // 원형(도넛) 차트: 항목별 비중을 stroke-dasharray로 구간을 나눠 그린다.
 // 외부 차트 라이브러리 없이도 실제 원형 차트로 렌더링하기 위한 방식이다.
-export function renderDonutChart(items, { centerLabel = "", valueFormatter = (v) => v.toFixed(2), animated = false } = {}) {
+function renderLegacyDonutChart(items, { centerLabel = "", valueFormatter = (v) => v.toFixed(2), animated = false } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "donut-chart-row";
   const total = items.reduce((sum, item) => sum + item.amount, 0) || 1;
@@ -208,7 +210,7 @@ function formatAxisTick(value) {
 }
 
 // 가로 막대 차트: 축 눈금과 그리드, 막대, 값 레이블, 호버 툴팁을 그린다.
-export function renderBarChartSVG(items, { valueFormatter = (v) => v.toFixed(2), animated = false } = {}) {
+function renderLegacyBarChartSVG(items, { valueFormatter = (v) => v.toFixed(2), animated = false } = {}) {
   const viewWidth = 760;
   const labelWidth = 260;
   const valueAreaWidth = 62;
@@ -406,9 +408,12 @@ function statCardMarkup({ label, value, amount, suffix = "", decimals = 0 }) {
   return `<strong${numeric}>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
 }
 
-export function renderEffortChart(chart) {
+export function renderEffortChart(chart, { complete = true } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "effort-chart";
+  const basis = document.createElement("p");
+  basis.textContent = "고객사전달일 기준 · 전달일 없는 이슈 제외";
+  wrap.appendChild(basis);
   const animated = shouldAnimateChart(chart);
 
   const statCards = document.createElement("div");
@@ -431,7 +436,7 @@ export function renderEffortChart(chart) {
     const section = document.createElement("div");
     section.className = "summary-section";
     section.innerHTML = `<h3>유형별 공수</h3>`;
-    section.appendChild(renderDonutChart(byType, { centerLabel: "총 공수", animated }));
+    section.appendChild(renderDonutChart(byType, { centerLabel: "총 공수", animated, complete }));
     wrap.appendChild(section);
   }
 
@@ -443,16 +448,19 @@ export function renderEffortChart(chart) {
       label: id ? `#${id} ${summary}` : summary,
       amount,
     }));
-    section.appendChild(renderBarChartSVG(items, { animated }));
+    section.appendChild(renderBarChartSVG(items, { animated, complete }));
     wrap.appendChild(section);
   }
 
   return wrap;
 }
 
-export function renderEffortRankingChart(ranking) {
+export function renderEffortRankingChart(ranking, { complete = true } = {}) {
   const wrap = document.createElement("div");
   wrap.className = "effort-chart";
+  const basis = document.createElement("p");
+  basis.textContent = "고객사전달일 기준 · 전달일 없는 이슈 제외";
+  wrap.appendChild(basis);
   const animated = shouldAnimateChart(ranking);
 
   const statCards = document.createElement("div");
@@ -474,9 +482,25 @@ export function renderEffortRankingChart(ranking) {
     const section = document.createElement("div");
     section.className = "summary-section";
     section.innerHTML = `<h3>공수 순위</h3>`;
-    section.appendChild(renderBarChartSVG(ranking.topPeople, { animated }));
+    section.appendChild(renderBarChartSVG(ranking.topPeople, { animated, complete }));
     wrap.appendChild(section);
   }
 
+  return wrap;
+}
+
+// 기존 SVG는 모듈 실패 시에도 원본 수치를 볼 수 있는 대체 표시로 남긴다.
+export function renderDonutChart(items, options = {}) {
+  const fallback = renderLegacyDonutChart(items, {...options, animated:false});
+  const wrap = document.createElement("div");
+  wrap.className = "bklit-report-chart";
+  wrap.innerHTML = chartHost(metricChartSpec(items, {kind:"pie", title:options.centerLabel || "유형별 공수", decimals:2, unit:"", complete:options.complete !== false, animated:options.animated}), (options.complete === false ? `<p>일부 조회 · 확인한 범위의 공수입니다.</p><dl>${items.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(Number(item.amount).toFixed(2))} 이상</dd>`).join("")}</dl>` : fallback.outerHTML));
+  return wrap;
+}
+export function renderBarChartSVG(items, options = {}) {
+  const fallback = renderLegacyBarChartSVG(items, {...options, animated:false});
+  const wrap = document.createElement("div");
+  wrap.className = "bklit-report-chart";
+  wrap.innerHTML = chartHost(metricChartSpec(items, {title:"공수", decimals:2, unit:"", complete:options.complete !== false, animated:options.animated}), (options.complete === false ? `<p>일부 조회 · 확인한 범위의 공수입니다.</p><dl>${items.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${escapeHtml(Number(item.amount).toFixed(2))} 이상</dd>`).join("")}</dl>` : fallback.outerHTML));
   return wrap;
 }

@@ -22,7 +22,8 @@
   --shadow-sm: 0 1px 2px rgb(25 31 40 / 6%), 0 0 0 1px rgb(25 31 40 / 3%);
   --shadow-md: 0 2px 4px rgb(25 31 40 / 4%), 0 12px 32px rgb(25 31 40 / 10%);
   --shadow: var(--shadow-md);
-  --chat-width: 760px;
+  --chat-width: 1080px;
+  --composer-width: 960px;
 }
 body.theme-dark { --shadow-sm: 0 1px 3px rgb(0 0 0 / 25%); --shadow-md: 0 8px 30px rgb(0 0 0 / 35%); --shadow: var(--shadow-md); }
 .app-shell { grid-template-columns: var(--rail-w) 272px minmax(0, 1fr); background: var(--bg); }
@@ -57,7 +58,32 @@ body.theme-dark .app-shell { background: var(--bg); }
 .chat-header h2 { font-size: 16px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .messages { padding-top: 28px; gap: 28px; }
 .message-content { min-width: 0; }
-.message.assistant .bubble { font-size: 16px; line-height: 1.75; }
+/* 답변의 문단·표·목록이 같은 축을 공유하고, 본문보다 보조 정보가 작게 읽히게 한다. */
+.message.assistant .bubble { font-size: 15px; line-height: 1.65; }
+.assistant-answer { gap: var(--space-3); }
+.assistant-answer p, .answer-list { line-height: 1.65; }
+.assistant-answer > .answer-heading { margin: var(--space-3) 0 0; font-size: 16px; line-height: 1.5; }
+.assistant-answer > .answer-heading:first-child { margin-top: 0; }
+.assistant-answer > .answer-heading + .answer-list,
+.assistant-answer > .answer-heading + p { margin-top: -4px; }
+.message.assistant .source-list, .message.assistant .follow-up-panel { max-width: none; }
+.answer-list { gap: 6px; }
+.answer-callout { font-size: 13px; line-height: 1.6; }
+/* 검색 조건은 조회에 유지하되 답변에서는 조건 칩을 노출하지 않는다. */
+.message.assistant :is(.search-condition-bar, .criteria-chips) { display: none; }
+.criteria-chips-label { display: none; }
+.message.assistant .markdown-table-wrap, .message.assistant .issue-table-wrap { border-radius: var(--radius-card); background: var(--surface); }
+.assistant-answer > .issue-table-wrap { margin: 0; }
+.message.assistant .markdown-table tbody tr:nth-child(even) { background: transparent; }
+.message.assistant .markdown-table tbody tr:hover { background: var(--surface-alt); }
+/* 일곱 열의 이슈 표도 1080px 본문 안에서 읽을 수 있게 고정 열의 여백을 줄인다. */
+.message.assistant .issue-table { min-width: 960px; }
+.message.assistant .issue-table :is(th, td):nth-child(1) { width: 80px; }
+.message.assistant .issue-table :is(th, td):nth-child(2) { width: 132px; }
+.message.assistant .issue-table :is(th, td):nth-child(5) { width: 76px; }
+.message.assistant .issue-table :is(th, td):nth-child(6) { width: 90px; }
+.message.assistant .issue-table :is(th, td):nth-child(7) { width: 110px; }
+
 .ab-panel { padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); align-content: start; }
 .ab-panel.is-context-selected { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
 .message.assistant .ab-panel .bubble { padding: 0; border: 0; background: transparent; box-shadow: none; }

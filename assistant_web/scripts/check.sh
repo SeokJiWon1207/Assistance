@@ -31,6 +31,11 @@ run_step() {
       "$PYTHON" -m coverage report
       ;;
     compile)
+      # 서버에는 빌드 결과만 배포하며 로컬/CI에서 원본과 번들의 일치를 검증한다.
+      if [[ ! -d assistant_web/frontend/node_modules ]]; then
+        npm --prefix assistant_web/frontend ci --ignore-scripts --no-audit --no-fund
+      fi
+      npm --prefix assistant_web/frontend run check
       "$PYTHON" -m compileall -q assistant_web/backend assistant_web/scripts assistant_web/tests
       ;;
     shell)
@@ -46,6 +51,7 @@ run_step() {
       ;;
     audit)
       "$PYTHON" assistant_web/scripts/check_dependency_audit.py
+      npm --prefix assistant_web/frontend audit --omit=dev --audit-level=high
       ;;
     *)
       echo "알 수 없는 단계: $1 (가능: ${ALL_STEPS[*]})" >&2

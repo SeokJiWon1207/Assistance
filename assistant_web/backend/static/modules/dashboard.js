@@ -1,3 +1,4 @@
+import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { formatUiDateTime, customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
@@ -19,6 +20,7 @@ const AGE_BUCKETS = [
   { key: "30-59", label: "30–59일", min: 30, max: 59, tone: "aging" },
   { key: "60+", label: "60일 이상", min: 60, max: Infinity, tone: "overdue" },
 ];
+const BKLIT_SEGMENTS = [{ key: "overdue", label: "지연", color: "var(--chart-4)" }, { key: "aging", label: "장기(지연 제외)", color: "var(--chart-3)" }, { key: "rest", label: "그 외", color: "var(--chart-1)" }];
 const SEGMENT_LABELS = { overdue: "지연", aging: "장기", rest: "그 외" };
 const CHART_CUSTOMER_LIMIT = 6;
 const PRIORITY_PREVIEW_LIMIT = 5;
@@ -188,8 +190,7 @@ function stackedTrack(counts, max) {
 }
 
 function chartLegend() {
-  return `<div class="dashboard-chart-legend" aria-hidden="true">${Object.entries(SEGMENT_LABELS)
-    .map(([key, label]) => `<span><i class="is-${key}"></i>${label}</span>`).join("")}</div>`;
+  return `<span class="dashboard-chart-note">지연과 장기가 겹치면 지연으로 집계합니다.</span>`;
 }
 
 function spikeSummary(item, customer = false) {
@@ -235,7 +236,7 @@ function renderCustomerChart(openIssues, health, customerSpikes, screenSpikes) {
     <section class="workspace-section dashboard-chart" aria-label="고객사별 미종료">
       ${sectionHeader("고객사별 미종료", "막대를 누르면 목록이 걸러집니다")}
       <div class="dashboard-chart-body">
-        ${rows.length ? `<div class="dashboard-bars">${bars}</div>` : emptyBlock("미종료 이슈가 없습니다.")}
+        ${rows.length ? chartHost({ kind: "bar", title: "고객사별 미종료", complete: dashboardState.data?.meta?.search_complete === true, rows: rows.map(([name, counts]) => ({ id: name, name: customerName(name), fullLabel: customerName(name), ...counts })), series: BKLIT_SEGMENTS, action: "data-dashboard-customer", selected: dashboardState.customer }, `<div class="dashboard-bars">${bars}</div>`) : emptyBlock("미종료 이슈가 없습니다.")}
         ${hidden > 0 ? `<p class="dashboard-chart-note">그 외 고객사 ${hidden}곳은 우선 확인 이슈 목록에서 볼 수 있습니다.</p>` : ""}
         ${otherSpikes.length ? `<p class="dashboard-chart-note"><b>급증 신호</b> ${escapeHtml(otherSpikes.join(" · "))}</p>` : ""}
       </div>
@@ -267,7 +268,7 @@ function renderAgeChart(openIssues) {
     <section class="workspace-section dashboard-chart" aria-label="미종료 경과일">
       ${sectionHeader("미종료 경과일", "등록 후 지난 일수")}
       <div class="dashboard-chart-body">
-        ${openIssues.length ? `<div class="dashboard-columns">${columns}</div>
+        ${openIssues.length ? `${chartHost({kind: "bar", title: "미종료 경과일", orientation: "vertical", complete: dashboardState.data?.meta?.search_complete === true, rows: AGE_BUCKETS.map(bucket => ({id: bucket.key, name: bucket.label, count: counts[bucket.key]})), series: [{key: "count", label: "미종료", color: "var(--chart-1)"}], action: "data-dashboard-age", selected: dashboardState.age}, `<div class="dashboard-columns">${columns}</div>`)}
         <p class="dashboard-chart-note">30일 이상 ${observedCount(aging)}이 장기 미종료입니다.${unknown ? ` 등록일을 확인하지 못한 ${formatNumber(unknown)}건은 제외했습니다.` : ""}</p>` : emptyBlock("미종료 이슈가 없습니다.")}
       </div>
     </section>`;
@@ -294,7 +295,7 @@ function renderMemberChart(members) {
   return `
     <section class="workspace-section dashboard-chart" aria-label="팀원별 업무 부하">
       ${sectionHeader("팀원별 부하", `미종료 기준 · ${members.length}명`)}
-      <div class="dashboard-chart-body"><div class="dashboard-bars">${bars}</div></div>
+      <div class="dashboard-chart-body">${chartHost({kind: "bar", title: "팀원별 부하", complete: dashboardState.data?.meta?.search_complete === true, rows: rows.map(row => ({id: row.mantisUsername, name: row.displayName, ...row.counts})), series: BKLIT_SEGMENTS}, `<div class="dashboard-bars">${bars}</div>`)}</div>
     </section>`;
 }
 
@@ -398,6 +399,7 @@ let stopDashboardReveal = () => {};
 
 function renderDashboard() {
   if (!els.dashboardBody) return;
+  releaseCharts(els.dashboardBody);
   stopDashboardReveal();
   stopDashboardReveal = () => {};
   const loading = dashboardState.loading || Boolean(dashboardFreshPromise);
@@ -456,9 +458,14 @@ function renderDashboard() {
     ${renderMetrics(data.summary, complete)}
     <div class="dashboard-dist-head"><h3>미종료 분포</h3>${chartLegend()}</div>
     <div class="dashboard-grid${memberChart ? "" : " is-two"}">${renderCustomerChart(priorities, data.customerHealth || [], data.customerSpikes || [], data.screenSpikes || [])}${renderAgeChart(priorities)}${memberChart}</div>
+    <div class="bklit-insights-grid">
+      <section class="workspace-section dashboard-chart">${sectionHeader("신규 이슈 등록 추이", "선택 기간 · 등록일 기준")}<div class="dashboard-chart-body">${chartHost({kind: "trend", title: "신규 이슈 등록 추이", complete, points: data.intakeTrend || []}, `<p>선택 기간 신규 ${observedCount(data.summary.newIssues)} · 일별 차트를 준비하고 있습니다.</p>`)}</div></section>
+      <section class="workspace-section dashboard-chart">${sectionHeader("신규 이슈의 현재 상태", "처리 완료 건수와 구분")}<div class="dashboard-chart-body">${chartHost({kind: "cohort", title: "신규 이슈의 현재 상태", complete, summary: data.summary}, `<p>현재 종료 ${observedCount(data.summary.closedNow)} · 현재 미종료 ${observedCount(data.summary.newOpen)} · 상태 미상 ${observedCount(data.summary.unknownStatus)}</p>`)}</div></section>
+    </div>
     ${renderPriorities(priorities, filtered)}
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>`;
   if (!dashboardContentShown) stopDashboardReveal = revealOnScroll(els.dashboardBody, DASHBOARD_REVEAL_SELECTOR);
+  mountCharts(els.dashboardBody);
   dashboardContentShown = true;
 }
 
