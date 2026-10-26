@@ -99,6 +99,7 @@ class TemplateCase:
     base_issue_id: Optional[int] = None
     forbidden_terms: List[str] = field(default_factory=list)
     preceding_questions: List[str] = field(default_factory=list)
+    as_of: str = ""
 
 
 # ── 질문 만들기 ─────────────────────────────────────────────────────────────
@@ -270,6 +271,10 @@ def build_cases(
         issues, rng, today=today, bucket="open")
     done_issue = pick_issue(issues, rng, today=today, bucket="done", customer=customer) or pick_issue(
         issues, rng, today=today, bucket="done")
+    # 일반 템플릿은 팀 기본 범위, 명시적 이슈 문서는 위에서 고른 원문 범위다.
+    from backend.team_scope import TEAM_MEMBERS
+    members = set(TEAM_MEMBERS)
+    issues = [issue for issue in issues if handler_name(issue) in members]
     cases: List[TemplateCase] = []
 
     def add(template_id: str, overrides: Dict[str, str], **expect: Any) -> None:
@@ -283,6 +288,7 @@ def build_cases(
             title=str(template.get("title") or template_id),
             question=fill_question(template, values),
             values=values,
+            as_of=today.isoformat(),
             **expect,
         ))
 
@@ -427,7 +433,10 @@ def check_filter(case: TemplateCase, constraints: Mapping[str, Any]) -> Optional
         problems.append(f"상태 {sorted(missing_statuses)} 누락")
     if case.expected_range:
         actual_range = constraints.get("created_at") or {}
-        if (actual_range.get("from"), actual_range.get("to")) != (case.expected_range["from"], case.expected_range["to"]):
+        def end_at_run(value):
+            return min(value, case.as_of) if value and case.as_of else value
+        if (actual_range.get("from"), end_at_run(actual_range.get("to"))) != (
+                case.expected_range["from"], end_at_run(case.expected_range["to"])):
             problems.append(
                 f"기간 {case.expected_range['from']}~{case.expected_range['to']} → "
                 f"{actual_range.get('from') or '?'}~{actual_range.get('to') or '?'}"
@@ -459,6 +468,15 @@ def notice_update_explained(content: str) -> bool:
     return False
 
 
+def confirmed_empty_result(response: Mapping[str, Any]) -> bool:
+    stages = (response.get("retrieval") or {}).get("stages") or []
+    mantis = [stage for stage in stages if str(stage.get("source") or "").startswith("mantis_")]
+    return bool(mantis and not response_issue_ids(response)
+                and all(stage.get("status") == "ok" and not stage.get("issues_list")
+                        and (stage.get("meta") or {}).get("search_complete") is True
+                        and (stage.get("meta") or {}).get("found_count") == 0 for stage in mantis))
+
+
 def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[int]) -> Dict[str, Any]:
     content = str(response.get("content") or "")
     checks: Dict[str, Dict[str, Any]] = {}
@@ -482,11 +500,12 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
     if filter_check is not None:
         checks["filter"] = filter_check
 
+    empty = case.expected_count == 0 and confirmed_empty_result(response)
     oracle_problems: List[str] = []
     oracle_applies = False
     if case.expected_count is not None:
         oracle_applies = True
-        if not count_mentioned(content, case.expected_count, case.template_id):
+        if not empty and not count_mentioned(content, case.expected_count, case.template_id):
             oracle_problems.append(f"요청한 지표가 저장본 기준 {case.expected_count}건과 다름 또는 답변에 없음")
     if case.expected_issue_ids:
         oracle_applies = True
@@ -508,7 +527,7 @@ def grade(case: TemplateCase, response: Mapping[str, Any], known_issue_ids: set[
 
     missing_sections = [
         "/".join(group) for group in REQUIRED_SECTIONS.get(case.template_id, [])
-        if not any(term in content for term in group)
+        if not (empty and group == ("|",)) and not any(term in content for term in group)
     ]
     checks["sections"] = {"passed": not missing_sections, "problems": [f"'{name}' 항목 없음" for name in missing_sections]}
     if case.template_id == "customer-notice" and not notice_update_explained(content):

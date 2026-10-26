@@ -22,7 +22,7 @@ from scripts.accuracy.template_quality_check import (
 )
 
 
-def issue(issue_id, project, created, status="assigned", handler="홍길동", summary="[MTS] 주문 화면이 열리지 않는 현상"):
+def issue(issue_id, project, created, status="assigned", handler="석지원", summary="[MTS] 주문 화면이 열리지 않는 현상"):
     return {
         "id": issue_id,
         "project": {"name": project},
@@ -100,7 +100,7 @@ class TemplateQuestionTests(unittest.TestCase):
         self.assertEqual(by_id["aging-issues"].expected_issue_ids, [1001, 1002, 1004])
         notice = by_id["customer-notice"]
         self.assertIn(f"#{notice.base_issue_id}", notice.forbidden_terms)
-        self.assertIn("홍길동", notice.forbidden_terms)
+        self.assertIn("석지원", notice.forbidden_terms)
         self.assertEqual(by_id["daily-operations"].expected_count, 3)
 
     def test_routine_maintenance_tickets_are_not_used_for_incident_templates(self):
@@ -283,3 +283,33 @@ class GradingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TemplateAuditGradingTests(unittest.TestCase):
+    def test_expected_counts_use_default_team_but_explicit_issue_cases_keep_raw_record(self):
+        rows = [issue(9011, '112KBStar(KB증권)', '2026-09-02', handler='석지원'),
+                issue(9012, '112KBStar(KB증권)', '2026-09-03', handler='다른팀'),
+                issue(9013, '112KBStar(KB증권)', '2026-09-04', status='closed', handler='다른팀')]
+        cases = build_cases(load_team_templates()['templates'], rows, today=TODAY, rng=random.Random(1))
+        analysis = next(c for c in cases if c.template_id == 'customer-analysis')
+        self.assertEqual(analysis.expected_count, 1)
+        notice = next(c for c in cases if c.template_id == 'customer-notice')
+        self.assertEqual(notice.base_issue_id, 9013)
+
+    def test_confirmed_empty_result_does_not_require_an_empty_table_or_zero_literal(self):
+        case = TemplateCase('empty', 'customer-analysis', '분석', '이슈를 표로 보여줘', {}, expected_count=0)
+        response = {'content': '요청 조건에 맞는 이슈를 찾지 못했어요. 검색 기준: 고객사 KB증권, 상태 미종료, 등록일 지난달입니다.',
+                    'sources': [], 'retrieval': {'stages': [{'source': 'mantis_snapshot', 'status': 'ok',
+                    'issues_list': [], 'meta': {'search_complete': True, 'found_count': 0}}]}}
+        self.assertTrue(grade(case, response, set())['passed'])
+        response['retrieval']['stages'][0]['meta']['search_complete'] = False
+        self.assertFalse(grade(case, response, set())['checks']['oracle']['passed'])
+
+    def test_current_week_end_and_today_are_equivalent_only_at_the_recorded_run_date(self):
+        from scripts.accuracy.template_quality_check import check_filter
+        case = TemplateCase('week', 'customer-analysis', '분석', '이번 주 이슈', {},
+                            expected_range={'from':'2026-10-26','to':'2026-11-01'})
+        case.as_of = '2026-10-26'
+        self.assertTrue(check_filter(case, {'created_at':{'from':'2026-10-26','to':'2026-10-26'}})['passed'])
+        self.assertFalse(check_filter(case, {'created_at':{'from':'2026-10-25','to':'2026-10-26'}})['passed'])
+        case.as_of = '2026-11-02'
+        self.assertFalse(check_filter(case, {'created_at':{'from':'2026-10-26','to':'2026-10-26'}})['passed'])
