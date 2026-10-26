@@ -85,6 +85,7 @@ class FrontendCoreTests(unittest.TestCase):
             "feedbackModal",
             "feedbackForm",
             "authGate",
+            "authScene",
             "loginForm",
             "signedInUser",
             "logoutConfirmModal",
@@ -96,7 +97,6 @@ class FrontendCoreTests(unittest.TestCase):
             "adminDrawerForm",
         ):
             self.assertIn(required_id, parser.ids)
-        self.assertNotIn('<canvas id="authScene"', html)
         self.assertIn("/static/design_system.css", html)
         self.assertLess(html.index("/static/auth.js"), html.index("/static/app.js"))
         self.assertLess(html.index("/static/frontend_core.js"), html.index("/static/app.js"))
