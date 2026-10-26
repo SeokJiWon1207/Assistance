@@ -233,3 +233,27 @@ Chroma 원문 파일과 WAL의 세대가 일치할 때만 사용하며, 최종 �
 재검증합니다. 새 Chroma 저장본 배포 시 활성화 전에 같은 런타임으로
 `scripts/build_chroma_titles.py --source <CHROMA_DB_PATH> --target <ASSISTANT_RUNTIME_DIR>/chroma_titles.sqlite3`
 를 실행합니다. 실패하거나 원문이 바뀌면 기존 스트리밍 경로를 사용합니다.
+
+### 배포본·백업 자동 보관
+
+기본 `RELEASE_KEEP=3`은 **현재 버전과 직전 두 버전**을 뜻하며 3보다 작게 설정할 수 없습니다. 정상 배포 확인 후 `install_deployment_retention.sh`가 공통 정리 도구를 설치하고 실행합니다. 같은 도구를 `content-ai-deployment-retention.timer`가 매일 한 번 실행하며, 서버가 꺼져 있었다면 부팅 후 놓친 작업을 수행합니다. 별도 수동 배포도 타이머로 정리됩니다.
+
+- 현재보다 새로운 릴리스, 실행 중 프로세스가 사용하는 릴리스 및 남겨둘 릴리스가 심볼릭 링크로 참조하는 이전 가상환경은 추가 보존합니다. 따라서 안전상 필요하면 총 3개를 초과할 수 있습니다.
+- 완성된 배포 이력이 3개보다 적으면 백업도 자동 삭제하지 않습니다. 미완성·알 수 없는 이름의 폴더와 검색 스냅샷은 자동 삭제하지 않습니다. `data` 링크를 통해 공유하는 검색 인덱스는 그대로 유지됩니다.
+- `/var/lib/content-ai-assistant/deployment-backups`, `/var/backups/content-ai-assistant`, `/opt/content-ai-assistant/backups`의 날짜로 식별 가능한 배포 백업 중 가장 오래된 보존 릴리스보다 앞선 것만 정리합니다. 보존하는 버전에 대응하는 백업과 실행 중 파일은 유지합니다. 미완료 백업은 7일 유예합니다.
+- 예전 `users/workspace/assistant_audit-YYYYMMDD-HHMMSS.sqlite3[.gz|.xz]` 형식은 디렉터리별 최신 3개 시각 묶음 및 최근 7일분을 보존합니다. 수동·특수 목적의 이름을 가진 백업은 삭제하지 않습니다.
+- 기본은 미리보기이며 `--apply`에서만 삭제합니다. 실행 전 운영 `/ready`를 확인하고 배포·롤백과 같은 `.deployment.lock`을 잡습니다. 정상 상태 확인 중 배포나 참조가 달라지면 중단합니다. 자동 삭제된 과거 항목은 복구할 수 없으므로 장기 보관이 필요한 백업은 관리 경로 밖에 따로 보관합니다.
+- 최근 실제 실행 기록은 `$STATE_DIR/retention-last-run.json`, 작업 로그는 `journalctl -u content-ai-deployment-retention.service`, 다음 실행 시각은 `systemctl list-timers content-ai-deployment-retention.timer`로 확인합니다.
+
+운영 설치(앱 재시작 불필요):
+
+```bash
+bash assistant_web/deploy/aws/install_deployment_retention.sh
+```
+
+삭제 없는 계획 확인:
+
+```bash
+sudo /opt/content-ai-assistant/current/assistant_web/.venv/bin/python -B \
+  /usr/local/libexec/content-ai-assistant/prune_deployments.py
+```

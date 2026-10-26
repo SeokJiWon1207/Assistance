@@ -9,7 +9,7 @@ ACME_WEBROOT="${ACME_WEBROOT:-/var/lib/content-ai-assistant-acme}"
 STATE_DIR="${STATE_DIR:-/var/lib/content-ai-assistant}"
 RELEASE_DIR="${RELEASE_DIR:-}"
 RELEASE_ID="${RELEASE_ID:-}"
-RELEASE_KEEP="${RELEASE_KEEP:-2}"
+RELEASE_KEEP="${RELEASE_KEEP:-3}"
 MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-primary}"
 RELEASES_DIR="$APP_ROOT/releases"
 CURRENT_LINK="$APP_ROOT/current"
@@ -26,6 +26,10 @@ if [[ -z "$RELEASE_DIR" || -z "$RELEASE_ID" ]]; then
 fi
 if [[ "$RELEASE_DIR" != "$RELEASES_DIR/$RELEASE_ID" || ! "$RELEASE_ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
   echo "Release path is outside the managed releases directory: $RELEASE_DIR" >&2
+  exit 1
+fi
+if [[ ! "$RELEASE_KEEP" =~ ^[0-9]+$ ]] || (( RELEASE_KEEP < 3 )); then
+  echo "RELEASE_KEEP must be at least 3." >&2
   exit 1
 fi
 if [[ "$MANTIS_INDEX_MODE" != "off" && "$MANTIS_INDEX_MODE" != "shadow" && "$MANTIS_INDEX_MODE" != "primary" ]]; then
@@ -343,31 +347,14 @@ if [[ "$maintenance_created" == "1" ]]; then rm -f -- "$APP_ROOT/maintenance.on"
 trap - ERR
 rm -rf -- "$rollback_dir"
 
-# 성공한 뒤에만 오래된 불변 릴리스와 그 전용 스냅샷을 정리한다.
-mapfile -t managed_releases < <(
-  find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d \
-    -name '20??????T??????Z' -printf '%f\n' | sort -r
-)
-if (( ${#managed_releases[@]} > RELEASE_KEEP )); then
-  for expired_id in "${managed_releases[@]:RELEASE_KEEP}"; do
-    expired_release="$RELEASES_DIR/$expired_id"
-    if [[ "$(readlink -f "$CURRENT_LINK")" != "$expired_release" ]]; then
-      rm -rf -- "$expired_release" "$APP_ROOT/snapshots/$expired_id"
-    fi
-  done
-fi
-
-# 실제 불변 릴리스가 2개 이상이면 legacy 없이도 즉시 롤백할 수 있다. 이때에만
-# 외부 상태 디렉터리와 무관한 구 in-place 배포 복사본을 제거해 디스크를 회수한다.
-if (( ${#managed_releases[@]} >= 2 )) && [[ -d "$RELEASES_DIR/legacy" ]]; then
-  if [[ "$(readlink -f "$CURRENT_LINK")" != "$RELEASES_DIR/legacy" ]]; then
-    rm -rf -- \
-      "$RELEASES_DIR/legacy" \
-      "$APP_ROOT/assistant_web" \
-      "$APP_ROOT/data" \
-      "$APP_ROOT/scripts"
-    echo "Removed legacy in-place deployment after two immutable releases were verified."
-  fi
+# 정상 배포 표시가 없는 스테이징은 롤백 슬롯에서 제외한다.
+printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$RELEASE_DIR/.deployment-ready.json"
+# 배포가 완전히 성공한 뒤 잠금을 놓고 동일한 보관 도구를 실행한다.
+# systemd 타이머는 수동 배포 경로에서도 하루 한 번 같은 검사를 수행한다.
+flock -u 9
+if ! APP_ROOT="$APP_ROOT" APP_USER="$APP_USER" STATE_DIR="$STATE_DIR" APP_PORT="$APP_PORT" RELEASE_KEEP="$RELEASE_KEEP" \
+  bash "$APP_DIR/deploy/aws/install_deployment_retention.sh"; then
+  echo "Release is healthy, but retention setup failed; inspect content-ai-deployment-retention.service." >&2
 fi
 
 echo "Done. Activated release=$RELEASE_ID previous=$previous_current"

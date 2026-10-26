@@ -44,7 +44,8 @@ class LocalScriptSafetyTests(unittest.TestCase):
             '"$PROJECT_DIR/assistant_web/deploy/aws/deploy_to_ec2.sh"',
             script,
         )
-        self.assertIn("RELEASE_KEEP=1", script)
+        # 현재 배포본과 직전 두 버전의 롤백 경로를 유지한다.
+        self.assertIn("RELEASE_KEEP=3", script)
 
 
 if __name__ == "__main__":

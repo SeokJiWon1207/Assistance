@@ -12,7 +12,7 @@ Optional:
   SERVER_NAME=demo.example.com
   INCLUDE_ENV=1
   FIREBASE_CREDENTIALS=/secure/path/service-account.json
-  RELEASE_KEEP=2
+  RELEASE_KEEP=3
   MANTIS_INDEX_MODE=primary
 USAGE
   exit 1
@@ -21,7 +21,7 @@ fi
 EC2_USER="${EC2_USER:-ubuntu}"
 APP_ROOT="${APP_ROOT:-/opt/content-ai-assistant}"
 SERVER_NAME="${SERVER_NAME:-$EC2_HOST}"
-RELEASE_KEEP="${RELEASE_KEEP:-2}"
+RELEASE_KEEP="${RELEASE_KEEP:-3}"
 MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-primary}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -30,8 +30,8 @@ if [[ ! "$RELEASE_ID" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]; then
   echo "RELEASE_ID must use YYYYMMDDTHHMMSSZ format: $RELEASE_ID" >&2
   exit 1
 fi
-if [[ ! "$RELEASE_KEEP" =~ ^[1-9][0-9]*$ ]]; then
-  echo "RELEASE_KEEP must be a positive integer." >&2
+if [[ ! "$RELEASE_KEEP" =~ ^[1-9][0-9]*$ ]] || (( RELEASE_KEEP < 3 )); then
+  echo "RELEASE_KEEP must be at least 3." >&2
   exit 1
 fi
 if [[ "$MANTIS_INDEX_MODE" != "off" && "$MANTIS_INDEX_MODE" != "shadow" && "$MANTIS_INDEX_MODE" != "primary" ]]; then

@@ -25,7 +25,7 @@ chmod 400 "$SSH_KEY"
 EC2_HOST="$EC2_HOST" \
 SSH_KEY="$SSH_KEY" \
 INCLUDE_ENV=1 \
-RELEASE_KEEP=1 \
+RELEASE_KEEP=3 \
 "$PROJECT_DIR/assistant_web/deploy/aws/deploy_to_ec2.sh"
 
 echo
