@@ -111,7 +111,24 @@ body.theme-dark .app-shell { background: var(--bg); }
 .related-issue-main h3 { font-size: 14px; line-height: 1.5; margin: 0 0 var(--space-1); overflow-wrap: anywhere; }
 .related-issue-main small { color: var(--muted); font-size: 12px; }
 .related-issue-item:hover { background: var(--surface-alt); }
-.related-issue-item .status-badge { max-width: 110px; white-space: normal; }
+.source-list .status-badge {
+  flex: 0 0 auto;
+  justify-self: end;
+  gap: 5px;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-badge);
+  font-size: 12px;
+  font-weight: 500;
+  font-style: normal;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.source-list .status-badge::before { width: 5px; height: 5px; flex-shrink: 0; }
+.source-list .status-badge.status-neutral {
+  background: color-mix(in srgb, var(--muted) 8%, var(--surface));
+  color: color-mix(in srgb, var(--text-soft) 75%, var(--muted));
+}
+.source-list .status-badge.status-neutral::before { opacity: .6; }
 .source-list-more { width: 100%; border: 0; border-top: 1px solid var(--line); min-height: 40px; background: var(--surface); color: var(--text-soft); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .source-list.is-table .related-issue-item { grid-template-columns: 64px minmax(0, 1fr) auto; }
 .source-list.is-table .related-issue-main { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(120px, .6fr); gap: var(--space-4); align-items: center; }
