@@ -66,3 +66,27 @@ class ConversationBulkDeleteTests(TestCase):
     def test_unauthenticated_request_is_rejected(self):
         with patch('backend.api.workspace.current_request_user', return_value=None):
             self.assertEqual(self.client.post('/api/workspace/conversations/bulk-delete', json={'all': True}).status_code, 401)
+
+    def test_listing_identifies_all_own_ids_beyond_the_message_page(self):
+        for cid in ('first', 'second', 'third'):
+            self.save('a', cid)
+        self.save('b', 'private')
+        listing = self.client.get('/api/workspace/conversations?limit=1').json()
+        self.assertEqual(len(listing['conversations']), 1)
+        self.assertIn('conversationIds', listing)
+        self.assertEqual(set(listing['conversationIds']), {'first', 'second', 'third'})
+        self.client.post('/api/workspace/conversations/bulk-delete', json={'ids': ['second']})
+        self.assertEqual(set(self.client.get('/api/workspace/conversations?limit=1').json()['conversationIds']), {'first', 'third'})
+
+    def test_deleted_revision_cannot_be_saved_as_a_conflict_recovery(self):
+        for bulk in (False, True):
+            with self.subTest(bulk=bulk):
+                saved = workspace.save_conversation('a', 'old', '삭제할 대화', [{'role': 'user', 'content': '질문'}], False)
+                if bulk:
+                    self.client.post('/api/workspace/conversations/bulk-delete', json={'all': True})
+                else:
+                    self.client.delete('/api/workspace/conversations/old')
+                response = self.client.put('/api/workspace/conversations/old', json={
+                    'expectedUpdatedAt': saved['updatedAt'], 'messages': [{'role': 'user', 'content': '늦은 저장'}], 'startIndex': 0})
+                self.assertEqual(response.status_code, 410, response.text)
+                self.assertIsNone(workspace.get_conversation('a', 'old'))

@@ -15,11 +15,12 @@ from backend.schemas import ConversationMessage
 from backend.workspace import (
     ConversationQuotaError,
     ConversationConflictError,
+    ConversationDeletedError,
     build_my_workspace,
     build_team_dashboard,
     delete_conversation,
     delete_conversations,
-    list_conversations,
+    conversation_listing,
     get_conversation,
     mark_notification_read,
     save_conversation,
@@ -94,7 +95,7 @@ def operations_dashboard(request: Request, days: int = 30, refresh: bool = False
 
 @router.get("/conversations")
 def my_conversations(request: Request, limit: int = 40) -> Dict[str, Any]:
-    return {"conversations": list_conversations(_user(request)["uid"], limit)}
+    return conversation_listing(_user(request)["uid"], limit)
 
 
 @router.put("/conversations/{conversation_id}")
@@ -116,6 +117,8 @@ def put_conversation(
             start_index=payload.startIndex,
             truncate=payload.truncate,
         )
+    except ConversationDeletedError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
     except ConversationConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ConversationQuotaError as exc:

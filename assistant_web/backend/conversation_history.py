@@ -14,6 +14,10 @@ class ConversationConflictError(ValueError):
     """기존 메시지를 덮기 전에 서버 버전과 순번 경계를 확인한다."""
 
 
+class ConversationDeletedError(ValueError):
+    """삭제된 서버 기록을 오래된 기기의 저장 요청으로 되살리지 않는다."""
+
+
 class ConversationQuotaError(ValueError):
     """용량을 초과하면 기존 기록을 자르지 않고 쓰기를 거절한다."""
 
@@ -86,10 +90,17 @@ def get_conversation(path: Path, user, conversation, *, before=None, limit=60):
 
 
 def list_conversations(path: Path, user, limit=40):
+    return conversation_listing(path, user, limit)['conversations']
+
+
+def conversation_listing(path: Path, user, limit=40):
     with closing(sqlite3.connect(path)) as db, db:
+        # 메시지 페이지 밖의 대화도 같은 스냅샷에서 확인해야 삭제와 미조회 상태를 구분할 수 있다.
+        db.execute('BEGIN')
         ids = db.execute('SELECT conversation_id FROM conversations WHERE user_uid=? '
-                         'ORDER BY favorite DESC,updated_at DESC LIMIT ?', (user, max(1,min(int(limit),100)))).fetchall()
-        return [read_page(db,user,row[0]) for row in ids]
+                         'ORDER BY favorite DESC,updated_at DESC', (user,)).fetchall()
+        return {'conversations': [read_page(db,user,row[0]) for row in ids[:max(1,min(int(limit),100))]],
+                'conversationIds': [row[0] for row in ids]}
 
 
 def save_conversation(path: Path, user, conversation, title, messages, favorite, created_at='',
@@ -103,6 +114,8 @@ def save_conversation(path: Path, user, conversation, title, messages, favorite,
     with closing(sqlite3.connect(path)) as db, db:
         db.execute('BEGIN IMMEDIATE')
         old = db.execute('SELECT updated_at,created_at FROM conversations WHERE user_uid=? AND conversation_id=?', (user,conversation)).fetchone()
+        if old is None and expected_updated_at:
+            raise ConversationDeletedError('다른 창이나 기기에서 삭제된 대화입니다.')
         if expected_updated_at is not None and expected_updated_at != (old[0] if old else ''):
             raise ConversationConflictError('다른 기기에서 대화가 변경되었습니다. 현재 기록을 보존한 뒤 다시 동기화해 주세요.')
         count = db.execute('SELECT COUNT(*) FROM conversations WHERE user_uid=?',(user,)).fetchone()[0]

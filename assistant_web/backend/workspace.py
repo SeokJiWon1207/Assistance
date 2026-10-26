@@ -24,7 +24,7 @@ from backend.sources.notion import (
     normalize_notion_page,
 )
 from backend import conversation_history
-from backend.conversation_history import ConversationConflictError, ConversationQuotaError  # noqa: F401
+from backend.conversation_history import ConversationConflictError, ConversationDeletedError, ConversationQuotaError  # noqa: F401
 from backend.tools.mantis_snapshot import scan_mantis_documents
 from backend.workspace_data import load_workspace_snapshot
 from backend.team_scope import filter_team_issues, team_member_profiles
@@ -137,6 +137,11 @@ def _safe_messages(messages):
 def list_conversations(user_uid: str, limit: int = 40):
     init_workspace_db()
     return conversation_history.list_conversations(workspace_db_path(), user_uid, limit)
+
+
+def conversation_listing(user_uid: str, limit: int = 40):
+    init_workspace_db()
+    return conversation_history.conversation_listing(workspace_db_path(), user_uid, limit)
 
 
 def get_conversation(user_uid: str, conversation_id: str, *, before=None, limit=60):

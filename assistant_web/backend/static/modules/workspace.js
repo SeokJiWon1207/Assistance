@@ -138,6 +138,25 @@ function syncConversation(conversation) {
         }),
       });
       if (state.currentUser?.uid !== uid) return;
+      if (response.status === 410) {
+        // 삭제는 버전 충돌과 다르다. 복구본을 만들거나 재시도해 삭제한 내용을 되살리지 않는다.
+        conversationMutation += 1;
+        clearTimeout(conversationSyncTimers.get(conversation.id));
+        conversationSyncTimers.delete(conversation.id);
+        syncedMessageState.delete(conversation.id);
+        state.conversations = state.conversations.filter((item) => item.id !== conversation.id);
+        if (!state.conversations.length) state.conversations.push(createConversation());
+        if (state.activeConversationId === conversation.id) {
+          state.activeConversationId = state.conversations[0].id;
+          state.messages = [...(state.conversations[0].messages || [])];
+          cancelMessageEdit();
+          renderMessages();
+        }
+        await saveLocalConversations();
+        renderConversationList();
+        showToast("다른 창이나 기기에서 삭제한 대화를 목록에서 제거했습니다.");
+        return;
+      }
       if (response.status === 409) {
         // 서버 기록은 건드리지 않고 현재 기기의 변경 부분을 복구본으로 보존한다.
         conversation.id = globalThis.crypto.randomUUID();
@@ -268,8 +287,14 @@ async function mergeServerConversations(limit, loadingUid) {
   const generation = conversationMutation;
   const response = await apiFetch(`/api/workspace/conversations?limit=${limit}`);
   if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
-  const serverItems = (await response.json()).conversations || [];
+  const data = await response.json();
+  const serverItems = data.conversations || [];
   if (state.currentUser?.uid !== loadingUid || conversationMutation !== generation) return false;
+  if (Array.isArray(data.conversationIds)) {
+    const existing = new Set(data.conversationIds);
+    // 서버에 저장한 적 있는 항목만 정리한다. 미저장 새 대화와 다음 페이지의 기록은 유지한다.
+    state.conversations = state.conversations.filter((item) => !item.serverUpdatedAt || existing.has(item.id));
+  }
   serverItems.forEach((item) => syncedMessageState.set(item.id, {
     offset: Number(item.messageOffset || 0), messages: storageSafeMessages(item.messages || []), version: item.updatedAt,
   }));

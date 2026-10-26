@@ -127,6 +127,39 @@ test('conflicting remote version preserves both histories', () => {
   assert.equal(merged.find((item) => item.id === 'chat').messages[0].content, 'remote');
 });
 
+test('refresh discards stale synced caches deleted in another tab but keeps offline and unpaged history', async () => {
+  const h = await harness(async () => ({ ok: true, json: async () => ({
+    conversations: [], conversationIds: ['older'],
+  }) }), async () => [{ id: 'deleted', messages: [message('오래된 캐시')], serverUpdatedAt: 'v1' }]);
+  h.storage.set('chats:user-a', JSON.stringify([
+    { id: 'deleted', messages: [message('늦은 변경')], serverUpdatedAt: 'v1', syncPending: true },
+    { id: 'older', messages: [message('다음 페이지')], serverUpdatedAt: 'v1' },
+    { id: 'offline', messages: [message('미저장 질문')], syncPending: true },
+  ]));
+  await h.api.loadConversations();
+  assert.deepEqual(json(h.state.conversations.map((item) => item.id)).sort(), ['offline', 'older']);
+  assert.equal(JSON.parse(h.storage.get('chats:user-a')).some((item) => item.id === 'deleted'), false);
+});
+
+test('late save of a deleted conversation removes it without creating or scheduling a recovery copy', async () => {
+  const cacheWrites = [];
+  const h = await harness(async () => ({ ok: false, status: 410, json: async () => ({ detail: '삭제된 대화' }) }), async (_key, items) => {
+    if (items) cacheWrites.push(json(items));
+    return true;
+  });
+  const deleted = { id: 'deleted', title: '삭제됨', messages: [message('질문')], serverUpdatedAt: 'v1', syncPending: true };
+  h.state.conversations = [deleted];
+  h.state.activeConversationId = 'deleted';
+  h.state.messages = deleted.messages;
+  h.api.scheduleConversationSync(deleted);
+  await assert.doesNotReject(h.api.syncConversation(deleted));
+  assert.deepEqual(json(h.state.conversations.map((item) => item.id)), ['new']);
+  assert.equal(h.state.activeConversationId, 'new');
+  assert.deepEqual(json(h.state.messages), []);
+  assert.equal([...h.timers.values()].filter((timer) => timer.ms === 350).length, 0);
+  assert.equal(cacheWrites.at(-1).some((item) => item.id === 'deleted' || item.id === 'recovered'), false);
+});
+
 test('failed PUT leaves local pending state for retry', async () => {
   const h = await harness(async () => ({ ok: false, status: 500 }));
   const conversation = { id: 'chat', messages: [message('질문')] };
