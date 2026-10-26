@@ -1187,6 +1187,7 @@ def retrieval_trace(retrieval_result: Optional[Dict[str, Any]]) -> List[Dict[str
         "mantis_snapshot": "Mantis 전체 인덱스",
         "mantis_count": "Mantis 건수 집계",
         "mantis_effort": "Mantis 공수 집계",
+        "mantis_effort_trend": "Mantis 월별 집계 원문 예시",
         "chroma_db": "ChromaDB",
     }
     trace = []

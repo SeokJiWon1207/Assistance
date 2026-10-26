@@ -24,7 +24,7 @@ def row(number, customer, month, amount, platform='MTS', handler='이영희'):
     return {'id': number, 'summary': '차트 문의', 'project': {'name': customer},
             'created_at': f'2026-{month:02d}-05T09:00:00+09:00',
             'handler': {'real_name': handler},
-            'custom_fields': [{'field': {'name': '매체구분'}, 'value': platform},
+            'custom_fields': [{'field': {'name': '고객사전달일'}, 'value': f'2026-{month:02d}-05'}, {'field': {'name': '매체구분'}, 'value': platform},
                               {'field': {'name': '1문의공수'}, 'value': f'이영희({amount})'}]}
 
 

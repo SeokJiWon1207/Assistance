@@ -25,6 +25,7 @@ def issue_document(
     *,
     created_at: str,
     issue_type: str,
+    delivered_at: str | None = None,
     effort_line: str = "- 1문의공수: 0.00",
     customer: str = "132SHGM(신한굿모닝증권)",
     platform: str = "MTS",
@@ -45,7 +46,7 @@ def issue_document(
 [일정/전달일]
 - 고객사요청일: {created_at}
 - 고객사전달 목표일: 미상
-- 고객사전달일: 미상
+- 고객사전달일: {created_at if delivered_at is None else delivered_at}
 - 개발완료 목표일: 미상
 - QC 완료 목표일: 미상
 - 버전반영일: 미상
@@ -222,7 +223,8 @@ class EffortTrendReportTest(unittest.TestCase):
             )
 
         self.assertEqual(report["effortTrend"]["totalIssues"], 0)
-        self.assertIn("make_vector_db.py", report["content"])
+        self.assertIn("이슈 유형을 확인하지 못한 1건", report["content"])
+        self.assertIn("전체 저장본의 동기화 상태", report["content"])
 
     def test_returns_none_for_unrelated_question(self):
         self.assertIsNone(build_effort_trend_report("홍길동 공수 알려줘"))
@@ -280,7 +282,7 @@ class EffortTrendReportTest(unittest.TestCase):
 
         self.assertEqual(report["effortTrend"]["untypedCount"], 10)
         self.assertIn("차트에서 빠졌습니다", report["content"])
-        self.assertIn("--full", report["content"])
+        self.assertIn("전체 저장본의 동기화 상태", report["content"])
 
     def test_explicit_year_window_covers_that_year(self):
         documents = [
@@ -324,7 +326,7 @@ class EffortTrendReportTest(unittest.TestCase):
         self.assertIn("해당하는 이슈가 없습니다", report["content"])
         self.assertNotIn("--full", report["content"])
 
-    def test_summary_states_registration_date_basis(self):
+    def test_summary_states_separate_count_and_effort_date_bases(self):
         documents = [issue_document(1, created_at="2026-08-01", issue_type="오류")]
         with tempfile.TemporaryDirectory() as directory:
             index_path = self.build_index(Path(directory), documents)
@@ -332,7 +334,7 @@ class EffortTrendReportTest(unittest.TestCase):
                 "월별 처리건수 추이", months=1, index_path=index_path, today=date(2026, 8, 15)
             )
         self.assertIn("등록일", report["content"])
-        self.assertIn("처리·완료 시점 아님", report["content"])
+        self.assertIn("고객사전달일", report["content"])
 
     def test_planner_path_runs_trend_for_unmatched_phrasing(self):
         documents = [

@@ -5,6 +5,14 @@ from backend.mantis_status import mantis_status_bucket, source_status
 
 def report_evidence_constraints(mode: str, source: dict, constraints: dict, retrieval: dict) -> dict:
     issue_id=source.get('issue_id')
+    if mode == 'deterministic_effort_trend':
+        # 두 시점의 합집합 근거다. 각 날짜는 월별 계산 검증에서 따로 대조한다.
+        scoped = deepcopy(constraints)
+        scoped.pop('created_at', None)
+        scoped.pop('delivered_at', None)
+        scoped['filter_clauses'] = [c for c in scoped.get('filter_clauses', [])
+                                    if c['field'] not in {'created_at', 'delivered_at'}]
+        return scoped
     if mode=='deterministic_similar_resolution':
         seed_ids={i for stage in retrieval.get('stages',[]) if stage.get('source')=='mantis_similar_resolution'
                   for i in stage.get('meta',{}).get('base_issue_ids',[])}
@@ -20,6 +28,14 @@ def report_evidence_constraints(mode: str, source: dict, constraints: dict, retr
                 'deterministic_monthly_customer_report':'mantis_monthly_customer'}.get(mode)
     backlog_ids={i for s in retrieval.get('stages',[]) if s.get('source')==stage_name and stage_name
                  for i in s.get('meta',{}).get('backlog_ids',[])}
+    effort_stage: dict = next((s for s in retrieval.get('stages', []) if s.get('source') == stage_name and stage_name), {})
+    effort_meta = effort_stage.get('meta', {})
+    if issue_id in effort_meta.get('effort_issue_ids', []):
+        scoped = deepcopy(constraints)
+        scoped.pop('created_at', None)
+        scoped['filter_clauses'] = [c for c in scoped.get('filter_clauses', []) if c['field'] != 'created_at']
+        scoped['delivered_at'] = effort_meta.get('effort_period')
+        return scoped
     if issue_id in backlog_ids and mantis_status_bucket(source_status(source))=='open':
         scoped=deepcopy(constraints)
         scoped.pop('created_at',None)

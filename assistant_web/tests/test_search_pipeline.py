@@ -563,6 +563,7 @@ class EffortIntentTests(unittest.TestCase):
             "status": {"name": "closed"},
             "created_at": created_at,
             "custom_fields": [
+                {"field": {"name": "고객사전달일"}, "value": created_at[:10]},
                 {"field": {"name": "매체구분"}, "value": media},
                 {"field": {"name": "1문의공수"}, "value": effort_value},
             ],

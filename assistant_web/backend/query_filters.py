@@ -40,6 +40,8 @@ SUPPORTED_FIELDS = {
     "issue_id",
     "screen_number",
     "created_at",
+    "delivered_at",
+    "effort_person",
     "due_at",
     "deployed_at",
     "title",
@@ -60,6 +62,8 @@ SOURCE_FILTER_FIELDS = {
         "issue_id",
         "screen_number",
         "created_at",
+        "delivered_at",
+        "effort_person",
         "title",
         "keyword",
     },
@@ -85,6 +89,8 @@ SOURCE_FILTER_FIELDS = {
         "issue_id",
         "screen_number",
         "created_at",
+        "delivered_at",
+        "effort_person",
         "title",
         "keyword",
     },
@@ -94,7 +100,7 @@ SOURCE_FILTER_FIELDS = {
 TEXT_OPERATORS = {"equals", "not_equals", "in", "not_in", "contains", "not_contains", "exists", "not_exists"}
 SOURCE_FILTER_OPERATORS = {
     family: {
-        field: (TEXT_OPERATORS | {"gte", "lte", "between"} if field in {"created_at", "due_at", "deployed_at"} else TEXT_OPERATORS)
+        field: (TEXT_OPERATORS | {"gte", "lte", "between"} if field in {"created_at", "due_at", "deployed_at", "delivered_at"} else TEXT_OPERATORS)
         for field in fields
     }
     for family, fields in SOURCE_FILTER_FIELDS.items()
@@ -105,7 +111,7 @@ def clause_supported(source: str, clause: Dict[str, Any]) -> bool:
     field, operator = clause["field"], clause["operator"]
     if operator not in SOURCE_FILTER_OPERATORS.get(source, {}).get(field, set()):
         return False
-    if field in {"created_at", "due_at", "deployed_at"} and operator in {"gte", "lte", "between"}:
+    if field in {"created_at", "due_at", "deployed_at", "delivered_at"} and operator in {"gte", "lte", "between"}:
         values = values_for_clause(clause.get("value"))
         if len(values) != (2 if operator == "between" else 1):
             return False
@@ -141,7 +147,7 @@ def matches_source_filters(source: str, fields: Dict[str, Any], clauses: Any) ->
         raw = fields.get(field, "")
         candidates = raw if isinstance(raw, list) else [raw]
         values = values_for_clause(clause.get("value"))
-        if field in {"created_at", "due_at", "deployed_at"}:
+        if field in {"created_at", "due_at", "deployed_at", "delivered_at"}:
             normalized_dates = []
             for item in candidates:
                 raw_date = str(item or "")
@@ -278,7 +284,7 @@ def filter_clause_label(clause: Dict[str, Any]) -> str:
     else:
         value_text = str(value) if value not in (None, "") else ""
     suffix = operator_labels.get(str(clause.get("operator")), str(clause.get("operator")))
-    field_label = {"due_at": "기한", "deployed_at": "운영반영일"}.get(str(clause.get("field")), str(clause.get("field")))
+    field_label = {"due_at": "기한", "deployed_at": "운영반영일", "delivered_at": "고객사전달일", "effort_person": "공수 기입자"}.get(str(clause.get("field")), str(clause.get("field")))
     return " ".join(part for part in (field_label, suffix, value_text) if part)
 
 

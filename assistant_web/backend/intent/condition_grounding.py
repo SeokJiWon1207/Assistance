@@ -45,7 +45,8 @@ def grounded_values(question: str, constraints: dict[str, Any], plan: dict[str, 
             certified.append(clause)
         auth = proof.get('authenticated') or {}
         if (auth.get('uid') and (plan.get('interpretation') or {}).get('scope') == 'self'
-                and clause == {'field': 'owner', 'operator': 'equals', 'value': auth.get('owner')}):
+                and clause in [{'field': field, 'operator': 'equals', 'value': auth.get('owner')}
+                               for field in ('owner', 'effort_person')]):
             certified.append(clause)
         audit_id = str(proof.get('audit_id') or '')
         if (re.fullmatch(r'[0-9a-f]{32}', audit_id)

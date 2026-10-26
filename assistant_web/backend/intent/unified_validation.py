@@ -11,7 +11,7 @@ from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 
 STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함|종료\s*여부(?:와|에)?\s*(?:관계|상관)\s*없이')
 PENDING = re.compile(r'(?:이슈|업무|티켓).{0,20}남(?:았|아)|남(?:은|아\s*있는).{0,20}(?:이슈|업무|티켓)|미종료|미완료|안\s*끝난|못\s*끝낸')
-PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter'}
+PERSON_FIELDS = {'owner', 'reporter', 'registered_reporter', 'effort_person'}
 STATUS_VALUES = set(MANTIS_STATUS_NAMES)
 _STATUS_LABEL = '(?:' + '|'.join(
     re.escape(alias).replace(r'\ ', r'\s*')
@@ -178,13 +178,13 @@ def check_clause(item, question, source):
         for value in values:
             forms = [value, *aliases.get(value, [])]
             require(any(form.casefold() in question.casefold() for form in forms), '고객사/매체 근거 불일치')
-    if field in {'created_at', 'due_at', 'deployed_at'}:
+    if field in {'created_at', 'due_at', 'deployed_at', 'delivered_at'}:
         try:
             dates = [date.fromisoformat(v) for v in values]
         except ValueError as exc:
             raise ValueError('날짜 형식 오류') from exc
         require(len(dates) in {1, 2} and (len(dates) == 1 or dates[0] <= dates[1]), '날짜 범위 오류')
-        if field == 'created_at':
+        if field in {'created_at', 'delivered_at'}:
             check_relative_created_at(clause, str(evidence))
     return clause
 
@@ -256,7 +256,7 @@ def check_query_period(question, source, operation, clauses, report_kind=None):
                 text = text.replace(value, ' ')
     if re.search(r'(?:기간|등록일|날짜).{0,12}(?:해제|제거|풀|빼|무관|관계없|상관없|제한\s*없이)', text):
         return
-    if re.search(r'(?:개발|QC|전달|배포|마감|수정|해결|종료|완료)\s*(?:일|날짜|기한)|'
+    if report_kind not in {'effort', 'effort_sla'} and re.search(r'(?:개발|QC|전달|배포|마감|수정|해결|종료|완료)\s*(?:일|날짜|기한)|'
                  r'(?:완료|해결|종료|수정|변경|전달|배포|처리)(?:된|한|했|됐|할|해야)', text, re.I):
         return
     periods = list(re.finditer(
@@ -271,15 +271,16 @@ def check_query_period(question, source, operation, clauses, report_kind=None):
         return
     if re.match(r'\s*(?:의\s*)?(?:조건|제한|필터|기간).{0,8}(?:해제|제거|풀|빼|제외)', suffix):
         return
-    dates = [clause for clause in clauses if clause['field'] == 'created_at']
-    require(bool(dates), f"'{period.group()}' 조회의 등록 기간이 누락됐습니다. created_at과 현재 질문의 기간 근거를 포함하세요")
+    period_field = 'delivered_at' if report_kind in {'effort', 'effort_sla'} else 'created_at'
+    dates = [clause for clause in clauses if clause['field'] == period_field]
+    require(bool(dates), f"'{period.group()}' 조회의 등록 기간 또는 공수 전달 기간이 누락됐습니다. {period_field}과 현재 질문의 기간 근거를 포함하세요")
     # '지난달 15일 이후'처럼 범위가 세분화된 요청은 기존 필터 근거 검증에 맡긴다.
     if not re.match(r'\s*(?:\d{1,2}\s*일|[월화수목금토일]요일|이전|이후|부터|까지)', suffix):
         for clause in dates:
             check_relative_created_at(clause, period.group())
 
 
-def constraints_from_clauses(clauses, status, scope, user, previous):
+def constraints_from_clauses(clauses, status, scope, user, previous, *, self_field="owner"):
     c = empty_query_constraints()
     c.update(filter_clauses=clauses, excluded_statuses=[], excluded_platform_keys=[], excluded_platform_aliases=[],
              excluded_customer_keys=[], excluded_customer_aliases=[], exclude_issue_ids=[])
@@ -301,8 +302,8 @@ def constraints_from_clauses(clauses, status, scope, user, previous):
                 c['exclude_issue_ids'] = [int(v.lstrip('#')) for v in values]
         elif field == 'screen_number' and included:
             c['screen_numbers'] = values
-        elif field == 'created_at' and operator == 'between':
-            c['created_at'] = {'from': values[0], 'to': values[1]}
+        elif field in {'created_at', 'delivered_at'} and operator == 'between':
+            c[field] = {'from': values[0], 'to': values[1]}
         elif field in {'customer', 'platform'} and included and len(values) == 1:
             catalog = CUSTOMER_ALIASES if field == 'customer' else PLATFORM_ALIASES
             canonical = next((key for key, aliases in catalog.items() if values[0].casefold() in {v.casefold() for v in [key, *aliases]}), None)
@@ -325,9 +326,11 @@ def constraints_from_clauses(clauses, status, scope, user, previous):
     if scope == 'self':
         name = str(user.get('mantisUsername') or user.get('displayName') or '').strip()
         require(bool(name), '개인 이슈의 담당자명이 등록되어 있지 않습니다')
-        require(not c['people']['names'] or c['people']['names'] == [name], '개인 범위와 다른 담당자가 충돌합니다')
-        c['people'] = {'names': [name], 'role': 'handler', 'name_origins': {name: 'known'}, 'candidates': []}
-        c['filter_clauses'].append({'field': 'owner', 'operator': 'equals', 'value': name})
+        self_names = [v for f in clauses if f['field'] == self_field and f['operator'] in {'equals', 'in'}
+                      for v in values_for_clause(f.get('value'))]
+        require(not self_names or set(self_names) == {name}, '개인 범위와 다른 인물이 충돌합니다')
+        c['people'] = {'names': [name], 'role': 'handler' if self_field == 'owner' else self_field, 'name_origins': {name: 'known'}, 'candidates': []}
+        c['filter_clauses'].append({'field': self_field, 'operator': 'equals', 'value': name})
     if scope == 'inherit':
         scope = previous.get('mantis_team_scope', 'default')
     if scope == 'default':
@@ -360,6 +363,13 @@ def check_notice_task(question, source, operation, report_kind):
             and re.search(r'작성|형식|초안|바꿔', text)):
         require(operation == 'report' and report_kind == 'notice',
                 '고객 안내·메신저 답변·점검 공지·회의 공유문 작성은 report/notice입니다. 내부 원문 설명으로 대체할 수 없습니다')
+
+
+def check_effort_task(question, report, followup):
+    if report == 'effort_sla' and not followup:
+        require(bool(re.search(r'처리\s*(?:시간|기간)|소요\s*(?:시간|기간)|리드\s*타임|해결\s*(?:시간|기간)|응답\s*시간|SLA',
+                               unquoted(question), re.I)),
+                '처리시간 요청이 없는 등록건수·공수 추이는 report/effort입니다. effort.type=trend로 계획하세요')
 
 
 def validate_plan(question, parsed, user, previous):
@@ -409,6 +419,7 @@ def validate_plan(question, parsed, user, previous):
     status = parsed['status']
     report = parsed.get('report_kind') or (previous.get('report_kind') if followup and operation == 'report' else None)
     check_notice_task(question, source, operation, report)
+    check_effort_task(question, report, followup)
     soft_topics = []
     if operation == 'report' and report == 'similar':
         # 유사성 주제와 명시적인 문자열 조건은 다른 계약이다. 이전 버전의 과제약도
@@ -460,12 +471,14 @@ def validate_plan(question, parsed, user, previous):
         require(not named_customer or explicit_removal or any(f['field']=='customer' for f in incoming),
                 '고객사로 범위를 좁히는 질문에서 고객사 조건을 해제했습니다. 명시된 고객사와 플랫폼을 모두 필터에 넣고 기준 이슈는 유지하세요.')
     replaced = {f['field'] for f in incoming} | set(clear) | {'status'}
-    if replaced & PERSON_FIELDS:
-        replaced |= PERSON_FIELDS
+    if replaced & (PERSON_FIELDS - {'effort_person'}):
+        replaced |= PERSON_FIELDS - {'effort_person'}
     clauses = [f for f in base.get('filter_clauses', []) if f['field'] not in replaced]
     clauses.extend(incoming)
+    self_field = 'effort_person' if operation == 'report' and report in {'effort', 'effort_sla'} else 'owner'
     if scope == 'self':
-        clauses = [f for f in clauses if f['field'] not in PERSON_FIELDS]
+        removed = {'effort_person'} if self_field == 'effort_person' else PERSON_FIELDS - {'effort_person'}
+        clauses = [f for f in clauses if f['field'] not in removed]
     if 'team' in clear:
         scope = 'all'
     check_query_period(question, source, operation, clauses, report)
@@ -479,7 +492,7 @@ def validate_plan(question, parsed, user, previous):
         scope = 'all'
     effective_scope = scope if source in {'mantis', 'both'} or scope == 'self' else 'all'
     scoped_user = {**user, 'mantisUsername': user.get('displayName')} if source == 'notion' else user
-    c = constraints_from_clauses(clauses, status, effective_scope, scoped_user, base)
+    c = constraints_from_clauses(clauses, status, effective_scope, scoped_user, base, self_field=self_field)
     if (previous.get('report_kind')=='similar' and followup and operation=='get'
             and explicit_switch and re.search(r'기준.{0,12}(?:하나|한\s*건|상태만)',question)):
         require(c.get('issue_ids')==base.get('issue_ids'), '비교 종료 후에도 기준 이슈 번호를 유지해야 합니다')
@@ -539,6 +552,23 @@ def validate_plan(question, parsed, user, previous):
     if parsed.get('sort') or (followup and previous.get('sort')):
         c['sort'] = deepcopy(sort)
     require(operation != 'report' or report in REPORT_KINDS, '지원하지 않는 보고서')
+    effort_options = None
+    if operation == 'report' and report in {'effort', 'effort_sla'}:
+        effort_options = parsed.get('effort') or (previous.get('effort') if followup else None) or {'type': 'total'}
+        require(isinstance(effort_options, dict) and effort_options.get('type') in {'total', 'ranking', 'trend'}, '공수 출력 형태 오류')
+        require(set(effort_options) <= {'type', 'order', 'show_all'}, '지원하지 않는 공수 계획 항목')
+        require(effort_options.get('order', 'desc') in {'asc', 'desc'}, '공수 정렬 오류')
+        require(isinstance(effort_options.get('show_all', False), bool), '공수 전체 표시 형식 오류')
+        require(source == 'mantis', '공수는 Mantis 원천으로 조회해야 합니다')
+        if any(f['field'] == 'created_at' for f in incoming):
+            require(bool(re.search(r'등록|접수|생성', question)), '공수 기간은 고객사전달일 delivered_at에 지정해야 합니다')
+        if not any(f['field'] == 'delivered_at' for f in clauses):
+            # 기간 생략 시 올해라는 회사 기본값. 질문에 명시한 기간은 위에서 검증한다.
+            year = date.today().year
+            period = {'field': 'delivered_at', 'operator': 'between', 'value': [f'{year}-01-01', f'{year}-12-31']}
+            c['filter_clauses'].append(period)
+            c['delivered_at'] = {'from': period['value'][0], 'to': period['value'][1]}
+        c['effort_date_basis'] = 'delivered_at'
     c['unified_plan_validated'] = True
     from backend.intent.condition_grounding import build_condition_grounding
     condition_grounding = build_condition_grounding(question, c, incoming, status, effective_scope, scoped_user, previous if followup else {})
@@ -548,6 +578,7 @@ def validate_plan(question, parsed, user, previous):
                         'statuses': c['statuses'], 'issue_ids': c['issue_ids'], 'screen_numbers': c['screen_numbers'], 'created_at': c['created_at']},
             'filter_clauses': deepcopy(c['filter_clauses']), 'resolved_constraints': c, 'terms': terms,
             'group_by': group, 'limit': limit, 'sort': sort, 'report_kind': report,
+            **({'effort': deepcopy(effort_options)} if effort_options else {}),
             'similar_literal_filters': [f for f in c['filter_clauses'] if f['field'] == 'keyword'] if report == 'similar' else [],
             'interpretation': {'status': deepcopy(status), 'followup': followup, 'scope': scope,
                                'evidence': deepcopy(raw), 'clear_fields': clear}}
@@ -562,6 +593,7 @@ def validate_execution_contract(question, plan):
         require(c.get('unified_plan_validated'), '미검증 계획')
         require(c.get('filter_clauses') == plan.get('filter_clauses'), '실행 조건과 계획 불일치')
         interpretation = plan.get('interpretation') or {}
+        check_effort_task(question, plan.get('report_kind'), interpretation.get('followup'))
         check_notice_task(question, plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_query_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))

@@ -251,6 +251,11 @@ def has_definite_scope_mismatch(source: dict[str, Any], constraints: dict[str, A
     if source.get("type") != "mantis":
         return False
     detail = source.get("detail") or {}
+    if constraints.get('delivered_at'):
+        from backend.effort_fields import issue_delivery_date
+        delivered = issue_delivery_date(detail)
+        if not delivered or not plan_created_at_matches(delivered, constraints['delivered_at']):
+            return True
     project = source.get("project") or detail.get("project") or ""
     media = source.get("media_type") or detail.get("media_type") or ""
     created = source.get("created_at") or detail.get("created_at") or ""

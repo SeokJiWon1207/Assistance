@@ -943,7 +943,8 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
         )
     people = constraints.get("people", {}).get("names", [])
     if people:
-        items.append({"id": "people", "label": "담당자/인물", "value": ", ".join(people), "values": people})
+        people_label = "공수 기입자" if constraints.get("people", {}).get("role") == "effort_person" else "담당자/인물"
+        items.append({"id": "people", "label": people_label, "value": ", ".join(people), "values": people})
     elif constraints.get("unassigned_people"):
         items.append(
             {
@@ -1002,6 +1003,11 @@ def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "values": [field_name, field_value],
             }
         )
+    delivered_at = constraints.get("delivered_at") or {}
+    if delivered_at.get("from") and delivered_at.get("to"):
+        items.append({"id": "delivered_at", "label": "고객사전달일",
+                      "value": f"{delivered_at['from']}~{delivered_at['to']}",
+                      "values": [delivered_at["from"], delivered_at["to"]]})
     created_at = constraints.get("created_at") or {}
     if created_at.get("from") and created_at.get("to"):
         items.append(

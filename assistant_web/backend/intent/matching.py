@@ -136,6 +136,10 @@ def text_matches_people(
 
     role = people.get("role") or "any"
     search_text = role_text or text
+    if role == "effort_person":
+        from backend.effort_fields import document_effort_fields, parse_effort_field_value
+        contributors = [person for value in document_effort_fields(text).values() for person, _ in parse_effort_field_value(value)]
+        return bool(set(map(normalize_for_match, names)) & set(map(normalize_for_match, contributors)))
     if role == "handler":
         return any(text_matches_any_alias(search_text, [name]) for name in names)
     if role == "registered_reporter":
@@ -214,6 +218,7 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         extract_chroma_field(text, "요청자"),
     ):
         return False
+    from backend.effort_fields import delivery_date, document_effort_fields, parse_effort_field_value
     return matches_source_filters("chroma", {
         "customer": extract_project_from_chroma_text(text),
         "platform": platform_source,
@@ -224,6 +229,8 @@ def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> b
         "issue_id": str(issue_id),
         "screen_number": screen_filter_values(extract_chroma_field(text, "화면번호"), extract_title_from_chroma_text(text)),
         "created_at": extract_chroma_date(text),
+        "delivered_at": delivery_date(extract_chroma_field(text, "고객사전달일")),
+        "effort_person": [name for value in document_effort_fields(text).values() for name, _ in parse_effort_field_value(value)],
         "title": extract_title_from_chroma_text(text), "keyword": text,
     }, constraints.get("filter_clauses") or [])
 

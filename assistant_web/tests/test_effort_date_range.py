@@ -46,6 +46,7 @@ class EffortDateRangeTests(unittest.TestCase):
                 "created_at": created_at,
                 "updated_at": created_at,
                 "custom_fields": [
+                    {"field": {"name": "고객사전달일"}, "value": created_at[:10]},
                     {"field": {"name": "1문의공수"}, "value": f"석지원({effort})"}
                 ],
             }
@@ -73,16 +74,13 @@ class EffortDateRangeTests(unittest.TestCase):
         self.assertIn("산정 기간: 2026-03-01 ~ 2026-07-10", report["content"])
         self.assertEqual(report["retrieval"]["stages"][0]["meta"]["period"], "range")
         self.assertEqual(
-            report["retrieval"]["constraints"]["created_at"],
+            report["retrieval"]["constraints"]["delivered_at"],
             {"from": "2026-03-01", "to": "2026-07-10", "precision": "range"},
         )
         self.assertEqual([source["issue_id"] for source in report["sources"]], [2])
 
-    def test_prefetched_pages_after_stop_do_not_change_or_break_the_report(self):
-        """기간 밖 페이지가 2쪽 연속이면 순차 수집과 같은 쪽에서 멈춘다.
-
-        미리 요청한 뒤 페이지의 공수와 오류는 결과에 반영되지 않아야 한다.
-        """
+    def test_prefetched_pages_after_empty_page_do_not_change_or_break_the_report(self):
+        """빈 페이지 뒤의 미리 받은 결과와 오류는 집계에 반영하지 않는다."""
         def issue(issue_id, created_at, effort):
             return {
                 "id": issue_id,
@@ -92,13 +90,14 @@ class EffortDateRangeTests(unittest.TestCase):
                 "handler": {"real_name": "석지원"},
                 "created_at": created_at,
                 "custom_fields": [
+                    {"field": {"name": "고객사전달일"}, "value": created_at[:10]},
                     {"field": {"name": "1문의공수"}, "value": f"석지원({effort})"}
                 ],
             }
 
         pages = {
             1: [issue(5, "2026-07-10T09:00:00+09:00", 1.5)],
-            2: [issue(4, "2026-01-10T09:00:00+09:00", 7)],
+            2: [],
             3: [issue(3, "2026-01-09T09:00:00+09:00", 7)],
             4: [issue(2, "2026-07-09T09:00:00+09:00", 100)],
         }

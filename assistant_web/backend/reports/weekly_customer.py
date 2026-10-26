@@ -8,6 +8,7 @@ from backend.display import customer_name, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
+from backend.effort_fields import issue_delivery_date, EFFORT_FIELD_LABELS
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
@@ -59,7 +60,7 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
 def _effort_total(issue: Dict[str, Any]) -> float:
     return round(sum(
         amount
-        for value in (issue.get("effort_fields") or {}).values()
+        for field, value in (issue.get("effort_fields") or {}).items() if field in EFFORT_FIELD_LABELS
         for _person, amount in parse_effort_field_value(value)
     ), 4)
 
@@ -169,11 +170,16 @@ def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = No
                 aging.append({**issue, "age_days": age_days})
     aging.sort(key=lambda issue: issue["age_days"], reverse=True)
 
+    delivered = [issue for issue in scoped
+                 if start <= (_parse_date(issue_delivery_date(issue)) or date.min) <= effective_end]
+    delivered_with_effort = [{**issue, "effort_total": _effort_total(issue)} for issue in delivered]
     current_with_effort = [{**issue, "effort_total": _effort_total(issue)} for issue in current]
-    total_effort = sum(issue["effort_total"] for issue in current_with_effort)
+    total_effort = sum(issue["effort_total"] for issue in delivered_with_effort)
     effort_by_person: Dict[str, float] = {}
-    for issue in current:
-        for value in (issue.get("effort_fields") or {}).values():
+    for issue in delivered:
+        for field, value in (issue.get("effort_fields") or {}).items():
+            if field not in EFFORT_FIELD_LABELS:
+                continue
             for person, amount in parse_effort_field_value(value):
                 effort_by_person[person] = effort_by_person.get(person, 0.0) + amount
     ranked_effort = sorted(effort_by_person.items(), key=lambda row: row[1], reverse=True)
@@ -242,6 +248,7 @@ def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = No
 
     lines.extend([
         "",
+        "※ 공수는 고객사전달일 기준이며 전달일이 없는 이슈는 제외합니다.",
         "※ 상태와 미종료 건수는 조회 시점의 Mantis 상태입니다.",
         "※ 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
@@ -280,6 +287,9 @@ def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = No
                     "backlog_ids": [issue['id'] for issue in open_rows],
                     "aging_count": len(aging),
                     "total_effort": round(total_effort, 2),
+                    "effort_date_basis": "delivered_at",
+                    "effort_issue_ids": [issue["id"] for issue in delivered],
+                    "effort_period": {"from": start.isoformat(), "to": effective_end.isoformat()},
                 },
             }],
         },

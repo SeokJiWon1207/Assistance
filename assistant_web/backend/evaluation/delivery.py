@@ -12,6 +12,7 @@ BLOCKING_CHECKS = frozenset({
     "effort_display", "effort_issue_count", "work_intent", "work_scope",
     "work_evidence", "work_answer_count",
     "followup_effort_result",
+    "trend_cells", "trend_display", "trend_issue_count",
 })
 
 

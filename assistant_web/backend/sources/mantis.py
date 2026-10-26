@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 import requests
 from fastapi import HTTPException
 
+from backend.effort_fields import issue_effort_people
 from backend.execution import bounded_timeout, interruptible_sleep, execution_slot
 from backend.display import customer_name
 from backend.common import (
@@ -449,7 +450,8 @@ def mantis_keyword_match_score(issue: Dict[str, Any], keywords: List[str]) -> in
 
 
 def mantis_issue_effort_date(issue: Dict[str, Any]) -> str:
-    return str(issue.get("created_at", ""))[:10]
+    from backend.effort_fields import issue_delivery_date
+    return issue_delivery_date(issue)
 
 
 def issue_matches_screen_numbers(issue: Dict[str, Any], screen_numbers: List[str]) -> bool:
@@ -532,7 +534,11 @@ def issue_matches_constraints(
     }:
         return False
     reporter_text = str((issue.get("reporter") or {}).get("real_name", ""))
-    if not text_matches_people(combined_text, constraints.get("people", {}), handler_text, reporter_text):
+    people = constraints.get("people", {})
+    if people.get("role") == "effort_person":
+        if not set(map(normalize_for_match, people.get("names", []))) & set(map(normalize_for_match, issue_effort_people(issue))):
+            return False
+    elif not text_matches_people(combined_text, people, handler_text, reporter_text):
         return False
     return matches_source_filters("mantis", {
         "customer": project_name,
@@ -541,6 +547,8 @@ def issue_matches_constraints(
         "issue_id": str(issue.get("id") or ""),
         "screen_number": screen_filter_values(get_issue_custom_field_value(issue, "화면번호"), str(issue.get("summary") or "")),
         "created_at": issue.get("created_at", ""),
+        "delivered_at": mantis_issue_effort_date(issue),
+        "effort_person": issue_effort_people(issue),
         "title": str(issue.get("summary", "")), "keyword": combined_text,
         "owner": handler_text, "reporter": extract_reporter_names(combined_text, reporter_text),
         "registered_reporter": reporter_text,
@@ -570,6 +578,8 @@ def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str
             "severity": issue.get("severity", ""),
             "handler": issue.get("handler", "담당자 미지정"),
             "created_at": issue.get("created_at", ""),
+            "delivered_at": mantis_issue_effort_date(issue),
+            "effort_person": issue_effort_people(issue),
             "preview": issue.get("preview") or issue.get("description", ""),
             "detail": issue.get("detail") or issue,
         }

@@ -6,6 +6,19 @@ from backend.reports import monthly_customer
 
 
 class MonthlyCustomerReportTests(unittest.TestCase):
+    def test_effort_includes_previous_registration_delivered_in_the_month(self):
+        monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
+            {'id': 1, 'project': '132SHGM', 'summary': '이전 등록', 'status': 'closed', 'handler': '석지원',
+             'created_at': '2026-06-01', 'updated_at': '2026-07-10', 'screen_number': '7600',
+             'effort_fields': {'3PC공수': '석지원(2.5)'}, 'date_fields': {'고객사전달일': '2026-07-10'}},
+            {'id': 2, 'project': '132SHGM', 'summary': '전달 대기', 'status': 'confirmed', 'handler': '석지원',
+             'created_at': '2026-07-01', 'updated_at': '2026-07-10', 'screen_number': '7600',
+             'effort_fields': {'3PC공수': '석지원(99)'}, 'date_fields': {}},
+        ]
+        result = monthly_customer.build_monthly_customer_report('2026년 7월 신한투자증권 월간 고객사 리포트')
+        self.assertEqual(result['retrieval']['stages'][0]['meta']['total_effort'], 2.5)
+        self.assertEqual(result['retrieval']['stages'][0]['meta']['current_count'], 1)
+
     def setUp(self):
         self.originals = {
             "fetch": monthly_customer.fetch_mantis_recent_issues,
@@ -87,10 +100,10 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
             {"id": 101, "project": "132SHGM", "summary": "종료 이슈", "status": "closed", "handler": "석지원",
              "created_at": "2026-07-01", "updated_at": "2026-07-10", "media_type": "MTS", "screen_number": "7600",
-             "effort_fields": {"3PC공수": "석지원(2.5)"}},
+             "date_fields": {"고객사전달일": "2026-07-10"}, "effort_fields": {"3PC공수": "석지원(2.5)"}},
             {"id": 102, "project": "132SHGM", "summary": "미종료 이슈", "status": "confirmed", "handler": "우동헌",
              "created_at": "2026-07-03", "updated_at": "2026-07-04", "media_type": "HTS", "screen_number": "7600",
-             "effort_fields": {"1문의공수": "우동헌(1.0)"}},
+             "date_fields": {"고객사전달일": "2026-07-04"}, "effort_fields": {"1문의공수": "우동헌(1.0)"}},
             {"id": 90, "project": "132SHGM", "summary": "전월 이슈", "status": "closed", "handler": "석지원",
              "created_at": "2026-06-02", "updated_at": "2026-06-05", "media_type": "MTS", "screen_number": "5000",
              "effort_fields": {}},

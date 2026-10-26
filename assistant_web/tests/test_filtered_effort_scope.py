@@ -11,7 +11,7 @@ from backend.evaluation.data_scope import build_answer_data_scope
 
 def issue(number, created='2026-09-01T09:00:00+09:00'):
     return {'id': number, 'summary': '[MTS] 테스트', 'project': {'name': '147MiraeAsset(미래에셋증권)'},
-            'created_at': created, 'custom_fields': [{'field': {'name': '3PC공수'}, 'value': '이영희(0.5)'}]}
+            'created_at': created, 'custom_fields': [{'field': {'name': '고객사전달일'}, 'value': created[:10]}, {'field': {'name': '3PC공수'}, 'value': '이영희(0.5)'}]}
 
 
 class FilteredEffortScopeTests(unittest.TestCase):

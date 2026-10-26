@@ -8,8 +8,8 @@ Mantis 이슈의 공수 커스텀필드를 파싱해 기간·고객사·매체·
 
 import calendar
 import re
-from contextlib import closing, nullcontext
-from datetime import date, datetime, timezone
+from copy import deepcopy
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from backend.display import customer_name
@@ -28,20 +28,15 @@ from backend.sources.mantis import (
     mantis_live_max_workers,
     normalize_issue,
 )
-from backend.sources.mantis_collection import collection_metadata, iter_pages_in_order
+from backend.sources.effort_collection import effort_issues, coverage_note
+from backend.effort_fields import EFFORT_FIELD_LABELS, parse_effort_field_value
+from backend.query_filters import add_filter_clause, matches_source_filters, values_for_clause
 from backend.understanding import (
     extract_query_constraints,
     load_known_people,
     wants_all_results,
 )
 
-
-EFFORT_FIELD_LABELS = {
-    "1문의공수": "문의",
-    "2서버공수": "서버",
-    "3PC공수": "PC",
-    "4QC공수": "QC",
-}
 
 
 def parse_effort_period(text: str) -> tuple[int, Optional[int]]:
@@ -118,8 +113,8 @@ def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
         if candidate in known_people and is_valid_person_name(candidate):
             person = candidate
     constraints = extract_query_constraints(text)
-    if constraints.get('unified_plan_validated') and constraints.get('created_at'):
-        date_range = dict(constraints['created_at'])
+    if constraints.get('unified_plan_validated') and constraints.get('delivered_at'):
+        date_range = dict(constraints['delivered_at'])
         year = int(date_range['from'][:4])
     if not person:
         people = constraints.get("people", {}).get("names") or []
@@ -152,15 +147,6 @@ def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
     return query
 
 
-def parse_effort_field_value(value: Any) -> List[tuple[str, float]]:
-    results = []
-    for name, amount in re.findall(
-        r"([가-힣A-Za-z]{2,20})\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)",
-        str(value or ""),
-    ):
-        results.append((name.strip(), float(amount)))
-    return results
-
 
 def build_effort_report(text: str) -> Optional[Dict[str, Any]]:
     query = extract_effort_query(text)
@@ -192,6 +178,66 @@ def build_effort_report(text: str) -> Optional[Dict[str, Any]]:
     )
 
 
+def _matches_contributor(person, constraints):
+    clauses = [f for f in constraints.get('filter_clauses', []) if f['field'] == 'effort_person']
+    return matches_source_filters('mantis', {'effort_person': person}, clauses)
+
+
+def build_effort_report_from_unified_plan(text: str, plan: Dict[str, Any]) -> Dict[str, Any]:
+    """LLM이 확정한 조건만 실행한다. 질문을 규칙으로 다시 분류하지 않는다."""
+    c = deepcopy(plan['resolved_constraints'])
+    dates = c.get('delivered_at')
+    if not dates:
+        clauses = [f for f in c.get('filter_clauses', []) if f['field'] == 'delivered_at']
+        lower, upper = '0001-01-01', '9999-12-31'
+        for clause in clauses:
+            values = values_for_clause(clause.get('value'))
+            op = clause['operator']
+            if op in {'equals', 'gte', 'between'}:
+                lower = max(lower, values[0])
+            if op in {'equals', 'lte', 'between'}:
+                upper = min(upper, values[-1])
+        dates = {'from': lower, 'to': upper}
+    year = int(dates['from'][:4])
+    options = plan.get('effort') or {'type': 'total'}
+    if options['type'] == 'ranking':
+        return run_effort_ranking_report(text, year, date_range=dates, constraints=c,
+            ascending=options.get('order', 'desc') == 'asc', show_all=options.get('show_all', False), limit=plan.get('limit'))
+    if options['type'] == 'trend':
+        from backend.reports.effort_trend import run_effort_trend_report
+        start, end = date.fromisoformat(dates['from']), date.fromisoformat(dates['to'])
+        months = (end.year - start.year) * 12 + end.month - start.month + 1
+        return run_effort_trend_report(text, months=months, constraints=c, end_year=end.year, end_month=end.month)
+    people = [value for clause in c.get('filter_clauses', [])
+              if clause['field'] == 'effort_person' and clause['operator'] in {'equals', 'in'}
+              for value in values_for_clause(clause.get('value'))]
+    if len(set(people)) == 1:
+        return run_person_effort_report(text, people[0], year, date_range=dates, constraints=c)
+    return run_filtered_effort_report(text, year, None, c, dates)
+
+
+def _effort_constraints(text, start, end, constraints=None, person=None):
+    c = deepcopy(constraints if constraints is not None else extract_query_constraints(text))
+    if not c.get('unified_plan_validated'):
+        c.pop('created_at', None)
+        c['filter_clauses'] = [f for f in c.get('filter_clauses', []) if f['field'] != 'created_at']
+    clauses = c.setdefault('filter_clauses', [])
+    if not any(f['field'] == 'delivered_at' for f in clauses):
+        add_filter_clause(clauses, 'delivered_at', 'between', [start, end])
+    c['delivered_at'] = {'from': start, 'to': end, 'precision': 'range'}
+    c['effort_date_basis'] = 'delivered_at'
+    if person:
+        if not c.get('unified_plan_validated'):
+            c['people'] = build_people([(person, 'known')], 'effort_person')
+            c['filter_clauses'] = [f for f in clauses if f['field'] not in {'owner', 'reporter', 'registered_reporter'}]
+            for key in ('mantis_team_members', 'mantis_team_label'):
+                c.pop(key, None)
+            c['mantis_team_scope'] = 'target'
+        if not any(f['field'] == 'effort_person' for f in c['filter_clauses']):
+            add_filter_clause(c['filter_clauses'], 'effort_person', 'equals', person)
+    return c
+
+
 def run_filtered_effort_report(
     text: str,
     year: int,
@@ -206,10 +252,7 @@ def run_filtered_effort_report(
         date_range,
     )
 
-    effort_constraints = {
-        **constraints,
-        "created_at": {"from": start_date, "to": end_date, "precision": "range"},
-    }
+    effort_constraints = _effort_constraints(text, start_date, end_date, constraints)
     effort_plan = build_query_plan(
         text,
         {"source": "mantis", "planner": "rule", "confidence": 1.0},
@@ -223,59 +266,37 @@ def run_filtered_effort_report(
     )
     totals: Dict[str, float] = {field: 0.0 for field in EFFORT_FIELD_LABELS}
     matched_rows: List[Dict[str, Any]] = []
-    consecutive_old_pages = 0
-    from backend.sources.mantis_store import stream_complete_store
-    with stream_complete_store() as stored:
-        collection_meta = collection_metadata(stored) if stored is not None else {
-            "search_complete": False, "queriedAt": datetime.now(timezone.utc).isoformat(),
-            "incomplete_reasons": ["bounded_live_scan"],
-        }
-        page_context = nullcontext(enumerate([stored], 1)) if stored is not None else closing(iter_pages_in_order(
-            lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
-            max_pages=50,
-            workers=mantis_live_max_workers(),
-        ))
-        with page_context as pages:
-            for _page_number, issues in pages:
-                if not issues:
-                    if stored is None:
-                        collection_meta.update(search_complete=True, incomplete_reasons=[])
-                    break
-                if stored is None:
-                    page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-                    page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-                    consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
-
-                for issue in issues:
-                    issue_date = mantis_issue_effort_date(issue)
-                    if not issue_date or issue_date < start_date or issue_date > end_date:
+    with effort_issues(fetch_mantis_issues, mantis_live_max_workers()) as (issues, collection_meta):
+        for issue in issues:
+            issue_date = mantis_issue_effort_date(issue)
+            if not issue_date or issue_date < start_date or issue_date > end_date:
+                continue
+            if not issue_matches_constraints(issue, effort_constraints):
+                continue
+            effort_items: List[Dict[str, Any]] = []
+            for custom_field in issue.get("custom_fields", []):
+                field_name = str(custom_field.get("field", {}).get("name", ""))
+                if field_name not in EFFORT_FIELD_LABELS:
+                    continue
+                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                    if not _matches_contributor(effort_person, effort_constraints):
                         continue
-                    if not issue_matches_constraints(issue, effort_constraints):
-                        continue
-                    effort_items: List[Dict[str, Any]] = []
-                    for custom_field in issue.get("custom_fields", []):
-                        field_name = str(custom_field.get("field", {}).get("name", ""))
-                        if field_name not in EFFORT_FIELD_LABELS:
-                            continue
-                        for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                            totals[field_name] += amount
-                            effort_items.append(
-                                {
-                                    "field": field_name,
-                                    "label": EFFORT_FIELD_LABELS[field_name],
-                                    "person": effort_person,
-                                    "amount": amount,
-                                }
-                            )
-                    if effort_items:
-                        normalized_issue = normalize_issue(issue)
-                        normalized_issue["effort_items"] = effort_items
-                        normalized_issue["effort_total"] = round(
-                            sum(item["amount"] for item in effort_items), 4
-                        )
-                        matched_rows.append(normalized_issue)
-                if stored is None and consecutive_old_pages >= 2:
-                    break
+                    totals[field_name] += amount
+                    effort_items.append(
+                        {
+                            "field": field_name,
+                            "label": EFFORT_FIELD_LABELS[field_name],
+                            "person": effort_person,
+                            "amount": amount,
+                        }
+                    )
+            if effort_items:
+                normalized_issue = normalize_issue(issue)
+                normalized_issue["effort_items"] = effort_items
+                normalized_issue["effort_total"] = round(
+                    sum(item["amount"] for item in effort_items), 4
+                )
+                matched_rows.append(normalized_issue)
 
     matched_rows.sort(
         key=lambda issue: (issue.get("effort_total", 0), issue.get("id", 0)),
@@ -297,7 +318,7 @@ def run_filtered_effort_report(
         f"- 총 공수: **{total_effort:.2f}**",
         f"- 반영 이슈: **{len(matched_rows)}건**",
         f"- 산정 기간: {start_date} ~ {end_date}",
-        "- 기준: Mantis 이슈 등록일 · 고객사/매체 조건 · 전체 공수 커스텀 필드",
+        "- 기준: Mantis 고객사전달일 · 고객사/매체 조건 · 전체 공수 커스텀 필드",
         "",
         "유형별 공수",
     ]
@@ -353,13 +374,13 @@ def run_filtered_effort_report(
                     "period": period_kind,
                     "totals": {key: round(value, 4) for key, value in totals.items()},
                     "total_effort": total_effort,
-                    "date_basis": "created_at",
+                    "date_basis": "delivered_at",
                 },
             }
         ],
     }
     return {
-        "content": "\n".join(lines),
+        "content": "\n".join(lines) + coverage_note(collection_meta),
         "sources": build_sources_from_issue_rows(matched_rows),
         "retrieval": retrieval_result,
         "effortChart": effort_chart if matched_rows else None,
@@ -373,6 +394,7 @@ def run_person_effort_report(
     year: int,
     month: Optional[int] = None,
     date_range: Optional[Dict[str, str]] = None,
+    *, constraints: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """특정 인물의 기간 공수를 Mantis 라이브 API에서 합산한다(결정형 계산 코어)."""
     start_date, end_date, period_label, period_kind = effort_period_bounds(
@@ -385,15 +407,7 @@ def run_person_effort_report(
         "month": "월별 개인 공수 집계",
         "year": "연간 개인 공수 집계",
     }[period_kind]
-    effort_constraints = extract_query_constraints(text)
-    handlers, reporters = load_known_people()
-    origin = "known" if person in set(handlers) | set(reporters) else "explicit_unverified"
-    effort_constraints["people"] = build_people([(person, origin)], "any")
-    effort_constraints["created_at"] = {
-        "from": start_date,
-        "to": end_date,
-        "precision": "range",
-    }
+    effort_constraints = _effort_constraints(text, start_date, end_date, constraints, person)
     effort_plan = build_query_plan(
         text,
         {"source": "mantis", "planner": "rule", "confidence": 1.0},
@@ -402,49 +416,38 @@ def run_person_effort_report(
     )
     totals: Dict[str, float] = {field: 0.0 for field in EFFORT_FIELD_LABELS}
     matched_rows: List[Dict[str, Any]] = []
-    consecutive_old_pages = 0
-
-    with closing(iter_pages_in_order(
-        lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
-        max_pages=50,
-        workers=mantis_live_max_workers(),
-    )) as pages:
-        for _page_number, issues in pages:
-            if not issues:
-                break
-            page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-            page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-            consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
-
-            for issue in issues:
-                issue_date = mantis_issue_effort_date(issue)
-                if not issue_date or issue_date < start_date or issue_date > end_date:
+    with effort_issues(fetch_mantis_issues, mantis_live_max_workers()) as (issues, collection_meta):
+        for issue in issues:
+            issue_date = mantis_issue_effort_date(issue)
+            if not issue_date or issue_date < start_date or issue_date > end_date:
+                continue
+            if not issue_matches_constraints(issue, effort_constraints):
+                continue
+            effort_items: List[Dict[str, Any]] = []
+            for custom_field in issue.get("custom_fields", []):
+                field_name = str(custom_field.get("field", {}).get("name", ""))
+                if field_name not in EFFORT_FIELD_LABELS:
                     continue
-                effort_items: List[Dict[str, Any]] = []
-                for custom_field in issue.get("custom_fields", []):
-                    field_name = str(custom_field.get("field", {}).get("name", ""))
-                    if field_name not in EFFORT_FIELD_LABELS:
+                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                    if not _matches_contributor(effort_person, effort_constraints):
                         continue
-                    for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                        if normalize_for_match(effort_person) != normalize_for_match(person):
-                            continue
-                        totals[field_name] += amount
-                        effort_items.append(
-                            {
-                                "field": field_name,
-                                "label": EFFORT_FIELD_LABELS[field_name],
-                                "amount": amount,
-                            }
-                        )
-                if effort_items:
-                    normalized_issue = normalize_issue(issue)
-                    normalized_issue["effort_items"] = effort_items
-                    normalized_issue["effort_total"] = round(
-                        sum(item["amount"] for item in effort_items), 4
+                    if normalize_for_match(effort_person) != normalize_for_match(person):
+                        continue
+                    totals[field_name] += amount
+                    effort_items.append(
+                        {
+                            "field": field_name,
+                            "label": EFFORT_FIELD_LABELS[field_name],
+                            "amount": amount,
+                        }
                     )
-                    matched_rows.append(normalized_issue)
-            if consecutive_old_pages >= 2:
-                break
+            if effort_items:
+                normalized_issue = normalize_issue(issue)
+                normalized_issue["effort_items"] = effort_items
+                normalized_issue["effort_total"] = round(
+                    sum(item["amount"] for item in effort_items), 4
+                )
+                matched_rows.append(normalized_issue)
 
     matched_rows.sort(
         key=lambda issue: (issue.get("effort_total", 0), issue.get("id", 0)),
@@ -457,7 +460,7 @@ def run_person_effort_report(
         f"- 총 공수: **{total_effort:.2f}**",
         f"- 반영 이슈: **{len(matched_rows)}건**",
         f"- 산정 기간: {start_date} ~ {end_date}",
-        "- 기준: Mantis 이슈 등록일 · 공수 커스텀 필드",
+        "- 기준: Mantis 고객사전달일 · 공수 커스텀 필드",
         "",
         "유형별 공수",
     ]
@@ -503,9 +506,10 @@ def run_person_effort_report(
         "stages": [
             {
                 "source": "mantis_effort",
-                "status": "ok",
+                "status": collection_meta.get("status", "ok"),
                 "issues_list": matched_rows,
                 "meta": {
+                    **collection_meta,
                     "displayed_count": len(matched_rows),
                     "person": person,
                     "year": year,
@@ -513,13 +517,13 @@ def run_person_effort_report(
                     "period": period_kind,
                     "totals": {key: round(value, 4) for key, value in totals.items()},
                     "total_effort": total_effort,
-                    "date_basis": "created_at",
+                    "date_basis": "delivered_at",
                 },
             }
         ],
     }
     return {
-        "content": "\n".join(lines),
+        "content": "\n".join(lines) + coverage_note(collection_meta),
         "sources": build_sources_from_issue_rows(matched_rows),
         "retrieval": retrieval_result,
         "effortChart": effort_chart if matched_rows else None,
@@ -605,6 +609,8 @@ def run_effort_ranking_report(
     year: int,
     month: Optional[int] = None,
     date_range: Optional[Dict[str, str]] = None,
+    *, constraints: Optional[Dict[str, Any]] = None, ascending: Optional[bool] = None,
+    show_all: Optional[bool] = None, limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """기간 내 전체 이슈를 스캔해 인물별 공수를 집계·정렬한다(결정형 계산 코어)."""
     start_date, end_date, period_label, period_kind = effort_period_bounds(
@@ -614,64 +620,62 @@ def run_effort_ranking_report(
     )
 
     per_person: Dict[str, Dict[str, float]] = {}
-    consecutive_old_pages = 0
+    effort_constraints = _effort_constraints(text, start_date, end_date, constraints if constraints is not None else {})
     scanned_issue_count = 0
-
-    with closing(iter_pages_in_order(
-        lambda page_number: fetch_mantis_issues({"page_size": 100, "page": page_number}),
-        max_pages=50,
-        workers=mantis_live_max_workers(),
-    )) as pages:
-        for _page_number, issues in pages:
-            if not issues:
-                break
-            page_dates = [mantis_issue_effort_date(issue) for issue in issues]
-            page_has_target_or_newer = any(date_value >= start_date for date_value in page_dates if date_value)
-            consecutive_old_pages = 0 if page_has_target_or_newer else consecutive_old_pages + 1
-
-            for issue in issues:
-                issue_date = mantis_issue_effort_date(issue)
-                if not issue_date or issue_date < start_date or issue_date > end_date:
+    matched_rows = []
+    with effort_issues(fetch_mantis_issues, mantis_live_max_workers()) as (issues, collection_meta):
+        for issue in issues:
+            issue_date = mantis_issue_effort_date(issue)
+            if not issue_date or issue_date < start_date or issue_date > end_date:
+                continue
+            if not issue_matches_constraints(issue, effort_constraints):
+                continue
+            issue_has_effort = False
+            for custom_field in issue.get("custom_fields", []):
+                field_name = str(custom_field.get("field", {}).get("name", ""))
+                if field_name not in EFFORT_FIELD_LABELS:
                     continue
-                issue_has_effort = False
-                for custom_field in issue.get("custom_fields", []):
-                    field_name = str(custom_field.get("field", {}).get("name", ""))
-                    if field_name not in EFFORT_FIELD_LABELS:
+                for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
+                    if not _matches_contributor(effort_person, effort_constraints):
                         continue
-                    for effort_person, amount in parse_effort_field_value(custom_field.get("value", "")):
-                        normalized_name = effort_person.strip()
-                        if not normalized_name:
-                            continue
-                        bucket = per_person.get(normalized_name)
-                        if bucket is None:
-                            bucket = {field: 0.0 for field in EFFORT_FIELD_LABELS}
-                            bucket["_total"] = 0.0
-                            per_person[normalized_name] = bucket
-                        bucket[field_name] += amount
-                        bucket["_total"] += amount
-                        issue_has_effort = True
-                if issue_has_effort:
-                    scanned_issue_count += 1
-            if consecutive_old_pages >= 2:
-                break
+                    normalized_name = effort_person.strip()
+                    if not normalized_name:
+                        continue
+                    bucket = per_person.get(normalized_name)
+                    if bucket is None:
+                        bucket = {field: 0.0 for field in EFFORT_FIELD_LABELS}
+                        bucket["_total"] = 0.0
+                        per_person[normalized_name] = bucket
+                    bucket[field_name] += amount
+                    bucket["_total"] += amount
+                    issue_has_effort = True
+            if issue_has_effort:
+                scanned_issue_count += 1
+                matched_rows.append(normalize_issue(issue))
 
     if not per_person:
         return {
-            "content": f"{period_label} 동안 공수가 기록된 이슈를 찾지 못했습니다.",
+            "content": f"{period_label} 고객사전달일 기준으로 공수가 기록된 이슈를 찾지 못했습니다." + coverage_note(collection_meta),
             "sources": [],
+            "retrieval": {
+                "query": text, "constraints": effort_constraints,
+                "stages": [{"source": "mantis_effort_ranking", "status": collection_meta.get("status", "ok"),
+                            "issues_list": [], "meta": {**collection_meta, "displayed_count": 0,
+                                "found_count": 0, "date_basis": "delivered_at"}}],
+            },
             "raw": {"mode": "deterministic_effort_ranking"},
         }
 
     # "가장 적은/하위"를 물으면 오름차순으로 뒤집는다.
-    ascending = wants_ascending_effort_ranking(text)
+    ascending = wants_ascending_effort_ranking(text) if ascending is None else ascending
     ranked = sorted(
         per_person.items(),
         key=lambda item: item[1]["_total"],
         reverse=not ascending,
     )
     # "다/전원 보여줘"면 전체를, 아니면 상위 10명만 노출한다.
-    show_all = wants_full_effort_roster(text)
-    top_n = ranked if show_all else ranked[:10]
+    show_all = wants_full_effort_roster(text) if show_all is None else show_all
+    top_n = ranked if show_all else ranked[:limit or 10]
     top_person_name, top_person_totals = top_n[0]
 
     order_label = "적은 순" if ascending else "많은 순"
@@ -684,6 +688,7 @@ def run_effort_ranking_report(
         heading,
         "",
         f"- 산정 기간: {start_date} ~ {end_date}",
+        "- 기준: Mantis 고객사전달일 · 공수 커스텀 필드",
         f"- 공수가 기록된 이슈: **{scanned_issue_count}건** · 인원: **{len(per_person)}명**",
         "",
         list_label,
@@ -709,28 +714,29 @@ def run_effort_ranking_report(
     retrieval_result = {
         "query": text,
         "keyword": "공수 랭킹",
-        "constraints": {},
+        "constraints": effort_constraints,
         "limit": len(top_n),
         "stages": [
             {
                 "source": "mantis_effort_ranking",
-                "status": "ok",
-                "issues_list": [],
+                "status": collection_meta.get("status", "ok"),
+                "issues_list": matched_rows,
                 "meta": {
-                    "displayed_count": len(top_n),
+                    **collection_meta,
+                    "displayed_count": len(matched_rows),
                     "found_count": len(per_person),
                     "period": period_kind,
                     "year": year,
                     "month": month,
-                    "date_basis": "created_at",
+                    "date_basis": "delivered_at",
                 },
             }
         ],
     }
 
     return {
-        "content": "\n".join(lines),
-        "sources": [],
+        "content": "\n".join(lines) + coverage_note(collection_meta),
+        "sources": build_sources_from_issue_rows(matched_rows),
         "retrieval": retrieval_result,
         "effortRanking": effort_ranking_chart,
         "raw": {"mode": "deterministic_effort_ranking"},

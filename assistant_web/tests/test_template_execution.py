@@ -77,7 +77,7 @@ class TemplateExecutionTests(TestCase):
         from backend.intent.confirmed_context import confirmed_constraints_scope
         q='지난달 NH 공수'
         c={'customer_key':'NH','customer_aliases':['NH'],'people':{'names':[]},
-           'unified_plan_validated':True,'created_at':{'from':'2026-09-01','to':'2026-09-30'}}
+           'unified_plan_validated':True,'delivered_at':{'from':'2026-09-01','to':'2026-09-30'}}
         with confirmed_constraints_scope(q,c):
             query=extract_effort_query(q)
         self.assertEqual(query['date_range'],{'from':'2026-09-01','to':'2026-09-30'})

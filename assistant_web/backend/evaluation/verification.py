@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, cast
 
 from backend.answers import display_constraints
+from backend.effort_fields import issue_effort_people, issue_delivery_date
+from backend.query_filters import matches_source_filters
 from backend.common import normalize_for_match
 from backend.mantis_status import source_status
 from backend.notion.search import extract_notion_constraints, notion_page_matches_constraints
@@ -190,8 +192,11 @@ def build_verification_report(
         and stage.get("meta", {}).get("coverage") not in {"saved_filter", "top_k", "snapshot_matches"}
         for stage in (retrieval_result or {}).get("stages", [])
     )
+    from backend.evaluation.effort_trend import trend_checks
+    monthly_checks = trend_checks(content, retrieval_result) if mode == 'deterministic_effort_trend' else []
+    verified_monthly = bool(monthly_checks) and all(c['status'] == 'pass' for c in monthly_checks)
     has_evidence = bool(
-        sources or successful_count_stage or not retrieval_used or completed_empty_search
+        sources or successful_count_stage or verified_monthly or not retrieval_used or completed_empty_search
     )
     evidence_status = (
         "warning"
@@ -209,7 +214,7 @@ def build_verification_report(
                 f"연결된 원문 {len(sources)}건"
                 if sources
                 else "집계 실행 완료"
-                if successful_count_stage
+                if successful_count_stage or verified_monthly
                 else "외부 검색 오류로 원문 확인 미완료"
                 if dependency_failed
                 else "검색 완료 · 일치 항목 없음"
@@ -320,11 +325,20 @@ def build_verification_report(
         matches = text_matches_constraints(source_text, text_constraints)
         matches = matches and text_matches_status(source_status(source), match_constraints.get("statuses", []))
         matches = matches and text_matches_screen_numbers(source_text, match_constraints.get("screen_numbers", []))
-        matches = matches and text_matches_people(
-            source_text, match_constraints.get("people", {}),
-            str(source.get("handler") or (source.get("detail") or {}).get("handler") or ""),
-            str(source.get("reporter") or (source.get("detail") or {}).get("reporter") or ""),
-        )
+        people = match_constraints.get('people', {})
+        if people.get('role') == 'effort_person':
+            matches = matches and bool(set(map(normalize_for_match, people.get('names', []))) &
+                                       set(map(normalize_for_match, issue_effort_people(source.get('detail') or {}))))
+        else:
+            matches = matches and text_matches_people(
+                source_text, match_constraints.get("people", {}),
+                str(source.get("handler") or (source.get("detail") or {}).get("handler") or ""),
+                str(source.get("reporter") or (source.get("detail") or {}).get("reporter") or ""),
+            )
+        matches = matches and matches_source_filters('mantis', {
+            'delivered_at': issue_delivery_date(source.get('detail') or {}),
+            'effort_person': issue_effort_people(source.get('detail') or {}),
+        }, [f for f in match_constraints.get('filter_clauses', []) if f['field'] in {'delivered_at', 'effort_person'}])
         matches = matches and plan_created_at_matches(
             str(source.get("created_at") or (source.get("detail") or {}).get("created_at") or ""),
             match_constraints.get("created_at"),
@@ -442,6 +456,12 @@ def build_verification_report(
         }
     )
 
+    if monthly_checks:
+        monthly_score, monthly_status = score_checks(monthly_checks)
+        dimensions.append({'id': 'calculation', 'label': '월별 계산 검증', 'score': monthly_score,
+                           'status': monthly_status, 'checks': monthly_checks,
+                           'description': '원문 등록일·전달일과 기입 공수를 월별로 다시 합산합니다.'})
+
     if mode in {"deterministic_effort_report", "deterministic_filtered_effort_report", "deterministic_effort_sla_report"}:
         component_mode = (retrieval_result or {}).get('effort_component_mode', mode)
         filtered_effort = component_mode == "deterministic_filtered_effort_report"
@@ -452,23 +472,25 @@ def build_verification_report(
         )
         effort_meta = effort_stage.get("meta", {})
         person = effort_meta.get("person", "")
+        effort_sources = sources
+        if mode == 'deterministic_effort_sla_report':
+            effort_ids = (retrieval_result or {}).get('effort_source_ids') or []
+            effort_sources = [s for s in sources if s.get('issue_id') in effort_ids]
         recomputed_totals = {field: 0.0 for field in EFFORT_FIELD_LABELS}
-        for source in sources:
+        for source in effort_sources:
             for field_name, value in (source.get("detail", {}).get("effort_fields") or {}).items():
                 if field_name not in recomputed_totals:
                     continue
                 for effort_person, amount in parse_effort_field_value(value):
-                    if filtered_effort or normalize_for_match(effort_person) == normalize_for_match(person):
+                    contributor_matches = matches_source_filters('mantis', {'effort_person': effort_person},
+                        [f for f in constraints.get('filter_clauses', []) if f['field'] == 'effort_person'])
+                    if contributor_matches and (filtered_effort or normalize_for_match(effort_person) == normalize_for_match(person)):
                         recomputed_totals[field_name] += amount
         recomputed_total = round(sum(recomputed_totals.values()), 4)
         stored_totals = effort_meta.get("totals", {})
         stored_total = float(effort_meta.get("total_effort", 0))
         displayed_total_match = re.search(r"총\s*공수:\s*\*\*([0-9.]+)", content or "")
         displayed_total = float(displayed_total_match.group(1)) if displayed_total_match else None
-        effort_sources = sources
-        if mode == 'deterministic_effort_sla_report':
-            effort_ids = (retrieval_result or {}).get('effort_source_ids') or []
-            effort_sources = [s for s in sources if s.get('issue_id') in effort_ids]
         calculation_checks = [
             {
                 "id": "effort_recalculation",
@@ -556,7 +578,7 @@ def build_verification_report(
                 "description": "도구의 전체 집계값과 답변에 표시된 건수를 비교합니다.",
             }
         )
-    else:
+    elif not monthly_checks:
         dimensions.append(
             {
                 "id": "calculation",

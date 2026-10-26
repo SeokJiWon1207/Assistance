@@ -44,6 +44,21 @@ class UnifiedPlannerTests(unittest.TestCase):
     def validate(self, question, plan, previous=None):
         return self.planner().validate_plan(question, plan, {'mantisUsername': '석지원'}, previous or {})
 
+    def test_monthly_count_and_effort_is_not_processing_duration(self):
+        q = '2026년 월별 이슈 유형별 등록건수와 전달 공수 추이를 보여줘'
+        p = proposal(operation='report', report_kind='effort_sla', scope='all',
+                     effort={'type': 'trend'},
+                     status={'mode': 'unspecified', 'values': [], 'evidence': ''},
+                     filters=[{'field': 'delivered_at', 'operator': 'between',
+                               'value': ['2026-01-01', '2026-12-31'], 'evidence': '2026년'}])
+        with self.assertRaisesRegex(ValueError, '처리시간'):
+            self.validate(q, p)
+        p['report_kind'] = 'effort'
+        self.assertEqual(self.validate(q, p)['effort']['type'], 'trend')
+        p['report_kind'] = 'effort_sla'
+        p['effort']['type'] = 'total'
+        self.assertEqual(self.validate('2026년 공수와 평균 처리시간을 알려줘', p)['report_kind'], 'effort_sla')
+
     def test_remaining_all_count_keeps_open_scope(self):
         q = '내 담당에 남아 있는 이슈를 모두 세어줘'
         result = self.validate(q, proposal())

@@ -19,6 +19,7 @@ def issue(identifier, created, updated, status, *, effort=None, handler="석지�
         "media_type": "MTS",
         "screen_number": "7600",
         "effort_fields": effort or {},
+        "date_fields": {"고객사전달일": created},
     }
 
 
@@ -29,6 +30,16 @@ class ReportDate(date):
 
 
 class WeeklyReportTests(unittest.TestCase):
+    def test_effort_period_uses_delivery_even_for_old_registrations(self):
+        old = issue(1, '2025-01-01', '2026-09-10', 'closed', effort={'3PC공수': '석지원(2.5)'})
+        old['date_fields'] = {'고객사전달일': '2026-09-10'}
+        pending = issue(2, '2026-09-09', '2026-09-10', 'confirmed', effort={'3PC공수': '석지원(99)'})
+        pending['date_fields'] = {}
+        weekly_customer.fetch_mantis_recent_issues = lambda **kwargs: [old, pending]
+        result = weekly_customer.build_weekly_report('지난주 신한 주간 보고서 작성해줘')
+        self.assertEqual(result['retrieval']['stages'][0]['meta']['total_effort'], 2.5)
+        self.assertEqual(result['retrieval']['stages'][0]['meta']['current_count'], 1)
+
     def setUp(self):
         self.date_patch = patch.object(weekly_customer, "date", ReportDate)
         self.date_patch.start()

@@ -10,6 +10,7 @@ from backend.display import customer_name, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
+from backend.effort_fields import issue_delivery_date, EFFORT_FIELD_LABELS
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
@@ -64,7 +65,7 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
 def _effort_total(issue: Dict[str, Any]) -> float:
     return round(sum(
         amount
-        for value in (issue.get("effort_fields") or {}).values()
+        for field, value in (issue.get("effort_fields") or {}).items() if field in EFFORT_FIELD_LABELS
         for _person, amount in parse_effort_field_value(value)
     ), 4)
 
@@ -173,8 +174,10 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
                 aging.append({**issue, "age_days": age_days})
     aging.sort(key=lambda issue: issue["age_days"], reverse=True)
 
-    current_with_effort = [{**issue, "effort_total": _effort_total(issue)} for issue in current]
-    total_effort = sum(issue["effort_total"] for issue in current_with_effort)
+    delivered = [issue for issue in scoped
+                 if start <= (_parse_date(issue_delivery_date(issue)) or date.min) <= effective_end]
+    delivered_with_effort = [{**issue, "effort_total": _effort_total(issue)} for issue in delivered]
+    total_effort = sum(issue["effort_total"] for issue in delivered_with_effort)
     screen_counts = Counter(str(issue.get("screen_number") or "미상") for issue in current)
     platform_counts = Counter(str(issue.get("media_type") or "기타/미상") for issue in current)
     trend = Counter(
@@ -212,18 +215,18 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     lines.append("- 빈발 화면: " + (" · ".join(f"{name} {count}건" for name, count in screen_counts.most_common(5)) or "데이터 없음"))
 
     ranked = sorted(
-        current_with_effort,
+        delivered_with_effort,
         key=lambda issue: (issue["effort_total"], int(issue.get("id") or 0)),
         reverse=True,
     )
-    lines.extend(["", "주요 이슈"])
+    lines.extend(["", "전달 공수가 큰 이슈"])
     if ranked:
         lines.extend(
             f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · 공수 {issue['effort_total']:.2f}"
             for issue in ranked[:MONTHLY_CUSTOMER_TOP_N]
         )
     else:
-        lines.append("- 해당 월에 등록된 이슈가 없습니다.")
+        lines.append("- 해당 월에 전달된 이슈가 없습니다.")
 
     lines.extend(["", "다음 확인 항목"])
     if aging:
@@ -235,6 +238,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
         lines.append("- 현재 장기 미종료 이슈가 없습니다.")
     lines.extend([
         "",
+        "※ 공수는 고객사전달일 기준이며 전달일이 없는 이슈는 제외합니다.",
         "※ 상태는 현재 Mantis 상태이며 과거 월말 상태를 복원한 값이 아닙니다.",
         "※ 평균 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
@@ -264,6 +268,9 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
                     "aging_count": len(aging),
                     "backlog_ids": [issue['id'] for issue in aging],
                     "total_effort": round(total_effort, 2),
+                    "effort_date_basis": "delivered_at",
+                    "effort_issue_ids": [issue["id"] for issue in delivered],
+                    "effort_period": {"from": start.isoformat(), "to": effective_end.isoformat()},
                 },
             }],
         },

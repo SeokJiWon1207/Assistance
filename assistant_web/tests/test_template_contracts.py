@@ -57,6 +57,7 @@ def raw_issues():
                      "status": {"name": status}, "handler": {"name": "김담당", "real_name": "석지원"}, "description": "기록된 증상과 확인 사항",
                      "created_at": f"2026-{month:02d}-{day:02d}", "updated_at": f"2026-{month:02d}-{day + 1:02d}",
                      "custom_fields": [{"field": {"name": "매체구분"}, "value": platform},
+                                       {"field": {"name": "고객사전달일"}, "value": f"2026-{month:02d}-{day:02d}"},
                                        {"field": {"name": "3PC공수"}, "value": "김담당(1.5)"}]})
     return rows
 

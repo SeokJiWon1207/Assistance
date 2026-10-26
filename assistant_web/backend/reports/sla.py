@@ -19,7 +19,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from backend.query_planning import extract_group_by, build_query_plan
 from backend.display import customer_name, korean_day, korean_time
 from backend.mantis_status import mantis_status_bucket
-from backend.reports.effort import parse_effort_field_value
+from backend.reports.effort import parse_effort_field_value, parse_effort_period, effort_period_bounds, extract_effort_date_range, _effort_constraints
+from backend.effort_fields import issue_delivery_date, EFFORT_FIELD_LABELS
+from backend.query_filters import matches_source_filters
+from backend.query_planning import plan_created_at_matches
 from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
@@ -201,13 +204,18 @@ def _unavailable(text: str, constraints: Dict[str, Any], reason: str) -> Dict[st
     )
 
 
-def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
+def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """처리시간/적체 질문에 라이브 이슈 기반 결정형 리포트로 답한다."""
-    mode = _sla_mode(text)
+    mode = mode or _sla_mode(text)
     if not mode:
         return None
 
     constraints = extract_query_constraints(text)
+    includes_effort = '공수' in text or constraints.get('effort_date_basis') == 'delivered_at'
+    if includes_effort and not constraints.get('unified_plan_validated'):
+        year, month = parse_effort_period(text)
+        start, end, _, _ = effort_period_bounds(year, month, extract_effort_date_range(text) or constraints.get('created_at'))
+        constraints = _effort_constraints(text, start, end, constraints)
     if mode == "aging":
         # 경과일과 별도로 명시한 등록 기간이 있으면 둘을 교집합으로 적용한다.
         # 상대 날짜 파서가 "30일 넘게"를 먼저 읽어 "이번 달"을 놓치는 경우도 보정한다.
@@ -220,7 +228,7 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
     try:
         # 매체 미입력 이슈의 본문 폴백까지 목록·집계와 같은 원본으로 판정한다.
         # 갱신이 늦어진 저장본도 전체 범위이므로 최근 N건 실시간 조회보다 정확하다. 기준 시각은 본문에 밝힌다.
-        stored = (read_complete_store() or read_complete_store(allow_stale=True)) if mode == "aging" else None
+        stored = (read_complete_store() or read_complete_store(allow_stale=True)) if mode == "aging" or includes_effort else None
         raw_issues = stored if stored is not None else fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
         coverage = collection_metadata(raw_issues)
     except Exception as exc:  # 네트워크/설정 오류는 조용히 흘리지 않고 사유를 남긴다.
@@ -250,7 +258,11 @@ def build_sla_report(text: str) -> Optional[Dict[str, Any]]:
 
     axis = _group_axis(text)
     if mode == "duration":
-        return _build_duration_report(text, match_constraints, issues, axis)
+        result = _build_duration_report(text, match_constraints, issues, axis)
+        result['retrieval']['stages'][0]['meta'].update(coverage)
+        if includes_effort and not coverage.get('search_complete'):
+            result['content'] += '\n\n일부 이슈만 조회되어 공수 합계가 누락될 수 있습니다.'
+        return result
     threshold_days = _aging_threshold_days(text)
     return _build_aging_report(
         text,
@@ -315,12 +327,18 @@ def _build_duration_report(
                 f"- {customer_name(name) if _axis_field == 'customer' else name} — 평균 {sum(days_list) / len(days_list):.1f}일 ({len(days_list)}건)"
             )
 
-    if "공수" in str(text or ""):
+    if "공수" in str(text or "") or constraints.get("effort_date_basis") == "delivered_at":
+        lines.append("공수 기준: 고객사전달일 · 전달일 없는 이슈 제외")
         def effort_total(issue: Dict[str, Any]) -> float:
+            delivered = issue_delivery_date(issue)
+            if not delivered or not plan_created_at_matches(delivered, constraints.get('delivered_at')):
+                return 0.0
             return sum(
                 amount
-                for value in (issue.get("effort_fields") or {}).values()
-                for _person, amount in parse_effort_field_value(value)
+                for field, value in (issue.get("effort_fields") or {}).items() if field in EFFORT_FIELD_LABELS
+                for person, amount in parse_effort_field_value(value)
+                if matches_source_filters('mantis', {'effort_person': person},
+                    [f for f in constraints.get('filter_clauses', []) if f['field'] == 'effort_person'])
             )
 
         if axis:

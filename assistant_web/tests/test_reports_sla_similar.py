@@ -13,6 +13,21 @@ from unittest.mock import patch
 
 
 class SlaReportTest(unittest.TestCase):
+    def test_combined_effort_excludes_missing_delivery_and_other_people(self):
+        constraints = {'delivered_at': {'from': '2026-10-01', 'to': '2026-10-31'},
+                       'effort_date_basis': 'delivered_at', 'filter_clauses': [
+                           {'field': 'effort_person', 'operator': 'equals', 'value': '석지원'}]}
+        rows = [
+            {'id': 1, 'summary': '이전 등록', 'status': 'closed', 'project': '고객A',
+             'created_at': '2026-09-01', 'updated_at': '2026-10-01',
+             'date_fields': {'고객사전달일': '2026-10-01'}, 'effort_fields': {'3PC공수': '석지원(2.5), 홍길동(9)'}},
+            {'id': 2, 'summary': '전달 대기', 'status': 'assigned', 'project': '고객A',
+             'created_at': '2026-10-01', 'updated_at': '2026-10-02',
+             'date_fields': {}, 'effort_fields': {'3PC공수': '석지원(99)'}},
+        ]
+        result = sla._build_duration_report('공수와 평균 처리시간', constraints, rows, None)
+        self.assertIn('| 2.50 |', result['content'])
+
     def setUp(self):
         store = patch.object(sla, "read_complete_store", return_value=None)
         store.start()
@@ -113,9 +128,11 @@ class SlaReportTest(unittest.TestCase):
         self._set_issues([
             {"id": 221, "summary": "A", "status": "closed", "project": "고객A",
              "created_at": "2026-08-01", "updated_at": "2026-08-05",
+             "date_fields": {"고객사전달일": "2026-08-05"},
              "effort_fields": {"3PC공수": "김담당(2.5)"}},
             {"id": 222, "summary": "B", "status": "assigned", "project": "고객A",
              "created_at": "2026-08-02", "updated_at": "2026-08-03",
+             "date_fields": {"고객사전달일": "2026-08-03"},
              "effort_fields": {"1문의공수": "김담당(1.0)"}},
         ])
         content = sla.build_sla_report("지난달 고객사별 공수와 평균 처리시간을 표로 보여줘")["content"]

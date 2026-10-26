@@ -73,6 +73,10 @@ def execute_plan(request, context, user):
         return {'modelId': request.modelId, **result} if result else clarification(request, 'Notion 작업 대상을 확인해 주세요.')
     if operation == 'report':
         kind = plan.get('report_kind')
+        if kind == 'effort':
+            from backend.reports.effort import build_effort_report_from_unified_plan
+            result = build_effort_report_from_unified_plan(context.retrieval_text, plan)
+            return {'modelId': request.modelId, **result}
         if kind == 'weekly':
             result = service.build_weekly_report(context.latest_user_text, constraints=context.query_constraints)
             return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
@@ -82,7 +86,7 @@ def execute_plan(request, context, user):
             return {'modelId': request.modelId, **result} if result else clarification(request, '문서를 작성할 단일 이슈 번호와 조건을 확인해 주세요.')
         if kind == 'effort_sla':
             from backend.reports.effort_sla import build_effort_sla_report
-            result = build_effort_sla_report(context.latest_user_text)
+            result = build_effort_sla_report(context.latest_user_text, plan=plan)
             return {'modelId': request.modelId, **result} if result else clarification(request, '공수·처리시간 조회 조건을 확인해 주세요.')
         builders = {'profile': service.build_customer_profile_report,
                     'monthly': service.build_monthly_customer_report,
