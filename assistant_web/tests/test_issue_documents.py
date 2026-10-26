@@ -96,3 +96,16 @@ class DocumentPresentationTests(TestCase):
         result = self.build('#31003 회의에서 다룰 안건 형식으로 바꿔줘', 'postmortem')
         self.assertIn('회의 안건', result['content'])
         self.assertIn('검토·결정', result['content'])
+
+    def test_every_notice_channel_honors_all_three_tones_and_keeps_uncertainty(self):
+        for channel in ['메신저 답변', '점검 공지', '회의 공유문', '고객 안내 메일']:
+            answers = [self.build(f'#31003 {tone} 말투의 {channel} 형식으로 작성해줘', 'notice')['content']
+                       for tone in ['간결한', '정중한', '상세한']]
+            with self.subTest(channel=channel):
+                self.assertEqual(len(set(answers)), 3)
+                self.assertLess(len(answers[0]), len(answers[2]))
+                for answer in answers:
+                    self.assertNotIn('31003', answer)
+                    self.assertNotIn('노트 11', answer)
+                    self.assertIn('다음 안내', answer)
+                    self.assertRegex(answer, '확인|확정')

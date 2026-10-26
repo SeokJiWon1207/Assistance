@@ -485,3 +485,16 @@ test('model context remains bounded while the archived dialogue remains complete
   assert.equal(model.length,21);
   assert.equal(model.at(-1).content,'다음 질문');
 });
+
+test('aging template rejects zero, out-of-range and fractional day values before insertion', () => {
+  const spec = template('aging-issues');
+  for (const days of ['0', '-1', '366', '1.5', 'abc']) {
+    const result = describeTeamTemplateQuestion(spec, {days});
+    assert.ok(result.errors?.length, `${days} must have a validation message`);
+    assert.doesNotMatch(buildTeamTemplateQuestion(spec, {days}), /일 넘게 미종료/);
+  }
+  for (const days of ['1', '30', '365']) {
+    assert.equal(describeTeamTemplateQuestion(spec, {days}).errors?.length ?? 0, 0);
+    assert.match(buildTeamTemplateQuestion(spec, {days}), new RegExp(`^${days}일`));
+  }
+});

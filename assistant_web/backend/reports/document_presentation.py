@@ -41,16 +41,19 @@ def present_document(lines: list[str], options: dict[str, str], *, kind: str, is
         # 고객용 제목은 기존 작성기에서 내부 번호·화면 코드를 제거한 값을 사용한다.
         symptom = lines[lines.index('### 현재 확인된 사실') + 1]
         state = ' / '.join(row.removeprefix('- ') for row in progress)
-        if form == 'messenger':
-            greeting = '문의하신 내용 확인 결과를 안내드립니다.' if options['tone'] == '간결한' else '안녕하세요. 문의하신 사항을 확인하여 안내드립니다.'
-            return [greeting, symptom, '진행 상황: ' + state,
-                    '영향 범위와 다음 안내 시점은 추가 확인이 필요합니다.']
-        if form == 'notice':
-            return ['점검 공지 초안', '', '확인된 현상: ' + symptom, '진행 상황: ' + state,
-                    '점검 일정·영향 범위·다음 안내 시점은 현재 기록에서 확정되지 않았습니다.']
-        if form == 'meeting':
-            return ['고객 공유용 회의 문안', '', '확인된 사실: ' + symptom, '진행 상황: ' + state,
-                    '추가 확인 사항: 고객 영향 범위와 다음 안내 시점']
+        if form in {'messenger', 'notice', 'meeting'}:
+            heading = {'messenger': '문의하신 내용 확인 결과', 'notice': '점검 공지 초안',
+                       'meeting': '고객 공유용 회의 문안'}[form]
+            pending = ('점검 일정·영향 범위·다음 안내 시점은 현재 기록에서 확정되지 않았습니다.'
+                       if form == 'notice' else '고객 영향 범위와 다음 안내 시점은 추가 확인이 필요합니다.')
+            if options['tone'] == '간결한':
+                return [heading, symptom, '진행 상황: ' + state, pending]
+            greeting = '안녕하세요. 확인된 내용을 안내드립니다.' if form != 'meeting' else '확인된 내용과 함께 논의할 사항을 공유드립니다.'
+            if options['tone'] == '상세한':
+                return [heading, '', greeting, '', '확인된 사실: ' + symptom, '',
+                        '단계별 진행 상황', *progress, '', '고객 영향 및 다음 안내', pending,
+                        '각 단계는 별도로 확인했습니다. 완료 기록이 없는 단계는 완료로 안내하지 않았습니다.']
+            return [heading, '', greeting, symptom, '진행 상황: ' + state, pending, '감사합니다.']
         if options['tone'] == '간결한':
             return ['제목: 문의 사항 진행 안내', '', symptom, '진행 상황: ' + state,
                     '고객 영향 범위와 다음 안내 시점은 추가 확인이 필요합니다.']

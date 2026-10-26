@@ -821,6 +821,8 @@ def format_issue_list_criteria(
     for clause in normalize_filter_clauses(constraints.get("filter_clauses") or []):
         if clause["field"] in {"title", "keyword"}:
             criteria.append(filter_clause_label(clause))
+        elif clause["field"] == "created_at" and not created_at:
+            criteria.append(filter_clause_label(clause).replace("created_at", "등록일", 1))
     return ", ".join(criteria) or "요청 조건"
 
 

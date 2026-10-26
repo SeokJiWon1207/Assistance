@@ -334,3 +334,19 @@ class SearchCoverageContractTests(unittest.TestCase):
               patch.object(mantis, 'fetch_mantis_issues', return_value=[{'id':i} for i in range(1,6)])):
             stage = mantis.execute_mantis_filter_search('저장 필터', 5)
         self.assertFalse(stage['meta']['search_complete'])
+
+class TemplateSummaryRegressionTests(unittest.TestCase):
+    def test_summary_counts_only_inspected_rows_and_is_distinct_from_list(self):
+        rows = [{'id': i, 'summary': f'실제 이슈 {i}', 'project': 'KB증권', 'status': status,
+                 'handler': '석지원', 'created_at': '2026-09-01'}
+                for i, status in [(1, 'closed'), (2, 'confirmed'), (3, 'developed')]]
+        for complete in [True, False]:
+            result = {'stages': [{'source': 'mantis_snapshot', 'status': 'ok', 'issues_list': rows,
+                                 'meta': {'found_count': 3, 'search_complete': complete}}]}
+            answer = format_deterministic_issue_answer('KB증권 이슈를 요약으로 모두 보여줘', {}, result, 200)
+            self.assertIn('이슈 요약', answer)
+            self.assertIn('미종료 2건', answer)
+            self.assertIn('해결·종료 1건', answer)
+            self.assertNotIn('**ID**:', answer)
+            if not complete:
+                self.assertIn('일부 범위', answer)

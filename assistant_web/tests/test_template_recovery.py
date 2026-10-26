@@ -1,5 +1,5 @@
 """운영 템플릿 실패의 날짜·보고서 계약과 불완전 집계 회귀."""
-from datetime import date
+from datetime import date, timedelta
 from unittest import TestCase
 from unittest.mock import patch
 from unittest.mock import Mock
@@ -20,7 +20,9 @@ def proposal(**kwargs):
 class TemplatePlanTests(TestCase):
     def test_weekly_metrics_do_not_become_an_open_only_filter(self):
         q='지난주 NH 신규 이슈, 미종료 이슈, 장기 적체, 공수와 처리시간을 주간 보고서로 작성해줘'
-        plan=validate_plan(q,proposal(operation='report',report_kind='weekly'),{}, {})
+        start = date.today() - timedelta(days=date.today().weekday() + 7)
+        filters = [{'field':'created_at','operator':'between', 'value':[str(start),str(start + timedelta(days=6))], 'evidence':'지난주'}]
+        plan=validate_plan(q,proposal(operation='report',report_kind='weekly',filters=filters),{}, {})
         self.assertEqual(plan['resolved_constraints']['statuses'],[])
         with self.assertRaises(ValueError):
             validate_plan(q,proposal(operation='report',report_kind='weekly',
@@ -55,7 +57,7 @@ class TemplatePlanTests(TestCase):
 
     def test_specialized_report_kinds_are_accepted(self):
         for kind,question in [('profile','NH 고객사 프로필'),('monthly','2026년 9월 NH 월간 고객사 리포트'),
-                              ('triage','NH 장애 초동 대응'),('effort_sla','지난달 NH 공수와 평균 처리시간')]:
+                              ('triage','NH 장애 초동 대응'),('effort_sla','NH 공수와 평균 처리시간')]:
             with self.subTest(kind=kind):
                 plan=validate_plan(question,proposal(operation='report',report_kind=kind),{}, {})
                 self.assertEqual(plan['report_kind'],kind)

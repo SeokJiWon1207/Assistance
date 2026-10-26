@@ -1,5 +1,6 @@
 """리뷰에서 재현한 긴 근거와 비교 후속의 과업 보존."""
 from unittest import TestCase
+from datetime import date, timedelta
 
 from backend.reports import comparison_facts, similar
 from backend.intent.unified_validation import validate_plan
@@ -97,7 +98,9 @@ class DocumentTaskContinuationTests(TestCase):
         self.assertEqual(validate_plan(question,bad,{'mantisUsername':'석지원'}, {})['report_kind'],'postmortem')
 
     def test_weekly_retrospective_without_an_issue_id_keeps_its_existing_report(self):
+        start = date.today() - timedelta(days=date.today().weekday() + 7)
         plan = validate_plan('지난주 우리 팀 회고를 작성해줘', proposal(
             operation='report',report_kind='weekly',scope='team',
+            filters=[{'field':'created_at','operator':'between','value':[str(start),str(start + timedelta(days=6))],'evidence':'지난주'}],
             status={'mode':'unspecified','values':[],'evidence':''}), {'mantisUsername':'석지원'}, {})
         self.assertEqual(plan['report_kind'],'weekly')

@@ -1,6 +1,6 @@
 """전체 질의 계획의 계약 검증과 확정 조건 변환. 질문을 다시 해석해 덮어쓰지 않는다."""
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 import re
 
 from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_ALIASES, MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES
@@ -219,9 +219,34 @@ def check_relative_created_at(clause, evidence):
             f"'{evidence.strip()}' 기간은 달력 기준 {expected_range[0]}~{expected_range[1]}입니다")
 
 
-def check_query_period(question, source, operation, clauses):
+def check_aging_period(question, source, operation, clauses, report_kind=None):
+    """명시한 경과 일수의 상한을 버린 계획은 재시도하거나 차단한다."""
+    if source != 'mantis' or not (operation in {'count', 'search', 'aggregate'}
+                                 or operation == 'report' and report_kind == 'aging'):
+        return
+    text = unquoted(question)
+    for clause in clauses:
+        if clause['field'] in {'title', 'keyword'}:
+            for value in values_for_clause(clause.get('value')):
+                text = text.replace(value, ' ')
+    if not re.search(r'미종료|미완료|열린|오픈', text):
+        return
+    match = re.search(r'(?P<days>\d+)\s*일\s*(?:넘게|이상|넘은|넘긴|이\s*넘은)', text)
+    if not match:
+        return
+    days = int(match['days'])
+    require(1 <= days <= (date.today() - date.min).days, '경과 일수는 1일 이상의 유효한 범위여야 합니다')
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    dates = [c for c in clauses if c['field'] == 'created_at']
+    require(any((c['operator'] == 'lte' and c['value'] == cutoff)
+                or (c['operator'] == 'between' and c['value'] == ['0001-01-01', cutoff]) for c in dates),
+            f"'{days}일' 미종료 조건은 등록일 created_at lte {cutoff}입니다. 경과 일수 조건이 누락되거나 다릅니다")
+
+
+def check_query_period(question, source, operation, clauses, report_kind=None):
     """명확한 조회 기간의 누락·잘못된 상속만 거부한다. 필터를 생성하지 않는다."""
-    if source != 'mantis' or operation not in {'count', 'search', 'aggregate'}:
+    if source != 'mantis' or not (operation in {'count', 'search', 'aggregate'} or
+            operation == 'report' and report_kind in {'weekly', 'monthly', 'profile', 'effort', 'sla', 'effort_sla'}):
         return
     text = unquoted(question)
     # 따옴표 없이 쓴 제목/본문 검색어도 날짜 조건으로 승격하지 않는다.
@@ -329,6 +354,14 @@ def _literal_similarity_keyword(question):
     return bool(re.search(r'정확히|문자열|키워드|(?:본문|노트|내용|텍스트).{0,100}(?:포함|들어|있는|있어)', question))
 
 
+def check_notice_task(question, source, operation, report_kind):
+    text = unquoted(question)
+    if (source == 'mantis' and re.search(r'고객\s*안내|메신저\s*답변|점검\s*공지|회의\s*공유문', text)
+            and re.search(r'작성|형식|초안|바꿔', text)):
+        require(operation == 'report' and report_kind == 'notice',
+                '고객 안내·메신저 답변·점검 공지·회의 공유문 작성은 report/notice입니다. 내부 원문 설명으로 대체할 수 없습니다')
+
+
 def validate_plan(question, parsed, user, previous):
     require(isinstance(parsed, dict), '계획 JSON 형식 오류')
     required = {'source', 'operation', 'scope', 'followup', 'filters', 'status', 'clear_fields', 'terms', 'group_by', 'limit'}
@@ -375,6 +408,7 @@ def validate_plan(question, parsed, user, previous):
     parsed = normalize_status_clauses(parsed, base, question)
     status = parsed['status']
     report = parsed.get('report_kind') or (previous.get('report_kind') if followup and operation == 'report' else None)
+    check_notice_task(question, source, operation, report)
     soft_topics = []
     if operation == 'report' and report == 'similar':
         # 유사성 주제와 명시적인 문자열 조건은 다른 계약이다. 이전 버전의 과제약도
@@ -434,7 +468,8 @@ def validate_plan(question, parsed, user, previous):
         clauses = [f for f in clauses if f['field'] not in PERSON_FIELDS]
     if 'team' in clear:
         scope = 'all'
-    check_query_period(question, source, operation, clauses)
+    check_query_period(question, source, operation, clauses, report)
+    check_aging_period(question, source, operation, clauses, report)
     # 포함과 제외를 AND로 합쳐 빈 집합을 만드는 계획을 실행하지 않는다.
     for a in clauses:
         for b in clauses:
@@ -527,7 +562,10 @@ def validate_execution_contract(question, plan):
         require(c.get('unified_plan_validated'), '미검증 계획')
         require(c.get('filter_clauses') == plan.get('filter_clauses'), '실행 조건과 계획 불일치')
         interpretation = plan.get('interpretation') or {}
+        check_notice_task(question, plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))
+        check_query_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))
+        check_aging_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))
         for clause in interpretation.get('evidence') or []:
             check_clause(clause, question, plan.get('source'))
         require(not interpretation.get('followup') or bool(c.get('inherited_from_audit_id')), '이전 기록 근거 누락')

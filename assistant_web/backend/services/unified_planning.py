@@ -73,6 +73,9 @@ def execute_plan(request, context, user):
         return {'modelId': request.modelId, **result} if result else clarification(request, 'Notion 작업 대상을 확인해 주세요.')
     if operation == 'report':
         kind = plan.get('report_kind')
+        if kind == 'weekly':
+            result = service.build_weekly_report(context.latest_user_text, constraints=context.query_constraints)
+            return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
         if kind in {'handoff', 'postmortem', 'notice'}:
             from backend.reports.issue_documents import build_issue_document_report
             result = build_issue_document_report(context.latest_user_text, context.query_constraints, kind)
@@ -83,7 +86,6 @@ def execute_plan(request, context, user):
             return {'modelId': request.modelId, **result} if result else clarification(request, '공수·처리시간 조회 조건을 확인해 주세요.')
         builders = {'profile': service.build_customer_profile_report,
                     'monthly': service.build_monthly_customer_report,
-                    'weekly': service.build_weekly_report,
                     'similar': service.build_similar_resolution_report}
         if kind == 'similar' and not context.enabled_tools.get('vectorDb'):
             return clarification(request, '유사 사례 검색 도구가 꺼져 있습니다.')

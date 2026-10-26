@@ -1,7 +1,6 @@
 """고객사·기간 기준 주간 운영 보고서."""
 
 import re
-from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -53,9 +52,8 @@ def _customer_label(constraints: Dict[str, Any], issues: List[Dict[str, Any]]) -
         value = str(constraints.get(key) or "").strip()
         if value:
             return customer_name(value)
-    if not issues:
-        return "전체 고객사"
-    return customer_name(Counter(str(issue.get("project") or "미상") for issue in issues).most_common(1)[0][0])
+    people = (constraints.get("people") or {}).get("names") or []
+    return f"{', '.join(people)} 담당 · 전체 고객사" if people else "전체 고객사"
 
 
 def _effort_total(issue: Dict[str, Any]) -> float:
@@ -91,11 +89,13 @@ def _failure(
     }
 
 
-def build_weekly_report(text: str) -> Optional[Dict[str, Any]]:
+def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """주간 보고서 요청을 신규·미종료·적체·공수·처리시간 한 묶음으로 만든다."""
-    if not WEEKLY_REPORT_PATTERN.search(str(text or "")):
+    if constraints is None and not WEEKLY_REPORT_PATTERN.search(str(text or "")):
         return None
-    constraints = extract_query_constraints(text)
+    # 통합 계획에서 확정한 종류·인물·기간은 자연어 문구로 다시 판정하지 않는다.
+    if constraints is None:
+        constraints = extract_query_constraints(text)
     bounds = _window(constraints)
     if not bounds:
         return _failure(

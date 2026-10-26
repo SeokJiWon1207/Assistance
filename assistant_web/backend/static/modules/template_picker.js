@@ -354,21 +354,21 @@ function renderTemplateFields(template) {
 function updateTemplatePreview() {
   const template = selectedTeamTemplate();
   if (!template) return;
-  const { question, missing } = describeTeamTemplateQuestion(template, templateFormValues());
+  const { question, missing, errors = [] } = describeTeamTemplateQuestion(template, templateFormValues());
   els.templateQuestionPreview.textContent = question;
   els.templateMissingHint.textContent = missing.length
     ? `필수 항목: ${missing.join(", ")}`
-    : "조건을 바꾸면 완성 질문이 바로 바뀝니다.";
-  els.templateMissingHint.classList.toggle("is-missing", missing.length > 0);
-  els.templateSubmitBtn.disabled = missing.length > 0;
-  els.templateInsertBtn.disabled = missing.length > 0;
+    : errors.join(" ") || "조건을 바꾸면 완성 질문이 바로 바뀝니다.";
+  els.templateMissingHint.classList.toggle("is-missing", missing.length > 0 || errors.length > 0);
+  els.templateSubmitBtn.disabled = missing.length > 0 || errors.length > 0;
+  els.templateInsertBtn.disabled = missing.length > 0 || errors.length > 0;
 }
 
 function completedTemplateQuestion() {
   const template = selectedTeamTemplate();
   if (!template) return null;
-  const { question, missing } = describeTeamTemplateQuestion(template, templateFormValues());
-  return missing.length || !question ? null : { template, question };
+  const { question, missing, errors = [] } = describeTeamTemplateQuestion(template, templateFormValues());
+  return missing.length || errors.length || !question ? null : { template, question };
 }
 
 function focusFirstTemplateField() {

@@ -350,6 +350,19 @@
     )).replace(/\s+/g, " ").trim();
   }
 
+  function templateValueErrors(template, values) {
+    return (template.fields || []).flatMap((field) => {
+      const value = values[field.name];
+      if (field.type !== "number" || !value) return [];
+      const number = Number(value);
+      if (!Number.isSafeInteger(number) || (field.min != null && number < field.min)
+          || (field.max != null && number > field.max)) {
+        return [`${field.label}: ${field.min ?? 1}~${field.max ?? "허용 범위"} 사이의 정수를 입력해 주세요.`];
+      }
+      return [];
+    });
+  }
+
   function buildTeamTemplateQuestion(template, values = {}) {
     if (!template || typeof template.questionTemplate !== "string") return "";
     const normalizedValues = normalizeTeamTemplateValues(template, values);
@@ -357,6 +370,8 @@
       (field) => field.required && !normalizedValues[field.name],
     );
     if (missingRequired) return `${missingRequired.label} 항목을 입력해 주세요.`;
+    const errors = templateValueErrors(template, normalizedValues);
+    if (errors.length) return errors[0];
     return fillTeamTemplateQuestion(template.questionTemplate, normalizedValues);
   }
 
@@ -373,6 +388,8 @@
     return {
       question: fillTeamTemplateQuestion(template.questionTemplate, normalizedValues),
       missing: missingFields.map((field) => field.label),
+      ...(templateValueErrors(template, normalizedValues).length
+        ? { errors: templateValueErrors(template, normalizedValues) } : {}),
     };
   }
 

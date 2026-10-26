@@ -8,6 +8,8 @@
 """
 
 import re
+from collections import Counter
+from backend.mantis_status import mantis_status_bucket
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -712,7 +714,18 @@ def format_deterministic_issue_answer(
         for label, count in sorted(customer_group_counts.items(), key=lambda item: (-item[1], item[0])):
             lines.append(f"| {customer_name(label).replace('|', r'\|')} | {count}건 |")
         lines.extend(["", "고객사별 대표 이슈", ""])
-    if wants_table_output(query_text):
+    if re.search(r'요약\s*(?:으로|형태로|형식으로)', query_text):
+        buckets = Counter(mantis_status_bucket(str(row.get('status') or '')) for row in issues)
+        owners = Counter(str(row.get('handler') or '미지정') for row in issues)
+        lines.extend([f"이슈 요약 · 확인한 {len(issues)}건 기준", "",
+                      f"- 미종료 {buckets['open']}건 · 해결·종료 {buckets['done']}건"
+                      + (f" · 상태 미확인 {buckets['unknown']}건" if buckets['unknown'] else ''),
+                      "- 담당자: " + ' · '.join(f"{encode_issue_field(name)} {count}건" for name, count in owners.most_common()),
+                      "", f"대표 이슈 {min(5, len(issues))}건"])
+        lines.extend(f"- #{row['id']} {encode_issue_field(row['summary'])} — "
+                     f"{encode_issue_field(display_status_label(row.get('status_label') or row['status']))}"
+                     for row in issues[:5])
+    elif wants_table_output(query_text):
         # 표를 요청했는데 결정형 답변이 늘 목록만 내보내던 문제. 모델을 거치지
         # 않는 경로라 여기서 직접 표로 조립한다.
         lines.extend(
