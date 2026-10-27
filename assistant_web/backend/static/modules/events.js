@@ -340,8 +340,17 @@ els.workspaceTabs?.addEventListener("click", (event) => {
   selectWorkspaceTab(button.dataset.workspaceTab);
 });
 
+document.getElementById("workspacePlaybookHelp")?.addEventListener("beforetoggle", (event) => {
+  if (event.newState !== "open") return;
+  const rect = document.getElementById("workspacePlaybookHelpButton").getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 32);
+  event.target.style.left = `${Math.max(16, Math.min(rect.left, window.innerWidth - width - 16))}px`;
+  event.target.style.top = `${rect.bottom + 8}px`;
+});
+
 // role="tablist" 는 좌우 화살표·Home·End 이동을 전제로 한다.
 els.workspaceTabs?.addEventListener("keydown", (event) => {
+  if (!event.target.closest("[data-workspace-tab]")) return;
   const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
   if (!keys.includes(event.key)) return;
   const tabs = [...els.workspaceTabs.querySelectorAll("[data-workspace-tab]")];

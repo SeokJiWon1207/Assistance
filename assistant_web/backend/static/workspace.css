@@ -89,6 +89,14 @@
   outline-offset: 2px;
 }
 
+.workspace-tab-group { display: flex; align-items: center; gap: 3px; }
+.workspace-tabs .workspace-help-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; min-height: 28px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+.workspace-help-button:hover { background: var(--surface-alt); color: var(--text); }
+.workspace-help-popover { position: fixed; inset: auto; box-sizing: border-box; width: 320px; max-width: calc(100vw - 32px); margin: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); color: var(--text); box-shadow: var(--shadow-md); }
+.workspace-help-popover > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.workspace-help-popover > header button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+.workspace-help-popover p { margin: 10px 0 0; color: var(--text-soft); font-size: 13px; line-height: 1.65; }
+
 /* 안 읽은 알림 수는 탭 이름 옆 작은 회색 알약 */
 .workspace-tabs em:not(:empty) {
   min-width: 18px;

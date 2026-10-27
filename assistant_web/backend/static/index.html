@@ -40,6 +40,7 @@
       <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 16l-4-4 4-4M6 12h10"/></symbol>
       <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6Z"/><path d="m9 12 2 2 4-4"/></symbol>
       <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 4M12 17h.01"/></symbol>
       <symbol id="i-warning" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19Z"/><path d="M12 10v4M12 17h.01"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 3Z"/><path d="M8 9h8M8 12h5"/></symbol>
@@ -280,10 +281,18 @@
         <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
           <button type="button" id="workspaceTab-overview" role="tab" aria-selected="true" aria-controls="workspaceContent" data-workspace-tab="overview" class="active">업무</button>
           <button type="button" id="workspaceTab-brief" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="brief">주간 보고 <i id="workspaceTabBriefDot" class="workspace-tab-dot" aria-label="새 팀 브리핑" hidden></i></button>
-          <button type="button" id="workspaceTab-playbooks" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="playbooks">플레이북</button>
+          <div class="workspace-tab-group" role="presentation">
+            <button type="button" id="workspaceTab-playbooks" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="playbooks">플레이북</button>
+            <button type="button" id="workspacePlaybookHelpButton" class="workspace-help-button" aria-label="플레이북 도움말" aria-describedby="workspacePlaybookHelpDescription" title="플레이북은 해결한 업무의 증상, 원인, 해결 방법과 확인 절차를 정리해 둔 팀의 업무 가이드입니다." popovertarget="workspacePlaybookHelp"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-help"/></svg></button>
+          </div>
           <button type="button" id="workspaceTab-notifications" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="notifications">알림 <em id="workspaceTabUnread"></em></button>
           <button type="button" id="workspaceTab-favorites" role="tab" aria-selected="false" aria-controls="workspaceContent" tabindex="-1" data-workspace-tab="favorites">즐겨찾기</button>
         </div>
+        <aside id="workspacePlaybookHelp" class="workspace-help-popover" popover aria-labelledby="workspacePlaybookHelpTitle">
+          <header><strong id="workspacePlaybookHelpTitle">플레이북이란?</strong><button type="button" popovertarget="workspacePlaybookHelp" popovertargetaction="hide" aria-label="플레이북 도움말 닫기"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-close"/></svg></button></header>
+          <p id="workspacePlaybookHelpDescription">해결한 업무의 증상, 원인, 해결 방법과 확인 절차를 정리해 둔 팀의 업무 가이드입니다.</p>
+          <p>비슷한 문제가 생겼을 때 검색해 다시 활용하세요. 이슈를 근거로 초안을 만들고, 팀 검수를 거쳐 공개할 수 있습니다.</p>
+        </aside>
         <div id="workspaceContent" class="workspace-content" role="tabpanel" aria-labelledby="workspaceTab-overview" tabindex="0">
           <div class="workspace-loading">업무 정보를 불러오는 중입니다.</div>
         </div>
