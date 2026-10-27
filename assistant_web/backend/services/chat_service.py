@@ -1237,7 +1237,7 @@ class ChatService:
         user: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         user_key = str((user or {}).get("uid") or "anonymous").strip()
-        with CHAT_ADMISSION.admit(user_key):
+        with CHAT_ADMISSION.wait(user_key):
             return self._build_response(request, user=user)
 
     def build_admitted_response(

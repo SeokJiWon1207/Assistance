@@ -8,8 +8,9 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
-from backend.admission import CHAT_ADMISSION, ChatAdmissionLease
+from backend.admission import CHAT_ADMISSION, ChatAdmissionLease, ChatAdmissionTicket
 from backend.auth import current_request_user
 from backend.audit import CHAT_STREAM_CONTEXT
 from backend.execution import ExecutionBudget, RequestStopped, checkpoint, execution_scope
@@ -86,8 +87,44 @@ async def chat_events(
         budget.cancel()
 
 
-async def stream_chat_response(request, user, admission_lease, budget):
-    iterator = chat_events(request, user, admission_lease, budget)
+async def queued_chat_events(request, user, ticket: ChatAdmissionTicket, connection=None):
+    """대기 중에는 작업 스레드·실행 예산을 만들지 않고 순서만 알린다."""
+    lease = None
+    handed_to_worker = False
+    worker_events = None
+    last_position, last_notice = -1, 0.0
+    try:
+        while lease is None:
+            if connection is not None and await connection.is_disconnected():
+                return
+            lease = ticket.try_start()
+            if lease is not None:
+                break
+            position = ticket.position
+            now = asyncio.get_running_loop().time()
+            if position != last_position or now - last_notice >= 5:
+                yield {"type": "status", "stage": "queue", "queuePosition": position,
+                       "message": f"앞선 요청을 처리하고 있습니다. 대기 순서 {position}번째입니다."}
+                last_position, last_notice = position, now
+            await asyncio.sleep(0.1)
+        # 대기 시간이 모델/검색의 실행 시간을 소진하지 않게 한다.
+        budget = ExecutionBudget.create()
+        worker_events = chat_events(request, user, lease, budget, connection)
+        handed_to_worker = True
+        async for event in worker_events:
+            yield event
+    except HTTPException as exc:
+        yield {"type": "error", "message": str(exc.detail), "status": exc.status_code}
+    finally:
+        ticket.cancel()
+        if worker_events is not None:
+            await worker_events.aclose()
+        if lease is not None and not handed_to_worker:
+            lease.release()
+
+
+async def stream_chat_response(request, user, ticket):
+    iterator = queued_chat_events(request, user, ticket)
     try:
         async for event in iterator:
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -99,10 +136,9 @@ async def stream_chat_response(request, user, admission_lease, budget):
 async def chat(payload: ChatRequest, http_request: Request):
     user = current_request_user(http_request)
     user_key = str((user or {}).get("uid") or "anonymous").strip()
-    admission_lease = CHAT_ADMISSION.acquire(user_key)
-    budget = ExecutionBudget.create()
+    ticket = CHAT_ADMISSION.enqueue(user_key)
     if not payload.stream:
-        iterator = chat_events(payload, user, admission_lease, budget, http_request)
+        iterator = queued_chat_events(payload, user, ticket, http_request)
         try:
             async for event in iterator:
                 if await http_request.is_disconnected():
@@ -115,12 +151,13 @@ async def chat(payload: ChatRequest, http_request: Request):
             await iterator.aclose()
         raise HTTPException(499, "요청이 취소되었습니다.")
     try:
-        event_iterator = stream_chat_response(payload, user, admission_lease, budget)
+        event_iterator = stream_chat_response(payload, user, ticket)
         return StreamingResponse(
             event_iterator,
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            background=BackgroundTask(ticket.cancel),
         )
     except Exception:
-        admission_lease.release()
+        ticket.cancel()
         raise
