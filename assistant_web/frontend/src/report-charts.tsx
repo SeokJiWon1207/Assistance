@@ -75,7 +75,7 @@ export function MonthlyTrend({spec}:{spec:Spec}) {
         <Grid horizontal/>{visible.map(s=><Line key={s.key} dataKey={s.key} stroke={s.color} animate={!reduced} curve={curveLinear} fadeEdges={false}/>)}
         <YAxis formatValue={value=>model.decimals?String(Number(value.toFixed(2))):Number.isInteger(value)?String(value):''}/>
         <XAxis numTicks={Math.min(6,rows.length)} labels={model.rows.map(row=>`${row.period.slice(2,4)}.${row.period.slice(4)}`)}/>
-        <ChartTooltip showDatePill={false} content={({point})=><div className="bklit-tooltip"><strong>{String(point.period).slice(0,4)}년 {Number(String(point.period).slice(4))}월</strong>{visible.map(s=><div key={s.key}><i style={{background:s.color}}/>{s.label}<b>{formatChartValue(point[s.key],formatSpec)}</b></div>)}</div>}/>
+        <ChartTooltip className="bklit-hover-panel" showDatePill={false} content={({point})=><div className="bklit-tooltip"><strong>{String(point.period).slice(0,4)}년 {Number(String(point.period).slice(4))}월</strong>{visible.map(s=><div key={s.key}><i style={{background:s.color}}/>{s.label}<b>{formatChartValue(point[s.key],formatSpec)}</b></div>)}</div>}/>
       </LineChart>
     </ChartLegendHoverProvider> : <p className="bklit-empty">표시할 유형을 범례에서 선택해 주세요.</p>}
     <Legend items={totals} hoveredIndex={hover} onHoverChange={setHover} className="bklit-legend"><SeriesToggle hidden={hidden} onToggle={toggle} onHover={setHover} spec={{...formatSpec,complete:spec.complete&&!model.missing}}/></Legend>

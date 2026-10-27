@@ -6,6 +6,7 @@
   --chart-background: var(--surface); --chart-foreground: var(--text); --chart-foreground-muted: var(--muted);
   --chart-label: var(--muted); --chart-line-primary: var(--chart-1); --chart-line-secondary: var(--chart-2);
   --chart-grid: var(--line); --chart-crosshair: var(--muted); --chart-tooltip-background: var(--surface);
+  --chart-tooltip-shadow: 0 4px 12px rgb(0 0 0 / 8%), var(--shadow);
   --chart-indicator-color: var(--blue); --chart-indicator-secondary-color: var(--line);
   --chart-brush-border: var(--blue); --chart-segment-background: var(--blue-soft); --chart-segment-line: var(--blue);
   --legend: var(--surface); --legend-foreground: var(--text-soft); --legend-muted: var(--surface-alt);
@@ -40,7 +41,19 @@
 .bklit-legend-item button { display:flex; align-items:center; gap:6px; padding:5px 4px; border:0; border-radius:6px; background:transparent; color:var(--text-soft); }
 .bklit-legend-item button:hover, .bklit-legend-item button:focus-visible { background: var(--surface-alt); }
 .bklit-legend-item :is(span,button) { font-size: 12px; }
-.bklit-tooltip { min-width: 140px; max-width: min(260px,70vw); padding: 4px; color: var(--text); }
+/* 원본 패널은 그대로 사용하고 서비스 토큰으로 외곽선 대신 음영을 적용한다. */
+.bklit-root .bklit-hover-panel > div {
+  border: 0;
+  border-radius: 12px;
+  box-shadow: var(--chart-tooltip-shadow);
+}
+.bklit-root .bklit-hover-panel > div::before { box-shadow: none; }
+.bklit-root .bklit-hover-panel .border-b { border-color: var(--line); }
+/* 달력의 실제 그리기 폭보다 툴팁이 넓어 왼쪽으로 뒤집히는 것을 막는다.
+   원본의 세로 위치/애니메이션은 유지하고 패널을 달력 안쪽에 맞춘다. */
+.bklit-root .bklit-calendar-tooltip { left: 0 !important; width: 100%; max-width: 260px; }
+.bklit-root .bklit-calendar-tooltip > div { min-width: 0; overflow-wrap: anywhere; }
+.bklit-tooltip { min-width: 140px; max-width: min(260px,70vw); padding: 12px 14px; color: var(--text); }
 .bklit-tooltip > strong { display: block; font-size: 12px; margin-bottom: 8px; overflow-wrap: anywhere; }
 .bklit-tooltip > div { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 5px 0; }
 .bklit-tooltip i { width: 7px; height: 7px; border-radius: 50%; }

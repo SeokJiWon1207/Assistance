@@ -61,7 +61,7 @@ function BarActions({ spec }: { spec: Spec }) {
       width={horizontal ? innerWidth : bandWidth} height={horizontal ? bandWidth : innerHeight}
       fill={spec.selected === String(row.id) ? 'var(--blue-soft)' : 'transparent'} fillOpacity={0.3}
       stroke={spec.selected === String(row.id) ? 'var(--blue)' : 'none'} rx={4}
-      style={{cursor:'pointer'}} {...{[spec.action!]: String(row.id)}}><title>{String(row.fullLabel || row.name)} · 목록 필터</title></rect>;
+      style={{cursor:'pointer'}} aria-label={`${String(row.fullLabel || row.name)} · 목록 필터`} {...{[spec.action!]: String(row.id)}} />;
   })}</g>;
 }
 
@@ -86,7 +86,7 @@ function Bars({ spec }: { spec: Spec }) {
         margin={{top:8,right:spec.decimals!==undefined?76:12,bottom:horizontal?12:35,left:horizontal?(spec.decimals!==undefined?116:76):12}}>
         {series.map(s => <Bar key={s.key} dataKey={s.key} fill={s.color} animate={!reduced && spec.animated !== false} lineCap={3} />)}
         {horizontal ? <BarYAxis /> : <BarXAxis showAllLabels />}
-        <ChartTooltip showDatePill={false} showDots={false} content={({point}) => <div className="bklit-tooltip">
+        <ChartTooltip className="bklit-hover-panel" showDatePill={false} showDots={false} content={({point}) => <div className="bklit-tooltip">
           <strong>{String(point.fullLabel || point.name)}</strong>
           {series.map(s => <div key={s.key}><i style={{background:s.color}}/>{s.label}<b>{formatChartValue(point[s.key],spec)}</b></div>)}
           {!spec.complete && <small>확인한 범위 기준</small>}
@@ -137,7 +137,7 @@ function Trend({ spec }: { spec: Spec }) {
       style={{height:230,aspectRatio:'auto'}} margin={{top:12,left:38,right:18,bottom:36}}>
       <Grid horizontal /><Line dataKey="count" stroke="var(--chart-1)" animate={!reduced} curve={curveLinear} />
       <YAxis formatValue={value=>Number.isInteger(value)?String(value):''} /><XAxis numTicks={5} labels={rows.map(row=>dateLabel(row.date))}/>
-      <ChartTooltip showDatePill={false} content={({point})=><div className="bklit-tooltip"><strong>{toDay(point.date as Date)}</strong><div>신규 이슈<b>{count(point.count,spec.complete)}</b></div></div>}/>
+      <ChartTooltip className="bklit-hover-panel" showDatePill={false} content={({point})=><div className="bklit-tooltip"><strong>{toDay(point.date as Date)}</strong><div>신규 이슈<b>{count(point.count,spec.complete)}</b></div></div>}/>
     </LineChart>
     <div className="bklit-brush" aria-label="드래그로 등록 추이 구간 선택 · 위 날짜 입력으로도 선택 가능">
       <LineChart data={rows} animationDuration={0} style={{height:64,aspectRatio:'auto'}} margin={{top:8,left:38,right:18,bottom:8}}>
@@ -183,7 +183,7 @@ function Calendar({ spec }: { spec: Spec }) {
     <div className="bklit-calendar-grid"><div className="bklit-weekdays">{'일월화수목금토'.split('').map(day=><span key={day}>{day}</span>)}</div>
       <HeatmapChart data={columns} xDomain={[first,toDate(calendar.days.at(-1)!.date)]} weekStartDay={0} binSize={27} gap={5} animate={!reduced} margin={{top:0,left:0,right:0,bottom:0}}
         levelColors={['var(--surface-alt)','var(--bklit-calendar-low)','var(--bklit-calendar-medium)','var(--blue)','var(--blue)']}>
-        <HeatmapCells cornerRadius={4} hideGhostCells={false}/><HeatmapTooltip formatLabel={(n,date)=>n < 0 ? "조회 기간 밖" : `${toDay(date)} · 완료예정 ${count(n,spec.complete)}`}/>
+        <HeatmapCells cornerRadius={4} hideGhostCells={false}/><HeatmapTooltip className="bklit-hover-panel bklit-calendar-tooltip" formatLabel={(n,date)=>n < 0 ? "조회 기간 밖" : `${toDay(date)} · 완료예정 ${count(n,spec.complete)}`}/>
       </HeatmapChart>
     </div>
     <p className="bklit-note">색이 진할수록 예정 업무가 많습니다. 기한 미등록 {count(calendar.missing,spec.complete)} · 기간 밖 {count(calendar.outside,spec.complete)}</p>
