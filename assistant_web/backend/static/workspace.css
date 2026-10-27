@@ -784,16 +784,26 @@
 .workspace-notification small { color: var(--muted); font-size: 12px; }
 .workspace-notification button { align-self: center; }
 
-/* 즐겨찾는 대화: 첫 질문이 보이는 카드 그리드 */
-.workspace-favorite-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; padding: 16px; }
-.workspace-favorite-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); }
-.workspace-favorite-card > strong { overflow: hidden; color: var(--text); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-favorite-card > p {
-  display: -webkit-box; margin: 0; padding: 10px 12px; overflow: hidden; border-radius: var(--control-radius); background: var(--bg);
-  color: var(--text-soft); font-size: 13px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+/* 즐겨찾기도 플레이북 검색줄과 업무 목록의 행·구분선을 사용한다. */
+.workspace-favorites { display: grid; gap: var(--space-4); min-width: 0; }
+.workspace-favorites-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+.workspace-favorites-heading h3 { margin: 0; color: var(--text); font-size: var(--font-section); }
+.workspace-favorites-heading p { margin: var(--space-1) 0 0; color: var(--muted); font-size: var(--font-caption); line-height: 1.6; }
+.workspace-favorites-count { flex-shrink: 0; color: var(--muted); font-size: var(--font-caption); }
+.playbook-toolbar.workspace-favorites-toolbar { margin-bottom: 0; }
+.workspace-favorite-row { gap: var(--space-5); padding: 20px var(--content-padding); }
+.workspace-favorite-row .workspace-item-name { white-space: normal; overflow-wrap: anywhere; }
+.workspace-favorite-question { display: -webkit-box; margin: 0; overflow: hidden; color: var(--text-soft); font-size: var(--font-caption); line-height: 1.6; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.workspace-favorite-actions { display: flex; align-items: center; gap: var(--space-2); }
+.workspace-favorite-remove { display: inline-grid; place-items: center; flex-shrink: 0; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--control-radius); background: transparent; color: var(--warning-strong); cursor: pointer; }
+.workspace-favorite-remove:hover { background: var(--surface-alt); }
+.workspace-favorite-empty { min-height: 160px; padding: var(--space-5); }
+.workspace-favorite-empty > span { background: var(--surface-alt); color: var(--muted); }
+
+@media (max-width: 600px) {
+  .workspace-favorite-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4); }
+  .workspace-favorite-actions { justify-content: flex-end; }
 }
-.workspace-favorite-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
-.workspace-favorite-card small { color: var(--muted); font-size: 12px; }
 
 .workspace-table-wrap {
   max-height: 390px;

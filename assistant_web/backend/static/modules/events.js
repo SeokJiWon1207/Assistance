@@ -490,7 +490,7 @@ els.workspaceContent?.addEventListener("click", async (event) => {
 });
 els.workspaceContent?.addEventListener("submit", async (event) => {
   const favoriteForm = event.target.closest("[data-favorite-search]");
-  if (favoriteForm) { event.preventDefault(); state.favoriteQuery = String(new FormData(favoriteForm).get("q") || ""); renderWorkspace(); els.workspaceContent.querySelector('[data-favorite-search] input')?.focus(); return; }
+  if (favoriteForm) { event.preventDefault(); state.favoriteQuery = String(new FormData(favoriteForm).get("favorite-query") || ""); renderWorkspace(); els.workspaceContent.querySelector('[data-favorite-search] input')?.focus(); return; }
   const searchForm = event.target.closest("[data-playbook-search-form]");
   if (searchForm) {
     event.preventDefault();

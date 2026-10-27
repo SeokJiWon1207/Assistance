@@ -243,10 +243,6 @@ button:disabled { cursor: not-allowed; }
 .workspace-notification .notification-actions button { border: 0; background: var(--surface-alt); padding: 6px 10px; }
 .workspace-search { display: flex; gap: var(--space-2); padding: var(--space-4); }
 .workspace-search input { width: 100%; max-width: 440px; border-radius: var(--radius-input); }
-.workspace-favorite-grid { padding-top: var(--space-1); }
-.workspace-favorite-card > header { display: flex; align-items: flex-start; gap: var(--space-3); border: 0; padding: 0; }
-.workspace-favorite-card > header strong { flex: 1; min-width: 0; font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
-.workspace-favorite-card > header button { flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: var(--radius-button); color: var(--warning-strong); background: transparent; cursor: pointer; }
 .playbook-layout.has-detail { display: grid; grid-template-columns: minmax(240px,.75fr) minmax(0,1.6fr); gap: var(--space-5); align-items: start; }
 .playbook-list { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; gap: 0; background: var(--surface); }
 .playbook-list-item { display: grid; gap: var(--space-2); width: 100%; padding: 20px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }

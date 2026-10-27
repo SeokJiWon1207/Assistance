@@ -54,17 +54,19 @@ async function harness(apiFetch, cache = core.conversationCache) {
     },
   };
   const source = fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace.js'), 'utf8');
+  const naming = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
+  await naming.link(() => {});
+  await naming.evaluate();
   const module = new vm.SourceTextModule(source, { context });
   await module.link((specifier) => {
-    if (specifier.startsWith('./ui_format.js')) return new vm.SourceTextModule(
-      fs.readFileSync(path.join(__dirname, '../backend/static/modules/ui_format.js'), 'utf8'), { context });
+    if (specifier.startsWith('./ui_format.js')) return naming;
     const exports = modules[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
     }, { context });
   });
   await module.evaluate();
-  return { state, storage, timers, els, htmlWrites, badges, api: module.namespace };
+  return { state, storage, timers, els, htmlWrites, badges, naming: naming.namespace, api: module.namespace };
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -131,6 +133,27 @@ test('favorite search keeps saved conversations and filters title and question',
   assert.match(html, /주간 보고/);
   assert.doesNotMatch(html, /접수 현황/);
   assert.equal(h.state.conversations.length, 2);
+});
+
+test('favorite customer suggestions deduplicate Korean names and search saved aliases without rewriting messages', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.naming.setCustomerNames({exact: {nh: 'NH투자증권', NH투자증권: 'NH투자증권', shinhan: '신한투자증권'}, projects: {'120NH': 'NH투자증권'}});
+  h.state.conversations = [
+    {id: 'nh', favorite: true, title: 'nh 업무', messages: [message('120NH_Project 점검')]},
+    {id: 'shinhan', favorite: true, title: '다른 업무', messages: [message('shinhan 점검')]},
+    {id: 'unrelated', favorite: true, title: 'NHibernate 점검', messages: []},
+  ];
+  const all = h.api.renderFavoriteConversations();
+  assert.equal((all.match(/<option value="NH투자증권"/g) || []).length, 1);
+  assert.match(all, /<option value="신한투자증권"/);
+  assert.doesNotMatch(all, /<option value="(?:nh|shinhan)"/);
+  h.state.favoriteQuery = 'NH투자증권';
+  const filtered = h.api.renderFavoriteConversations();
+  assert.match(filtered, /data-open-favorite="nh"/);
+  assert.doesNotMatch(filtered, /data-open-favorite="(?:shinhan|unrelated)"/);
+  h.state.favoriteQuery = '신한투자증권';
+  assert.match(h.api.renderFavoriteConversations(), /data-open-favorite="shinhan"/);
+  assert.equal(h.state.conversations[0].messages[0].content, '120NH_Project 점검');
 });
 
 test('mark all notifications keeps failed items unread and reports partial failure', async () => {

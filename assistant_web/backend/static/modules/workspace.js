@@ -3,7 +3,7 @@ import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBa
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { formatUiDateTime, customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, customerName, customerLabelText, customerSearchNames, customerSearchText } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 
@@ -972,24 +972,34 @@ async function markNotificationsRead(ids = null) {
 }
 
 function renderFavoriteConversations() {
-  const query = String(state.favoriteQuery || "").trim().toLocaleLowerCase();
-  const favorites = state.conversations.filter((item) => item.favorite && (!query || `${item.title || ""} ${(item.messages || []).filter((message) => message.role === "user").map((message) => message.content).join(" ")}`.toLocaleLowerCase().includes(query)));
+  const query = customerSearchText(String(state.favoriteQuery || "").trim());
+  const favorites = state.conversations.filter((item) => {
+    const text = `${item.title || ""} ${(item.messages || []).filter((message) => message.role === "user").map((message) => message.content).join(" ")}`;
+    return item.favorite && (!query || text.toLocaleLowerCase().includes(query) || customerSearchText(text).includes(query));
+  });
   return `
-    <section class="workspace-section workspace-section-single">
-      <header><div><h3>즐겨찾는 대화</h3><p>자주 사용하는 질문과 답변을 다시 확인하세요.</p></div><em>${favorites.length}개</em></header>
-      <form class="workspace-search" data-favorite-search><input name="q" type="search" value="${escapeHtml(state.favoriteQuery || "")}" aria-label="즐겨찾기 검색" placeholder="대화 제목 또는 질문 검색"/><button type="submit" class="secondary-button">검색</button></form>
-      ${favorites.length ? `<div class="workspace-favorite-grid">${favorites.map((conversation) => {
-        // 카드에는 첫 질문을 보여 줘 제목만으로 구분하기 어려운 대화도 알아볼 수 있게 한다.
+    <section class="workspace-favorites" aria-labelledby="workspaceFavoritesHeading">
+      <header class="workspace-favorites-heading"><div><h3 id="workspaceFavoritesHeading">즐겨찾는 대화</h3><p>자주 사용하는 질문과 답변을 다시 확인하세요.</p></div><span class="workspace-favorites-count">${favorites.length}개</span></header>
+      <div class="playbook-toolbar workspace-favorites-toolbar"><form data-favorite-search autocomplete="off"><input name="favorite-query" type="search" autocomplete="off" list="favoriteCustomerNames" value="${escapeHtml(state.favoriteQuery || "")}" aria-label="즐겨찾기 검색" placeholder="고객사명, 대화 제목 또는 질문 검색"/><datalist id="favoriteCustomerNames">${customerSearchNames().map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist><button type="submit" class="secondary-button">검색</button></form></div>
+      <div class="workspace-section workspace-favorite-list" aria-label="즐겨찾는 대화 목록">
+      ${favorites.length ? favorites.map((conversation) => {
+        // 업무 목록과 같은 행 안에서 제목, 첫 질문, 저장 정보를 함께 보여 준다.
         const firstQuestion = (conversation.messages || []).find((message) => message.role === "user")?.content || "";
         const count = conversation.messageCount ?? (conversation.messages || []).length;
         return `
-        <article class="workspace-favorite-card">
-          <header><strong>${escapeHtml(conversation.title || "새 대화")}</strong><button type="button" data-remove-favorite="${escapeHtml(conversation.id)}" aria-label="${escapeHtml(conversation.title || "새 대화")} 즐겨찾기 해제">${icon("star", 18)}</button></header>
-          ${firstQuestion ? `<p>“${escapeHtml(firstQuestion)}”</p>` : ""}
-          <footer><small>${escapeHtml(formatWorkspaceDate(conversation.updatedAt))} · 메시지 ${count}개</small>
-            <button type="button" class="workspace-item-action" data-open-favorite="${escapeHtml(conversation.id)}">대화 열기</button></footer>
+        <article class="workspace-item workspace-favorite-row">
+          <div class="workspace-item-main">
+            <strong class="workspace-item-name">${escapeHtml(conversation.title || "새 대화")}</strong>
+            ${firstQuestion ? `<p class="workspace-favorite-question">${escapeHtml(firstQuestion)}</p>` : ""}
+            <small>${escapeHtml(formatWorkspaceDate(conversation.updatedAt))} · 메시지 ${count}개</small>
+          </div>
+          <div class="workspace-favorite-actions">
+            <button type="button" class="workspace-favorite-remove" data-remove-favorite="${escapeHtml(conversation.id)}" aria-label="${escapeHtml(conversation.title || "새 대화")} 즐겨찾기 해제">${icon("star", 18)}</button>
+            <button type="button" class="workspace-item-action" data-open-favorite="${escapeHtml(conversation.id)}">대화 열기</button>
+          </div>
         </article>`;
-      }).join("")}</div>` : `<div class="workspace-list">${workspaceEmpty(query ? "검색 조건에 맞는 즐겨찾기가 없습니다." : "사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요.")}</div>`}
+      }).join("") : `<div class="workspace-empty workspace-favorite-empty"><span aria-hidden="true">${icon("star", 20)}</span><p>${query ? "검색 조건에 맞는 즐겨찾기가 없습니다." : "사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요."}</p></div>`}
+      </div>
     </section>`;
 }
 

@@ -14,11 +14,27 @@ export function formatUiDateTime(value, { compact = false, now = new Date() } = 
 // 서버의 customer_directory.json에서 받은 표시 전용 이름표다. 조회 키는 바꾸지 않는다.
 let customerExact = new Map();
 let customerProjects = [];
+let customerSearchPattern = null;
 
 export function setCustomerNames(directory = {}) {
   const entries = (value) => Object.entries(value || {}).filter(([key, name]) => key && typeof name === "string" && name.trim());
   customerExact = new Map(entries(directory.exact).map(([key, name]) => [key.toLocaleLowerCase(), name]));
   customerProjects = entries(directory.projects).sort(([left], [right]) => right.length - left.length);
+  const aliases = [...customerExact.keys()].sort((left, right) => right.length - left.length)
+    .map((alias) => alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  customerSearchPattern = aliases.length ? new RegExp(`(^|[^\\p{L}\\p{N}_])(${aliases.join("|")})(?=$|[^A-Za-z0-9_])`, "giu") : null;
+}
+
+export function customerSearchNames() {
+  return [...new Set([...customerExact.values(), ...customerProjects.map(([, name]) => name)])]
+    .sort((left, right) => left.localeCompare(right, "ko"));
+}
+
+// 즐겨찾기 검색용 비교 문자열만 정규화하고 저장된 대화와 인용은 그대로 둔다.
+export function customerSearchText(value) {
+  const text = customerLabelText(value);
+  return (customerSearchPattern ? text.replace(customerSearchPattern, (_, before, alias) => before + customerExact.get(alias.toLocaleLowerCase())) : text)
+    .toLocaleLowerCase();
 }
 
 export function customerName(value, fallback = "고객사 미상") {
