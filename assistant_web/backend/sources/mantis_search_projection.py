@@ -9,7 +9,7 @@ from backend.common import normalize_for_match
 from backend.execution import checkpoint
 
 # issue_to_search_text/normalize_for_match의 검색 의미가 바뀌면 함께 올린다.
-SEARCH_PROJECTION_VERSION = 1
+SEARCH_PROJECTION_VERSION = 2
 SEARCH_PAYLOAD_SQL = "json_remove(payload, '$.history', '$.attachments', '$.monitors', '$.relationships')"
 
 

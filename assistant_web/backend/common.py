@@ -5,7 +5,7 @@
 """
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
@@ -294,10 +294,9 @@ def format_mantis_custom_date(value: Any) -> str:
         if timestamp > 10_000_000_000:
             timestamp //= 1000
         try:
-            # Mantis date-only custom fields are stored as UTC timestamps whose
-            # UTC calendar date is the value shown in the Mantis UI. Applying
-            # the server's KST offset here shifts the displayed date by one day.
-            return datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+            # Mantis 변경 이력의 날짜는 한국 시간 기준이다. 자정 값은 UTC로
+            # 전날 15시에 저장되므로 UTC 날짜로 자르면 월초 공수가 전월로 빠진다.
+            return datetime.fromtimestamp(timestamp, timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
         except (OSError, OverflowError, ValueError):
             return raw_value
     return raw_value

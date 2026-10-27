@@ -98,6 +98,17 @@ class RawSearchProjectionTests(unittest.TestCase):
             db.execute("UPDATE search_projection SET normalized_text='unrelated'")
         self.assertEqual(self.search()['meta']['matched_issue_ids'], [1])
 
+    def test_utc_date_projection_cannot_hide_a_korean_month_boundary(self):
+        item = row(31345, 'HTS')
+        item['custom_fields'].append({'field': {'name': '고객사전달일'}, 'value': '1790780400'})
+        self.sync([item])
+        with closing(sqlite3.connect(self.path)) as db, db:
+            meta = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
+            meta['searchProjectionVersion'] = 1
+            db.execute('UPDATE metadata SET value=?', (json.dumps(meta),))
+            db.execute("UPDATE search_projection SET normalized_text='hts20260930'")
+        self.assertEqual(self.search('20261001')['meta']['matched_issue_ids'], [31345])
+
     def test_status_exclusion_count_still_includes_other_topics(self):
         self.sync([row(1, 'HTS unrelated', status='closed'), row(2, 'HTS VBScript JavaScript 교체')])
         result = self.search(constraints={**HTS, 'statuses': ['confirmed']})

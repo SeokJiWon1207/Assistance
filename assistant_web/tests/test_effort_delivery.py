@@ -31,6 +31,36 @@ def proposal(**changes):
 
 
 class EffortDeliveryTests(TestCase):
+    def test_mantis_epoch_dates_match_the_korean_calendar_shown_in_history(self):
+        from backend.common import format_mantis_custom_date
+        for value, expected in (
+            ('1790780400', '2026-10-01'),
+            (1790780400000, '2026-10-01'),
+            ('1790694000', '2026-09-30'),
+            ('1793372400', '2026-10-31'),
+            ('1793458800', '2026-11-01'),
+            ('20261001', '2026-10-01'),
+            ('2026-10-01', '2026-10-01'),
+        ):
+            with self.subTest(value=value):
+                self.assertEqual(format_mantis_custom_date(value), expected)
+
+    def test_monthly_effort_includes_korean_midnight_and_excludes_next_month(self):
+        rows = [issue(31345, '1790780400', 5),
+                issue(2, '1793372400000', 1.5),
+                issue(3, '1793458800', 99),
+                issue(4, '1790694000', 88)]
+        batch = IssueBatch(rows, {'search_complete': True, 'status': 'snapshot'})
+        with patch('backend.sources.mantis_store.stream_complete_store', side_effect=lambda: nullcontext(batch)):
+            result = effort.run_person_effort_report('2026년 10월 석지원 공수', '석지원', 2026, 10)
+        self.assertEqual(result['effortChart']['totalEffort'], 6.5)
+        self.assertEqual({s['issue_id'] for s in result['sources']}, {31345, 2})
+        from backend.evaluation.verification import build_verification_report
+        verification = build_verification_report('2026년 10월 석지원 공수', result['content'],
+            result['sources'], result['retrieval'], result['raw']['mode'])
+        self.assertTrue(all(check['status'] == 'pass' for check in verification['checks']
+                            if check['id'].startswith('effort_')))
+
     def test_date_uses_actual_delivery_and_never_registration_or_target(self):
         for raw, expected in [('2026-10-03', '2026-10-03'), ('2026-02-30', ''),
                               ('0', ''), ('', ''), ('미상', '')]:
