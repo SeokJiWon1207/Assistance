@@ -6,6 +6,7 @@
 """
 
 from typing import Any, Callable, Dict, List
+from dataclasses import dataclass
 
 from backend.display import korean_time
 from backend.sources.mantis_collection import IssueBatch, collection_metadata
@@ -13,10 +14,23 @@ from backend.sources.mantis_collection import IssueBatch, collection_metadata
 LIVE_FALLBACK_LIMIT = 1000
 
 
+@dataclass
+class ReportIssues:
+    """행을 복제하지 않고 보고서용 범위 정보만 덧붙이는 재순회 뷰."""
+    rows: Any
+    meta: Dict[str, Any]
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __len__(self):
+        return len(self.rows)
+
+
 def load_report_issues(
     read_store: Callable[..., Any],
     fetch_recent: Callable[..., List[Dict[str, Any]]],
-) -> IssueBatch:
+) -> ReportIssues | IssueBatch:
     """최신 저장본 → 갱신이 지연된 저장본 → 최근 등록분 실시간 순으로 원본을 고른다.
 
     보고서 모듈의 이름을 넘겨받아 테스트가 각 모듈의 조회 함수를 바꿔 끼울 수 있게 한다.
@@ -25,13 +39,13 @@ def load_report_issues(
     if stored is None:
         stored = read_store(allow_stale=True, summary_only=True)
     if stored is not None:
-        return IssueBatch(list(stored), {**collection_metadata(stored), "coverage": "complete_store"})
+        return ReportIssues(stored, {**collection_metadata(stored), "coverage": "complete_store"})
     rows = fetch_recent(total_limit=LIVE_FALLBACK_LIMIT)
     meta = {**collection_metadata(rows), "coverage": "recent_live", "search_complete": False}
     return IssueBatch(list(rows), meta)
 
 
-def report_scope_label(rows: List[Dict[str, Any]]) -> str:
+def report_scope_label(rows: ReportIssues | IssueBatch) -> str:
     """보고서 머리글의 '기준' 뒤에 붙는 데이터 범위 설명."""
     meta = collection_metadata(rows)
     count = f"{len(rows):,}건"

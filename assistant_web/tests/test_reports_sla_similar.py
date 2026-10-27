@@ -29,7 +29,7 @@ class SlaReportTest(unittest.TestCase):
         self.assertIn('| 2.50 |', result['content'])
 
     def setUp(self):
-        store = patch.object(sla, "read_complete_store", return_value=None)
+        store = patch.object(sla, "read_scoped_store", return_value=None)
         store.start()
         self.addCleanup(store.stop)
         self._originals = {
@@ -97,7 +97,7 @@ class SlaReportTest(unittest.TestCase):
         stale = IssueBatch(rows, {"status": "snapshot", "fetchedAt": "2026-10-07T05:35:00+00:00",
                                   "search_complete": False, "snapshot_complete": True})
         sla.fetch_mantis_recent_issues = lambda **kwargs: self.fail("저장본이 있으면 최근 N건 실시간 조회로 세지 않는다")
-        with patch.object(sla, "read_complete_store", side_effect=lambda allow_stale=False: stale if allow_stale else None):
+        with patch.object(sla, "read_scoped_store", side_effect=lambda allow_stale=False: stale if allow_stale else None):
             content = sla.build_sla_report("가장 오래 방치된 이슈 알려줘")["content"]
         # 갱신이 1시간 넘게 늦어도 답을 거부하지 않고, 몇 시 기준인지 밝힌다.
         self.assertIn("#201", content)

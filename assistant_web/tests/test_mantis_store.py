@@ -270,7 +270,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.sync([{'id': 1}])
         with (patch.object(workspace_data, 'store_path', return_value=self.path),
               patch.object(workspace_data, 'connection_key', return_value='connection-a'),
-              patch.object(workspace_data, 'read_complete_store', side_effect=[None, mantis_store.read_complete_store()]) as read):
+              patch.object(workspace_data, 'read_scoped_store', side_effect=[None, mantis_store.read_complete_store()]) as read):
             self.assertIsNone(workspace_data.load_complete_workspace())
             self.assertIsNotNone(workspace_data.load_complete_workspace())
             self.assertEqual(read.call_count, 2)

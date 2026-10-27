@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.config import CUSTOMER_ALIASES, CUSTOMER_DIRECTORY, CUSTOMER_PROJECT_DISPLAY_NAMES
 from backend.display import customer_name
-from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.team_templates import (
     TeamTemplateConfigError,
     load_team_templates,
@@ -24,12 +24,13 @@ _counts_lock = Lock()
 _counts_cache: Dict[str, Any] = {"key": None, "counts": {}}
 
 
+@with_store_scope
 def recent_customer_statistics() -> Dict[str, Any]:
     """저장된 Mantis 전체 세대에서 고객사별 최근 이슈 수를 센다. 세대·날짜가 같으면 다시 세지 않는다.
 
     순서를 정하는 데만 쓰므로 갱신이 늦은 저장본도 쓰고, 저장본이 없으면 빈 값(설정 순서)으로 둔다.
     """
-    rows = read_complete_store(allow_stale=True, summary_only=True)
+    rows = read_scoped_store(allow_stale=True, summary_only=True)
     if rows is None:
         return {"available": False, "counts": {}, "asOf": ""}
     today = date.today()

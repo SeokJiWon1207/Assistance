@@ -158,7 +158,7 @@ class ApiIntegrationTests(unittest.TestCase):
         ])
         templates_api._counts_cache.update({"key": None, "counts": {}})
         try:
-            with patch.object(templates_api, "read_complete_store", return_value=rows):
+            with patch.object(templates_api, "read_scoped_store", return_value=rows):
                 payload = self.client.get("/api/templates").json()
         finally:
             templates_api._counts_cache.update({"key": None, "counts": {}})

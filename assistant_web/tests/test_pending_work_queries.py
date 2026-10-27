@@ -54,7 +54,7 @@ class PendingWorkQueryTests(unittest.TestCase):
         ]
         snapshot = IssueBatch(rows, {"search_complete": True, "snapshot_complete": True,
                                      "fetchedAt": "2026-10-15T03:06:25+00:00"})
-        with patch("backend.reports.work_queries.read_complete_store", return_value=snapshot):
+        with patch("backend.reports.work_queries.read_scoped_store", return_value=snapshot):
             report = build_work_query_report(question, extract_query_constraints(question), today=date(2026, 10, 15))
         self.assertIsNotNone(report)
         self.assertEqual(report["retrieval"]["stages"][0]["meta"]["matched_ids"], [31218])

@@ -12,8 +12,8 @@ from datetime import date, datetime, timedelta
 from backend.intent.confirmed_context import confirmed_scope_text
 from backend.mantis_status import mantis_status_bucket
 from backend.query_planning import build_query_plan, extract_created_at_range, extract_relative_created_at_range
-from backend.sources.mantis import normalize_issue, select_mantis_rows, build_sources_from_issue_rows
-from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis import normalize_issue, issue_matches_constraints, build_sources_from_issue_rows
+from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
 from backend.common import display_mantis_status_label
 from backend.intent.search_terms import wants_all_results
@@ -124,6 +124,7 @@ def _line(row: dict) -> str:
     return f"- #{row['id']} {title} — {display_mantis_status_label(row['status'])} · {row['handler']} · {_customer(row['project'])}"
 
 
+@with_store_scope
 def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10, operation: str | None = None) -> dict | None:
     operation = operation or work_operation(question, constraints)
     if not operation:
@@ -171,14 +172,13 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         }
         return _response(question, c, operation, explanations[operation], [], None, [], notice)
 
-    stored = read_complete_store(allow_stale=True, summary_only=operation not in {"cause", "candidates", "similar", "customers"})
+    stored = read_scoped_store(allow_stale=True, summary_only=operation not in {"cause", "candidates", "similar", "customers"})
     if stored is None or not stored.meta.get("snapshot_complete", stored.meta.get("search_complete", False)):
         return _response(question, c, operation, "전체 조회 원본을 사용할 수 없어 건수와 목록을 확정하지 않았습니다. 데이터 갱신 후 다시 조회해 주세요.", [], None, [], notice)
     meta = dict(stored.meta)
     if not meta.get("search_complete"):
         notice.append("갱신이 지연된 저장 데이터입니다. 아래는 저장 시점의 결과이며 현재 건수로 확정할 수 없습니다.")
-    selected = select_mantis_rows(stored, c)
-    rows = [normalize_issue(row) for row in selected]
+    rows = [normalize_issue(row) for row in stored if issue_matches_constraints(row, c)]
     lookup = c.get("work_lookup") or {}
     subject = "아이폰" if IOS.search(question) else "VWAP" if re.search("vwap", question, re.I) else "차트" if "차트" in question else lookup.get("subject", "")
     crash_requested = bool((IOS.search(question) and CRASH.search(question)) or lookup.get("crash"))
@@ -208,7 +208,7 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         if not seed:
             return _response(question, c, operation, "비교할 원본 이슈를 하나로 특정하지 못했습니다. 이슈 번호를 알려 주세요.", [], meta, [], notice)
         _clear(c, "issue_id", "issue_ids")
-        candidates = [normalize_issue(r) for r in select_mantis_rows(stored, c) if r["id"] != seed["id"]]
+        candidates = [normalize_issue(r) for r in stored if r["id"] != seed["id"] and issue_matches_constraints(r, c)]
         historical = bool(re.search(r"예전|과거|이전", question))
         rows = rank_similar(seed, candidates, historical=historical)
         notice.append(f"기준 이슈 {seed['id']}의 제목에서 핵심 기능·증상 개념이 일치하는 후보를 관련도순으로 정렬했습니다. 동일 원인이나 재발로 확정한 결과가 아닙니다.")

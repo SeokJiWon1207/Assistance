@@ -26,10 +26,10 @@ class MonthlyCustomerReportTests(unittest.TestCase):
             "matches": monthly_customer.issue_matches_constraints,
             "constraints": monthly_customer.extract_query_constraints,
             "sources": monthly_customer.build_sources_from_issue_rows,
-            "store": monthly_customer.read_complete_store,
+            "store": monthly_customer.read_scoped_store,
         }
         # 기본은 저장본이 없는 상황(최근 등록분 실시간)으로 고정해 개발 PC의 실제 저장본에 흔들리지 않게 한다.
-        monthly_customer.read_complete_store = lambda **kwargs: None
+        monthly_customer.read_scoped_store = lambda **kwargs: None
         monthly_customer.normalize_issue = lambda issue: issue
         monthly_customer.issue_matches_constraints = lambda issue, constraints: True
         monthly_customer.extract_query_constraints = lambda text: {
@@ -45,7 +45,7 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         monthly_customer.issue_matches_constraints = self.originals["matches"]
         monthly_customer.extract_query_constraints = self.originals["constraints"]
         monthly_customer.build_sources_from_issue_rows = self.originals["sources"]
-        monthly_customer.read_complete_store = self.originals["store"]
+        monthly_customer.read_scoped_store = self.originals["store"]
 
     def test_open_and_aging_counts_use_the_complete_store_not_the_latest_1000(self):
         from backend.sources.mantis_collection import IssueBatch
@@ -59,7 +59,7 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         stored = IssueBatch([row(2001, "2026-07-02", "confirmed"), *[row(1000 + i, "2026-07-03", "closed") for i in range(1000)],
                              row(5, "2021-01-04", "assigned")],
                             {"status": "snapshot", "fetchedAt": "2026-08-01T00:00:00+00:00", "search_complete": True})
-        monthly_customer.read_complete_store = lambda **kwargs: stored
+        monthly_customer.read_scoped_store = lambda **kwargs: stored
         monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: self.fail("저장본이 있으면 최근 1,000건 실시간 조회를 하지 않는다")
         report = monthly_customer.build_monthly_customer_report("2026년 7월 신한투자증권 월간 고객사 리포트")
         # 장기 미종료는 그 달 등록분이 아니라 보고 종료일까지 열려 있는 전체 이슈를 센다.

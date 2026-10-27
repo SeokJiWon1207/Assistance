@@ -200,7 +200,7 @@ class StatusSemanticTests(unittest.TestCase):
                  "handler": {"real_name": "석지원"}, "status": {"name": status}, "created_at": "2025-01-01"}
                 for i, status in enumerate(("assigned", "resolved", "closed", "new"), 1)]
         with patch.object(chat, "resolve_status_intent", return_value=resolution), \
-             patch.object(sla, "read_complete_store", return_value=IssueBatch(rows, {"search_complete": True})):
+             patch.object(sla, "read_scoped_store", return_value=IssueBatch(rows, {"search_complete": True})):
             response = chat.plan_chat_query(ChatRequest(modelId="chosen-answer-model", messages=[ChatMessage(role="user", content=q)]), context, None).response
         self.assertEqual({s["issue_id"] for s in response["sources"]}, {1, 4})
         response = chat.attach_status_resolution(response, context)

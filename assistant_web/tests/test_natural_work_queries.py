@@ -47,7 +47,7 @@ class NaturalWorkQueryTests(unittest.TestCase):
                      issue(9, title="VWAP 추가 요청", status="closed"),
                      issue(10, owner="석지원", created="2020-01-01", due="2026-10-02")]
         self.meta = {"search_complete": True, "snapshot_complete": True, "fetchedAt": "2026-10-01T04:00:00+00:00"}
-        self.store = patch("backend.reports.work_queries.read_complete_store", return_value=IssueBatch(self.rows, self.meta))
+        self.store = patch("backend.reports.work_queries.read_scoped_store", return_value=IssueBatch(self.rows, self.meta))
         self.store.start()
         self.addCleanup(self.store.stop)
 
@@ -139,10 +139,10 @@ class NaturalWorkQueryTests(unittest.TestCase):
         self.assertEqual(merged["filter_clauses"], c["filter_clauses"])
 
     def test_missing_evidence_and_staleness_never_get_verified_as_current(self):
-        with patch("backend.reports.work_queries.read_complete_store", return_value=None):
+        with patch("backend.reports.work_queries.read_scoped_store", return_value=None):
             r = self.report(QUESTIONS[6])
             self.assertNotIn("0건", r["content"])
-        with patch("backend.reports.work_queries.read_complete_store", return_value=IssueBatch(self.rows, {**self.meta, "search_complete": False})):
+        with patch("backend.reports.work_queries.read_scoped_store", return_value=IssueBatch(self.rows, {**self.meta, "search_complete": False})):
             r = self.report(QUESTIONS[6])
             self.assertIn("현재 건수로 확정할 수 없습니다", r["content"])
             self.assertEqual(verify_work_report(QUESTIONS[6], r["content"], r["sources"], r["retrieval"])["status"], "warning")

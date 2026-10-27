@@ -27,11 +27,10 @@ from backend.sources.mantis import (
     build_sources_from_issue_rows,
     fetch_mantis_recent_issues,
     issue_matches_constraints,
-    select_mantis_rows,
     normalize_issue,
 )
 from backend.understanding import extract_query_constraints, extract_requested_limit
-from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.sources.mantis_collection import collection_metadata
 
 
@@ -126,7 +125,7 @@ def _match_issues(
 ) -> List[Dict[str, Any]]:
     return [
         normalize_issue(issue)
-        for issue in select_mantis_rows(raw_issues, constraints, matcher=issue_matches_constraints)
+        for issue in raw_issues if issue_matches_constraints(issue, constraints)
     ]
 
 
@@ -204,6 +203,7 @@ def _unavailable(text: str, constraints: Dict[str, Any], reason: str) -> Dict[st
     )
 
 
+@with_store_scope
 def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """처리시간/적체 질문에 라이브 이슈 기반 결정형 리포트로 답한다."""
     mode = mode or _sla_mode(text)
@@ -228,7 +228,7 @@ def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[
     try:
         # 매체 미입력 이슈의 본문 폴백까지 목록·집계와 같은 원본으로 판정한다.
         # 갱신이 늦어진 저장본도 전체 범위이므로 최근 N건 실시간 조회보다 정확하다. 기준 시각은 본문에 밝힌다.
-        stored = (read_complete_store() or read_complete_store(allow_stale=True)) if mode == "aging" or includes_effort else None
+        stored = (read_scoped_store() or read_scoped_store(allow_stale=True)) if mode == "aging" or includes_effort else None
         raw_issues = stored if stored is not None else fetch_mantis_recent_issues(total_limit=SLA_FETCH_LIMIT)
         coverage = collection_metadata(raw_issues)
     except Exception as exc:  # 네트워크/설정 오류는 조용히 흘리지 않고 사유를 남긴다.

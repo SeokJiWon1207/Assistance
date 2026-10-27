@@ -108,7 +108,7 @@ class UiAccuracyRegressions(unittest.TestCase):
         rows = [{"id": 30000 + i, "summary": str(i), "created_at": (date.today()-timedelta(days=500-i)).isoformat(),
                  "status": {"name": "confirmed"}, "handler": {"real_name": "권한별"}} for i in range(44)]
         rows.append({"id": 40000, "status": {"name": "resolved"}, "created_at": "2020-01-01"})
-        with patch.object(sla, "read_complete_store", return_value=IssueBatch(rows, {"search_complete": True})), \
+        with patch.object(sla, "read_scoped_store", return_value=IssueBatch(rows, {"search_complete": True})), \
              patch.object(sla, "fetch_mantis_recent_issues", side_effect=AssertionError("일부 조회 금지")):
             result = sla.build_sla_report("우리 팀에서 등록 후 30일 이상 지난 미종료 이슈를 오래된 순으로 5건 보여줘")
         self.assertIn("**44건**", result["content"])
@@ -120,7 +120,7 @@ class UiAccuracyRegressions(unittest.TestCase):
         self.assertFalse([check for check in report["checks"] if check["status"] == "fail"], report)
 
     def test_aging_does_not_claim_global_ranking_for_incomplete_data(self):
-        with patch.object(sla, "read_complete_store", return_value=None), \
+        with patch.object(sla, "read_scoped_store", return_value=None), \
              patch.object(sla, "fetch_mantis_recent_issues", return_value=IssueBatch([], {"search_complete": False})):
             result = sla.build_sla_report("30일 이상 오래된 미종료 이슈 5건 보여줘")
         self.assertIn("확정할 수 없습니다", result["content"])

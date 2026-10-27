@@ -79,7 +79,7 @@ class TemplateContractTests(unittest.TestCase):
             "similar-issues": "deterministic_similar_resolution",
         }
         with ExitStack() as stack:
-            stack.enter_context(patch.object(sla, "read_complete_store", return_value=IssueBatch(raw, {"search_complete": True})))
+            stack.enter_context(patch.object(sla, "read_scoped_store", return_value=IssueBatch(raw, {"search_complete": True})))
             stack.enter_context(patch("backend.query_planning.date", FixedDate))
             for module in (customer, monthly_customer, sla, weekly_customer):
                 stack.enter_context(patch.object(module, "fetch_mantis_recent_issues", return_value=raw))

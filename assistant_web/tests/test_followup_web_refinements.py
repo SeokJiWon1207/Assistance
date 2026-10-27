@@ -91,7 +91,7 @@ class FollowupWebRefinementTests(unittest.TestCase):
             "created_at": "2025-12-18T01:00:00Z",
             "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}],
         }], {"search_complete": True, "snapshot_complete": True})
-        with patch("backend.reports.work_queries.read_complete_store", return_value=rows):
+        with patch("backend.reports.work_queries.read_scoped_store", return_value=rows):
             report = build_work_query_report("담당자는 이영희로 바꿔줘", constraints)
         self.assertEqual(report["retrieval"]["constraints"]["statuses"], [])
         self.assertEqual([source["issue_id"] for source in report["sources"]], [901])

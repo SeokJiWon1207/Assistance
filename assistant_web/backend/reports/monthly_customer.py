@@ -18,7 +18,7 @@ from backend.sources.mantis import (
     normalize_issue,
 )
 from backend.reports.report_data import load_report_issues, report_scope_label
-from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.understanding import extract_query_constraints
 
 
@@ -96,6 +96,7 @@ def _failure(
     }
 
 
+@with_store_scope
 def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
     """월간 고객사 요청을 전월 비교와 운영 지표를 포함한 보고서로 만든다."""
     if not MONTHLY_CUSTOMER_PATTERN.search(str(text or "")):
@@ -126,7 +127,7 @@ def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
         )
 
     try:
-        raw_issues = load_report_issues(read_complete_store, fetch_mantis_recent_issues)
+        raw_issues = load_report_issues(read_scoped_store, fetch_mantis_recent_issues)
     except Exception as exc:
         return _failure(
             text,

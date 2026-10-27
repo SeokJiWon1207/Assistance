@@ -64,7 +64,7 @@ class SearchRegressionTests(unittest.TestCase):
     def test_personal_sla_report_retains_authenticated_scope(self):
         question = "내 장기 미종료 이슈 알려줘"
         text = chat.apply_authenticated_mantis_scope(question, {"mantisUsername": "테스트갑"})
-        with patch.object(sla, "read_complete_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})):
+        with patch.object(sla, "read_scoped_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})):
             result = chat.build_deterministic_report(
                 question, text, {"mantis": True}, [], {"uid": "a", "mantisUsername": "테스트갑"}
             ).response
@@ -79,7 +79,7 @@ class SearchRegressionTests(unittest.TestCase):
         with (
             patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}),
             patch.object(chat, "get_model_api_key", return_value="synthetic"),
-            patch.object(sla, "read_complete_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})),
+            patch.object(sla, "read_scoped_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})),
         ):
             result = chat.chat_service.build_response(
                 request, user={"uid": "synthetic-scope", "mantisUsername": "테스트갑"}

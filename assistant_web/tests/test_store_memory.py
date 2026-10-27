@@ -137,11 +137,11 @@ class StoreMemoryTests(unittest.TestCase):
         self.write_rows(1)
         previous = weakref.ref(workspace_data.load_complete_workspace()[0][0])
         self.write_rows(2)
-        read = workspace_data.read_complete_store
+        read = workspace_data.read_scoped_store
 
         def check_release(**kwargs):
             self.assertIsNone(previous())
             return read(**kwargs)
 
-        with patch.object(workspace_data, "read_complete_store", side_effect=check_release):
+        with patch.object(workspace_data, "read_scoped_store", side_effect=check_release):
             self.assertEqual(len(workspace_data.load_complete_workspace()[0]), 2)

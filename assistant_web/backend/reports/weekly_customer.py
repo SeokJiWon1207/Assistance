@@ -16,7 +16,7 @@ from backend.sources.mantis import (
     normalize_issue,
 )
 from backend.reports.report_data import load_report_issues, report_scope_label
-from backend.sources.mantis_store import read_complete_store
+from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.understanding import extract_query_constraints
 
 
@@ -90,6 +90,7 @@ def _failure(
     }
 
 
+@with_store_scope
 def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """주간 보고서 요청을 신규·미종료·적체·공수·처리시간 한 묶음으로 만든다."""
     if constraints is None and not WEEKLY_REPORT_PATTERN.search(str(text or "")):
@@ -113,7 +114,7 @@ def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = No
     previous_start = previous_end - timedelta(days=span - 1)
 
     try:
-        raw_issues = load_report_issues(read_complete_store, fetch_mantis_recent_issues)
+        raw_issues = load_report_issues(read_scoped_store, fetch_mantis_recent_issues)
     except Exception as exc:
         return _failure(
             text,

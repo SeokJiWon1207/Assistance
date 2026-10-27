@@ -19,7 +19,7 @@ def row(i, title, created="2020-01-01", description="", customer="120NH(NH증권
 
 class IssueRelevanceTests(unittest.TestCase):
     def report(self, q, rows, c=None):
-        with patch("backend.reports.work_queries.read_complete_store", return_value=IssueBatch(rows,
+        with patch("backend.reports.work_queries.read_scoped_store", return_value=IssueBatch(rows,
                 {"snapshot_complete": True, "search_complete": True, "fetchedAt": "2026-10-02"})):
             return build_work_query_report(q, c or extract_query_constraints(q), today=date(2026, 10, 2))
 

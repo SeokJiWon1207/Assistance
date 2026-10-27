@@ -28,7 +28,7 @@ class IssueBatch(list[dict[str, Any]]):
         self.meta = meta
 
 
-def collection_metadata(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def collection_metadata(rows: object) -> dict[str, Any]:
     return dict(getattr(rows, "meta", {"search_complete": False, "incomplete_reasons": ["unknown_coverage"]}))
 
 

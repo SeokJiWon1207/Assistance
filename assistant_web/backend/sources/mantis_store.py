@@ -113,10 +113,14 @@ def read_store_metadata(*, allow_stale: bool = False) -> dict[str, Any] | None:
 class _StoreStream:
     """본문을 보관하지 않고 고정된 SQLite 세대를 재순회한다."""
 
-    def __init__(self, db, saved, fresh):
+    def __init__(self, db, saved, fresh, *, summary_only=False):
         self.db = db
         self._query_lock = RLock()
         self.count = saved["count"]
+        self.payload_sql = SEARCH_PAYLOAD_SQL
+        if summary_only:
+            self.payload_sql = ("json_remove(" + SEARCH_PAYLOAD_SQL
+                                + ", '$.description', '$.steps_to_reproduce', '$.notes', '$.additional_information')")
         self.has_search_projection = projection_ready(db, saved)
         db.set_progress_handler(self._check_query_budget, 1000)
         self.meta = {
@@ -169,7 +173,7 @@ class _StoreStream:
         return self._iter_query(sql, values)
 
     def __iter__(self):
-        return self._iter_query(f"SELECT {SEARCH_PAYLOAD_SQL} FROM issues ORDER BY id DESC")
+        return self._iter_query(f"SELECT {self.payload_sql} FROM issues ORDER BY id DESC")
 
     def _iter_query(self, sql, values=()):
         with execution_slot(self._query_lock):
@@ -193,7 +197,7 @@ class _StoreStream:
             self.db.close()
 
 
-def _open_store_stream(path, identity, allow_stale):
+def _open_store_stream(path, identity, allow_stale, *, summary_only=False):
     db = None
     try:
         db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
@@ -207,7 +211,7 @@ def _open_store_stream(path, identity, allow_stale):
             return None
         if db.execute("SELECT count(*) FROM issues").fetchone()[0] != saved["count"]:
             return None
-        stream = _StoreStream(db, saved, fresh)
+        stream = _StoreStream(db, saved, fresh, summary_only=summary_only)
         db = None  # 호출자 또는 요청 범위가 연결 수명을 소유한다.
         return stream
     except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
@@ -218,17 +222,17 @@ def _open_store_stream(path, identity, allow_stale):
 
 
 @contextmanager
-def stream_complete_store(*, allow_stale=False):
+def stream_complete_store(*, allow_stale=False, summary_only=False):
     """전체 검색은 행 단위로 읽고 한 요청 안에서는 같은 트랜잭션을 유지한다."""
     scope = _request_streams.get()
     stream = None
     try:
         path, identity = store_path(), connection_key()
-        key = (str(path), identity, allow_stale)
+        key = (str(path), identity, allow_stale, summary_only)
         with execution_slot(_generation_lock):
             stream = scope.get(key) if scope is not None else None
             if stream is None:
-                stream = _open_store_stream(path, identity, allow_stale)
+                stream = _open_store_stream(path, identity, allow_stale, summary_only=summary_only)
                 if stream is not None and scope is not None:
                     scope[key] = stream
     except HTTPException:
@@ -238,6 +242,18 @@ def stream_complete_store(*, allow_stale=False):
     finally:
         if stream is not None and scope is None:
             stream.close()
+
+
+def read_scoped_store(*, allow_stale=False, summary_only=False):
+    """요청 범위가 소유하는 재순회 가능한 원본. 전체 JSON을 메모리에 캐시하지 않는다.
+
+    호출자는 with_store_scope/store_request_scope 안에서 결과를 소비해야 한다.
+    정상 종료·예외·취소 모두 해당 범위가 SQLite 연결을 닫는다.
+    """
+    if _request_streams.get() is None:
+        raise RuntimeError("read_scoped_store는 store_request_scope 안에서 사용해야 합니다.")
+    with stream_complete_store(allow_stale=allow_stale, summary_only=summary_only) as stream:
+        return stream
 
 
 @measured("store_read")

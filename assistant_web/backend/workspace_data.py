@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from backend.execution import checkpoint, execution_slot, wait_for_result
 from backend.sources.mantis_collection import IssueBatch
-from backend.sources.mantis_store import read_complete_store, start_store_refresh, store_path, connection_key, MAX_AGE_SECONDS, refresh_in_progress, read_store_metadata
+from backend.sources.mantis_store import read_scoped_store, with_store_scope, start_store_refresh, store_path, connection_key, MAX_AGE_SECONDS, refresh_in_progress, read_store_metadata
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -35,6 +35,7 @@ _complete_workspace_lock = Lock()
 _complete_workspace_key: tuple | None = None
 
 
+@with_store_scope
 def fetch_workspace_recent_issues(
     total_limit: int = 1000, request_timeout: int = 8, *, force_refresh: bool = False,
 ) -> List[Dict[str, Any]]:
@@ -44,9 +45,9 @@ def fetch_workspace_recent_issues(
     권한/담당자 범위를 적용한다. 부분 실패한 세대는 전부 폐기한다.
     """
     global _live_key, _live_pages, _live_expires_at, _live_fetched_at
-    stored = None if force_refresh else read_complete_store(summary_only=True)
+    stored = None if force_refresh else read_scoped_store(summary_only=True)
     if stored is not None:
-        return stored
+        return IssueBatch(list(stored), dict(stored.meta))
     settings = get_mantis_settings()
     key = (settings["url"], settings["token"])
     limit = max(1, min(int(total_limit), 3000))
@@ -161,10 +162,11 @@ def _freeze(value):
 
 
 @lru_cache(maxsize=1)
+@with_store_scope
 def _complete_workspace_cached(path: str, mtime: int, size: int, identity: str):
     del path, mtime, size, identity
     from backend.sources.mantis import normalize_issue
-    stored = read_complete_store(summary_only=True)
+    stored = read_scoped_store(summary_only=True)
     if stored is None:
         # lru_cache는 예외를 저장하지 않으므로 일시적인 읽기 실패는 바로 복구된다.
         raise LookupError("전체 업무 원본을 읽지 못했습니다.")
