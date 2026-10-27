@@ -2,10 +2,12 @@
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import requests
@@ -164,6 +166,43 @@ class RecentRegistrationTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in result['stages'][0]['notion_pages']], ['new'])
         self.assertEqual(result['stages'][0]['meta']['tool'], 'notion_recent_catalog')
         self.assertEqual(self.queries, [])
+
+    def test_twenty_results_tolerate_normal_per_page_verification_latency(self):
+        from backend.notion import recent_catalog
+        for i in range(20):
+            self.add(f'p{i}', f'2026-10-{i + 1:02}T00:00:00Z', '2026-10-27T00:00:00Z')
+        clock = [100.0]
+
+        def delayed_read(endpoint, budget, **kwargs):
+            clock[0] += 1.2
+            if clock[0] >= budget.deadline:
+                raise _ReadFailure('time_limit')
+            return self.read(endpoint)
+
+        with patch.object(recent_catalog, 'time', SimpleNamespace(
+            monotonic=lambda: clock[0], time=time.time,
+        )), patch('backend.notion.body_index_sync._request', side_effect=delayed_read):
+            result = self.run_search(limit=20)
+        self.assertEqual(result['meta'].get('tool'), 'notion_recent_catalog')
+        self.assertEqual(len(result['notion_pages']), 20)
+        self.assertEqual(self.queries, [])
+
+    def test_verification_still_respects_remaining_request_deadline(self):
+        from backend.notion import recent_catalog
+        self.add('new', '2026-10-26T00:00:00Z', '2026-10-26T00:00:00Z')
+        deadlines = []
+
+        def read_with_deadline(endpoint, budget):
+            deadlines.append(budget.deadline)
+            return self.read(endpoint)
+
+        with patch.object(recent_catalog, 'time', SimpleNamespace(
+            monotonic=lambda: 100.0, time=time.time,
+        )), patch.object(recent_catalog, 'CURRENT_BUDGET', SimpleNamespace(
+            get=lambda: SimpleNamespace(deadline=112.0),
+        )), patch('backend.notion.body_index_sync._request', side_effect=read_with_deadline):
+            self.run_search(limit=20)
+        self.assertEqual(deadlines, [107.0])
 
     def test_created_time_fallback_respects_kst_boundary(self):
         self.add('before', '2026-10-26T14:59:00Z', '2026-10-27T08:00:00Z')

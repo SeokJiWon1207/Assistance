@@ -1,12 +1,16 @@
 """최근 등록 목록을 본문 색인의 완전성과 분리해 속성만으로 조회한다."""
 from datetime import datetime, timezone
 import json
+import logging
 import time
 
 from backend.execution import CURRENT_BUDGET, checkpoint
 from backend.notion.complete_snapshot import _time, catalog_max_age_seconds
 from backend.notion.property_snapshot import read_full_properties
 from backend.notion.property_roles import REGISTRATION_NAMES, role_properties
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _recent_candidates(index, database_ids, read_scope, constraints, limit):
@@ -92,7 +96,12 @@ def search_recent_catalog(index, database_ids, *, read_scope, constraints, limit
         return None
     candidates, proof = outcome
     active = CURRENT_BUDGET.get()
-    deadline = min(time.monotonic() + 20, active.deadline - 5) if active else time.monotonic() + 20
+    # 화면의 20건 설정도 검증할 수 있도록 반환 후보 수에 맞춘다.
+    # 고정 20초는 정상 API 지연과 공유 요청 간격만으로도 전수 검색으로 넘어갔다.
+    verification_seconds = min(60, max(20, len(candidates) * 2))
+    deadline = time.monotonic() + verification_seconds
+    if active:
+        deadline = min(deadline, active.deadline - 5)
     budget = _Budget(deadline, max(20, len(candidates) * 8))
     allowed = {identifier.replace('-', '').lower() for identifier in read_scope}
     pages = []
@@ -118,7 +127,9 @@ def search_recent_catalog(index, database_ids, *, read_scope, constraints, limit
                 return None
             page.update(match_method='notion_recent_catalog', matched_terms=[], match_score=0)
             pages.append(page)
-    except _ReadFailure:
+    except _ReadFailure as exc:
+        LOGGER.warning('Notion 최근 목록 재검증 중단: reason=%s candidates=%d verified=%d',
+                       str(exc), len(candidates), len(pages))
         return None
     return {'source': 'notion', 'status': 'ok', 'notion_pages': pages, 'meta': {
         **proof, 'status': 'snapshot', 'tool': 'notion_recent_catalog',
