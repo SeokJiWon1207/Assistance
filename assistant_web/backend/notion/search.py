@@ -53,7 +53,7 @@ from backend.notion.constants import (
 )
 from backend.notion.mapping import normalize_notion_page, resolve_notion_page_owner
 from backend.notion.read_scope import resolve_notion_read_scope
-from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_structural_query, split_notion_body_query
+from backend.notion.query_text import grounded_notion_body_constraints, notion_literal_title, notion_registration_sort, notion_structural_query, split_notion_body_query, without_registration_order
 from backend.notion.query_cache import cached_title_query
 from backend.notion.body_index_search import find_indexed_body_candidates
 from backend.notion.database_roles import select_notion_database_ids
@@ -189,6 +189,10 @@ def ground_notion_terms(text: str, terms: List[str], constraints: Dict[str, Any]
         re.sub(r"^(회식|송년회|신년회|팀빌딩)(?:일정|일시|장소)$", r"\1", term)
         for term in terms if normalize_for_match(term) not in requested_fields
     ]
+    if notion_registration_sort(text):
+        subject = normalize_for_match(without_registration_order(notion_structural_query(text)))
+        grounded = [term for term in grounded if term not in {"등록", "접수", "생성", "작성"}
+                    or normalize_for_match(term) in subject]
     excluded_quarters = set()
     for match in re.finditer(r"(?<!\d)[1-4]\s*분기", text):
         quarter = re.sub(r"\s+", "", match.group())
@@ -201,7 +205,9 @@ def ground_notion_terms(text: str, terms: List[str], constraints: Dict[str, Any]
         else:
             grounded.append(quarter)
     grounded = [term for term in grounded if normalize_for_match(term) not in excluded_quarters]
-    return remove_structured_date_terms(list(dict.fromkeys(grounded))[:8], constraints)
+    return remove_structured_date_terms(list(dict.fromkeys(grounded))[:8], {
+        **constraints, "sort": notion_registration_sort(text) or constraints.get("sort"),
+    })
 
 
 def notion_keyword_subject_text(text: str, constraints: Dict[str, Any]) -> Tuple[str, set[str]]:
@@ -228,12 +234,16 @@ def notion_keyword_subject_text(text: str, constraints: Dict[str, Any]) -> Tuple
 
 
 def build_notion_terms(text: str, constraints: Optional[Dict[str, Any]] = None) -> List[str]:
+    if not notion_literal_title(text):
+        constraints = {**(constraints or {}), "sort": notion_registration_sort(text) or (constraints or {}).get("sort")}
     text, body_clauses = split_notion_body_query(text)
     if body_clauses and (constraints or {}).get("exact_title"):
         # 정확한 제목은 서버 필터가 처리한다. 제목 지정 문구까지 본문 AND 검색어로 넣지 않는다.
         return []
     if not (constraints or {}).get("exact_title"):
         text = notion_subject_text(text)
+        if not notion_literal_title(text):
+            text = without_registration_order(text)
     text, _consumed = notion_keyword_subject_text(text, constraints or {})
     owner_values = [
         value
@@ -294,6 +304,8 @@ def remove_structured_date_terms(terms: List[str], constraints: Dict[str, Any]) 
     }
     if constraints.get("date_filter"):
         date_fields.add(str(constraints["date_filter"].get("field") or ""))
+    if (constraints.get("sort") or {}).get("field") == "created_at":
+        date_fields.add("created_at")
     if not date_fields & {"created_at", "due_at", "deployed_at"}:
         return terms
     field_terms = {
@@ -308,6 +320,7 @@ def remove_structured_date_terms(terms: List[str], constraints: Dict[str, Any]) 
         and not _DATE_RANGE_TAIL_TERM.fullmatch(term)
         and normalize_for_match(term) not in field_terms
         and not (created_at and _CREATED_DATE_VERB.fullmatch(term))
+        and not (created_at and re.fullmatch(r"(?:등록|접수|생성|작성)(?:일)?순(?:으로)?", term))
     ]
 
 
@@ -597,6 +610,9 @@ def extract_notion_constraints(text: str) -> Dict[str, Any]:
     )
     if date_range:
         result["date_filter"] = {"field": temporal_field, "operator": "between", "value": [date_range["from"], date_range["to"]]}
+    registration_sort = notion_registration_sort(text)
+    if registration_sort:
+        result["sort"] = registration_sort
     return result
 
 
@@ -1145,6 +1161,15 @@ def notion_database_date_filter(database_id: str, clause: Dict[str, Any]) -> Opt
     return filters[0] if len(filters) == 1 else {"or": filters}
 
 
+def notion_database_created_sort(database_id: str) -> tuple[Dict[str, str], bool]:
+    fields = role_properties(notion_property_schema(database_id), REGISTRATION_NAMES, {"date"})
+    if fields:
+        # 빈 등록일은 생성 시각으로 대체하므로 한 속성의 API 정렬만으로
+        # 전체 상위 N건을 확정할 수 없다. 이 경우 기존 전체 후보 검사를 유지한다.
+        return {"property": fields[0], "direction": "descending"}, False
+    return {"timestamp": "created_time", "direction": "descending"}, True
+
+
 def notion_database_created_filter(
     database_id: str, clause: Dict[str, Any],
 ) -> tuple[Dict[str, Any], Dict[str, str], bool]:
@@ -1191,14 +1216,15 @@ def notion_page_sort_key(page: Dict[str, Any], *, created_at_filtered: bool) -> 
     """날짜와 전체 ISO 시각을 분리해 모든 DB에서 같은 타입으로 정렬한다."""
     if created_at_filtered:
         calendar_date = str(page.get("registration_date") or page.get("created_time") or "")[:10]
-        raw_time = str(page.get("created_time_raw") or page.get("created_time") or "")
+        raw_time = str(page.get("registration_time_raw") or page.get("created_time_raw") or page.get("created_time") or "")
     else:
         calendar_date = str(page.get("last_edited_time") or "")[:10]
         raw_time = str(page.get("last_edited_time_raw") or page.get("last_edited_time") or "")
     try:
         parsed = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            local_registration = created_at_filtered and page.get("registration_time_raw")
+            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=9)) if local_registration else timezone.utc)
         timestamp = parsed.timestamp()
     except (ValueError, OverflowError):
         timestamp = 0.0
@@ -1510,6 +1536,19 @@ def execute_notion_search(
     database_ids, selected_database_role = select_notion_database_ids(
         database_ids, query_text, terms, notion_constraints,
     )
+    created_at_filtered = any(
+        clause.get("field") == "created_at"
+        for clause in notion_constraints.get("common_filter_clauses", [])
+    )
+    created_order = created_at_filtered or (notion_constraints.get("sort") or {}).get("field") == "created_at"
+    metadata_list = bool(
+        created_order and not include_blocks and not terms and not exact_title and not body_clauses and not keyword_clauses
+        and not has_count_intent(query_text) and not notion_constraints.get("group_by")
+        and not any(notion_constraints.get(key) for key in ("status", "owner", "unassigned_owner", "excluded_statuses"))
+        and all(clause.get("field") == "created_at" for clause in notion_constraints.get("common_filter_clauses", []))
+    )
+    if metadata_list:
+        notion_constraints["metadata_list"] = True
     if scope_complete:
         from backend.notion.complete_snapshot import search_complete_snapshot
         snapshot_result = search_complete_snapshot(
@@ -1534,10 +1573,6 @@ def execute_notion_search(
     max_pages = notion_search_max_pages(
         notion_constraints,
         require_complete=require_complete_scan,
-    )
-    created_at_filtered = any(
-        clause.get("field") == "created_at"
-        for clause in notion_constraints.get("common_filter_clauses", [])
     )
     created_list_window = bool(
         created_at_filtered
@@ -1663,6 +1698,9 @@ def execute_notion_search(
             database_sort: Dict[str, str] = {
                 "timestamp": "last_edited_time", "direction": "descending",
             }
+            registration_window_safe = False
+            if created_order and not date_clauses:
+                database_sort, registration_window_safe = notion_database_created_sort(database_id)
             if date_clauses:
                 try:
                     date_filters: List[Optional[Dict[str, Any]]] = []
@@ -1759,6 +1797,7 @@ def execute_notion_search(
                 and not require_complete_scan
                 and ("created_at" not in server_covered_fields or created_window_safe)
             )
+            server_filtered_list_window = server_filtered_list_window or bool(metadata_list and registration_window_safe)
             try:
                 title_property = (
                     notion_title_property(notion_property_schema(database_id))
@@ -2299,7 +2338,7 @@ def execute_notion_search(
     pages.sort(
         key=lambda page: (
             bool(terms) and (page.get("match_method") == "notion_title_filter" or page.get("index_title_match", False)),
-            notion_page_sort_key(page, created_at_filtered=created_at_filtered),
+            notion_page_sort_key(page, created_at_filtered=created_order),
         ),
         reverse=True,
     )

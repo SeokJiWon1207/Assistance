@@ -152,7 +152,8 @@ def search_catalog_snapshot(index, database_ids, *, read_scope, constraints, ter
             matched.append(page)
     except _ReadFailure:
         return None
-    created = any(clause.get('field') == 'created_at' for clause in constraints.get('common_filter_clauses', []))
+    created = (constraints.get('sort') or {}).get('field') == 'created_at' or any(
+        clause.get('field') == 'created_at' for clause in constraints.get('common_filter_clauses', []))
     matched.sort(key=lambda page: search.notion_page_sort_key(page, created_at_filtered=created), reverse=True)
     shown = search.deduplicate_notion_pages_by_id(matched)[:limit]
     incomplete = []
