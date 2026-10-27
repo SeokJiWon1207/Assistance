@@ -1,5 +1,5 @@
 import { chartHost } from "./bklit_charts.js?v=20261026-1";
-import { metricChartSpec } from "./chart_models.js?v=20261026-1";
+import { metricChartSpec, formatChartValue } from "./chart_models.js?v=20261026-1";
 import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js?v=20260911-6";
 
 function escapeHtml(value) {
@@ -408,50 +408,48 @@ function statCardMarkup({ label, value, amount, suffix = "", decimals = 0 }) {
   return `<strong${numeric}>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
 }
 
-export function renderEffortChart(chart, { complete = true } = {}) {
+export function renderEffortChart(chart, { complete = true, originalAnswer = null } = {}) {
   const wrap = document.createElement("div");
-  wrap.className = "effort-chart";
-  const basis = document.createElement("p");
-  basis.textContent = "고객사전달일 기준 · 전달일 없는 이슈 제외";
-  wrap.appendChild(basis);
+  wrap.className = "effort-chart effort-answer";
   const animated = shouldAnimateChart(chart);
-
-  const statCards = document.createElement("div");
-  statCards.className = "summary-stat-grid effort-chart-stats";
-  [
-    { label: chart.periodLabel || `${chart.year}년 ${chart.month}월`, value: chart.person },
-    { label: "총 공수", value: chart.totalEffort.toFixed(2), amount: chart.totalEffort, decimals: 2 },
-    { label: "반영 이슈", value: `${chart.issueCount}건`, amount: chart.issueCount, suffix: "건" },
-  ].forEach((stat, index) => {
-    const card = document.createElement("div");
-    card.className = `summary-stat-card effort-stat-card effort-stat-${index + 1}`;
-    card.innerHTML = statCardMarkup(stat);
-    statCards.appendChild(card);
-  });
-  wrap.appendChild(statCards);
-  if (animated) animateStatCards(statCards);
-
-  const byType = chart.byType.filter((item) => item.amount > 0);
-  if (byType.length) {
-    const section = document.createElement("div");
-    section.className = "summary-section";
-    section.innerHTML = `<h3>유형별 공수</h3>`;
-    section.appendChild(renderDonutChart(byType, { centerLabel: "총 공수", animated, complete }));
-    wrap.appendChild(section);
-  }
+  const value = amount => escapeHtml(formatChartValue(amount, {decimals: 2, unit: "", complete}));
+  const period = chart.periodFrom && chart.periodTo ? `${chart.periodFrom}–${chart.periodTo}` : chart.periodLabel || `${chart.year}년 ${chart.month}월`;
+  const daily = chart.dailyEffort;
+  const dailyFallback = Array.isArray(daily) && daily.length
+    ? `<details class="bklit-data"><summary>일별 수치 보기</summary><div class="bklit-sparkline-table"><table><thead><tr><th>고객사전달일</th><th>공수</th></tr></thead><tbody>${daily.map(point => `<tr><td>${escapeHtml(point.date)}</td><td>${value(point.amount)}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+  const sparkline = dailyFallback ? chartHost({
+    kind: "sparkline", title: "일별 공수", complete, sparklineVariant: "bar", dateBasis: "고객사전달일",
+    points: daily.map(point => ({date: point.date, count: point.amount})), decimals: 2, unit: " 공수", showTotal: false, animated,
+  }, dailyFallback) : `<p class="bklit-note">${daily === null ? "일별 추이는 1년 이하의 조회 기간에 표시됩니다." : daily === undefined ? "일별 공수 데이터가 없는 저장된 답변입니다. 다시 조회하면 추이를 볼 수 있습니다." : "표시할 일별 공수 데이터가 없습니다."}</p>`;
+  wrap.innerHTML = `
+    <header class="effort-answer-header"><h3>${escapeHtml(chart.person)} 공수</h3><p>${escapeHtml(period)} · 고객사전달일 기준</p></header>
+    <div class="effort-answer-total"><div><span class="effort-answer-label">총 공수</span><strong>${value(chart.totalEffort)}</strong></div><p>반영 이슈 <b>${escapeHtml(formatChartValue(chart.issueCount, {complete}))}</b></p></div>
+    ${!complete ? '<p class="bklit-note">확인한 범위의 공수입니다. 전체 합계는 미확정입니다.</p>' : ""}
+    <div class="effort-answer-sparkline">${sparkline}</div>
+    <div class="effort-answer-types" aria-label="유형별 공수">${(chart.byType || []).map(item => `<div><span>${escapeHtml(item.label)}</span><strong>${value(item.amount)}</strong></div>`).join("")}</div>
+    <p class="effort-answer-basis">Mantis 고객사전달일 · 공수 커스텀 필드 합산 · 전달일 없는 이슈 제외</p>`;
 
   if (chart.topIssues?.length) {
-    const section = document.createElement("div");
-    section.className = "summary-section";
-    section.innerHTML = `<h3>공수가 큰 이슈</h3>`;
+    const section = document.createElement("details");
+    section.className = "summary-section effort-answer-issues";
+    section.innerHTML = `<summary>공수가 큰 이슈 보기</summary>`;
     const items = chart.topIssues.map(({ id, summary, amount }) => ({
       label: id ? `#${id} ${summary}` : summary,
       amount,
     }));
-    section.appendChild(renderBarChartSVG(items, { animated, complete }));
+    section.appendChild(renderBarChartSVG(items, { animated: false, complete }));
     wrap.appendChild(section);
   }
 
+  if (originalAnswer) {
+    const details = document.createElement("details");
+    details.className = "effort-answer-original";
+    const summary = document.createElement("summary");
+    summary.textContent = "답변 원문 보기";
+    details.appendChild(summary);
+    details.appendChild(originalAnswer);
+    wrap.appendChild(details);
+  }
   return wrap;
 }
 

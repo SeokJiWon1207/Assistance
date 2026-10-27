@@ -13,7 +13,7 @@ import { useChartStable } from '../vendor/bklit/charts/chart-context';
 import { ChartTooltip } from '../vendor/bklit/charts/tooltip/chart-tooltip';
 import { Legend, LegendItem, LegendLabel, LegendMarker, LegendValue } from '../vendor/bklit/charts/legend';
 import { useLegend, useLegendItem } from '../vendor/bklit/charts/legend/legend-context';
-import { LineSparkline, useSparklineHover } from '../vendor/bklit/charts/sparkline';
+import { Sparkline } from './sparkline';
 import { LineChart, Line } from '../vendor/bklit/charts/line-chart';
 import { Grid } from '../vendor/bklit/charts/grid';
 import { XAxis } from '../vendor/bklit/charts/x-axis';
@@ -33,6 +33,7 @@ export type Spec = {
   rows?: Row[]; series?: Series[]; orientation?: 'horizontal' | 'vertical';
   action?: string; selected?: string; points?: Point[]; summary?: Record<string, number>;
   decimals?: number; unit?: string; animated?: boolean;
+  sparklineVariant?: 'line' | 'bar'; compact?: boolean; dateBasis?: string; showTotal?: boolean;
   trend?: {periods: string[]; series: Array<{label:string; counts: Array<number|null>; efforts: Array<number|null>}>; effortDateBasis?: string; untypedCount?: number};
   issues?: Array<{ id: string | number; dueDate: string; title: string }>; today?: string;
 };
@@ -96,19 +97,6 @@ function Bars({ spec }: { spec: Spec }) {
     </div>
     {series.length>1 && <Legend items={legend} hoveredIndex={hover} onHoverChange={setHover} className="bklit-legend"><KeyboardLegendItem complete={spec.complete}/></Legend>}
   </ChartLegendHoverProvider>;
-}
-
-function Sparkline({ spec }: { spec: Spec }) {
-  const points = spec.points || [];
-  const hover = useSparklineHover<Point>();
-  if (!points.length) return <p className="bklit-empty">등록 추이를 확인하지 못했습니다.</p>;
-  const shown = hover.datum;
-  return <div className="bklit-sparkline">
-    <div className="bklit-sparkline-label"><span>{shown ? shown.date : `${points[0].date.slice(5)}–${points.at(-1)!.date.slice(5)} · 등록일 기준`}</span>
-      <strong>{count(shown ? shown.count : points.reduce((sum,p)=>sum+p.count,0),spec.complete)}</strong></div>
-    <LineSparkline data={points} dataKey="count" height={54} yDomain={[0,undefined]} curve="linear" color="var(--chart-1)" {...hover.sparklineProps} aria-label="최근 7일 신규 이슈 등록 추이" />
-    <details className="bklit-data"><summary>일별 수치 보기</summary><table><thead><tr><th>등록일</th><th>신규</th></tr></thead><tbody>{points.map(p=><tr key={p.date}><td>{p.date}</td><td>{count(p.count,spec.complete)}</td></tr>)}</tbody></table></details>
-  </div>;
 }
 
 function Trend({ spec }: { spec: Spec }) {

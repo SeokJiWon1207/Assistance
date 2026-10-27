@@ -30,6 +30,7 @@ from backend.sources.mantis import (
 )
 from backend.sources.effort_collection import effort_issues, coverage_note
 from backend.effort_fields import EFFORT_FIELD_LABELS, parse_effort_field_value
+from backend.reports.effort_series import daily_effort
 from backend.query_filters import add_filter_clause, matches_source_filters, values_for_clause
 from backend.understanding import (
     extract_query_constraints,
@@ -338,6 +339,9 @@ def run_filtered_effort_report(
         "person": f"{scope_label} 전체",
         "year": year,
         "periodLabel": period_label,
+        "periodFrom": start_date,
+        "periodTo": end_date,
+        "dailyEffort": daily_effort(matched_rows, start_date, end_date),
         "month": month,
         "totalEffort": total_effort,
         "issueCount": len(matched_rows),
@@ -479,6 +483,9 @@ def run_person_effort_report(
         "person": person,
         "year": year,
         "periodLabel": period_label,
+        "periodFrom": start_date,
+        "periodTo": end_date,
+        "dailyEffort": daily_effort(matched_rows, start_date, end_date),
         "month": month,
         "totalEffort": total_effort,
         "issueCount": len(matched_rows),

@@ -137,13 +137,8 @@
 }
 
 .dashboard-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.35fr); }
-.dashboard-intake .dashboard-intake-bar { display: flex; gap: 2px; height: 6px; margin: 4px 0 2px; overflow: hidden; border-radius: 999px; background: var(--surface-alt); }
-.dashboard-intake-bar i { display: block; height: 100%; border-radius: 999px; }
 .dashboard-intake .is-closed { color: var(--success); }
 .dashboard-intake .is-open { color: var(--blue); }
-.dashboard-intake-bar i.is-closed { background: var(--success); }
-.dashboard-intake-bar i.is-open { background: color-mix(in srgb, var(--blue) 30%, var(--surface)); }
-.dashboard-intake-bar i.is-unknown { background: var(--muted); }
 .dashboard-intake small b { font-weight: 700; }
 button.workspace-metric {
   width: 100%;

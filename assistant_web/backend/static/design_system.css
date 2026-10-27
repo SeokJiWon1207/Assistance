@@ -313,7 +313,7 @@ button:disabled { cursor: not-allowed; }
 }
 .dashboard-intake > .dashboard-metric-top { order: 1; }
 .dashboard-intake > strong { order: 2; }
-.dashboard-intake > .dashboard-intake-bar { order: 3; }
+.dashboard-intake > .bklit-host { order: 3; }
 .dashboard-intake > small { order: 4; }
 .dashboard-chart-body { max-height: 290px; overflow-y: auto; }
 .chat-panel:has(> .messages > .empty-state) > .template-picker { flex-shrink: 0; height: min(460px, 60dvh); }

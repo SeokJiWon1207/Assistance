@@ -397,7 +397,12 @@ function updateComposerShadow() {
 // 버튼 색상(hover 등)이 아이콘에도 그대로 적용되게 한다.
 function appendAssistantExtras(container, message, messageIndex) {
   const complete = !(message.verification?.dataScope || []).some(row => ["부분 조회", "범위 미확인"].includes(row.coverage));
-  if (message.effortChart) container.appendChild(renderEffortChart(message.effortChart, { complete }));
+  if (message.effortChart) {
+    // 새 공수 답변은 요약 카드부터 읽고 원문은 필요할 때 펼친다. 저장·복사할 답변은 유지한다.
+    const originalAnswer = !message.loading && !message.streaming && Array.isArray(message.effortChart.dailyEffort)
+      ? container.querySelector(":scope > .bubble") : null;
+    container.appendChild(renderEffortChart(message.effortChart, { complete, originalAnswer }));
+  }
   if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking, { complete }));
   if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend, { complete }));
   if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {

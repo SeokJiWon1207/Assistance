@@ -23,7 +23,7 @@ export async function mountCharts(container) {
   if (!hosts.length) return;
   const generation = generations.get(container) || 0;
   try {
-    bundlePromise ||= import('../vendor/bklit/charts.js?v=20261026-1').catch(error => { bundlePromise = null; throw error; });
+    bundlePromise ||= import('../vendor/bklit/charts.js?v=20261027-1').catch(error => { bundlePromise = null; throw error; });
     const { mountChart } = await bundlePromise;
     if ((generations.get(container) || 0) !== generation) return;
     for (const host of hosts) {

@@ -107,14 +107,11 @@ function metricCard(key, label, value, helper, tone = "", delta = "", lowerBound
 }
 
 // closedNow는 기간 중 처리한 전체 건수가 아니라 이번 기간 신규 이슈 중 지금 종료된 건수다.
-function renderIntakeCard(summary, complete = true) {
+function renderIntakeCard(summary, complete = true, points = []) {
   const total = Number(summary.newIssues || 0);
   const closed = Math.min(Number(summary.closedNow || 0), total);
   const unknown = Number(summary.unknownStatus || 0);
   const open = Number(summary.newOpen ?? Math.max(0, total - closed - unknown));
-  const closedShare = total ? Math.round((closed / total) * 1000) / 10 : 0;
-  const openShare = total ? Math.round((open / total) * 1000) / 10 : 0;
-  const unknownShare = total ? Math.round((unknown / total) * 1000) / 10 : 0;
   const rate = summary.changeRate;
   const delta = !complete ? '<em class="dashboard-delta">확인 범위 · 비교 미확정</em>' : rate == null
     ? '<em class="dashboard-delta">직전 기간 비교 없음</em>'
@@ -123,19 +120,19 @@ function renderIntakeCard(summary, complete = true) {
     <div class="workspace-metric dashboard-intake" role="group" aria-label="이번 기간 신규 이슈 ${total}건${complete ? "" : " 이상 · 확인 범위"} 중 종료 ${closed}건, 미종료 ${open}건${unknown ? `, 상태 미상 ${unknown}건` : ""}">
       <span class="dashboard-metric-top"><span>이번 기간 신규 이슈</span>${delta}</span>
       <strong>${formatNumber(total)}${complete ? "" : '<span class="dashboard-lower-bound">건 이상</span>'}</strong>
-      <span class="dashboard-intake-bar" aria-hidden="true"><i class="is-closed" style="width:${closedShare}%"></i><i class="is-open" style="width:${openShare}%"></i>${unknown ? `<i class="is-unknown" style="width:${unknownShare}%"></i>` : ""}</span>
+      ${chartHost({kind: "sparkline", title: "선택 기간 신규 이슈 등록 추이", complete, points, compact: true, animated: false}, '<p class="bklit-note">일별 등록 추이는 아래 상세 차트에서 확인할 수 있습니다.</p>')}
       <small class="dashboard-new-change"><b class="is-closed">종료 ${formatNumber(closed)}</b> · <b class="is-open">미종료 ${formatNumber(open)}</b>${unknown ? ` · <b>상태 미상 ${formatNumber(unknown)}</b>` : ""} · ${complete ? `직전 기간 ${formatNumber(summary.previousNewIssues)}건` : "확인된 이슈만 집계"}</small>
     </div>`;
 }
 
-function renderMetrics(summary, complete = true) {
+function renderMetrics(summary, complete = true, points = []) {
   return `
     <section class="workspace-summary-grid dashboard-metrics" aria-label="핵심 운영 지표">
       ${metricCard("open", complete ? "미종료 이슈" : "확인된 미종료", summary.open, `${complete ? "전체 보기" : "전체 미확정"} · 이월 ${formatNumber(summary.carriedOpen)}건`, "is-blue", "", !complete)}
       ${metricCard("overdue", "일정 지연", summary.overdue, "완료 예정일 경과", "is-danger", "", !complete)}
       ${metricCard("aging", "장기 미종료", summary.aging, "30일 이상 미종료", "is-warning", "", !complete)}
       ${metricCard("highRisk", "고위험", summary.highRisk, `우선순위 높음 ${formatNumber(summary.highPriority)}건`, "is-danger", "", !complete)}
-      ${renderIntakeCard(summary, complete)}
+      ${renderIntakeCard(summary, complete, points)}
     </section>`;
 }
 
@@ -455,7 +452,7 @@ function renderDashboard() {
         : ""}
     ${!complete ? '<div class="dashboard-refresh-status is-warning" role="status"><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>' : ""}
     ${renderDecision(data.decisionSummary || {}, data.meta.periodDays)}
-    ${renderMetrics(data.summary, complete)}
+    ${renderMetrics(data.summary, complete, data.intakeTrend || [])}
     <div class="dashboard-dist-head"><h3>미종료 분포</h3>${chartLegend()}</div>
     <div class="dashboard-grid${memberChart ? "" : " is-two"}">${renderCustomerChart(priorities, data.customerHealth || [], data.customerSpikes || [], data.screenSpikes || [])}${renderAgeChart(priorities)}${memberChart}</div>
     <div class="bklit-insights-grid">
