@@ -153,8 +153,10 @@ mdurl==0.1.2
     # via markdown-it-py
 mmh3==5.2.1
     # via chromadb
-msgpack==1.2.1
-    # via cachecontrol
+msgpack==1.2.3
+    # via
+    #   -c assistant_web/constraints-security.txt
+    #   cachecontrol
 multidict==6.9.1
     # via
     #   -c assistant_web/constraints-security.txt

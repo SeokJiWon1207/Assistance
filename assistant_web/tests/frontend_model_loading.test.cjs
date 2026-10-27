@@ -133,47 +133,66 @@ test('canceling one waiting question does not cancel shared initialization', asy
   assert.equal(h.els.modelSelect.value, 'company');
 });
 
-test('model initialization starts while templates are still pending', async () => {
-  let requests = 0;
-  let finishConversations;
-  let finishTemplates;
-  let renders = 0;
-  const conversations = new Promise((resolve) => { finishConversations = resolve; });
-  const state = { initializing: true };
-  const context = vm.createContext({
-    AssistantAuthReady: Promise.resolve({}),
-    fetch: async () => ({ ok: false }), setInterval() {},
+for (const { name, messages, busy, templateFailure, earlyTemplates, expectedRenders } of [
+  { name: 'saved history', messages: [{ role: 'user', content: '저장된 질문' }], expectedRenders: 1 },
+  { name: 'empty conversation', messages: [], expectedRenders: 2 },
+  { name: 'answer in progress', messages: [], busy: true, expectedRenders: 1 },
+  { name: 'failed template catalog', messages: [], templateFailure: true, expectedRenders: 2 },
+  { name: 'catalog ready before history', messages: [], earlyTemplates: true, expectedRenders: 1 },
+]) {
+  test(`refresh renders ${name} while templates and version checks are pending`, async () => {
+    let requests = 0;
+    let finishConversations;
+    let finishTemplates;
+    let failTemplates;
+    let renders = 0;
+    let dashboardInitializations = 0;
+    const conversations = new Promise((resolve) => { finishConversations = resolve; });
+    const state = { initializing: true, messages, busy: false };
+    const context = vm.createContext({
+      AssistantAuthReady: Promise.resolve({}),
+      fetch: () => new Promise(() => {}), setInterval() {},
+    });
+    const source = fs.readFileSync(path.join(modules, 'bootstrap.js'), 'utf8');
+    const imports = new Map([...source.matchAll(/import\s*{([^}]+)}\s*from\s*["']([^"']+)["']/g)]
+      .map((match) => [match[2], match[1].split(',').map((name) => name.trim())]));
+    const values = {
+      state, els: { adminGenerationSettings: {} }, defaultOptions: {},
+      canUseAdminTools: () => false,
+      loadConversations: () => conversations,
+      loadModels: async () => { requests++; },
+      loadTeamTemplates: () => new Promise((resolve, reject) => { finishTemplates = resolve; failTemplates = reject; }),
+      renderMessages: () => { renders++; },
+      initDashboard: () => { dashboardInitializations++; },
+    };
+    const module = new vm.SourceTextModule(source, { context });
+    await module.link((specifier) => {
+      const names = imports.get(specifier) || [];
+      return new vm.SyntheticModule(names, function () {
+        for (const name of names) this.setExport(name, values[name] || (() => Promise.resolve()));
+      }, { context });
+    });
+    await module.evaluate();
+    await flush();
+    assert.equal(requests, 1);
+    assert.equal(state.initializing, true);
+    if (earlyTemplates) {
+      finishTemplates();
+      await flush();
+      assert.equal(renders, 0, 'templates must not render before history restoration');
+    }
+    finishConversations();
+    await flush();
+    assert.equal(state.initializing, false, 'only conversation restoration gates submission');
+    assert.equal(renders, 1, 'saved messages must render without waiting for optional requests');
+    assert.equal(dashboardInitializations, 1, 'optional requests must not block the rest of initialization');
+    state.busy = busy;
+    if (templateFailure) failTemplates(new Error('템플릿 연결 실패'));
+    else finishTemplates();
+    await flush();
+    assert.equal(renders, expectedRenders, 'only idle empty conversations refresh their template cards');
   });
-  const source = fs.readFileSync(path.join(modules, 'bootstrap.js'), 'utf8');
-  const imports = new Map([...source.matchAll(/import\s*{([^}]+)}\s*from\s*["']([^"']+)["']/g)]
-    .map((match) => [match[2], match[1].split(',').map((name) => name.trim())]));
-  const values = {
-    state, els: { adminGenerationSettings: {} }, defaultOptions: {},
-    canUseAdminTools: () => false,
-    loadConversations: () => conversations,
-    loadModels: async () => { requests++; },
-    loadTeamTemplates: () => new Promise((resolve) => { finishTemplates = resolve; }),
-    renderMessages: () => { renders++; },
-  };
-  const module = new vm.SourceTextModule(source, { context });
-  await module.link((specifier) => {
-    const names = imports.get(specifier) || [];
-    return new vm.SyntheticModule(names, function () {
-      for (const name of names) this.setExport(name, values[name] || (() => Promise.resolve()));
-    }, { context });
-  });
-  await module.evaluate();
-  await flush();
-  assert.equal(requests, 1);
-  assert.equal(state.initializing, true);
-  finishConversations();
-  await flush();
-  assert.equal(state.initializing, false, 'only conversation restoration gates submission');
-  assert.equal(renders, 0, 'initial template cards must wait for their catalog');
-  finishTemplates();
-  await flush();
-  assert.equal(renders, 1);
-});
+}
 
 test('submission preserves the draft and history until initial conversation restoration completes', async () => {
   const source = fs.readFileSync(path.join(modules, 'events.js'), 'utf8');

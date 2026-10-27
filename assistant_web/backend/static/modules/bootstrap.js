@@ -42,24 +42,25 @@ async function bootstrapApplication(authState = {}) {
   await apiFetch("/api/customer-names").then(async (response) => {
     if (response.ok) setCustomerNames(await response.json());
   }).catch(() => {});
-  await Promise.all([
-    loadConversations().then(() => {
-      state.initializing = false;
-      globalThis.dispatchEvent?.(new Event("conversations:rendered"));
-    }),
-    loadTeamTemplates().catch(() => {}),
-    checkAppVersion().catch(() => {}),
-  ]);
+  loadTheme();
+  setShowSources(defaultOptions.showSources);
+  setAbComparison(defaultOptions.abTest);
+  // 템플릿·버전 확인이 지연되어도 복원한 대화는 바로 표시한다.
+  loadTeamTemplates().catch(() => {}).then(() => {
+    // 목록이 늦게 도착하면 시작 카드만 갱신하고, 읽거나 생성 중인 대화는 유지한다.
+    if (!state.initializing && !state.busy && !state.messages.length) renderMessages();
+  });
+  checkAppVersion().catch(() => {});
+  await loadConversations();
+  renderMessages();
+  autoResizeInput();
+  state.initializing = false;
+  globalThis.dispatchEvent?.(new Event("conversations:rendered"));
   const workspaceReady = state.currentUser?.uid
     ? loadMyWorkspace().catch(() => {})
     : Promise.resolve();
   renderChatDataBadge({ loading: true });
   loadDataStatus().catch(() => renderChatDataBadge({ failed: true }));
-  loadTheme();
-  setShowSources(defaultOptions.showSources);
-  setAbComparison(defaultOptions.abTest);
-  renderMessages();
-  autoResizeInput();
   initAdminCenter();
   initDashboard();
   // 승인 대기 배지는 관리자 센터를 열기 전에도 보여야 하므로 미리 불러 둔다.
