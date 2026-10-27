@@ -244,3 +244,30 @@
 {"q": "2026년 10월 내 공수 알려줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "unified": {"source": "mantis", "operation": "report", "report_kind": "effort", "scope": "self", "followup": false, "filters": [{"field": "delivered_at", "operator": "between", "value": ["2026-10-01", "2026-10-31"], "evidence": "2026년 10월"}], "status": {"mode": "unspecified", "values": [], "evidence": ""}, "clear_fields": [], "terms": [], "group_by": null, "limit": null, "effort": {"type": "total"}}, "unified_statuses": [], "unified_role": "effort_person"}
 {"q": "2026년 10월 내 공수 알려줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "unified": {"source": "mantis", "operation": "report", "report_kind": "effort", "scope": "self", "followup": false, "filters": [{"field": "created_at", "operator": "between", "value": ["2026-10-01", "2026-10-31"], "evidence": "2026년 10월"}], "status": {"mode": "unspecified", "values": [], "evidence": ""}, "clear_fields": [], "terms": [], "group_by": null, "limit": null, "effort": {"type": "total"}}, "unified_statuses": [], "unified_role": "effort_person", "unified_rejected": "delivered_at"}
 {"q": "2026년 월별 이슈 유형별 등록건수와 전달 공수 추이를 보여줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": [], "unified": {"source": "mantis", "operation": "report", "report_kind": "effort_sla", "scope": "all", "followup": false, "filters": [{"field": "delivered_at", "operator": "between", "value": ["2026-01-01", "2026-12-31"], "evidence": "2026년"}], "status": {"mode": "unspecified", "values": [], "evidence": ""}, "clear_fields": [], "terms": [], "group_by": null, "limit": null, "effort": {"type": "trend"}}, "unified_rejected": "처리시간"}
+{"q": "안녕하세요", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "파이썬에서 리스트와 튜플 차이를 설명해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "파이썬 TypeError 오류를 고치는 방법 알려줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "HTTP 404 오류가 뭔지 알려줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "SQL 인덱스의 장단점을 정리해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "메모리 누수란 무엇이고 어떻게 예방해?", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "차트 종류와 각각의 장단점을 설명해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "화면 해상도와 DPI 차이가 뭐야?", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "삼성전자는 어떤 회사야?", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "NH투자증권이 어떤 회사인지 일반적으로 설명해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "친구에게 생일 축하 메일 써줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "회의록 작성 요령을 알려줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "휴가 때 읽을 만한 책 추천해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "오늘 날씨 어때?", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "이 문장을 정중하게 고쳐줘: 내일까지 보내주세요", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "Mantis가 어떤 프로그램인지 설명해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "Notion과 엑셀의 차이를 설명해줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "일반적으로 고객 문의 메일을 정중하게 쓰는 방법을 알려줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "그럼 파이썬 TypeError 오류를 고치는 방법 알려줘", "source": "general", "authority": "authoritative", "general_chat": true, "people": [], "candidate_people": []}
+{"q": "파이썬 TypeError 관련 이슈를 Mantis에서 찾아줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "HTTP 404 오류가 접수된 이슈를 찾아줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "우리 팀 회의록 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "휴가 규정 문서 찾아줘", "source": "notion", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "NH MTS 오류의 원인과 처리 이력 알려줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "#31105 이슈를 근거로 고객 안내 메일 초안 작성해줘", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "안녕하세요 NH MTS 이슈 몇 건 남았어?", "source": "mantis", "authority": "authoritative", "people": [], "candidate_people": []}
+{"q": "NH MTS 차트 오류의 원리는 무엇인지 설명해줘", "source": "general", "authority": "abstain", "issue_explanation": true, "people": [], "candidate_people": []}

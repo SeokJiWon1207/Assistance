@@ -13,6 +13,9 @@ def explanation_search_terms(text: str, constraints: dict[str, Any]) -> list[str
 
 
 def wants_issue_explanation(text: str, constraints: dict[str, Any]) -> bool:
+    from backend.intent.general import is_general_question
+    if is_general_question(text):
+        return False
     from backend.intent.source_router import rule_based_search_intent
     source_plan = rule_based_search_intent(text, constraints)
     source = source_plan.get("source")

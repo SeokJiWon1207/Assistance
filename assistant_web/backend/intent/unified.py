@@ -19,12 +19,14 @@ PROMPT = '''사용자 질문 전체를 사내 조회 실행 계획 JSON 하나�
 명시한 이슈 번호는 issue_id 필터에 반드시 보존한다. 입력의 mentioned_people은 질문에 실제 등장하는 인물 후보다. '담당자 권한별의'에서 권한별은 사람 이름이며 owner equals 필터이지 담당자별 group_by가 아니다. 이름이 명시된 담당자 조건을 누락하지 않는다.
 Notion에서 인용한 문서 제목을 찾는 요청은 title equals 필터로 보존하며 terms=[]로 둔다. 제목 안의 고객사·번호·매체·상태는 별도 필터가 아니다. '본문/내용에 문자열 포함' 요청은 정확 제목 조회와 다르므로 keyword contains를 쓴다. Notion의 시작전 같은 상태는 filters의 status not_equals/not_in 등으로 표현하고 최상위 status는 unspecified다.
 source: mantis(고객사 소프트웨어 이슈/버그/차트/HTS/MTS), notion(사내 문서/공지/휴가/회의), both(둘 다 명시), general(일반 대화).
+일반 지식·프로그래밍·개념 설명·번역·문장 수정·일반 메일 작성·추천·인사는 지원하는 일반 대화다. 사내 자료 조회가 필요 없으면 source=general, operation=explain, scope=default, followup=false, filters=[], status={"mode":"unspecified","values":[],"evidence":""}, clear_fields=[], terms=[], group_by=null, limit=null로 출력한다. report_kind는 생략한다. 사내 기능 범위 밖이라는 이유로 clarify나 거절을 반환하지 않는다.
+오류·차트·화면·회의록·휴가·고객사명·Mantis·Notion이라는 단어만으로 사내 조회를 선택하지 않는다. 'HTTP 404 오류가 뭔지', '회의록 작성 요령', 'Notion과 엑셀의 차이', 'NH투자증권이 어떤 회사인지', '친구 생일 축하 메일'은 general이다. 'Mantis에서 오류 이슈 찾아줘', '우리 팀 회의록 찾아줘', 특정 이슈 번호의 설명은 실제 사내 조회다. 이전 계획이 있어도 새로 제시한 일반 질문은 이전 이슈·고객사·상태를 상속하지 않는다.
 operation: count(몇 개/몇 건/건수/수를 세어줘), search(목록), get(특정 번호 상세), explain(원인·조치·경위·노트·확인 여부 설명), aggregate(그룹별 건수), report(공수/업무보고 등 특수 보고서), write(Notion 생성·수정·삭제·승인 요청), clarify(불명확).
 인용된 제목의 '공수'는 공수 합산 요청이 아니다. '모두/전부 몇 개'는 수량이며 전체 상태가 아니다. 숫자는 모델이 계산하지 않는다.
 scope: self(나/내/나한테/내가 담당한 개인 이슈), team(우리 팀), all(전사/팀 범위 해제), target(명시한 인물/번호), default(대상 없음), inherit(후속 범위 유지). self 이름은 서버에서 인증 사용자로 연결하므로 owner 필터를 만들지 않는다. Mantis 조회 기본은 team이며 명시한 담당자/번호는 target이다. 설명 질문은 팀을 명시하지 않으면 scope=all로 관련 원문을 조회한다.
 followup: true/false. 이전 확정 계획을 좁히거나 변경/상태 선택/같은 기준 재집계하면 true, 독립 질문이면 false. 이전 계획이 없는데 생략된 조건을 복원해야 하면 clarify. 후속 질문은 바뀐 필터만 출력한다. 나머지 이전 조건은 서버가 보존한다. 범위/상태가 바뀌지 않으면 scope/status 모두 inherit. 이전 질문이 건수 조회였고 '담당자만 변경/연도만 바꿔줘'이면 count를 유지한다.
 문서의 분량·말투·형식만 바꾸는 후속은 기존 report_kind를 유지한다. 사후 분석의 '회의 안건'은 postmortem이며 notice로 바꾸지 않는다. 고객 메일·메신저로 명시 전환한 경우에만 notice로 바꾼다. 형식·말투는 검색 필터나 clear_fields가 아니다.
-고객 안내 메일·메신저 답변·점검 공지·회의 공유문 작성은 항상 operation=report, report_kind=notice다. 간결한/정중한/상세한 말투에 관계없이 notice를 유지한다. 내부 식별자를 제외하라는 안내문을 explain/get으로 바꾸지 않는다.
+사내 이슈나 이전 조회 결과를 근거로 하는 고객 안내 메일·메신저 답변·점검 공지·회의 공유문 작성은 operation=report, report_kind=notice다. 일반적인 메일 작성법·예문이나 사용자가 제공한 문장 수정은 general이다. 간결한/정중한/상세한 말투에 관계없이 실제 이슈 안내는 notice를 유지한다. 내부 식별자를 제외하라는 안내문을 explain/get으로 바꾸지 않는다.
 사후 분석 또는 회고를 문서·요약·5줄로 작성해 달라는 요청은 explain이 아니라 report/postmortem이다. 원문 근거 확인과 출력 형식을 함께 보존한다.
 유사 비교의 '고객사 플랫폼으로만 좁혀'는 두 조건을 모두 후보 필터에 추가하며 기준 issue_id를 유지한다. '만'을 다른 필드 해제로 해석하지 않는다. clear_fields는 실제 해제를 요청한 필드만 쓴다.
 유사 비교의 기준 번호는 issue_id equals로 지정한다. '기준보다 전에/더 오래된/과거 사례'는 보고서가 기준 이전 후보를 찾는 범위이며 issue_id lte/gte 필터나 추측한 날짜를 추가하지 않는다.

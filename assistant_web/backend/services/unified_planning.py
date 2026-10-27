@@ -59,6 +59,8 @@ def execute_plan(request, context, user):
     from backend.services import chat_service as service
     plan = context.intent_plan or {}
     operation, source = plan.get('operation'), plan.get('source')
+    if source == 'general':
+        return None
     if operation == 'clarify':
         return clarification(request, plan.get('reason') or '질문을 구체적으로 다시 입력해 주세요.')
     required = ['mantis', 'notion'] if source == 'both' else [source]

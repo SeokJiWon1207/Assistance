@@ -767,6 +767,10 @@ def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user:
     if (context.intent_plan or {}).get("planner") == "unified_llm":
         from backend.services.unified_planning import execute_plan
         return execute_plan(request, context, user)
+    from backend.intent.general import is_general_question
+    if is_general_question(context.latest_user_text):
+        context.intent_plan = {"source": "general", "operation": "explain", "planner": "rule", "authority": "authoritative"}
+        return None
     if context.query_constraints.get("list_context_missing"):
         return {"modelId": request.modelId,
                 "content": "이어서 조회할 이전 검색 기록을 확인하지 못했습니다. 고객사·기간·담당자·플랫폼 등 원래 조회 조건으로 다시 검색해 주세요.",
@@ -957,6 +961,8 @@ def _plan_chat_query(
 
 
 def should_retrieve_chat_evidence(context: ChatPipelineContext) -> bool:
+    if (context.intent_plan or {}).get("source") == "general" and (context.intent_plan or {}).get("authority") == "authoritative":
+        return False
     if (context.intent_plan or {}).get("planner") == "unified_llm":
         return (context.intent_plan or {}).get("source") in {"mantis", "notion", "both"}
     return bool(
@@ -1202,6 +1208,8 @@ def _retrieve_chat_evidence(
 
 
 def attach_status_resolution(response: Dict[str, Any], context: ChatPipelineContext) -> Dict[str, Any]:
+    if (context.intent_plan or {}).get("source") == "general":
+        return response
     if (context.intent_plan or {}).get("planner") == "unified_llm":
         from copy import deepcopy
         retrieval = response.setdefault("retrieval", {"query": context.retrieval_text, "stages": []})
@@ -1315,7 +1323,7 @@ class ChatService:
                 0,
                 {"role": "system", "content": "\n\n".join(context.system_notes)},
             )
-        if (context.intent_plan or {}).get("operation") == "explain" and (context.intent_plan or {}).get("source") not in {"notion", "both"}:
+        if (context.intent_plan or {}).get("operation") == "explain" and (context.intent_plan or {}).get("source") == "mantis":
             from backend.services.grounded_explanation import generate_grounded_explanation
             generated_response = measured("generation")(generate_grounded_explanation)(request, context, generate_model_response)
         else:

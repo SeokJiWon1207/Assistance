@@ -31,7 +31,7 @@ class GroundedExplanationTests(unittest.TestCase):
         request = ChatRequest(modelId='test', messages=[{'role': 'user', 'content': '질문'}])
         for operation in ['explain', 'count']:
             context = ChatPipelineContext('질문', {}, '', [], '질문', {}, [], {}, 5,
-                                          intent_plan={'operation': operation}, retrieval_result={'stages': []})
+                                          intent_plan={'source': 'mantis', 'operation': operation}, retrieval_result={'stages': []})
             with patch('backend.services.chat_service.plan_chat_query', return_value=StageResult.from_response(None)), patch(
                 'backend.services.chat_service.retrieve_chat_evidence', return_value=StageResult.from_response(None)
             ), patch('backend.services.chat_service.generate_model_response', return_value={'content': '기존 답변', 'raw': {}}), patch(

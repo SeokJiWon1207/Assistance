@@ -21,6 +21,7 @@ from backend.intent.constants import (
 )
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
 from backend.intent.list_continuation import list_continuation_mode
+from backend.intent.general import is_general_question
 from backend.intent.search_terms import wants_all_results
 from backend.intent.status_semantics import ALL_STATUSES
 from backend.intent.scope_changes import cleared_scope_fields, followup_created_at, has_scope_edit
@@ -98,6 +99,8 @@ def is_dimension_only_followup(text: str) -> bool:
 
 
 def is_follow_up_question(text: str) -> bool:
+    if is_general_question(text):
+        return False
     if is_dimension_only_followup(text):
         return True
     if list_continuation_mode(text):

@@ -16,6 +16,7 @@ from backend.intent.constants import (
     TRIAGE_REQUEST_PATTERN,
 )
 from backend.intent.entities import is_simple_greeting
+from backend.intent.general import is_general_question
 from backend.query_planning import extract_group_by
 
 
@@ -85,11 +86,11 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
     scoped_issue = scope_only and bool(re.search(r"이슈|버그", normalized))
     evidence: List[Dict[str, str]] = []
 
-    if is_simple_greeting(text):
+    if is_simple_greeting(text) or is_general_question(text):
         return {
             "source": "general",
             "terms": [],
-            "reason": "단순 인사",
+            "reason": "사내 조회가 필요 없는 일반 질문",
             "planned": True,
             "planner": "rule",
             "confidence": 1.0,
@@ -150,7 +151,7 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
 
 
 def should_run_retrieval(text: str, constraints: Dict[str, Any]) -> bool:
-    if is_simple_greeting(text):
+    if is_simple_greeting(text) or is_general_question(text):
         return False
     normalized_text = normalize_for_match(text)
     if has_notion_retrieval_signal(text):
@@ -179,6 +180,8 @@ def has_notion_retrieval_signal(text: str) -> bool:
     실제 Notion 단계 실행 여부는 최종 ``plan_source``가 결정한다.
     """
     normalized_text = normalize_for_match(text)
+    if is_general_question(text):
+        return False
     return bool(
         _contains_normalized_marker(normalized_text, EXPLICIT_NOTION_MARKERS)
         or _contains_normalized_marker(normalized_text, NOTION_TARGET_OBJECT_MARKERS)
