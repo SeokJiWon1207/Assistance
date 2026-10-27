@@ -19,6 +19,29 @@ def proposal(**updates):
 
 
 class UnifiedPlannerTests(unittest.TestCase):
+    def test_mirae_shorthand_validates_and_selects_only_domestic_mirae_project(self):
+        for name in ('미래', '미래에셋', '미래에셋증권'):
+            with self.subTest(name=name):
+                plan = self.validate(f'9월 {name} mts 이슈 알려줘', proposal(
+                    operation='search', scope='team',
+                    status={'mode': 'unspecified', 'values': [], 'evidence': ''}, filters=[
+                        {'field': 'customer', 'operator': 'equals', 'value': '미래에셋', 'evidence': name},
+                        {'field': 'platform', 'operator': 'equals', 'value': 'mts', 'evidence': 'mts'},
+                        {'field': 'created_at', 'operator': 'between',
+                         'value': ['2026-09-01', '2026-09-30'], 'evidence': '9월'},
+                    ]))
+                constraints = plan['resolved_constraints']
+                self.assertEqual(constraints['customer_key'], '미래에셋')
+                self.assertEqual(constraints['platform_key'], 'mts')
+                self.assertEqual(constraints['created_at'], {'from': '2026-09-01', 'to': '2026-09-30'})
+                from backend.query_filters import matches_source_filters
+                clause = next(c for c in constraints['filter_clauses'] if c['field'] == 'customer')
+                for project, expected in (
+                    ('147MiraeAsset', True), ('125Daewoo', False),
+                    ('136INNI_ETRADE', False), ('112KBStar', False),
+                ):
+                    self.assertEqual(matches_source_filters('mantis', {'customer': project}, [clause]), expected)
+
     def test_narrowing_similarity_cannot_clear_a_customer_named_as_the_target(self):
         previous=self.validate('#9000과 비슷한 과거 사례의 원인을 비교해줘',proposal(
             operation='report',report_kind='similar',scope='target',
