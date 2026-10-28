@@ -32,6 +32,18 @@ LOGGER = logging.getLogger(__name__)
 def _default_model_registry() -> List[Dict[str, Any]]:
     return [
         {
+            "id": "gemini-3.1-flash-lite",
+            "label": "Gemini 3.1 Flash-Lite",
+            "model": "gemini-3.1-flash-lite",
+            "provider": "gemini",
+            "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            "apiKeyEnv": "GEMINI_API_KEY",
+            "reasoningEffort": "minimal",
+            "maxOutputTokens": 2048,
+            "expiresAt": "",
+            "enabled": True,
+        },
+        {
             "id": "company-qwen3.6-35b-a3b",
             "label": "회사 Qwen 3.6 35B",
             "model": "qwen3.6-35b-a3b",
@@ -50,18 +62,6 @@ def _default_model_registry() -> List[Dict[str, Any]]:
             "endpoint": "http://127.0.0.1:11434/v1/chat/completions",
             "nativeEndpoint": "http://127.0.0.1:11434/api/chat",
             "think": False,
-            "expiresAt": "",
-            "enabled": True,
-        },
-        {
-            "id": "gemini-3.1-flash-lite",
-            "label": "Gemini 3.1 Flash-Lite",
-            "model": "gemini-3.1-flash-lite",
-            "provider": "gemini",
-            "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-            "apiKeyEnv": "GEMINI_API_KEY",
-            "reasoningEffort": "minimal",
-            "maxOutputTokens": 2048,
             "expiresAt": "",
             "enabled": True,
         },

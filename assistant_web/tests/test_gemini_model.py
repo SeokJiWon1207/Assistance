@@ -38,6 +38,16 @@ class GeminiModelTests(unittest.TestCase):
         self.assertNotIn('apiKeyEnv', public)
         self.assertNotIn('endpoint', public)
 
+    def test_gemini_is_the_default_even_when_the_company_model_is_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for config_dir in [Path(directory), Path(__file__).resolve().parents[1] / 'config']:
+                with self.subTest(config_dir=config_dir), patch.object(llm, 'CONFIG_DIR', config_dir), \
+                        patch.dict(os.environ, {'GEMINI_API_KEY': 'test-gemini-key',
+                                                'COMPANY_MODEL_46_API_KEY': 'test-company-key'}, clear=True):
+                    models = llm.get_model_registry()
+                    self.assertEqual(models[0]['id'], self.model['id'])
+                    self.assertEqual(next(m for m in models if m['status'] == 'active')['id'], self.model['id'])
+
     def test_gemini_registry_is_unavailable_without_a_key(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(llm, 'CONFIG_DIR', Path(directory)), \
                 patch.dict(os.environ, {}, clear=True):
