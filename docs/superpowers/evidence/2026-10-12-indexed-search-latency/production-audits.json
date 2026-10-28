@@ -1,0 +1,402 @@
+[
+  {
+    "id": "977d90d8bd7747a19976e815c5e4c63e",
+    "at": "2026-10-12T09:11:08+00:00",
+    "totalMs": 2789.3900000000003,
+    "timings": {
+      "stages": {
+        "context": {
+          "calls": 1,
+          "durationMs": 384.96
+        },
+        "status_resolution": {
+          "calls": 1,
+          "durationMs": 410.97
+        },
+        "reports": {
+          "calls": 1,
+          "durationMs": 0.66
+        },
+        "query_planner": {
+          "calls": 1,
+          "durationMs": 1614.62
+        },
+        "count": {
+          "calls": 1,
+          "durationMs": 0.02
+        },
+        "planning": {
+          "calls": 1,
+          "durationMs": 2035.4
+        },
+        "mantis_page_scan": {
+          "calls": 1,
+          "durationMs": 271.35
+        },
+        "retrieval": {
+          "calls": 1,
+          "durationMs": 284.23
+        }
+      },
+      "beforeFinalizationMs": 2705.55,
+      "verificationAndFormattingMs": 83.84
+    },
+    "terms": [
+      "VB스크립트",
+      "자바스크립트",
+      "교체"
+    ],
+    "filters": {
+      "customer": null,
+      "platform": "hts",
+      "statuses": [],
+      "people": {
+        "names": [],
+        "role": null,
+        "name_origins": {},
+        "candidates": []
+      },
+      "issue_ids": [],
+      "screen_numbers": [],
+      "date_fields": {},
+      "created_at": null
+    },
+    "answer": "🔍 ‘VB스크립트 자바스크립트 교체’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요.\n\n검색 기준: 플랫폼=HTS, 검색어=VB스크립트 자바스크립트 교체, 정렬: 최신 이슈 ID 기준\n\n데이터 기준: 10월 12일 오후 6:10에 저장한 Mantis 원본입니다. 이후 변경은 다음 동기화에 반영됩니다.",
+    "sourceCount": 0,
+    "retrievalStages": [
+      {
+        "source": "mantis_page_scan",
+        "status": "ok",
+        "reason": null,
+        "meta": {
+          "search_keyword": "VB스크립트 자바스크립트 교체",
+          "found_count": 0,
+          "matched_customer_groups": {},
+          "displayed_count": 0,
+          "status": "snapshot",
+          "fetchedAt": "2026-10-12T09:10:25.285216+00:00",
+          "search_complete": true,
+          "snapshot_complete": true,
+          "incomplete_reasons": [],
+          "reason": "",
+          "searched_pages": 0,
+          "status_excluded_count": 0,
+          "filter_audit": {
+            "source_family": "mantis",
+            "applied_filters": [
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              }
+            ],
+            "unapplied_filters": [],
+            "fully_applied": true
+          },
+          "scanned_issue_ids_count": 31233,
+          "matched_issue_ids_count": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "2cbbba6b5a30452b94563a48ec4aa38a",
+    "at": "2026-10-12T09:11:40+00:00",
+    "totalMs": 2216.99,
+    "timings": {
+      "stages": {
+        "context": {
+          "calls": 1,
+          "durationMs": 40.25
+        },
+        "status_resolution": {
+          "calls": 1,
+          "durationMs": 305.81
+        },
+        "reports": {
+          "calls": 1,
+          "durationMs": 0.6
+        },
+        "query_planner": {
+          "calls": 1,
+          "durationMs": 1617.71
+        },
+        "count": {
+          "calls": 1,
+          "durationMs": 0.02
+        },
+        "planning": {
+          "calls": 1,
+          "durationMs": 1924.94
+        },
+        "mantis_page_scan": {
+          "calls": 1,
+          "durationMs": 240.87
+        },
+        "retrieval": {
+          "calls": 1,
+          "durationMs": 248.34
+        }
+      },
+      "beforeFinalizationMs": 2214.72,
+      "verificationAndFormattingMs": 2.27
+    },
+    "terms": [
+      "VB스크립트",
+      "자바스크립트",
+      "교체"
+    ],
+    "filters": {
+      "customer": null,
+      "platform": "hts",
+      "statuses": [],
+      "people": {
+        "names": [],
+        "role": null,
+        "name_origins": {},
+        "candidates": []
+      },
+      "issue_ids": [],
+      "screen_numbers": [],
+      "date_fields": {},
+      "created_at": null
+    },
+    "answer": "🔍 ‘VB스크립트 자바스크립트 교체’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요.\n\n검색 기준: 플랫폼=HTS, 검색어=VB스크립트 자바스크립트 교체, 정렬: 최신 이슈 ID 기준\n\n데이터 기준: 10월 12일 오후 6:10에 저장한 Mantis 원본입니다. 이후 변경은 다음 동기화에 반영됩니다.",
+    "sourceCount": 0,
+    "retrievalStages": [
+      {
+        "source": "mantis_page_scan",
+        "status": "ok",
+        "reason": null,
+        "meta": {
+          "search_keyword": "VB스크립트 자바스크립트 교체",
+          "found_count": 0,
+          "matched_customer_groups": {},
+          "displayed_count": 0,
+          "status": "snapshot",
+          "fetchedAt": "2026-10-12T09:10:25.285216+00:00",
+          "search_complete": true,
+          "snapshot_complete": true,
+          "incomplete_reasons": [],
+          "reason": "",
+          "searched_pages": 0,
+          "status_excluded_count": 0,
+          "filter_audit": {
+            "source_family": "mantis",
+            "applied_filters": [
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              }
+            ],
+            "unapplied_filters": [],
+            "fully_applied": true
+          },
+          "scanned_issue_ids_count": 31233,
+          "matched_issue_ids_count": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "54e51abea0ef43b0972855f556235355",
+    "at": "2026-10-12T09:12:52+00:00",
+    "totalMs": 2294.49,
+    "timings": {
+      "stages": {
+        "context": {
+          "calls": 1,
+          "durationMs": 34.83
+        },
+        "status_resolution": {
+          "calls": 1,
+          "durationMs": 370.04
+        },
+        "reports": {
+          "calls": 1,
+          "durationMs": 0.56
+        },
+        "query_planner": {
+          "calls": 1,
+          "durationMs": 1634.56
+        },
+        "count": {
+          "calls": 1,
+          "durationMs": 0.02
+        },
+        "planning": {
+          "calls": 1,
+          "durationMs": 2005.87
+        },
+        "mantis_page_scan": {
+          "calls": 1,
+          "durationMs": 245.27
+        },
+        "retrieval": {
+          "calls": 1,
+          "durationMs": 251.82
+        }
+      },
+      "beforeFinalizationMs": 2293.39,
+      "verificationAndFormattingMs": 1.1
+    },
+    "terms": [
+      "VB스크립트",
+      "자바스크립트",
+      "교체"
+    ],
+    "filters": {
+      "customer": null,
+      "platform": "hts",
+      "statuses": [],
+      "people": {
+        "names": [],
+        "role": null,
+        "name_origins": {},
+        "candidates": []
+      },
+      "issue_ids": [],
+      "screen_numbers": [],
+      "date_fields": {},
+      "created_at": null
+    },
+    "answer": "🔍 ‘VB스크립트 자바스크립트 교체’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요.\n\n검색 기준: 플랫폼=HTS, 검색어=VB스크립트 자바스크립트 교체, 정렬: 최신 이슈 ID 기준\n\n데이터 기준: 10월 12일 오후 6:10에 저장한 Mantis 원본입니다. 이후 변경은 다음 동기화에 반영됩니다.",
+    "sourceCount": 0,
+    "retrievalStages": [
+      {
+        "source": "mantis_page_scan",
+        "status": "ok",
+        "reason": null,
+        "meta": {
+          "search_keyword": "VB스크립트 자바스크립트 교체",
+          "found_count": 0,
+          "matched_customer_groups": {},
+          "displayed_count": 0,
+          "status": "snapshot",
+          "fetchedAt": "2026-10-12T09:10:25.285216+00:00",
+          "search_complete": true,
+          "snapshot_complete": true,
+          "incomplete_reasons": [],
+          "reason": "",
+          "searched_pages": 0,
+          "status_excluded_count": 0,
+          "filter_audit": {
+            "source_family": "mantis",
+            "applied_filters": [
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              }
+            ],
+            "unapplied_filters": [],
+            "fully_applied": true
+          },
+          "scanned_issue_ids_count": 31233,
+          "matched_issue_ids_count": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "fbb3c01da4734e19b428f0225c5855f6",
+    "at": "2026-10-12T09:12:52+00:00",
+    "totalMs": 2335.87,
+    "timings": {
+      "stages": {
+        "context": {
+          "calls": 1,
+          "durationMs": 35.56
+        },
+        "status_resolution": {
+          "calls": 1,
+          "durationMs": 321.33
+        },
+        "reports": {
+          "calls": 1,
+          "durationMs": 0.55
+        },
+        "query_planner": {
+          "calls": 1,
+          "durationMs": 1731.69
+        },
+        "count": {
+          "calls": 1,
+          "durationMs": 0.02
+        },
+        "planning": {
+          "calls": 1,
+          "durationMs": 2054.35
+        },
+        "mantis_page_scan": {
+          "calls": 1,
+          "durationMs": 236.21
+        },
+        "retrieval": {
+          "calls": 1,
+          "durationMs": 243.14
+        }
+      },
+      "beforeFinalizationMs": 2333.88,
+      "verificationAndFormattingMs": 1.99
+    },
+    "terms": [
+      "VB스크립트",
+      "자바스크립트",
+      "교체"
+    ],
+    "filters": {
+      "customer": null,
+      "platform": "hts",
+      "statuses": [],
+      "people": {
+        "names": [],
+        "role": null,
+        "name_origins": {},
+        "candidates": []
+      },
+      "issue_ids": [],
+      "screen_numbers": [],
+      "date_fields": {},
+      "created_at": null
+    },
+    "answer": "🔍 ‘VB스크립트 자바스크립트 교체’ 주제와 요청 조건에 일치하는 이슈를 조회한 범위에서 찾지 못했어요.\n\n검색 기준: 플랫폼=HTS, 검색어=VB스크립트 자바스크립트 교체, 정렬: 최신 이슈 ID 기준\n\n데이터 기준: 10월 12일 오후 6:10에 저장한 Mantis 원본입니다. 이후 변경은 다음 동기화에 반영됩니다.",
+    "sourceCount": 0,
+    "retrievalStages": [
+      {
+        "source": "mantis_page_scan",
+        "status": "ok",
+        "reason": null,
+        "meta": {
+          "search_keyword": "VB스크립트 자바스크립트 교체",
+          "found_count": 0,
+          "matched_customer_groups": {},
+          "displayed_count": 0,
+          "status": "snapshot",
+          "fetchedAt": "2026-10-12T09:10:25.285216+00:00",
+          "search_complete": true,
+          "snapshot_complete": true,
+          "incomplete_reasons": [],
+          "reason": "",
+          "searched_pages": 0,
+          "status_excluded_count": 0,
+          "filter_audit": {
+            "source_family": "mantis",
+            "applied_filters": [
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              }
+            ],
+            "unapplied_filters": [],
+            "fully_applied": true
+          },
+          "scanned_issue_ids_count": 31233,
+          "matched_issue_ids_count": 0
+        }
+      }
+    ]
+  }
+]
