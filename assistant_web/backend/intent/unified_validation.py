@@ -176,7 +176,10 @@ def check_clause(item, question, source):
     if field in {'customer', 'platform'}:
         aliases = CUSTOMER_ALIASES if field == 'customer' else PLATFORM_ALIASES
         for value in values:
-            forms = [value, *aliases.get(value, [])]
+            # 모델이 약칭을 정식 명칭으로 풀어 써도 같은 등록 별칭 묶음으로 근거를 확인한다.
+            canonical = next((key for key, variants in aliases.items()
+                              if value.casefold() in {v.casefold() for v in [key, *variants]}), value)
+            forms = [canonical, *aliases.get(canonical, [])]
             require(any(form.casefold() in question.casefold() for form in forms), '고객사/매체 근거 불일치')
     if field in {'created_at', 'due_at', 'deployed_at', 'delivered_at'}:
         try:
