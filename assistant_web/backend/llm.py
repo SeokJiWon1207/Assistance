@@ -53,6 +53,18 @@ def _default_model_registry() -> List[Dict[str, Any]]:
             "expiresAt": "",
             "enabled": True,
         },
+        {
+            "id": "gemini-3.1-flash-lite",
+            "label": "Gemini 3.1 Flash-Lite",
+            "model": "gemini-3.1-flash-lite",
+            "provider": "gemini",
+            "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            "apiKeyEnv": "GEMINI_API_KEY",
+            "reasoningEffort": "minimal",
+            "maxOutputTokens": 2048,
+            "expiresAt": "",
+            "enabled": True,
+        },
     ]
 
 
@@ -320,7 +332,15 @@ def _send_model_chat(
     if not is_ollama_model(model):
         remote_payload = {**payload}
         effective_think = model.get("think") if think is None else think
-        if effective_think is not None:
+        if str(model.get("provider", "")).strip().lower() == "gemini":
+            # 회사 모델 전용 옵션은 Gemini의 OpenAI 호환 API에 전달하지 않는다.
+            for name in ("seed", "top_k", "min_p", "repetition_penalty", "chat_template_kwargs"):
+                remote_payload.pop(name, None)
+            remote_payload["reasoning_effort"] = model.get("reasoningEffort", "low")
+            output_limit = clamp_int(model.get("maxOutputTokens"), 1, 32768) or 2048
+            requested_limit = clamp_int(remote_payload.get("max_tokens"), 1, 32768) or output_limit
+            remote_payload["max_tokens"] = min(requested_limit, output_limit)
+        elif effective_think is not None:
             chat_template_kwargs = dict(remote_payload.get("chat_template_kwargs") or {})
             chat_template_kwargs["enable_thinking"] = bool(effective_think)
             remote_payload["chat_template_kwargs"] = chat_template_kwargs
