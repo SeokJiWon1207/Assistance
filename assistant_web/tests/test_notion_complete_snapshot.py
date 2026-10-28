@@ -102,6 +102,50 @@ class CompleteSnapshotTests(unittest.TestCase):
             db.execute("UPDATE catalogs SET updated_at='2020-01-01T00:00:00+00:00'")
         self.assertIsNone(self.snapshot().read_complete(self.index, ['db-1'], ['needle']))
 
+    def test_unusable_catalog_falls_back_without_reading_page_or_body_tables(self):
+        from unittest.mock import patch
+        snapshot = self.snapshot()
+        connect = sqlite3.connect
+        read_tables = set()
+
+        def track_reads(action, table, _column, _database, _trigger):
+            if action == sqlite3.SQLITE_READ:
+                read_tables.add(table)
+            return sqlite3.SQLITE_OK
+
+        def traced_connect(*args, **kwargs):
+            db = connect(*args, **kwargs)
+            db.set_authorizer(track_reads)
+            return db
+
+        for scope, update in (
+            ([], ''),
+            (['db-1', 'missing'], ''),
+            (['db-1'], 'UPDATE catalogs SET complete=0'),
+            (['db-1'], "UPDATE catalogs SET updated_at='2020-01-01T00:00:00+00:00'"),
+            (['db-1'], "UPDATE catalogs SET updated_at='9999-01-01T00:00:00+00:00'"),
+            (['db-1'], "UPDATE catalogs SET updated_at='invalid'"),
+        ):
+            with self.subTest(scope=scope, update=update):
+                self.add()
+                if update:
+                    with closing(connect(self.index.path)) as db, db:
+                        db.execute(update)
+                read_tables.clear()
+                with (
+                    patch.object(snapshot, 'open_body_index', return_value=self.index),
+                    patch.object(snapshot, '_scope_current', return_value=True),
+                    patch.dict('os.environ', {'NOTION_FETCH_PAGE_BLOCKS': 'true',
+                                             'NOTION_SNAPSHOT_CATALOG_MAX_AGE_SECONDS': '7200'}),
+                    patch.object(sqlite3, 'connect', side_effect=traced_connect),
+                ):
+                    result = snapshot.search_complete_snapshot(
+                        scope, terms=['needle'], read_scope={key: key for key in scope}, constraints={},
+                        pre_body_constraints={}, body_clauses=[], keyword_clauses=[], limit=5)
+                self.assertIsNone(result)
+                self.assertFalse(read_tables & {'pages', 'blocks', 'partial_blocks', 'collection_coverage'},
+                                 f'사용할 수 없는 목록에서 원문을 읽었습니다: {read_tables}')
+
     def test_complete_search_uses_all_candidates_and_keeps_display_limit_separate(self):
         from unittest.mock import patch
         from backend.notion import complete_snapshot as snapshot
