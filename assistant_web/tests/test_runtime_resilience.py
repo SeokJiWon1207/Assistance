@@ -25,7 +25,7 @@ class RuntimeResilienceTests(unittest.TestCase):
 
         self.assertEqual(
             [model["id"] for model in models],
-            ["company-qwen3.6-35b-a3b", "qwen3.5-9b-local"],
+            ["gemini-3.1-flash-lite", "company-qwen3.6-35b-a3b", "qwen3.5-9b-local"],
         )
         self.assertNotIn("59.6.135.38", str(models))
 
