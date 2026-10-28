@@ -94,6 +94,24 @@ class GeminiModelTests(unittest.TestCase):
                 with llm.consume_model_response(response):
                     pass
 
+    def test_gemini_stream_without_a_charset_decodes_korean_as_utf8(self):
+        from backend.services.chat_service import _read_model_response
+        expected = 'Gemini 연결 정상'
+        event = {'choices':[{'delta':{'content':expected}}]}
+        wire = 'data: ' + json.dumps(event, ensure_ascii=False) + '\n\ndata: [DONE]\n\n'
+        response = requests.Response()
+        response.status_code = 200
+        response.headers['Content-Type'] = 'text/event-stream'
+        response.encoding = 'ISO-8859-1'
+        response._content = wire.encode('utf-8')
+        response._content_consumed = True
+        with patch.object(llm.requests, 'post', return_value=response):
+            actual = llm.post_model_chat(self.model, 'test-key', {'model':self.model['id']},
+                                         timeout=12, stream=True)
+        with llm.consume_model_response(actual):
+            data = _read_model_response(actual, self.model, True)
+        self.assertEqual(llm.extract_model_content(data), expected)
+
     def test_company_thinking_option_does_not_receive_gemini_controls(self):
         model = {**self.model, 'provider': 'openai-compatible', 'think': False}
         response = requests.Response()

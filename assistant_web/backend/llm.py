@@ -344,13 +344,18 @@ def _send_model_chat(
             chat_template_kwargs = dict(remote_payload.get("chat_template_kwargs") or {})
             chat_template_kwargs["enable_thinking"] = bool(effective_think)
             remote_payload["chat_template_kwargs"] = chat_template_kwargs
-        return requests.post(
+        response = requests.post(
             model["endpoint"],
             headers=headers,
             json=remote_payload,
             timeout=bounded_timeout(timeout),
             stream=stream,
         )
+
+        if str(model.get("provider", "")).strip().lower() == "gemini":
+            # SSE는 UTF-8이다. charset이 없을 때 requests의 Latin-1 기본값을 쓰지 않는다.
+            response.encoding = "utf-8"
+        return response
 
     option_names = {
         "temperature": "temperature",
