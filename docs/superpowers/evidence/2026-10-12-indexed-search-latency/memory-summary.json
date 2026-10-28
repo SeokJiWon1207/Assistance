@@ -1,0 +1,32 @@
+{
+  "single": {
+    "samples": 422,
+    "start": "2026-10-12T09:10:34.317001+00:00",
+    "end": "2026-10-12T09:12:19.970698+00:00",
+    "rssStartMiB": 605.71,
+    "rssEndMiB": 709.7,
+    "maxRssMiB": 711.11,
+    "maxHwmMiB": 711.11,
+    "maxServiceMiB": 1154.5,
+    "maxAnonMiB": 683.19,
+    "maxFileMiB": 455.42,
+    "minAvailableMiB": 744.49,
+    "oom": 0,
+    "oomKill": 0
+  },
+  "concurrent": {
+    "samples": 229,
+    "start": "2026-10-12T09:12:29.572214+00:00",
+    "end": "2026-10-12T09:13:26.806746+00:00",
+    "rssStartMiB": 709.7,
+    "rssEndMiB": 713.91,
+    "maxRssMiB": 713.96,
+    "maxHwmMiB": 713.96,
+    "maxServiceMiB": 1157.8,
+    "maxAnonMiB": 686.04,
+    "maxFileMiB": 455.84,
+    "minAvailableMiB": 730.62,
+    "oom": 0,
+    "oomKill": 0
+  }
+}

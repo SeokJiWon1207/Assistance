@@ -1,0 +1,58 @@
+[
+  {
+    "query": "VB스크립트 자바스크립트 교체",
+    "found": 0,
+    "legacy_s": 5.7462,
+    "indexed_s": 0.134,
+    "exact_result_equal": true
+  },
+  {
+    "query": "VBScript",
+    "found": 8,
+    "legacy_s": 4.5928,
+    "indexed_s": 0.2269,
+    "exact_result_equal": true
+  },
+  {
+    "query": "자바스크립트",
+    "found": 3,
+    "legacy_s": 5.2836,
+    "indexed_s": 0.3305,
+    "exact_result_equal": true
+  },
+  {
+    "query": "교체",
+    "found": 65,
+    "legacy_s": 5.3652,
+    "indexed_s": 0.3231,
+    "exact_result_equal": true
+  },
+  {
+    "query": "오류",
+    "found": 0,
+    "legacy_s": 4.6852,
+    "indexed_s": 1.4722,
+    "exact_result_equal": true
+  },
+  {
+    "query": "2025년 1월",
+    "found": 369,
+    "legacy_s": 4.4393,
+    "indexed_s": 0.2453,
+    "exact_result_equal": true
+  },
+  {
+    "query": "화면",
+    "found": 30120,
+    "legacy_s": 6.0254,
+    "indexed_s": 7.5735,
+    "exact_result_equal": true
+  },
+  {
+    "query": "",
+    "found": 8114,
+    "legacy_s": 5.0301,
+    "indexed_s": 5.6562,
+    "exact_result_equal": true
+  }
+]

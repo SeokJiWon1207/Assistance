@@ -145,3 +145,114 @@ class StoreMemoryTests(unittest.TestCase):
 
         with patch.object(workspace_data, "read_scoped_store", side_effect=check_release):
             self.assertEqual(len(workspace_data.load_complete_workspace()[0]), 2)
+
+    def write_large_text_rows(self, count=400):
+        self.write_rows(count)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("UPDATE issues SET payload=json_set(payload, '$.description', ?, '$.notes', json(?))",
+                       ("stream target", json.dumps([{"text": "x" * 32000}])))
+
+
+    def test_snapshot_search_counts_every_match_without_retaining_every_body(self):
+        from backend.common import normalize_chroma_issue_document
+        from backend.config import CHROMA_DB_PATH
+        from backend.tools.mantis_snapshot import scan_mantis_documents
+        self.write_large_text_rows()
+        gc.collect()
+        tracemalloc.start()
+        try:
+            result = scan_mantis_documents(CHROMA_DB_PATH, lambda text: "stream target" in text,
+                                          normalize_chroma_issue_document, example_limit=3)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["matched_count"], 399)
+        self.assertEqual([row["id"] for row in result["issues"]], [399, 398, 397])
+        self.assertTrue(result["search_complete"])
+        self.assertLess(peak, 3 * 1024 * 1024, "검색 표시 건수와 무관한 본문은 스트림으로 처리해야 한다")
+
+
+    def test_page_search_keeps_all_match_metadata_but_only_the_best_bodies(self):
+        from backend.sources.mantis import execute_mantis_page_scan
+        self.write_large_text_rows()
+        gc.collect()
+        tracemalloc.start()
+        try:
+            result = execute_mantis_page_scan("stream target", limit=3)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(result["meta"]["found_count"], 400)
+        self.assertEqual(result["meta"]["matched_issue_ids"], list(range(1, 400)))
+        self.assertEqual(len(result["meta"]["matched_customer_groups"]), 399)
+        self.assertEqual([row["id"] for row in result["issues_list"]], [399, 398, 397])
+        self.assertTrue(result["meta"]["search_complete"])
+        self.assertLess(peak, 3 * 1024 * 1024, "일치한 모든 본문을 결과 대기열에 남기지 않아야 한다")
+
+
+    def test_stream_scope_pins_generation_and_closes_on_request_exit(self):
+        self.write_rows(1)
+        replacement = self.path.with_name("replacement.sqlite3")
+        with store.store_request_scope():
+            with store.stream_complete_store() as first:
+                self.assertEqual(len(first), 1)
+                self.assertEqual([row["id"] for row in first], [0])
+                with closing(sqlite3.connect(self.path)) as source, closing(sqlite3.connect(replacement)) as dest:
+                    source.backup(dest)
+                with closing(sqlite3.connect(replacement)) as db, db:
+                    db.execute("UPDATE issues SET id=8, payload=json_set(payload, '$.id', 8)")
+                replacement.replace(self.path)
+            with store.stream_complete_store() as second:
+                self.assertEqual([row["id"] for row in second], [0])
+                self.assertEqual(second.meta, first.meta)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            list(first)
+        with store.stream_complete_store() as latest:
+            self.assertEqual([row["id"] for row in latest], [8])
+
+
+    def test_stream_rejects_wrong_connection_expiry_and_incomplete_count(self):
+        self.write_rows(1)
+        with patch.object(store, "connection_key", return_value="other"):
+            with store.stream_complete_store() as rows:
+                self.assertIsNone(rows)
+        with patch.object(store, "MAX_AGE_SECONDS", -1):
+            with store.stream_complete_store() as rows:
+                self.assertIsNone(rows)
+            with store.stream_complete_store(allow_stale=True) as rows:
+                self.assertFalse(rows.meta["search_complete"])
+                self.assertEqual(rows.meta["incomplete_reasons"], ["stale_snapshot"])
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("DELETE FROM issues")
+        with store.stream_complete_store(allow_stale=True) as rows:
+            self.assertIsNone(rows)
+
+
+    def test_cancelled_stream_stops_before_decoding_another_row(self):
+        from backend.execution import execution_scope, RequestStopped
+        self.write_rows(3)
+        with store.stream_complete_store() as rows, execution_scope() as budget:
+            iterator = iter(rows)
+            self.assertEqual(next(iterator)["id"], 2)
+            budget.cancel()
+            with self.assertRaises(RequestStopped):
+                next(iterator)
+
+
+    def test_partly_consumed_stream_can_close_after_its_connection(self):
+        self.write_rows(3)
+        with store.stream_complete_store() as rows:
+            iterator = iter(rows)
+            self.assertEqual(next(iterator)["id"], 2)
+        iterator.close()
+
+
+    def test_parallel_scans_share_one_request_generation_without_mixing_cursors(self):
+        from contextvars import copy_context
+        self.write_rows(30)
+        def scan():
+            with store.stream_complete_store() as rows:
+                return [row["id"] for row in rows]
+        with store.store_request_scope(), ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(copy_context().run, scan) for _ in range(2)]
+            self.assertEqual([future.result() for future in futures], [list(range(29, -1, -1))] * 2)

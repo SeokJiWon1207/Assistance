@@ -660,6 +660,10 @@ def activate_snapshot(temporary_dir: Path) -> Path | None:
             os.replace(backup, CHROMA_DIR)
         raise
     prune_snapshot_backups()
+    from backend.intent.entities import warm_entity_catalog
+
+    if not warm_entity_catalog(CHROMA_DIR / "chroma.sqlite3"):
+        print("⚠️ 검색 명부 사전 준비 실패: 다음 조회에서 원본을 확인합니다.")
     return backup
 
 

@@ -1,0 +1,38 @@
+{
+  "assistant_web/backend/sources/mantis.py": {
+    "before": "ea5307245f6d9c8455c37098c38f0a52bee2dec5d35e649aa5eb89af3a23b23f",
+    "after": "68c806e73d1750f6c07822a3009d21c86eee11f165291f982bb2f9ad7b1ac67d"
+  },
+  "assistant_web/backend/sources/mantis_store.py": {
+    "before": "6a74154e7875bd54293c3889b11ab57e391d20719ad45f2ce2ba1490a6926df9",
+    "after": "abdd41bbcff1f0d478f13353c37a4d4255df69d5f5b07454af9e18c885d4a263"
+  },
+  "assistant_web/backend/sources/mantis_search_projection.py": {
+    "before": null,
+    "after": "3f8cfa7969d4f30ec0e2a58e80a8a716004306c3f9d613095e192e624a5862b1"
+  },
+  "assistant_web/backend/intent/entities.py": {
+    "before": "8d49ce5aa6871542e29992886a3971f5be6a463db0cb673f132375359dc3ed71",
+    "after": "697ae5f218bed721c1b8ceb11235379b475fa097628137e8593c9f87bca731b4"
+  },
+  "assistant_web/tests/test_raw_search_projection.py": {
+    "before": null,
+    "after": "6085ed97fcf0e07fd99f41b804309f57aec8c11b7d471489e6c36a54535013d2"
+  },
+  "assistant_web/tests/test_entity_catalog_latency.py": {
+    "before": null,
+    "after": "ed3653485b5f98737687cae89bc5fbf97d4fb81018cd0b1c4d61d5a728701ed2"
+  },
+  "assistant_web/tests/test_snapshot_rebuild.py": {
+    "before": "37d094f6507681b60acd88f5721d188195aa05a51c727992c3c9a549534e6a9c",
+    "after": "31f84e3cb91fe33ec72e913fee1c858cb0af7eb78919cf37457b04fefc7d20ac"
+  },
+  "assistant_web/deploy/aws/setup_server.sh": {
+    "before": "58bed62d53809d80db81bb2002c828161cd6d642a37b5d131db4cdf9b2e007df",
+    "after": "2c60c8e978ca6524e7a03f09641e0c3e43fb464f254e2ca909e466682736e4ff"
+  },
+  "scripts/make_vector_db.py": {
+    "before": "1ec31139d286300178d61c2de6dde071bbdefeabd76c6224b89be0df7af53b6f",
+    "after": "ab2d7617643382190b648008d2c98c6e3a3eaee8c27cb65c6745b74e1600fa51"
+  }
+}

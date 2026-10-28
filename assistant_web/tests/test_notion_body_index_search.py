@@ -9,6 +9,7 @@ from fastapi import HTTPException
 import test_notion_accuracy_regressions as fixtures
 
 from backend.notion import body_index_search, search
+from backend.execution import CURRENT_BUDGET, ExecutionBudget, RequestStopped, checkpoint, execution_scope
 
 
 def indexed_candidate(identifier, text="needle", *, kind="paragraph", owner=None,
@@ -344,6 +345,40 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
         })
         result = search.execute_notion_search('노션 needle 찾아줘', planned_terms=["needle"], include_blocks=False)
         self.assertEqual({page["id"] for page in result["notion_pages"]}, {"old", "fresh"})
+
+    def test_slow_supplementary_search_returns_verified_documents_as_partial(self):
+        self.install_index(indexed_candidate('verified'))
+        def slow_query(*_args, **_kwargs):
+            # 현재 검색의 마감만 소진하며 상위 채팅 요청에는 시간이 남아 있다.
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+        with execution_scope(ExecutionBudget.create()), patch.object(search, 'notion_post_json', side_effect=slow_query):
+            result = search.execute_notion_search('노션 needle 찾아줘', planned_terms=['needle'], include_blocks=False)
+        self.assertEqual([page['id'] for page in result['notion_pages']], ['verified'])
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertFalse(result['meta']['candidate_count_complete'])
+        self.assertFalse(result['meta']['result_window_complete'])
+        self.assertIn('live_search_time_limit', result['meta']['incomplete_reasons'])
+
+    def test_search_cancellation_is_not_converted_into_partial_success(self):
+        self.install_index(indexed_candidate('verified'))
+        parent = ExecutionBudget.create()
+        def cancel_query(*_args, **_kwargs):
+            parent.cancel()
+            checkpoint()
+        with execution_scope(parent), patch.object(search, 'notion_post_json', side_effect=cancel_query):
+            with self.assertRaises(RequestStopped) as stopped:
+                search.execute_notion_search('노션 needle 찾아줘', planned_terms=['needle'], include_blocks=False)
+        self.assertEqual(stopped.exception.status_code, 499)
+
+    def test_count_timeout_never_returns_a_partial_success(self):
+        self.install_index(indexed_candidate('verified'))
+        def slow_query(*_args, **_kwargs):
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+        with execution_scope(ExecutionBudget.create()), patch.object(search, 'notion_post_json', side_effect=slow_query):
+            with self.assertRaises(RequestStopped):
+                search.execute_notion_search('노션 needle 문서 몇 개야', planned_terms=['needle'], include_blocks=False)
 
     def test_plain_index_keeps_title_match_priority_over_newer_body_only_page(self):
         self.install_index(indexed_candidate("title", title="needle", edited="2025-01-01T00:00:00Z"),

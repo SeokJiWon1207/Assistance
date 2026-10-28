@@ -49,6 +49,15 @@ FIREBASE_CREDENTIALS=~/.config/ai-assistant/firebase-service-account.json \
 readiness 실패 시 신규 서비스를 중지한 상태에서 활성화 직전 DB와 코드를 복구합니다.
 서비스 중지 또는 DB 복구가 실패하면 자동 재기동하지 않고 복구 파일 경로를 남깁니다.
 
+검사 사본은 `$STATE_DIR/assistant-preflight-*`(기본 `/var/lib/content-ai-assistant`),
+활성화 직전 복구 사본은 `$APP_ROOT/backups/deploy-<release-id>.*`(기본
+`/opt/content-ai-assistant/backups`)에 생성합니다. 두 경로는 디스크 파일시스템에 두며,
+`/tmp`가 tmpfs여도 DB 사본으로 서버 메모리를 사용하지 않습니다. 임시 디렉터리는 권한
+700, DB와 백업 목록은 권한 600으로 제한합니다. 배포 스크립트는 SSH 사용자로 실행되므로
+`backups` 디렉터리는 `APP_USER` 소유로 준비합니다. 검사 사본은 성공·실패 모두 정리하고,
+배포 복구 사본은 기존과 같이 정상 완료 또는 복구 완료 후 정리합니다. 복구가 실패하거나
+배포 프로세스가 중단된 경우 남은 사본은 디스크에 보존하며, 기존 백업을 일괄 삭제하지 않습니다.
+
 수동 롤백도 대상 릴리스로 현재 DB 복제본을 열어 보고 호환되지 않으면 링크 전환 전에
 중단합니다. 오래된 백업을 자동 덮어써 최신 대화를 잃지 않도록 하기 위한 제한입니다.
 호환되지 않는 스키마는 먼저 이전 코드 호환 마이그레이션을 준비하거나, 점검 상태에서

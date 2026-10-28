@@ -308,6 +308,26 @@ def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
         index = open_body_index()
         if index is None or not _scope_current(read_scope):
             return None
+        # 목록이 만료·누락되면 본문 재수집으로 복구할 수 없다. 원문 전체를
+        # 두 번 검사하기 전에 작은 목록 테이블만 읽고 실시간 검색에 맡긴다.
+        with index._database() as db:
+            placeholders, params = index._scope(database_ids)
+            if not placeholders:
+                return None
+            catalogs = list(db.execute(
+                f'SELECT complete, updated_at FROM catalogs '
+                f'WHERE fingerprint=? AND database_id IN ({placeholders})', params))
+            now = time.time()
+            max_age = catalog_max_age_seconds()
+            if len(catalogs) != len(params) - 1 or any(
+                not row['complete'] or not 0 <= now - _time(row['updated_at']) < max_age
+                for row in catalogs
+            ):
+                return None
+        if constraints.get('metadata_list'):
+            from backend.notion.recent_catalog import search_recent_catalog
+            return search_recent_catalog(index, database_ids, read_scope=read_scope,
+                                         constraints=constraints, limit=limit)
         blocks_enabled = os.getenv('NOTION_FETCH_PAGE_BLOCKS', 'true').lower() not in {'0', 'false', 'no'}
         if constraints.get('exact_title') and not body_clauses and not keyword_clauses:
             from backend.notion.catalog_search import search_catalog_snapshot
@@ -343,7 +363,8 @@ def _search_snapshot_once(index, database_ids, *, terms, read_scope, constraints
     positive = [str(clause['value']) for clause in body_clauses if clause['operator'] == 'contains']
     discovery_terms = list(dict.fromkeys([*positive, *terms]))
     from itertools import batched
-    created = any(c.get('field') == 'created_at' for c in constraints.get('common_filter_clauses', []))
+    created = (constraints.get('sort') or {}).get('field') == 'created_at' or any(
+        c.get('field') == 'created_at' for c in constraints.get('common_filter_clauses', []))
     def rank(p):
         return (bool(terms) and p.get('index_title_match', False),
                 notion_page_sort_key(p, created_at_filtered=created))

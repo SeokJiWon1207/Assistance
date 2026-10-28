@@ -92,6 +92,10 @@ load_dotenv(Path.cwd() / ".env")
 from backend.startup_validation import validate_runtime_security
 
 validate_runtime_security()
+from backend.intent.entities import warm_entity_catalog
+
+if not warm_entity_catalog():
+    raise RuntimeError("검색 명부 사전 준비 실패")
 print("Release preflight passed")
 PY
 
@@ -99,7 +103,9 @@ PY
 .venv/bin/python scripts/runtime_databases.py check --state "$STATE_DIR" \
   --legacy "$APP_ROOT/assistant_web/runtime" --app "$APP_DIR"
 
-rollback_dir="$(mktemp -d /tmp/content-ai-assistant-deploy.XXXXXX)"
+# /tmp가 tmpfs인 서버에서도 DB 복구 사본이 RAM을 점유하지 않게 디스크에 둔다.
+sudo install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_ROOT/backups"
+rollback_dir="$(mktemp -d "$APP_ROOT/backups/deploy-$RELEASE_ID.XXXXXX")"
 service_existed=0
 nginx_existed=0
 maintenance_created=0
