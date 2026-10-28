@@ -447,6 +447,14 @@ def validate_plan(question, parsed, user, previous):
     invalid_clear = [f for f in clear if not isinstance(f, str) or f not in SUPPORTED_FIELDS | {'terms', 'team'}]
     require(not invalid_clear, '해제 조건 오류: ' + ', '.join(str(f)[:30] for f in invalid_clear) +
             '. report_kind/group_by/sort는 clear_fields가 아닙니다. 과업은 operation으로 바꾸고 검색 주제만 terms로 해제하세요')
+    previous_fields = {f['field'] for f in (previous.get('resolved_constraints') or {}).get('filter_clauses', [])}
+    if (clear and not followup and source == previous.get('source') == 'mantis'
+            and operation in {'get', 'explain'} and scope == 'target' and len(document_ids) == 1
+            and set(clear) <= previous_fields and not set(clear) & {'team', 'status'}):
+        # 독립적인 번호 조회는 이전 필터를 상속하지 않는다. 이미 적용되지 않는
+        # 이전 조건의 해제 표기만 제거하며, 현재 필터와 번호 근거 검증은 유지한다.
+        clear = []
+        parsed['clear_fields'] = clear
     require(not clear or followup, '해제할 이전 조건이 없습니다')
     raw = parsed['filters']
     require(isinstance(raw, list) and len(raw) <= 20, '필터 개수 오류')
