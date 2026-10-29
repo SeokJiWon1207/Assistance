@@ -11,6 +11,26 @@ from test_aggregation_spec import proposal, specification
 
 
 class AggregationPipelineTests(unittest.TestCase):
+    def test_invalid_top_n_is_retried_before_accepting_corrected_plan(self):
+        from backend.intent import unified
+        question = '전사 2026년 8월부터 9월까지 고객사와 월별로 Mantis 등록 건수를 집계해줘.'
+        valid = proposal(aggregation=specification(metrics=['issue_count'], comparison=None, explain=False))
+        for invalid_value in (None, 0):
+            with self.subTest(top_n=invalid_value):
+                invalid = deepcopy(valid)
+                invalid['aggregation']['top_n'] = invalid_value
+                calls = []
+
+                def propose(model, key, payload, *, calls=calls, invalid=invalid):
+                    calls.append(deepcopy(payload))
+                    return deepcopy(invalid if len(calls) == 1 else valid)
+
+                with patch.object(unified, '_propose', side_effect=propose), patch.object(
+                        unified.llm, 'get_model_registry', return_value=[]):
+                    plan = unified.plan_question(question, {'id': 'fixture'}, 'test', {}, {})
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(plan['aggregation'], valid['aggregation'])
+
     def test_retry_explains_conflicting_outer_fields_without_changing_aggregation(self):
         from backend.intent import unified
         question = ('전사 2026년 8월부터 9월까지 고객사별 월별 Mantis 등록 건수를 전월 대비 분석해줘. '
