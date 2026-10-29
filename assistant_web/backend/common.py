@@ -13,6 +13,7 @@ from backend.config import (
     AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES,
     CUSTOMER_ALIASES,
     KOREAN_COUNT_WORDS,
+    MANTIS_DATE_CUSTOM_FIELDS,
     PERSON_BLOCKLIST,
     PERSON_ROLE_ALIASES,
     PLATFORM_ALIASES,
@@ -433,7 +434,8 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
         "screen_number": extract_chroma_field(text, "화면번호") or "미상",
         "work_subject": extract_chroma_field(text, "작업주체") or "미상",
         "effort_fields": {},
-        "date_fields": {},
+        "date_fields": {name: format_mantis_custom_date(value) for name in MANTIS_DATE_CUSTOM_FIELDS
+                        if (value := extract_chroma_field(text, name))},
         "reporter": extract_chroma_field(text, "요청자") or "미상",
         "handler": extract_chroma_field(text, "담당자") or "담당자 미지정",
         "created_at": created_at,

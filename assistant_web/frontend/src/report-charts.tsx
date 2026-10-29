@@ -25,16 +25,16 @@ function ValueLegend({spec}:{spec:Spec}) {
 }
 
 export function MetricPie({spec}:{spec:Spec}) {
-  const data=(spec.rows||[]).map((row,index)=>({label:String(row.fullLabel),value:Number(row.amount),color:`var(--chart-${index%6+1})`}));
+  const data=(spec.rows||[]).map((row,index)=>({label:String(row.fullLabel),value:Number(row.amount),color:String(row.color || `var(--chart-${index%6+1})`)}));
   const [hover,setHover]=useState<number|null>(null); const reduced=useReducedMotion();
   const valid=data.every(row=>Number.isFinite(row.value)&&row.value>=0);
   const total=data.reduce((sum,row)=>sum+row.value,0);
   if(!valid)throw new Error('유효하지 않은 공수 데이터');
-  if(!total)return <p className="bklit-empty">표시할 공수가 없습니다.</p>;
+  if(!total)return <p className="bklit-empty">{spec.emptyMessage || '표시할 공수가 없습니다.'}</p>;
   return <div className="bklit-cohort bklit-metric-pie">
     {spec.complete ? <PieChart data={data} size={190} innerRadius={65} hoveredIndex={hover} onHoverChange={setHover}>
       {data.map((row,index)=><PieSlice key={index} index={index} animate={Boolean(spec.animated)&&!reduced} hoverEffect={reduced?'none':'translate'} showGlow={false}/>)}
-      <PieCenter defaultLabel={spec.title} formatOptions={{minimumFractionDigits:spec.decimals??2,maximumFractionDigits:spec.decimals??2}} suffix={spec.unit}/>
+      <PieCenter defaultLabel={spec.centerLabel || spec.title} formatOptions={{minimumFractionDigits:spec.decimals??2,maximumFractionDigits:spec.decimals??2}} suffix={spec.unit}/>
     </PieChart> : <p className="bklit-note">일부 조회 결과여서 비율은 표시하지 않습니다.</p>}
     <Legend items={data.map(row=>({...row,maxValue:total}))} hoveredIndex={hover} onHoverChange={setHover} className="bklit-legend is-vertical"><ValueLegend spec={spec}/></Legend>
   </div>;

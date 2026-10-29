@@ -9,9 +9,11 @@ from backend.sources.mantis_store import render_document
 
 
 @contextmanager
-def trend_rows(index_path, start_date):
+def trend_rows(index_path, start_date, *, constraints=None):
     # 명시 경로는 회귀 테스트·오프라인 점검 전용이다. 운영에서 자동 대체하지 않는다.
     if index_path is not None:
+        if constraints is not None:
+            raise LookupError('조건 집계는 검증된 전체 원본 저장본이 필요합니다.')
         with closing(sqlite3.connect(f'file:{index_path}?mode=ro', uri=True)) as db:
             index_rows = db.execute('''SELECT i.created_at,i.issue_type,i.document FROM issues i
                 LEFT JOIN issue_dates d ON d.issue_id=i.issue_id AND d.field_name='고객사전달일'
@@ -30,6 +32,10 @@ def trend_rows(index_path, start_date):
         def rows():
             for raw in stored:
                 checkpoint()
+                if constraints is not None:
+                    from backend.sources.mantis import issue_matches_constraints
+                    if not issue_matches_constraints(raw, constraints):
+                        continue
                 created = str(raw.get('created_at') or '')[:10]
                 if created < start_date and mantis_issue_effort_date(raw) < start_date:
                     continue

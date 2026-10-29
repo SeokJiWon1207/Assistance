@@ -70,6 +70,10 @@ def execute_plan(request, context, user):
     if any(not context.enabled_tools.get(tool) for tool in required if tool != 'general'):
         return clarification(request, '요청한 원천의 조회 도구가 꺼져 있습니다.')
     if source == 'mantis' and operation in {'count', 'aggregate'}:
+        if plan.get('aggregation'):
+            from backend.reports.aggregation_rollout import run_aggregation_report
+            return {'modelId': request.modelId, **run_aggregation_report(
+                context.retrieval_text, plan, context.model, context.api_key)}
         return {'modelId': request.modelId, **service.build_mantis_count_report(context.retrieval_text, {**plan, 'operation': 'count'})}
     if operation == 'write':
         result = service.run_notion_write_command(context.latest_user_text, request.messages,

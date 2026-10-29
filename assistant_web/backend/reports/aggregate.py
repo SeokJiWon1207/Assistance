@@ -110,18 +110,28 @@ def format_month_trend_lines(group_counts: Dict[str, int], label: str) -> List[s
     ordered = sorted(group_counts.items(), key=lambda item: item[0])
     lines = ["", f"{label}별 건수 (시간순, {len(ordered)}개 {label})"]
     prev: Optional[int] = None
+    previous_month: Optional[date] = None
     for name, count in ordered:
+        try:
+            month = date.fromisoformat(f"{name}-01")
+        except ValueError:
+            month = None
         if prev is None:
             lines.append(f"- {name} — {count}건")
+        elif month is None or previous_month is None or (month - timedelta(days=1)).replace(day=1) != previous_month:
+            lines.append(f"- {name} — {count}건 (전월 자료 없음)")
         else:
             diff = count - prev
             arrow = "▲" if diff > 0 else ("▼" if diff < 0 else "―")
             if diff == 0:
                 lines.append(f"- {name} — {count}건 (― 변동 없음)")
+            elif prev == 0:
+                lines.append(f"- {name} — {count}건 (▲{diff}, 신규 발생)")
             else:
-                pct = (diff / prev * 100) if prev else 0.0
+                pct = diff / prev * 100
                 lines.append(f"- {name} — {count}건 ({arrow}{abs(diff)}, {pct:+.1f}%)")
         prev = count
+        previous_month = month
     counts = [count for _, count in ordered]
     if len(counts) >= 2:
         avg = sum(counts) / len(counts)
@@ -685,6 +695,7 @@ def build_mantis_count_report(
                     "search_complete": scan_complete,
                     "live_scanned_pages": live_scanned_pages,
                     "total_count": total_count,
+                    "group_counts": group_counts,
                     "displayed_count": len(representative_issues),
                     "applied_filters": constraints,
                     "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",

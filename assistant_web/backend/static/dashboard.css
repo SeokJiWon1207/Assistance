@@ -318,6 +318,23 @@ body.theme-dark .dashboard-column:is(.is-fresh, .is-rest) i { background: color-
   white-space: nowrap;
 }
 .dashboard-spike-badge { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); font-size: 12px; font-weight: 700; text-align: center; }
+.dashboard-spikes { margin-top: 0; }
+.dashboard-spikes > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 14px 20px; cursor: pointer; font-size: 13px; }
+.dashboard-spikes > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }
+.dashboard-spikes[open] > summary::before { transform: rotate(45deg); }
+.dashboard-spikes > summary > span { color: var(--muted); font-size: 12px; }
+.dashboard-spikes > summary > .dashboard-spikes-toggle { margin-left: auto; color: var(--blue); }
+.dashboard-spikes-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; padding: 0 20px 14px; }
+.dashboard-spikes-groups > section { min-width: 0; }
+@media (max-width: 680px) { .dashboard-spikes-groups { grid-template-columns: 1fr; } }
+.dashboard-spikes h3 { margin: 0 0 8px; color: var(--text-soft); font-size: 13px; font-weight: 600; }
+.dashboard-spikes ul { margin: 0; padding: 0; list-style: none; }
+.dashboard-spikes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 7px 0; font-size: 13px; }
+.dashboard-spikes li + li { border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+.dashboard-spike-name { color: var(--text-soft); overflow-wrap: anywhere; }
+.dashboard-spike-counts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+.dashboard-spike-counts strong { color: var(--text); font-weight: 600; }
+.dashboard-spike-counts > span { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .dashboard-columns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .dashboard-column {
   display: grid;
@@ -376,7 +393,7 @@ body.theme-dark .dashboard-column:is(.is-fresh, .is-rest) i { background: color-
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 14px;
 }
 
@@ -585,3 +602,29 @@ button.dashboard-column,
   .dashboard-metrics .workspace-metric strong { font-size: 22px; }
   .dashboard-detail-meta { grid-template-columns: 1fr; }
 }
+
+/* 토~금 업무 날짜 집계: 선택 기간 지표와 별도의 구역. */
+.dashboard-weekly { display: grid; gap: 12px; min-width: 0; margin: 12px 0 8px; }
+.dashboard-weekly-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dashboard-weekly-heading h3 { margin: 0 0 5px; font-size: var(--font-section); }
+.dashboard-weekly-heading p { margin: 0; font-size: 12px; color: var(--muted); }
+.dashboard-weekly-heading > span { border-radius: 999px; padding: 6px 10px; background: var(--surface-alt); color: var(--text-soft); font-size: 12px; white-space: nowrap; }
+.dashboard-weekly-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.dashboard-weekly-card { min-width: 0; overflow: hidden; grid-template-rows: auto 1fr auto; }
+.dashboard-weekly-card > .dashboard-weekly-card-head { display: block; padding: 20px 20px 0; }
+.dashboard-weekly-card-head h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.dashboard-weekly-card-head p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.dashboard-weekly-card-head .dashboard-weekly-total { font-size: 26px; letter-spacing: -1px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.dashboard-weekly-card .bklit-legend { flex-wrap: wrap; }
+.dashboard-weekly-card .bklit-cohort { min-height: 220px; }
+.dashboard-weekly-card .bklit-cohort .bklit-legend { flex-basis: 100%; }
+.dashboard-weekly-table { overflow-x: auto; }
+.dashboard-weekly-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dashboard-weekly-table th, .dashboard-weekly-table td { padding: 7px; text-align: left; border-bottom: 1px solid var(--line); }
+.dashboard-weekly-table tr > :last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.dashboard-weekly-missing { margin: 0 20px 16px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.dashboard-weekly-missing summary { cursor: pointer; }
+.dashboard-weekly-missing p { margin-bottom: 0; }
+.bklit-grouped-labels { fill: var(--text-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) { .dashboard-weekly-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-weekly-grid > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 680px) { .dashboard-weekly-grid { grid-template-columns: minmax(0, 1fr); } .dashboard-weekly-heading { align-items: start; } .dashboard-weekly-heading > span { display: none; } }

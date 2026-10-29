@@ -44,6 +44,8 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   });
   const bridge = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/bklit_charts.js'), 'utf8'), {context});
   await bridge.link(() => {}); await bridge.evaluate();
+  const weeklyModule = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard_weekly.js'), 'utf8'), {context});
+  await weeklyModule.link(() => bridge); await weeklyModule.evaluate();
   const dependencies = {
     './runtime.js': { state, els, WORKSPACE_ENDPOINTS: { dashboard: '/dashboard' },
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
@@ -73,6 +75,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const module = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/dashboard.js'), 'utf8'), { context });
   await module.link((specifier) => {
     if (specifier.startsWith('./bklit_charts.js')) return bridge;
+    if (specifier.startsWith('./dashboard_weekly.js')) return weeklyModule;
     if (specifier.startsWith('./ui_format.js')) return formatModule;
     const values = dependencies[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(values), function () {

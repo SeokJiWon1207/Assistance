@@ -239,7 +239,7 @@ function revealAnswer(content, bubble, { streamed }) {
 
 function renderMessages() {
   releaseCharts(els.messages);
-  if (!state.busy) els.input.placeholder = state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요";
+  if (!state.busy) els.input.placeholder = state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다.";
   els.messages.innerHTML = "";
   const activeHistory = state.conversations?.find((item) => item.id === state.activeConversationId);
   if (activeHistory?.messageOffset > 0) {
@@ -259,8 +259,8 @@ function renderMessages() {
     empty.innerHTML = `
       <div>
         <p class="empty-state-eyebrow">${escapeHtml(state.currentUser?.displayName || state.currentUser?.name || "사용자")}님, ${new Date().getHours() < 12 ? "좋은 아침이에요" : new Date().getHours() < 18 ? "좋은 오후예요" : "좋은 저녁이에요"}</p>
-        <h3>어떤 이슈를 찾아드릴까요?</h3>
-        <p>자주 쓰는 업무를 고르거나 아래 입력창에 바로 질문하세요. 입력창에 / 를 입력해도 템플릿이 열려요.</p>
+        <h3>어떤 업무를 도와드릴까요?</h3>
+        <p class="empty-state-source-intro">Mantis 이슈와 Notion 문서를 바탕으로 답변해요.</p>
         <div class="starter-heading"><strong>팀 템플릿</strong><button type="button" data-open-all-templates>전체 ${TEAM_TEMPLATES.length}개 보기</button></div>
         <div class="starter-grid" aria-label="팀 공용 템플릿">
           ${state.teamTemplatesError
@@ -694,7 +694,7 @@ function setBusy(busy) {
   state.busy = busy;
   globalThis.dispatchEvent?.(new Event("conversations:rendered"));
   els.input.disabled = false;
-  els.input.placeholder = busy ? "답변을 만드는 동안 다음 질문을 적어 둘 수 있어요" : (state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요");
+  els.input.placeholder = busy ? "답변을 만드는 동안 다음 질문을 적어 둘 수 있어요" : (state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다.");
   if (els.templateToggleBtn) els.templateToggleBtn.disabled = busy;
   // 모델 연결 대기 중에도 준비된 AbortController로 요청을 중지할 수 있다.
   const canStop = busy && state.chatCanAbort;

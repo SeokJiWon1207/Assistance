@@ -393,6 +393,20 @@ def validate_plan(question, parsed, user, previous):
     base = deepcopy(previous.get('resolved_constraints') or {}) if followup else {}
     require(not followup or bool(base), '이어서 조회할 확정 검색 기록이 없습니다')
     require(scope != 'inherit' or followup, '상속할 범위가 없습니다')
+    from backend.intent.aggregation_spec import validate_aggregation, period_clause
+    previous_aggregation = previous.get('aggregation') if followup else None
+    aggregation = None
+    if parsed.get('aggregation') is not None or (previous_aggregation and operation == 'aggregate'):
+        require(source == 'mantis' and operation == 'aggregate', '집계 명세는 Mantis aggregate 작업입니다')
+        aggregation = validate_aggregation(question, parsed.get('aggregation') if parsed.get('aggregation') is not None else {}, previous_aggregation)
+        require(parsed.get('group_by') is None and parsed.get('limit') is None, '복합 집계와 기존 그룹/표시 개수 계약이 충돌합니다')
+        require(not (scope == 'self' and len(aggregation['metrics']) > 1),
+                '개인 건수의 담당자와 공수 기입자 범위를 구분해 지표별로 요청해 주세요')
+    elif previous_aggregation and operation in {'count', 'search'}:
+        # 출력 형태를 건수/목록으로 바꿔도 조회 기간은 버리지 않는다.
+        period = period_clause(previous_aggregation, 'issue_count')
+        base.setdefault('filter_clauses', []).append(period)
+        base['created_at'] = {k: previous_aggregation['period'][k] for k in ('from', 'to')}
     if followup:
         require(previous.get('source') == source, '후속 조회의 원천이 바뀌었습니다')
     document_text = unquoted(question)
@@ -486,13 +500,15 @@ def validate_plan(question, parsed, user, previous):
         replaced |= PERSON_FIELDS - {'effort_person'}
     clauses = [f for f in base.get('filter_clauses', []) if f['field'] not in replaced]
     clauses.extend(incoming)
-    self_field = 'effort_person' if operation == 'report' and report in {'effort', 'effort_sla'} else 'owner'
+    self_field = 'effort_person' if (operation == 'report' and report in {'effort', 'effort_sla'}
+                                    or aggregation and aggregation['metrics'] == ['effort']) else 'owner'
     if scope == 'self':
         removed = {'effort_person'} if self_field == 'effort_person' else PERSON_FIELDS - {'effort_person'}
         clauses = [f for f in clauses if f['field'] not in removed]
     if 'team' in clear:
         scope = 'all'
-    check_query_period(question, source, operation, clauses, report)
+    if not aggregation:
+        check_query_period(question, source, operation, clauses, report)
     check_aging_period(question, source, operation, clauses, report)
     # 포함과 제외를 AND로 합쳐 빈 집합을 만드는 계획을 실행하지 않는다.
     for a in clauses:
@@ -589,6 +605,7 @@ def validate_plan(question, parsed, user, previous):
                         'statuses': c['statuses'], 'issue_ids': c['issue_ids'], 'screen_numbers': c['screen_numbers'], 'created_at': c['created_at']},
             'filter_clauses': deepcopy(c['filter_clauses']), 'resolved_constraints': c, 'terms': terms,
             'group_by': group, 'limit': limit, 'sort': sort, 'report_kind': report,
+            **({'aggregation': aggregation} if aggregation else {}),
             **({'effort': deepcopy(effort_options)} if effort_options else {}),
             'similar_literal_filters': [f for f in c['filter_clauses'] if f['field'] == 'keyword'] if report == 'similar' else [],
             'interpretation': {'status': deepcopy(status), 'followup': followup, 'scope': scope,
@@ -607,7 +624,12 @@ def validate_execution_contract(question, plan):
         check_effort_task(question, plan.get('report_kind'), interpretation.get('followup'))
         check_notice_task(question, plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))
-        check_query_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))
+        if plan.get('aggregation'):
+            from backend.intent.aggregation_spec import check_shape
+            check_shape(plan['aggregation'])
+            require(plan.get('source') == 'mantis' and plan.get('operation') == 'aggregate', '집계 작업 불일치')
+        else:
+            check_query_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))
         check_aging_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))
         for clause in interpretation.get('evidence') or []:
             check_clause(clause, question, plan.get('source'))
