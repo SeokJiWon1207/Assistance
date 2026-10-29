@@ -88,6 +88,16 @@ def enabled():
 def plan_question(question, model, api_key, user, previous):
     if not api_key:
         return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
+    from backend.intent.literal_plans import literal_plan
+    literal = literal_plan(question, previous or {})
+    if literal is not None:
+        try:
+            plan = validate_plan(question, literal, user or {}, previous or {})
+            plan['planner_rule'] = 'literal_or_confirmed_list'
+            return plan
+        except ValueError:
+            # 지원 문법처럼 보여도 근거 계약에 맞지 않으면 일반 해석으로 보낸다.
+            pass
     previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
     prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(CUSTOMER_ALIASES, ensure_ascii=False)
     compact_document = eligible(question,previous or {})

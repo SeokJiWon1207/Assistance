@@ -1254,12 +1254,8 @@ def indexed_exact_title_database_ids(exact_title: str, database_ids: List[str]) 
         stat = path.stat()
     except OSError:
         return []
-    try:
-        max_age = float(os.getenv("NOTION_TITLE_INDEX_TTL_SECONDS", "86400"))
-    except (TypeError, ValueError):
-        max_age = 86400.0
-    if max_age >= 0 and time.time() - stat.st_mtime > max_age:
-        return []
+    # 이 색인은 정답/완전성 판정에 사용하지 않고 현재 허용 범위의 조회
+    # 순서만 정한다. 오래된 후보도 원문을 다시 읽으므로 버릴 필요가 없다.
     index = _title_index_cached(str(path), stat.st_mtime_ns, stat.st_size)
     allowed = {identifier.replace("-", ""): identifier for identifier in database_ids}
     return list(dict.fromkeys(
@@ -2152,7 +2148,8 @@ def execute_notion_search(
 
         # DB 조회는 단계 안에서만 미리 실행하고, 병합과 종료 판단은 원래 DB 순서를 따른다.
         from backend.notion.search_budget import bounded_live_search
-        with bounded_live_search(body_index_used and not require_complete_scan) as live_search:
+        with bounded_live_search((body_index_used or bool(indexed_exact_database_ids))
+                                 and not require_complete_scan) as live_search:
             workers = notion_search_max_workers()
             for title_pass in ((True, False) if title_first else (False,)):
                 full_pass_after_title = title_first and not title_pass

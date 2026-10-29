@@ -49,7 +49,7 @@ class UnifiedModelFallbackTests(unittest.TestCase):
                                          ('local', 'ollama', 'qwen3.5:9b', 60)])
 
     def test_local_plan_must_preserve_exclusions_and_can_be_corrected(self):
-        self.question = "노션에서 '배포 계획' 문서 찾아줘. 시작전 상태는 빼고"
+        self.question = "노션에서 '배포 계획' 문서를 검색해줄래? 시작전 상태는 빼고"
         valid = proposal(source='notion', operation='search', scope='all', status=NO_STATUS,
                          filters=[{'field': 'title', 'operator': 'equals', 'value': '배포 계획',
                                    'evidence': "'배포 계획'"},

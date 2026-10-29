@@ -35,7 +35,10 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
         plan = {'planner': 'unified_llm', 'operation': 'clarify',
                 'reason': '이전 답변에서 요청한 순번의 대상을 확인하지 못했습니다. 이슈 번호나 문서 제목을 지정해 주세요.'}
     else:
-        plan = plan_question(retrieval_text, model, api_key, user, previous)
+        # 순번은 표시했던 단건 ID로 이미 확정됐다. 이전 목록 조건을 다시
+        # 상속하면 현재 속성이 바뀐 단건을 제외하거나 불필요한 조건을 만든다.
+        planning_previous = {} if resolved and parse_ordinal_reference(question) is not None else previous
+        plan = plan_question(retrieval_text, model, api_key, user, planning_previous)
     if previous and plan.get('operation') == 'explain' and (plan.get('interpretation') or {}).get('followup'):
         # 표시용 질문 문맥도 같은 사용자에게 묶인 서버 기록만 사용한다.
         plan['previous_explanation_questions'] = [

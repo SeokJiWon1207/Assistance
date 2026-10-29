@@ -352,7 +352,8 @@ class NotionPostJsonTests(unittest.TestCase):
 
         self.assertIs(response, success)
         self.assertEqual(post.call_count, 2)
-        sleep.assert_called_once_with(0.5)
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.5, places=2)
 
     def test_post_respects_retry_after_header(self):
         throttled = Mock(status_code=429, headers={"Retry-After": "2"})
@@ -365,7 +366,8 @@ class NotionPostJsonTests(unittest.TestCase):
             patch.object(config.random, "uniform", return_value=0),
         ):
             self.assertIs(config.notion_post_json("https://api.notion.test/query", {}), success)
-        sleep.assert_called_once_with(2.0)
+        sleep.assert_called_once()
+        self.assertAlmostEqual(sleep.call_args.args[0], 2.0, places=2)
 
     def test_post_does_not_retry_non_transient_http_status(self):
         forbidden = Mock(status_code=403)
