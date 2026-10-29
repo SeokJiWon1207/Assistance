@@ -695,6 +695,7 @@ def build_mantis_count_report(
                     "search_complete": scan_complete,
                     "live_scanned_pages": live_scanned_pages,
                     "total_count": total_count,
+                    "group_counts": group_counts,
                     "displayed_count": len(representative_issues),
                     "applied_filters": constraints,
                     "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",

@@ -131,6 +131,9 @@ def build_verification_report(
     retrieval_result: Optional[Dict[str, Any]],
     mode: str,
 ) -> Dict[str, Any]:
+    if mode == 'validated_aggregation':
+        from backend.evaluation.aggregation import verify_aggregation
+        return verify_aggregation(question, content, retrieval_result or {}, mode)
     if mode == "deterministic_work_report":
         from backend.reports.work_queries import verify_work_report
         return verify_work_report(question, content, sources, retrieval_result or {})

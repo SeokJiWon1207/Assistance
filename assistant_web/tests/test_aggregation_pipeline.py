@@ -1,0 +1,34 @@
+import os
+import unittest
+from unittest.mock import patch
+
+from backend.schemas import ChatMessage, ChatRequest
+from backend.services.chat_service import chat_service
+from backend.evaluation.verification import build_verification_report
+from test_aggregation import complete_store, raw_issue
+from test_aggregation_spec import proposal, specification
+
+
+class AggregationPipelineTests(unittest.TestCase):
+    def test_chat_uses_one_planner_call_and_returns_compound_table(self):
+        question = '전사 2026년 8월부터 9월까지 고객사별 월별 Mantis 이슈 건수를 보여줘'
+        planned = proposal(aggregation=specification(metrics=['issue_count'], explain=False))
+        request = ChatRequest(modelId='offline', abTest=False, messages=[ChatMessage(role='user', content=question)],
+                              tools={'mantis': True, 'notion': False, 'vectorDb': False})
+        with patch.dict(os.environ, {'UNIFIED_QUERY_PLANNER_ENABLED': 'true', 'MANTIS_AGGREGATION_MODE': 'primary'}), patch(
+                'backend.services.chat_service.get_private_model', return_value={'id': 'offline', 'status': 'active'}), patch(
+                'backend.services.chat_service.get_model_api_key', return_value='test'), patch(
+                'backend.intent.unified._propose', return_value=planned) as planner, patch(
+                'backend.sources.mantis_store.stream_complete_store', side_effect=lambda: complete_store([raw_issue(1)])):
+            result = chat_service.build_response(request, user={'uid': 'aggregation-user'})
+        self.assertEqual(result['raw']['mode'], 'validated_aggregation')
+        self.assertEqual(result['aggregation']['totals'], {'issue_count': 1})
+        self.assertEqual(planner.call_count, 1)
+        self.assertEqual(result['retrieval']['aggregation_narrative']['calls'], 0)
+
+    def test_explanation_is_not_automatically_trusted_as_deterministic_text(self):
+        retrieval = {'constraints': {}, 'aggregation_narrative': {'status': 'unavailable', 'calls': 1}}
+        result = build_verification_report('집계', '계산 표', [], retrieval, 'validated_aggregation')
+        checks = {c['id']: c for c in result['checks']}
+        self.assertIn('aggregation_narrative', checks)
+        self.assertEqual(checks['aggregation_narrative']['status'], 'warning')

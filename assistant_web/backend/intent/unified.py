@@ -53,6 +53,12 @@ clear_fields: 후속에서 명시적으로 해제한 검색 필드 배열. 담�
 미종료 조회 후 '해결 상태도 함께 포함'은 미종료+resolved이며 closed는 계속 제외한다. status.mode=exclude, values=["closed"]로 표현한다. 전체 상태로 확대하지 않는다.
 terms: 실제 내용 검색어 최대6개. count의 건수/남았어/몇개, 담당자/고객사/상태 같은 필터값은 검색어가 아니다. 특정 이슈 번호가 있으면 일반적으로 terms=[]. 유사 사례 비교에서는 CPU·메모리 누수 같은 비교 주제는 terms에 지정할 수 있다. 주제를 keyword contains 필터로 강제하지 마라. 본문/노트에 정확한 문자열을 포함하라고 명시한 경우에만 keyword contains를 쓴다. 고객사·매체·담당자·기간·상태·명시적 제목 및 제외 조건은 계속 filters로 보존한다.
 group_by: null|customer|platform|status|owner|month. limit: null 또는 목록 표시 개수(1~200). count는 항상 null.
+복합 그룹·집계 분석은 operation=aggregate, group_by=null, limit=null로 두고 aggregation을 추가한다:
+{"group_by":["customer","month"],"metrics":["issue_count","effort"],"period":{"from":"2026-08-01","to":"2026-09-30","evidence":"2026년 8월부터 9월까지"},"comparison":"previous_month","top_n":10,"explain":true}.
+aggregation.group_by는 customer/platform/status/owner/issue_type/month 중 중복 없이 최대 3개, metrics는 issue_count(등록건수)/effort(공수)만 허용한다. SQL·수식·임의 지표·date_basis는 금지한다. 서버가 건수=등록일, 공수=고객사전달일을 적용한다. 수정일/완료일 기준 집계는 clarify다.
+집계 기간은 aggregation.period에만 넣고 filters에 중복하지 않는다. 별도 등록 조건 등 실제 추가 제한만 filters에 넣는다. 기간은 필수이며 최대 36개월, 생략 시 기간을 확인한다. comparison은 null 또는 previous_month(월 그룹 필요), top_n은 1~20, explain은 분석/설명/증감 이유를 요청한 경우만 true다. 서버가 전체 집계 후 같은 상위 그룹과 기타를 모든 월에 적용한다.
+집계 후속은 operation=aggregate를 유지하고 변경한 aggregation 항목만 보낸다. 필터와 나머지 집계 명세는 서버가 상속한다. 단순 총 건수로 명시 전환하면 operation=count, aggregation 생략. 기존 단순 공수 합계/랭킹/유형별 추이는 report/effort를 유지할 수 있다.
+예: 고객사×월별 집계 후 '그중 HTS만 상위 3개 고객사로 좁혀줘'는 filters에 platform=hts, aggregation={"top_n":3}만 쓴다. 고객사 상위 개수는 월 그룹 해제가 아니며 기존 month를 삭제하지 않는다. 월별을 합치거나 구분을 빼 달라고 명시했을 때만 group_by를 변경한다.
 선택 키 sort={field:created_at|updated_at|issue_id,direction:asc|desc}. 오래된 순은 반드시 created_at asc, 최신 등록순은 created_at desc. 모두 보여줘는 limit=200이다.
 공수 업무 규칙: 공수의 기간은 항상 Mantis 고객사전달일(delivered_at)이다. 이번 달 내 공수는 report/effort, scope=self, delivered_at between 이번 달 1일~말일이다. 등록일(created_at)은 사용자가 별도 등록 조건을 명시했을 때만 추가한다. 고객사전달일을 등록일로 바꾸지 않는다. 고객사전달 목표일도 다른 날짜다.
 공수 기입자 조건은 effort_person equals/in이며 이슈 담당자 owner와 구분한다. '석지원 공수'는 effort_person=석지원, '홍길동 담당 이슈의 석지원 공수'는 owner=홍길동과 effort_person=석지원 둘 다다. '내 공수'의 self는 서버가 인증된 공수 기입자로 연결하므로 인물 필터를 추측하지 않는다.
@@ -98,7 +104,7 @@ def plan_question(question, model, api_key, user, previous):
         except ValueError:
             # 지원 문법처럼 보여도 근거 계약에 맞지 않으면 일반 해석으로 보낸다.
             pass
-    previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
+    previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'aggregation', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
     prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(CUSTOMER_ALIASES, ensure_ascii=False)
     compact_document = eligible(question,previous or {})
     if compact_document:
