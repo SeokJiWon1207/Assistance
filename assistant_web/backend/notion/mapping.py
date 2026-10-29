@@ -387,6 +387,8 @@ def normalize_notion_page(
         "due_date_property": date_property(properties, DUE_NAMES),
         "deployment_date": str((properties.get(deployment_property, {}).get("date") or {}).get("start") or ""),
         "registration_date": registration_dates[0] if registration_dates else "",
+        "registration_time_raw": next((str((properties[name].get("date") or {}).get("start"))
+                                       for name in registration_properties if (properties[name].get("date") or {}).get("start")), ""),
         "registration_dates": registration_dates,
         "registration_date_property": registration_property,
         "registration_date_properties": registration_properties,

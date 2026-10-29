@@ -1,6 +1,7 @@
 """Notion 검색 근거와 결정형 답변을 포맷한다."""
 
 import re
+from datetime import datetime
 
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,7 @@ from backend.intent.constants import ISSUE_ANALYSIS_INTENT_KEYWORDS, ISSUE_LIST_
 from backend.notion.client import NOTION_CONTENT_INCOMPLETE
 from backend.notion.search import collect_retrieved_notion_pages, notion_requested_information_fields
 from backend.notion.query_text import notion_structural_query
+from backend.notion.mapping import KST
 from backend.query_filters import filter_clause_label
 from backend.query_planning import extract_group_by, has_count_intent
 
@@ -210,7 +212,8 @@ def notion_result_sort_label(constraints: Dict[str, Any]) -> str:
         clause.get("field") == "created_at"
         for clause in constraints.get("common_filter_clauses", [])
     )
-    return "최근 등록순" if created_at_filtered else "최근 수정순"
+    created_order = (constraints.get("sort") or {}).get("field") == "created_at"
+    return "최근 등록순" if created_at_filtered or created_order else "최근 수정순"
 
 
 def format_grouped_notion_answer(
@@ -277,6 +280,13 @@ def format_deterministic_notion_answer(
     if notion_stage.get("status") == "error":
         return f"Notion 조회 중 오류가 발생했습니다.\n\n{notion_stage.get('reason', '원인 미상')}"
     scope_meta = notion_stage.get("meta", {})
+    catalog_time_notice = ""
+    if scope_meta.get("tool") == "notion_recent_catalog":
+        try:
+            stamp = datetime.fromisoformat(scope_meta["snapshot_as_of"].replace("Z", "+00:00"))
+            catalog_time_notice = f"목록 기준 시각: {stamp.astimezone(KST):%Y-%m-%d %H:%M} KST"
+        except (KeyError, TypeError, ValueError):
+            pass
     scope_notice = ""
     if scope_meta.get("incomplete_reasons") == ["page_limit"] and scope_meta.get("scan_limit_per_database"):
         scope_notice = (
@@ -286,6 +296,8 @@ def format_deterministic_notion_answer(
     if not pages:
         if notion_stage.get("meta", {}).get("search_complete") is False:
             return "Notion에서 조회한 범위에는 일치하는 항목이 없습니다. " + (scope_notice or "전체 조회가 끝나지 않아 결과가 없다고 확정할 수 없습니다.")
+        if catalog_time_notice:
+            return f"문서 목록 저장본에서 조건에 맞는 항목을 찾지 못했습니다.\n\n{catalog_time_notice}"
         return (
             "🔍 Notion DB에서는 조건에 맞는 항목을 찾지 못했어요. "
             "키워드를 바꾸거나 조회할 DB를 좁혀서 다시 찾아볼까요?"
@@ -357,7 +369,12 @@ def format_deterministic_notion_answer(
     else:
         intro = f"🔍 Notion에서 관련 항목 {len(pages)}건을 찾았어요. {sort_label}으로 정리했습니다."
     if scope_meta.get("coverage_basis") == "api_properties":
-        criteria += ", 검색 범위: 저장본의 전체 제목·속성 (제목 일치 후보의 현재 속성 재확인)"
+        if scope_meta.get("tool") == "notion_recent_catalog":
+            criteria += ", 검색 범위: 문서 목록 저장본 (표시 문서의 현재 속성 재확인)"
+            if catalog_time_notice:
+                criteria += f", {catalog_time_notice}"
+        else:
+            criteria += ", 검색 범위: 저장본의 전체 제목·속성 (제목 일치 후보의 현재 속성 재확인)"
         if scope_meta.get("excluded_document_count"):
             criteria += " (삭제·범위 밖 이동·접근 불가 문서 제외)"
     if scope_meta.get("coverage_basis") == "api_readable":
@@ -380,6 +397,8 @@ def format_deterministic_notion_answer(
             meta_items.append(f"기한 {page['due_date']}")
         if page.get("deployment_date"):
             meta_items.append(f"운영반영 {page['deployment_date']}")
+        if sort_label == "최근 등록순" and (page.get("registration_date") or page.get("created_time")):
+            meta_items.append(f"등록 {page.get('registration_date') or page['created_time']}")
         if page.get("last_edited_time"):
             meta_items.append(f"수정 {page['last_edited_time']}")
         lines.extend(

@@ -1,5 +1,17 @@
 [
   {
+    "id": "gemini-3.1-flash-lite",
+    "label": "Gemini 3.1 Flash-Lite",
+    "model": "gemini-3.1-flash-lite",
+    "provider": "gemini",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "apiKeyEnv": "GEMINI_API_KEY",
+    "reasoningEffort": "minimal",
+    "maxOutputTokens": 2048,
+    "expiresAt": "",
+    "enabled": true
+  },
+  {
     "id": "company-qwen3.6-35b-a3b",
     "label": "회사 Qwen 3.6 35B",
     "model": "qwen3.6-35b-a3b",

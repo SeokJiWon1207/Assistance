@@ -1,4 +1,8 @@
 import unittest
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -64,6 +68,55 @@ class DeploymentScriptTests(unittest.TestCase):
         self.assertIn("trap restore_previous ERR", script)
         self.assertIn('mv -Tf "$temporary_link" "$CURRENT_LINK"', script)
         self.assertIn("/ready", script)
+
+    def test_setup_allocates_private_recovery_directory_on_the_app_disk(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_root = root / "app"
+            release_id = "20261012T010203Z"
+            release = app_root / "releases" / release_id
+            (release / "assistant_web").mkdir(parents=True)
+            (release / "data").symlink_to(root)
+            (app_root / "current").symlink_to(release)
+            record = root / "allocated"
+            stubs = root / "shell-stubs"
+            # 패키지 설치·venv·권한 상승은 가짜 경계로 두고 실제 디렉터리 할당까지 실행한다.
+            stubs.write_text("""
+id() { return 0; }
+flock() { return 0; }
+sudo() {
+  if [[ "$1" == "install" ]]; then
+    shift
+    local args=()
+    while (($#)); do
+      case "$1" in -o|-g) shift 2;; *) args+=("$1"); shift;; esac
+    done
+    command install "${args[@]}"
+  fi
+}
+python3() {
+  mkdir -p .venv/bin
+  : > .venv/bin/activate
+  printf '#!/usr/bin/env bash\\nexit 0\\n' > .venv/bin/python
+  chmod +x .venv/bin/python
+}
+pip() { return 0; }
+mktemp() {
+  command mktemp "$@" > "$TEST_ALLOCATED_DIRECTORY"
+  exit 43
+}
+""")
+            result = subprocess.run(["bash", str(DEPLOY_DIR / "setup_server.sh")],
+                env={**os.environ, "APP_ROOT": str(app_root), "APP_USER": "fixture",
+                     "STATE_DIR": str(root / "state"), "RELEASE_DIR": str(release), "RELEASE_ID": release_id,
+                     "BASH_ENV": str(stubs), "TEST_ALLOCATED_DIRECTORY": str(record)},
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 43, result.stderr)
+            allocated = Path(record.read_text().strip())
+            self.addCleanup(shutil.rmtree, allocated, True)
+            self.assertEqual(allocated.parent, app_root / "backups")
+            self.assertEqual(allocated.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(allocated.parent.stat().st_mode & 0o777, 0o700)
 
 
 if __name__ == "__main__":

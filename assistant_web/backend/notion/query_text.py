@@ -86,6 +86,25 @@ def notion_structural_query(text: str) -> str:
     return remove_quoted_value(subject)
 
 
+_REGISTRATION_ORDER = re.compile(
+    r"(?<![가-힣A-Za-z])(?:최근|최신)(?:에|의)?\s*(?:새로\s*)?"
+    r"(?:등록|접수|생성|작성)(?:된|한|됐|되었|되어)?(?=\s|$|[?!.,])"
+    r"|(?<![가-힣A-Za-z])(?:등록|접수|생성|작성)(?:일)?\s*순(?:으로)?(?=\s|$|[?!.,])"
+)
+
+
+def notion_registration_sort(text: str) -> dict[str, str] | None:
+    """기간을 임의로 만들지 않고 최근 등록·등록순 표현만 정렬로 해석한다."""
+    if _REGISTRATION_ORDER.search(notion_structural_query(text)):
+        return {"field": "created_at", "direction": "desc"}
+    return None
+
+
+def without_registration_order(text: str) -> str:
+    """제목·본문 리터럴을 분리한 검색 주제에서 정렬 표현만 제거한다."""
+    return _REGISTRATION_ORDER.sub(" ", text)
+
+
 def grounded_notion_body_constraints(text: str, constraints: dict[str, Any]) -> dict[str, Any]:
     """리터럴 오해석은 버리고 바깥 문장에 근거한 플래너의 OR 조건은 보존한다."""
     from backend.intent.constraints import extract_query_constraints

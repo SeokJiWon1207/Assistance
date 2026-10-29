@@ -39,6 +39,21 @@ class SnapshotRebuildTests(unittest.TestCase):
         )
         return document
 
+    def test_published_snapshot_prepares_catalog_before_next_question(self):
+        from backend.intent import entities
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            staging, active = root / "staging", root / "active"
+            self.create_atomic_snapshot(staging, {"id": 1, "summary": "새 이슈", "created_at": "2026-10-12",
+                                                 "handler": {"real_name": "홍길동"}})
+            with (patch.object(make_vector_db, "CHROMA_DIR", active),
+                  patch.object(make_vector_db, "BACKUP_DIR", root / "backups"),
+                  patch.object(entities, "RUNTIME_DIR", root),
+                  patch.object(entities, "CHROMA_DB_PATH", active / "chroma.sqlite3")):
+                make_vector_db.activate_snapshot(staging)
+                self.assertIsNotNone(entities._read_header_catalog(entities._snapshot_cache_key()))
+                self.assertEqual(entities.load_known_people()[0], ("홍길동",))
+
     def test_reuse_comparison_ignores_only_unordered_custom_field_sections(self):
         original = """[Mantis 이슈 정보]
 - 이슈 ID: #1
