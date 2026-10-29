@@ -94,6 +94,7 @@ body.theme-dark .app-shell { background: var(--bg); }
 .empty-state h3 { font-size: clamp(24px, 2.4vw, 30px); letter-spacing: -.6px; }
 .empty-state-eyebrow { margin-top: clamp(40px, 16vh, 160px) !important; text-align: center; }
 .empty-state > div > p:not(.empty-state-eyebrow) { display: none; }
+.empty-state > div > p.empty-state-source-intro { display: block; color: var(--muted); font-size: 15px; text-align: center; }
 .starter-heading { order: 6; display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-3); color: var(--text-soft); font-size: 13px; }
 .starter-heading button { border: 0; background: none; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; }
 .empty-state .starter-grid { order: 7; margin-top: var(--space-3); border-radius: var(--radius-card); }
