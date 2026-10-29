@@ -53,7 +53,7 @@ clear_fields: 후속에서 명시적으로 해제한 검색 필드 배열. 담�
 미종료 조회 후 '해결 상태도 함께 포함'은 미종료+resolved이며 closed는 계속 제외한다. status.mode=exclude, values=["closed"]로 표현한다. 전체 상태로 확대하지 않는다.
 terms: 실제 내용 검색어 최대6개. count의 건수/남았어/몇개, 담당자/고객사/상태 같은 필터값은 검색어가 아니다. 특정 이슈 번호가 있으면 일반적으로 terms=[]. 유사 사례 비교에서는 CPU·메모리 누수 같은 비교 주제는 terms에 지정할 수 있다. 주제를 keyword contains 필터로 강제하지 마라. 본문/노트에 정확한 문자열을 포함하라고 명시한 경우에만 keyword contains를 쓴다. 고객사·매체·담당자·기간·상태·명시적 제목 및 제외 조건은 계속 filters로 보존한다.
 group_by: null|customer|platform|status|owner|month. limit: null 또는 목록 표시 개수(1~200). count는 항상 null.
-복합 그룹·집계 분석은 operation=aggregate, group_by=null, limit=null로 두고 aggregation을 추가한다:
+복합 그룹·집계 분석은 operation=aggregate, 최상위 group_by=null, limit=null로 두고 aggregation을 추가한다. 상위 N개는 aggregation.top_n에만 적는다:
 {"group_by":["customer","month"],"metrics":["issue_count","effort"],"period":{"from":"2026-08-01","to":"2026-09-30","evidence":"2026년 8월부터 9월까지"},"comparison":"previous_month","top_n":10,"explain":true}.
 aggregation.group_by는 customer/platform/status/owner/issue_type/month 중 중복 없이 최대 3개, metrics는 issue_count(등록건수)/effort(공수)만 허용한다. SQL·수식·임의 지표·date_basis는 금지한다. 서버가 건수=등록일, 공수=고객사전달일을 적용한다. 수정일/완료일 기준 집계는 clarify다.
 집계 기간은 aggregation.period에만 넣고 filters에 중복하지 않는다. 별도 등록 조건 등 실제 추가 제한만 filters에 넣는다. 기간은 필수이며 최대 36개월, 생략 시 기간을 확인한다. comparison은 null 또는 previous_month(월 그룹 필요), top_n은 1~20, explain은 분석/설명/증감 이유를 요청한 경우만 true다. 서버가 전체 집계 후 같은 상위 그룹과 기타를 모든 월에 적용한다.
@@ -150,8 +150,14 @@ def plan_question(question, model, api_key, user, previous):
             except ValueError as exc:
                 reason = str(exc)
                 if attempt == 0:
+                    repair_hint = (
+                        '. 복합 집계는 최상위 group_by=null, limit=null이어야 합니다. '
+                        '그룹은 aggregation.group_by, 상위 N개는 aggregation.top_n에만 적으세요. '
+                        'aggregation의 기간·지표·전월 비교·설명 요청은 유지하세요'
+                        if reason == '복합 집계와 기존 그룹/표시 개수 계약이 충돌합니다' else ''
+                    )
                     candidate_payload['messages'].append({'role': 'user', 'content':
-                        '계획 검증에 실패했습니다: ' + reason[:200] +
+                        '계획 검증에 실패했습니다: ' + reason[:200] + repair_hint +
                         '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 변경 요청이 없는 후속은 inherit, 상태 요청이 없는 독립 질문은 unspecified입니다. '
                         '이전 상태·기간을 filters에 반복하지 마세요. 그룹 집계에서 건수로 전환하면 operation=count, group_by=null이며 group_by를 clear_fields에 넣지 마세요. '
                         '보고서에 담을 지표/상태를 검색 조건으로 좁히지 마세요. 검증을 생략하지 마세요.'})

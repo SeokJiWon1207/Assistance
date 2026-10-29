@@ -1,5 +1,6 @@
 import os
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 from backend.schemas import ChatMessage, ChatRequest
@@ -10,6 +11,29 @@ from test_aggregation_spec import proposal, specification
 
 
 class AggregationPipelineTests(unittest.TestCase):
+    def test_retry_explains_conflicting_outer_fields_without_changing_aggregation(self):
+        from backend.intent import unified
+        question = ('전사 2026년 8월부터 9월까지 고객사별 월별 Mantis 등록 건수를 전월 대비 분석해줘. '
+                    '상위 3개 고객사와 기타로 보여줘.')
+        valid = proposal(aggregation=specification(metrics=['issue_count'], top_n=3))
+        invalid = {**valid, 'group_by': 'customer', 'limit': 3}
+        calls = []
+
+        def propose(model, key, payload):
+            calls.append(deepcopy(payload))
+            return deepcopy(invalid if len(calls) == 1 else valid)
+
+        with patch.object(unified, '_propose', side_effect=propose), patch.object(
+                unified.llm, 'get_model_registry', return_value=[]):
+            plan = unified.plan_question(question, {'id': 'fixture'}, 'test', {}, {})
+        self.assertEqual(len(calls), 2)
+        feedback = calls[1]['messages'][-1]['content']
+        self.assertIn('최상위 group_by=null, limit=null', feedback)
+        self.assertIn('aggregation.top_n', feedback)
+        self.assertEqual(plan['aggregation'], valid['aggregation'])
+        self.assertIsNone(plan['group_by'])
+        self.assertIsNone(plan['limit'])
+
     def test_chat_uses_one_planner_call_and_returns_compound_table(self):
         question = '전사 2026년 8월부터 9월까지 고객사별 월별 Mantis 이슈 건수를 보여줘'
         planned = proposal(aggregation=specification(metrics=['issue_count'], explain=False))
