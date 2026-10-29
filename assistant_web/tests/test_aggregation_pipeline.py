@@ -67,8 +67,19 @@ class AggregationPipelineTests(unittest.TestCase):
             result = chat_service.build_response(request, user={'uid': 'aggregation-user'})
         self.assertEqual(result['raw']['mode'], 'validated_aggregation')
         self.assertEqual(result['aggregation']['totals'], {'issue_count': 1})
+        self.assertEqual(result['verification']['constraints'], [])
         self.assertEqual(planner.call_count, 1)
         self.assertEqual(result['retrieval']['aggregation_narrative']['calls'], 0)
+
+    def test_verification_exposes_display_filters_without_changing_execution_constraints(self):
+        constraints = {'platform_key': 'MTS', 'platform_aliases': ['MTS', 'mts']}
+        report = build_verification_report('MTS 집계', '계산 표', [], {
+            'query_plan': {'resolved_constraints': constraints},
+            'aggregation_narrative': {'status': 'not_requested'},
+        }, 'validated_aggregation')
+        self.assertEqual(report['constraints'], [
+            {'id': 'platform', 'label': '플랫폼', 'value': 'MTS', 'values': ['MTS', 'mts']}])
+        self.assertEqual(report['queryPlan']['resolved_constraints'], constraints)
 
     def test_explanation_is_not_automatically_trusted_as_deterministic_text(self):
         retrieval = {'constraints': {}, 'aggregation_narrative': {'status': 'unavailable', 'calls': 1}}

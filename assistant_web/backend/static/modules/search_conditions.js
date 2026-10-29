@@ -21,7 +21,9 @@ function parseCriteria(text) {
 }
 
 export function answerSearchPresentation(message) {
-  const conditions = (message.verification?.constraints || []).map((condition) => ({
+  const verified = message.verification?.constraints;
+  // 이전 집계 답변에 저장된 원시 조건 객체는 제거 버튼용 목록이 아니다.
+  const conditions = (Array.isArray(verified) ? verified : []).map((condition) => ({
     ...condition, removeCondition: condition,
   }));
   const content = String(message.content || "").replace(/^검색 기준:\s*(.+)$/gm, (line, criteria) => {
