@@ -56,7 +56,7 @@ group_by: null|customer|platform|status|owner|month. limit: null 또는 목록 �
 복합 그룹·집계 분석은 operation=aggregate, 최상위 group_by=null, limit=null로 두고 aggregation을 추가한다. 상위 N개는 aggregation.top_n에만 적는다:
 {"group_by":["customer","month"],"metrics":["issue_count","effort"],"period":{"from":"2026-08-01","to":"2026-09-30","evidence":"2026년 8월부터 9월까지"},"comparison":"previous_month","top_n":10,"explain":true}.
 aggregation.group_by는 customer/platform/status/owner/issue_type/month 중 중복 없이 최대 3개, metrics는 issue_count(등록건수)/effort(공수)만 허용한다. SQL·수식·임의 지표·date_basis는 금지한다. 서버가 건수=등록일, 공수=고객사전달일을 적용한다. 수정일/완료일 기준 집계는 clarify다.
-집계 기간은 aggregation.period에만 넣고 filters에 중복하지 않는다. 별도 등록 조건 등 실제 추가 제한만 filters에 넣는다. 기간은 필수이며 최대 36개월, 생략 시 기간을 확인한다. comparison은 null 또는 previous_month(월 그룹 필요), top_n은 1~20, explain은 분석/설명/증감 이유를 요청한 경우만 true다. 서버가 전체 집계 후 같은 상위 그룹과 기타를 모든 월에 적용한다.
+집계 기간은 aggregation.period에만 넣고 filters에 중복하지 않는다. 별도 등록 조건 등 실제 추가 제한만 filters에 넣는다. 기간은 필수이며 최대 36개월, 생략 시 기간을 확인한다. comparison은 null 또는 previous_month(월 그룹 필요), top_n은 1~20의 정수다. 독립 질문에서 상위 개수 미지정 시 top_n=10, 후속에서는 이전 top_n을 유지한다. null·0·문자열은 허용하지 않는다. explain은 분석/설명/증감 이유를 요청한 경우만 true다. 서버가 전체 집계 후 같은 상위 그룹과 기타를 모든 월에 적용한다.
 집계 후속은 operation=aggregate를 유지하고 변경한 aggregation 항목만 보낸다. 필터와 나머지 집계 명세는 서버가 상속한다. 단순 총 건수로 명시 전환하면 operation=count, aggregation 생략. 기존 단순 공수 합계/랭킹/유형별 추이는 report/effort를 유지할 수 있다.
 예: 고객사×월별 집계 후 '그중 HTS만 상위 3개 고객사로 좁혀줘'는 filters에 platform=hts, aggregation={"top_n":3}만 쓴다. 고객사 상위 개수는 월 그룹 해제가 아니며 기존 month를 삭제하지 않는다. 월별을 합치거나 구분을 빼 달라고 명시했을 때만 group_by를 변경한다.
 선택 키 sort={field:created_at|updated_at|issue_id,direction:asc|desc}. 오래된 순은 반드시 created_at asc, 최신 등록순은 created_at desc. 모두 보여줘는 limit=200이다.
@@ -156,6 +156,12 @@ def plan_question(question, model, api_key, user, previous):
                         'aggregation의 기간·지표·전월 비교·설명 요청은 유지하세요'
                         if reason == '복합 집계와 기존 그룹/표시 개수 계약이 충돌합니다' else ''
                     )
+                    if reason == '집계 상위 개수 오류':
+                        repair_hint = (
+                            '. aggregation.top_n은 1~20의 정수이며 null·0·문자열은 허용하지 않습니다. '
+                            '독립 질문에서 상위 개수 미지정 시 aggregation.top_n=10, '
+                            '후속에서는 이전 top_n을 유지하세요. 명시한 개수가 지원 범위를 넘으면 clarify하세요'
+                        )
                     candidate_payload['messages'].append({'role': 'user', 'content':
                         '계획 검증에 실패했습니다: ' + reason[:200] + repair_hint +
                         '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 변경 요청이 없는 후속은 inherit, 상태 요청이 없는 독립 질문은 unspecified입니다. '
