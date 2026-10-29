@@ -44,6 +44,14 @@ test('older and streaming answers retain Notion title, keywords and unverified f
   assert.equal(keywords.conditions[1].value, '포함 주문, 오류');
 });
 
+test('saved aggregation answers with legacy constraint objects keep their content visible', async () => {
+  const { answerSearchPresentation } = await load('search_conditions');
+  const content = '합계: 등록 건수 68, 공수 72.15\n\n| 고객사 | 월 | 등록 건수 |\n| A | 2026-09 | 68 |';
+  const result = answerSearchPresentation({ content, verification: { constraints: { platform_key: 'MTS' } } });
+  assert.equal(result.content, content);
+  assert.equal(result.conditions.length, 0);
+});
+
 test('count scope metadata stays outside removable date and keyword conditions', async () => {
   const { answerSearchPresentation } = await load('search_conditions');
   const date = { id: 'created_at', label: '등록일', value: '2025년', values: ['2025'] };
