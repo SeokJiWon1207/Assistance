@@ -338,6 +338,7 @@ def _send_model_chat(
         "top_k": "top_k",
         "min_p": "min_p",
         "max_tokens": "num_predict",
+        "num_ctx": "num_ctx",
         "repetition_penalty": "repeat_penalty",
         "seed": "seed",
         "stop": "stop",

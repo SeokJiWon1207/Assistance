@@ -1,11 +1,13 @@
 """질문 전체를 한 번 해석하고 확정된 실행 계획만 반환한다."""
 import json
 import os
+from copy import deepcopy
 from datetime import date
 
 import requests
 
 from backend.config import CUSTOMER_ALIASES
+from backend import llm
 from backend.llm import post_model_chat, extract_model_content
 from backend.intent.constraints import extract_json_object
 from backend.intent.entities import extract_people_constraints
@@ -61,14 +63,21 @@ report일 때 report_kind=effort|effort_sla|weekly|monthly|profile|sla|pivot|spi
 보고서 표제의 미종료/완료/원인·담당자는 보고서 항목이며 검색 필터가 아니다. 상태를 제한하라고 명시하지 않은 보고서는 status=unspecified, evidence=""를 쓴다. 특히 주간보고서의 신규·미종료·장기 적체를 하나의 상태로 필터링하지 않는다.
 고객사 프로필을 고객사별 건수 aggregate로, 유사 사례 비교를 단일 이슈 explain으로 대체하지 않는다. 특정 이슈 문서/비교의 scope=target, 그 외 고객사 보고서는 기본 team 범위를 유지한다.
 조건이 모호하거나 필요한 기능/근거가 없으면 operation=clarify, reason에 이유. 누락된 조건으로 전체를 조회하지 않는다. JSON 외 문장을 출력하지 않는다.
+최종 확인: evidence는 현재 question에서 연속된 문자열을 그대로 복사한다. '질문:' 접두사, 설명, 원문에 없는 따옴표를 추가하지 않는다. 고객사 별칭을 정규화하더라도 evidence는 원문 그대로다.
+Notion에서 'OO 관련 문서 찾아줘'는 제목·본문의 관련 내용 검색이다. 제목/고객사 속성을 명시하지 않았으면 title/customer 필터를 추측하지 않고 terms에 질문의 OO를 그대로 둔다. 예: '노션에서 인증 관련 문서 찾아줘' → {"source":"notion","operation":"search","scope":"default","followup":false,"filters":[],"status":{"mode":"unspecified","values":[],"evidence":""},"clear_fields":[],"terms":["인증"],"group_by":null,"limit":null}.
 '''
 
 
 @measured('unified_model')
 def _propose(model, api_key, payload):
-    response = post_model_chat(model, api_key, payload, timeout=12, think=False)
-    response.raise_for_status()
-    return extract_json_object(extract_model_content(response.json()))
+    # 로컬 모델은 최초 로딩과 긴 해석 프롬프트 처리 시간을 별도로 확보한다.
+    response = post_model_chat(model, api_key, payload,
+                               timeout=60 if llm.is_ollama_model(model) else 12, think=False)
+    try:
+        response.raise_for_status()
+        return extract_json_object(extract_model_content(response.json()))
+    finally:
+        response.close()
 
 
 def enabled():
@@ -79,6 +88,16 @@ def enabled():
 def plan_question(question, model, api_key, user, previous):
     if not api_key:
         return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
+    from backend.intent.literal_plans import literal_plan
+    literal = literal_plan(question, previous or {})
+    if literal is not None:
+        try:
+            plan = validate_plan(question, literal, user or {}, previous or {})
+            plan['planner_rule'] = 'literal_or_confirmed_list'
+            return plan
+        except ValueError:
+            # 지원 문법처럼 보여도 근거 계약에 맞지 않으면 일반 해석으로 보낸다.
+            pass
     previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
     prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(CUSTOMER_ALIASES, ensure_ascii=False)
     compact_document = eligible(question,previous or {})
@@ -100,32 +119,47 @@ def plan_question(question, model, api_key, user, previous):
                                     '현재 질문에 번호 없이 같은 기준이라고만 하면 기존 issue_id를 서버가 상속한다.',
                     },
                     'mentioned_people': extract_people_constraints(question).get('names', [])}, ensure_ascii=False)}]}
-    for attempt in range(2):
-        try:
-            parsed = _propose(model, api_key, payload)
-            if isinstance(parsed,dict) and parsed.get('document_presentation_only') is True:
-                if set(parsed)!={'document_presentation_only'} or not compact_document:
-                    raise ValueError('표현 변경 축약 계획에 새로운 조건을 섞을 수 없습니다')
-                parsed=expand(question,previous)
-            return validate_plan(question, parsed, user or {}, previous or {})
-        except ValueError as exc:
-            reason = str(exc)
-            if attempt == 0:
-                payload['messages'].append({'role': 'user', 'content':
-                    '계획 검증에 실패했습니다: ' + reason[:200] +
-                    '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 변경 요청이 없는 후속은 inherit, 상태 요청이 없는 독립 질문은 unspecified입니다. '
-                    '이전 상태·기간을 filters에 반복하지 마세요. 그룹 집계에서 건수로 전환하면 operation=count, group_by=null이며 group_by를 clear_fields에 넣지 마세요. '
-                    '보고서에 담을 지표/상태를 검색 조건으로 좁히지 마세요. 검증을 생략하지 마세요.'})
-                continue
-        except requests.RequestException as exc:
-            reason = '질문 해석 모델 응답을 확인하지 못했습니다.'
-            status_code = getattr(exc.response, 'status_code', None)
-            transient = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or status_code in {429, 502, 503, 504}
-            if attempt == 0 and transient:
-                # 읽기 전용 해석만 한 번 재시도한다. 실패를 무조건 무필터 조회로
-                # 바꾸거나 인증/권한 오류를 반복 요청하지 않는다.
-                continue
-        except (TypeError, KeyError):
-            reason = '질문 해석 모델 응답을 확인하지 못했습니다.'
-        return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': reason[:200]}
+    candidates = [(model, api_key)]
+    for candidate in llm.get_model_registry():
+        if (candidate['id'] != model['id'] and candidate.get('status') == 'active'
+                and llm.is_ollama_model(candidate) and (key := llm.get_model_api_key(candidate))):
+            candidates.append((candidate, key))
+    for index, (candidate, key) in enumerate(candidates):
+        candidate_payload = {**deepcopy(payload), 'model': candidate.get('model', candidate['id'])}
+        if llm.is_ollama_model(candidate):
+            # 기본 2K/4K 창은 해석 규칙 앞부분을 잘라 필수 JSON 계약까지 잃는다.
+            candidate_payload['num_ctx'] = 16384
+        for attempt in range(2):
+            try:
+                parsed = _propose(candidate, key, candidate_payload)
+                if isinstance(parsed,dict) and parsed.get('document_presentation_only') is True:
+                    if set(parsed)!={'document_presentation_only'} or not compact_document:
+                        raise ValueError('표현 변경 축약 계획에 새로운 조건을 섞을 수 없습니다')
+                    parsed=expand(question,previous)
+                plan = validate_plan(question, parsed, user or {}, previous or {})
+                plan['planner_model_id'] = candidate['id']
+                if candidate['id'] != model['id']:
+                    plan['planner_fallback_from'] = model['id']
+                return plan
+            except ValueError as exc:
+                reason = str(exc)
+                if attempt == 0:
+                    candidate_payload['messages'].append({'role': 'user', 'content':
+                        '계획 검증에 실패했습니다: ' + reason[:200] +
+                        '. 원래 질문 전체를 다시 해석해 JSON만 반환하세요. 상태 변경 요청이 없는 후속은 inherit, 상태 요청이 없는 독립 질문은 unspecified입니다. '
+                        '이전 상태·기간을 filters에 반복하지 마세요. 그룹 집계에서 건수로 전환하면 operation=count, group_by=null이며 group_by를 clear_fields에 넣지 마세요. '
+                        '보고서에 담을 지표/상태를 검색 조건으로 좁히지 마세요. 검증을 생략하지 마세요.'})
+                    continue
+            except requests.RequestException as exc:
+                reason = '질문 해석 모델 응답을 확인하지 못했습니다.'
+                status_code = getattr(exc.response, 'status_code', None)
+                transient = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or status_code in {429, 502, 503, 504}
+                if transient and index + 1 < len(candidates):
+                    # 연결 장애·회로 차단이면 같은 회사 모델을 기다리지 않고 로컬로 전환한다.
+                    break
+                if attempt == 0 and transient:
+                    continue
+            except (TypeError, KeyError):
+                reason = '질문 해석 모델 응답을 확인하지 못했습니다.'
+            return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': reason[:200]}
     return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 조건을 확정하지 못했습니다.'}

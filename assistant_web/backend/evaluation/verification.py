@@ -50,9 +50,14 @@ def ungrounded_constraint_labels(
     조건을 물려받은 경우까지 근거 없음으로 잡히면 경고가 무의미해진다.
     """
     from backend.intent.condition_grounding import grounded_values
+    from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES
     certified = grounded_values(grounding_text, constraints, query_plan)
     def grounded(field, value):
-        return (field, normalize_for_match(str(value).lstrip('#'))) in certified
+        # 서버가 검증한 정식 명칭과 실행용 키를 같은 정적 별칭 집합으로 대조한다.
+        # 모델이 제공한 임의 aliases는 인증 근거를 확장하는 데 사용하지 않는다.
+        aliases = {'customer': CUSTOMER_ALIASES, 'platform': PLATFORM_ALIASES}.get(field, {})
+        return any((field, normalize_for_match(str(alias).lstrip('#'))) in certified
+                   for alias in [value, *aliases.get(value, [])])
     normalized = normalize_for_match(grounding_text)
     labels: List[str] = []
 

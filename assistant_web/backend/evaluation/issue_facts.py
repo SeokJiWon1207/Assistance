@@ -93,6 +93,14 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
         return ids, claims
     for raw_line in content.splitlines():
         line = plain_text(raw_line)
+        summary = re.fullmatch(r'-\s*요약:\s*(.+)', line) if source_sections else None
+        if summary:
+            excerpt = re.sub(r'(?:\.{3}|…)$', '', summary[1]).strip()
+            normalized_excerpt = re.sub(r'\s+', ' ', excerpt)
+            if normalized_excerpt and any(normalized_excerpt in re.sub(r'\s+', ' ', text)
+                                          for text in source_quotes):
+                # 코드가 잘라 표시한 원문 인용의 #항목번호는 새 이슈 참조가 아니다.
+                continue
         quote = re.fullmatch(r'(?:>\s*|원문\s*인용\s*[:：]\s*)[“"‘\']?(.+?)[”"’\']?', line)
         if quote and any(quote[1] in source_text for source_text in source_quotes):
             continue

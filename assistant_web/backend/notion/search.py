@@ -1228,12 +1228,8 @@ def indexed_exact_title_database_ids(exact_title: str, database_ids: List[str]) 
         stat = path.stat()
     except OSError:
         return []
-    try:
-        max_age = float(os.getenv("NOTION_TITLE_INDEX_TTL_SECONDS", "86400"))
-    except (TypeError, ValueError):
-        max_age = 86400.0
-    if max_age >= 0 and time.time() - stat.st_mtime > max_age:
-        return []
+    # 이 색인은 정답/완전성 판정에 사용하지 않고 현재 허용 범위의 조회
+    # 순서만 정한다. 오래된 후보도 원문을 다시 읽으므로 버릴 필요가 없다.
     index = _title_index_cached(str(path), stat.st_mtime_ns, stat.st_size)
     allowed = {identifier.replace("-", ""): identifier for identifier in database_ids}
     return list(dict.fromkeys(
@@ -2112,180 +2108,188 @@ def execute_notion_search(
             return bool(title_search_complete and pages and not require_complete_scan and not body_index_used)
 
         # DB 조회는 단계 안에서만 미리 실행하고, 병합과 종료 판단은 원래 DB 순서를 따른다.
-        workers = notion_search_max_workers()
-        for title_pass in ((True, False) if title_first else (False,)):
-            full_pass_after_title = title_first and not title_pass
-            if full_pass_after_title and title_results_suffice():
-                title_search_only = True
-                break
-            scans = iter_in_order(
-                partial(scan_database, title_pass=title_pass, seen_before=frozenset(seen_page_ids)),
-                search_database_ids,
-                workers=workers,
-            )
-            with closing(scans) as ordered_scans:
-                for _database_id, scan in ordered_scans:
-                    if full_pass_after_title and title_results_suffice():
-                        title_search_only = True
-                        break
-                    merge_scan(scan)
-        if title_search_only:
-            result_window_complete = True
-            candidate_count_complete = False
-
-        # DB 순서가 결과를 좌우하지 않도록 후보를 라운드로빈으로 읽되,
-        # 실제 본문 요청은 DB 수와 관계없이 요청 전체 30회까지만 허용한다.
-        body_match_counts: Dict[str, int] = {}
-        for indexed_page in pages:
-            if indexed_page.get("match_method") == "notion_body_index":
-                indexed_db = str(indexed_page.get("database_id") or "")
-                body_match_counts[indexed_db] = body_match_counts.get(indexed_db, 0) + 1
-        max_candidates = max(
-            (len(candidates) for _, candidates in body_scan_candidate_groups),
-            default=0,
-        )
-        body_scan_candidate_count = sum(
-            len(candidates) for _, candidates in body_scan_candidate_groups
-        )
-        body_scan_budget_exhausted = False
-        # 색인 hit가 있어도 새 미색인 문서를 찾아 합친다. 검증된 오래된 결과가
-        # limit를 채웠다는 이유로 최근 원본 후보 확인을 생략하지 않는다.
-        require_body_scan = require_complete_scan or body_index_used
-        body_scan_deadline = time.monotonic() + 30 if body_index_used else float("inf")
-        active_budget = CURRENT_BUDGET.get()
-        if body_index_used and active_budget is not None:
-            body_scan_deadline = min(body_scan_deadline, active_budget.deadline - 5)
-        for candidate_index in range(max_candidates):
-            for database_id, candidates in body_scan_candidate_groups:
-                if candidate_index >= len(candidates):
-                    continue
-                if not require_body_scan and len(pages) >= limit:
+        from backend.notion.search_budget import bounded_live_search
+        with bounded_live_search((body_index_used or bool(indexed_exact_database_ids))
+                                 and not require_complete_scan) as live_search:
+            workers = notion_search_max_workers()
+            for title_pass in ((True, False) if title_first else (False,)):
+                full_pass_after_title = title_first and not title_pass
+                if full_pass_after_title and title_results_suffice():
+                    title_search_only = True
                     break
-                if time.monotonic() >= body_scan_deadline:
-                    body_scan_budget_exhausted = True
-                    incomplete_reasons.add("body_index_live_scan_limit")
-                    break
-                if body_scan_attempted_count >= NOTION_BODY_SCAN_MAX_PER_REQUEST:
-                    body_scan_budget_exhausted = True
-                    break
-                page = candidates[candidate_index]
-                page_id = page.get("id", "")
-                if page_id in seen_page_ids:
-                    continue
-                body_scan_attempted_count += 1
-                # 정확한 제목으로 한정된 후보는 결과 본문과 같은 범위까지
-                # 확인해야 앞의 20개 블록 뒤에 있는 표·코드도 찾을 수 있다.
-                if body_clauses:
-                    from backend.notion.client import fetch_notion_page_content
-
-                    body = fetch_notion_page_content(page_id, max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20)
-                    block_text = str(body["text"])
-                    own_segments = [
-                        segment for segment in body["segments"]
-                        if str(segment.get("owner_page_id") or "").replace("-", "") == str(page_id).replace("-", "")
-                    ]
-                else:
-                    block_text = fetch_notion_page_blocks(
-                        page_id,
-                        max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20,
-                    )
-                    own_segments = []
-                if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
-                    search_complete = False
-                    candidate_count_complete = False
-                    incomplete_reasons.add("body_disabled")
-                    page["content_incomplete"] = True
-                if NOTION_CONTENT_INCOMPLETE in block_text:
-                    search_complete = False
-                    candidate_count_complete = False
-                    incomplete_reasons.add("body_limit")
-                    page["content_incomplete"] = True
-                if not block_text and not keyword_clauses:
-                    continue
-                body_search_text = (
-                    f"{page.get('search_text', '')}\n"
-                    f"{block_text.replace(NOTION_CONTENT_INCOMPLETE, '')}"
+                scans = iter_in_order(
+                    partial(scan_database, title_pass=title_pass, seen_before=frozenset(seen_page_ids)),
+                    search_database_ids,
+                    workers=workers,
                 )
-                if not all(
-                    normalize_for_match(term) in normalize_for_match(body_search_text)
-                    for term in terms
-                ):
-                    continue
-                page["content"] = "\n\n".join(
-                    part for part in (page.get("properties_text", ""), block_text) if part
-                ).strip()
-                if keyword_clauses:
-                    # 읽지 못한 본문 뒤에 제외 키워드가 있을 수 있으므로 부정 조건을 확정하지 않는다.
-                    if page.get("content_incomplete") and any(
-                        clause["operator"] in {"not_contains", "not_equals", "not_in", "not_exists"}
-                        for clause in keyword_clauses
+                with closing(scans) as ordered_scans:
+                    for _database_id, scan in ordered_scans:
+                        if full_pass_after_title and title_results_suffice():
+                            title_search_only = True
+                            break
+                        merge_scan(scan)
+            if title_search_only:
+                result_window_complete = True
+                candidate_count_complete = False
+
+            # DB 순서가 결과를 좌우하지 않도록 후보를 라운드로빈으로 읽되,
+            # 실제 본문 요청은 DB 수와 관계없이 요청 전체 30회까지만 허용한다.
+            body_match_counts: Dict[str, int] = {}
+            for indexed_page in pages:
+                if indexed_page.get("match_method") == "notion_body_index":
+                    indexed_db = str(indexed_page.get("database_id") or "")
+                    body_match_counts[indexed_db] = body_match_counts.get(indexed_db, 0) + 1
+            max_candidates = max(
+                (len(candidates) for _, candidates in body_scan_candidate_groups),
+                default=0,
+            )
+            body_scan_candidate_count = sum(
+                len(candidates) for _, candidates in body_scan_candidate_groups
+            )
+            body_scan_budget_exhausted = False
+            # 색인 hit가 있어도 새 미색인 문서를 찾아 합친다. 검증된 오래된 결과가
+            # limit를 채웠다는 이유로 최근 원본 후보 확인을 생략하지 않는다.
+            require_body_scan = require_complete_scan or body_index_used
+            body_scan_deadline = time.monotonic() + 30 if body_index_used else float("inf")
+            active_budget = CURRENT_BUDGET.get()
+            if body_index_used and active_budget is not None:
+                body_scan_deadline = min(body_scan_deadline, active_budget.deadline - 5)
+            for candidate_index in range(max_candidates):
+                for database_id, candidates in body_scan_candidate_groups:
+                    if candidate_index >= len(candidates):
+                        continue
+                    if not require_body_scan and len(pages) >= limit:
+                        break
+                    if time.monotonic() >= body_scan_deadline:
+                        body_scan_budget_exhausted = True
+                        incomplete_reasons.add("body_index_live_scan_limit")
+                        break
+                    if body_scan_attempted_count >= NOTION_BODY_SCAN_MAX_PER_REQUEST:
+                        body_scan_budget_exhausted = True
+                        break
+                    page = candidates[candidate_index]
+                    page_id = page.get("id", "")
+                    if page_id in seen_page_ids:
+                        continue
+                    body_scan_attempted_count += 1
+                    # 정확한 제목으로 한정된 후보는 결과 본문과 같은 범위까지
+                    # 확인해야 앞의 20개 블록 뒤에 있는 표·코드도 찾을 수 있다.
+                    if body_clauses:
+                        from backend.notion.client import fetch_notion_page_content
+
+                        body = fetch_notion_page_content(page_id, max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20)
+                        block_text = str(body["text"])
+                        own_segments = [
+                            segment for segment in body["segments"]
+                            if str(segment.get("owner_page_id") or "").replace("-", "") == str(page_id).replace("-", "")
+                        ]
+                    else:
+                        block_text = fetch_notion_page_blocks(
+                            page_id,
+                            max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS if exact_title else 20,
+                        )
+                        own_segments = []
+                    if os.getenv("NOTION_FETCH_PAGE_BLOCKS", "true").lower() in {"0", "false", "no"}:
+                        search_complete = False
+                        candidate_count_complete = False
+                        incomplete_reasons.add("body_disabled")
+                        page["content_incomplete"] = True
+                    if NOTION_CONTENT_INCOMPLETE in block_text:
+                        search_complete = False
+                        candidate_count_complete = False
+                        incomplete_reasons.add("body_limit")
+                        page["content_incomplete"] = True
+                    if not block_text and not keyword_clauses:
+                        continue
+                    body_search_text = (
+                        f"{page.get('search_text', '')}\n"
+                        f"{block_text.replace(NOTION_CONTENT_INCOMPLETE, '')}"
+                    )
+                    if not all(
+                        normalize_for_match(term) in normalize_for_match(body_search_text)
+                        for term in terms
                     ):
                         continue
-                    body_matched = True
-                    matched_blocks = []
-                    for clause in body_clauses:
-                        candidates = [segment for segment in own_segments
-                                      if not clause["block_type"] or segment["type"] == clause["block_type"]]
-                        matching = [segment for segment in candidates
-                                    if normalize_for_match(str(clause["value"])) in normalize_for_match(str(segment["text"]))]
-                        if bool(matching) != (clause["operator"] == "contains"):
-                            body_matched = False
-                            break
-                        if matching:
-                            matched_blocks.extend(matching)
-                    if not body_matched:
-                        continue
-                    remaining_constraints = {
-                        **notion_constraints,
-                        "common_filter_clauses": [
-                            clause for clause in notion_constraints["common_filter_clauses"]
-                            if clause not in normalize_filter_clauses(body_clauses)
-                        ],
-                    }
-                    if not notion_page_matches_constraints(page, remaining_constraints):
-                        continue
-                    if matched_blocks:
-                        page["matched_body_blocks"] = list({block["block_id"]: block for block in matched_blocks}.values())[:10]
-                seen_page_ids.add(page_id)
-                page["match_score"] = notion_page_match_score(page, terms) - 5
-                page["matched_terms"] = [
-                    term
-                    for term in terms
-                    if normalize_for_match(term) in normalize_for_match(body_search_text)
-                ]
-                page["match_method"] = "notion_body_scan"
-                pages.append(page)
-                body_match_counts[database_id] = body_match_counts.get(database_id, 0) + 1
-            if body_scan_budget_exhausted or (
-                not require_body_scan and len(pages) >= limit
-            ):
-                break
-        body_scan_stopped_at_limit = bool(
-            not require_body_scan
-            and len(pages) >= limit
-            and body_scan_attempted_count < body_scan_candidate_count
-        )
-        body_scan_result_incomplete = bool(
-            body_scan_budget_exhausted
-            or (
-                body_scan_candidates_truncated
-                and (require_body_scan or len(pages) < limit)
+                    page["content"] = "\n\n".join(
+                        part for part in (page.get("properties_text", ""), block_text) if part
+                    ).strip()
+                    if keyword_clauses:
+                        # 읽지 못한 본문 뒤에 제외 키워드가 있을 수 있으므로 부정 조건을 확정하지 않는다.
+                        if page.get("content_incomplete") and any(
+                            clause["operator"] in {"not_contains", "not_equals", "not_in", "not_exists"}
+                            for clause in keyword_clauses
+                        ):
+                            continue
+                        body_matched = True
+                        matched_blocks = []
+                        for clause in body_clauses:
+                            candidates = [segment for segment in own_segments
+                                          if not clause["block_type"] or segment["type"] == clause["block_type"]]
+                            matching = [segment for segment in candidates
+                                        if normalize_for_match(str(clause["value"])) in normalize_for_match(str(segment["text"]))]
+                            if bool(matching) != (clause["operator"] == "contains"):
+                                body_matched = False
+                                break
+                            if matching:
+                                matched_blocks.extend(matching)
+                        if not body_matched:
+                            continue
+                        remaining_constraints = {
+                            **notion_constraints,
+                            "common_filter_clauses": [
+                                clause for clause in notion_constraints["common_filter_clauses"]
+                                if clause not in normalize_filter_clauses(body_clauses)
+                            ],
+                        }
+                        if not notion_page_matches_constraints(page, remaining_constraints):
+                            continue
+                        if matched_blocks:
+                            page["matched_body_blocks"] = list({block["block_id"]: block for block in matched_blocks}.values())[:10]
+                    seen_page_ids.add(page_id)
+                    page["match_score"] = notion_page_match_score(page, terms) - 5
+                    page["matched_terms"] = [
+                        term
+                        for term in terms
+                        if normalize_for_match(term) in normalize_for_match(body_search_text)
+                    ]
+                    page["match_method"] = "notion_body_scan"
+                    pages.append(page)
+                    body_match_counts[database_id] = body_match_counts.get(database_id, 0) + 1
+                if body_scan_budget_exhausted or (
+                    not require_body_scan and len(pages) >= limit
+                ):
+                    break
+            body_scan_stopped_at_limit = bool(
+                not require_body_scan
+                and len(pages) >= limit
+                and body_scan_attempted_count < body_scan_candidate_count
             )
-        )
-        if body_scan_result_incomplete:
+            body_scan_result_incomplete = bool(
+                body_scan_budget_exhausted
+                or (
+                    body_scan_candidates_truncated
+                    and (require_body_scan or len(pages) < limit)
+                )
+            )
+            if body_scan_result_incomplete:
+                search_complete = False
+                candidate_count_complete = False
+                incomplete_reasons.add("body_scan_limit")
+            elif body_scan_candidates_truncated or body_scan_stopped_at_limit:
+                # 목록에 필요한 결과 창은 확보했지만, 나머지 본문 후보를 읽지
+                # 않았으므로 전체 후보 건수까지 확정됐다고 표시하지 않는다.
+                candidate_count_complete = False
+                result_window_complete = True
+            for meta in database_meta:
+                found_count = meta.get("found_count")
+                meta["found_count"] = (found_count if isinstance(found_count, int) else 0) + body_match_counts.get(
+                    str(meta.get("database_id") or ""), 0,
+                )
+        if live_search['limited']:
             search_complete = False
             candidate_count_complete = False
-            incomplete_reasons.add("body_scan_limit")
-        elif body_scan_candidates_truncated or body_scan_stopped_at_limit:
-            # 목록에 필요한 결과 창은 확보했지만, 나머지 본문 후보를 읽지
-            # 않았으므로 전체 후보 건수까지 확정됐다고 표시하지 않는다.
-            candidate_count_complete = False
-            result_window_complete = True
-        for meta in database_meta:
-            found_count = meta.get("found_count")
-            meta["found_count"] = (found_count if isinstance(found_count, int) else 0) + body_match_counts.get(
-                str(meta.get("database_id") or ""), 0,
-            )
+            result_window_complete = False
+            incomplete_reasons.add('live_search_time_limit')
     except requests.RequestException as exc:
         return {
             "source": "notion",
