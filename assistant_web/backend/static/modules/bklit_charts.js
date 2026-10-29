@@ -5,8 +5,9 @@ let bundlePromise;
 const escapeAttribute = value => String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 export function chartHost(spec, fallback = '<p class="bklit-empty">차트를 준비하고 있습니다.</p>') {
-  const content = spec.kind === 'bar' ? `<details data-bklit-values open><summary>${spec.action ? "수치·필터 보기" : "수치 보기"}</summary>${fallback}</details>` : fallback;
-  return `<div class="bklit-host" role="group" aria-label="${escapeAttribute(spec.title)}" data-bklit-kind="${escapeAttribute(spec.kind)}" data-bklit-spec="${escapeAttribute(JSON.stringify(spec))}"><div class="bklit-root" data-bklit-mount></div><div data-bklit-fallback>${content}</div></div>`;
+  const keepValues = spec.kind === 'bar' || spec.showValues;
+  const content = keepValues ? `<details data-bklit-values open><summary>${spec.action ? "수치·필터 보기" : "수치 보기"}</summary>${fallback}</details>` : fallback;
+  return `<div class="bklit-host" role="group" aria-label="${escapeAttribute(spec.title)}" ${keepValues ? 'data-keep-values' : ''} data-bklit-kind="${escapeAttribute(spec.kind)}" data-bklit-spec="${escapeAttribute(JSON.stringify(spec))}"><div class="bklit-root" data-bklit-mount></div><div data-bklit-fallback>${content}</div></div>`;
 }
 
 export function releaseCharts(container) {
@@ -23,7 +24,7 @@ export async function mountCharts(container) {
   if (!hosts.length) return;
   const generation = generations.get(container) || 0;
   try {
-    bundlePromise ||= import('../vendor/bklit/charts.js?v=20261027-1').catch(error => { bundlePromise = null; throw error; });
+    bundlePromise ||= import('../vendor/bklit/charts.js?v=20261029-1').catch(error => { bundlePromise = null; throw error; });
     const { mountChart } = await bundlePromise;
     if ((generations.get(container) || 0) !== generation) return;
     for (const host of hosts) {

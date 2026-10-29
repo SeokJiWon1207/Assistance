@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
 
 from backend.chart_data import daily_registrations
 from backend.common import normalize_for_match
 from backend.mantis_status import mantis_status_bucket
 from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
 from backend.reports.customer import _health_content, _is_closed
+from backend.reports.weekly_issues import weekly_issue_summary
 from backend.reports.team_brief import (
     TEAM_BRIEF_AGING_DAYS,
     _decision_summary,
@@ -267,7 +269,7 @@ def build_operations_dashboard(
     """대시보드 한 화면에 필요한 데이터를 같은 조회 기준으로 계산한다."""
     if days not in DASHBOARD_PERIOD_OPTIONS:
         raise ValueError("조회 기간은 7일, 14일, 30일, 90일 중 하나여야 합니다.")
-    base = today or date.today()
+    base = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
     issues, source = _load_issues(prefer_snapshot=not (refresh or live), force_refresh=refresh)
     complete = source.get("search_complete") is True
@@ -338,6 +340,7 @@ def build_operations_dashboard(
             "linked": bool(person),
         },
         "summary": summary,
+        "weeklyIssues": weekly_issue_summary(scoped_issues, base, complete=complete),
         "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),

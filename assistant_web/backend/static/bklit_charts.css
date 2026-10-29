@@ -21,7 +21,7 @@
 .bklit-root :is(button, input, summary):focus-visible, [data-bklit-values] summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .bklit-host { min-width: 0; width: 100%; }
 .bklit-host:not([data-ready]) .bklit-root:empty { display: none; }
-.bklit-host[data-ready]:not([data-bklit-kind="bar"]) > [data-bklit-fallback] { display: none; }
+.bklit-host[data-ready]:not([data-keep-values]) > [data-bklit-fallback] { display: none; }
 [data-bklit-values] summary { display: none; color: var(--muted); cursor: pointer; padding: 8px 0; font-size: 12px; }
 [data-ready] [data-bklit-values] summary { display: list-item; margin-left: 16px; }
 [data-ready] [data-bklit-values] .dashboard-track, [data-ready] [data-bklit-values] .dashboard-column-bar { display: none; }
@@ -102,7 +102,14 @@
 @media(prefers-reduced-motion:reduce){ .bklit-root *, .bklit-root *::before, .bklit-root *::after { animation-duration:0s !important; transition-duration:0s !important; } }
 /* 기존 작은 차트의 높이 제한은 새 추이·범례를 자르지 않도록 해제한다. */
 .dashboard-chart .dashboard-chart-body:has(.bklit-host) { max-height:none; overflow:visible; }
-.dashboard-grid:has(.bklit-host) { align-items:start; }
+.dashboard-grid:has(.bklit-host) { align-items:stretch; }
+/* 전체 팀원은 유지하면서 행 간격만 줄여 분포 구역을 짧게 한다. */
+.dashboard-members-chart .bklit-bar-frame { height: 300px !important; }
+/* 경과일 막대는 같은 행의 카드 높이를 채우고 수치·안내 공간은 따로 확보한다. */
+.dashboard-age-chart .dashboard-chart-body:has(.bklit-host) { grid-template-rows: minmax(220px, 1fr) auto; align-content: stretch; }
+.dashboard-age-chart .bklit-host { display: grid; grid-template-rows: minmax(220px, 1fr) auto; }
+.dashboard-age-chart .bklit-root { min-height: 0; height: 100%; }
+.dashboard-age-chart .bklit-bar-frame { height: 100% !important; min-height: 220px; }
 .workspace-overview:has(.bklit-host) { grid-template-rows:min-content minmax(0,1fr); }
 .workspace-overview:has(.bklit-host):has(> .workspace-connection) { grid-template-rows:min-content min-content minmax(0,1fr); }
 .workspace-overview:has(.bklit-host) .workspace-side-card { flex-shrink:0; }

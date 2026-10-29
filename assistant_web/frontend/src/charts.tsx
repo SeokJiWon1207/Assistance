@@ -9,7 +9,7 @@ import { Bar } from '../vendor/bklit/charts/bar';
 import { BarXAxis } from '../vendor/bklit/charts/bar-x-axis';
 import { BarYAxis } from '../vendor/bklit/charts/bar-y-axis';
 import { ChartLegendHoverProvider } from '../vendor/bklit/charts/chart-legend-hover';
-import { useChartStable } from '../vendor/bklit/charts/chart-context';
+import { useChartStable, useYScale } from '../vendor/bklit/charts/chart-context';
 import { ChartTooltip } from '../vendor/bklit/charts/tooltip/chart-tooltip';
 import { Legend, LegendItem, LegendLabel, LegendMarker, LegendValue } from '../vendor/bklit/charts/legend';
 import { useLegend, useLegendItem } from '../vendor/bklit/charts/legend/legend-context';
@@ -31,6 +31,7 @@ type Series = { key: string; label: string; color: string };
 export type Spec = {
   kind: 'bar' | 'sparkline' | 'trend' | 'cohort' | 'calendar' | 'pie' | 'monthly'; title: string; complete: boolean;
   rows?: Row[]; series?: Series[]; orientation?: 'horizontal' | 'vertical';
+  grouped?: boolean; showValues?: boolean; centerLabel?: string; emptyMessage?: string;
   action?: string; selected?: string; points?: Point[]; summary?: Record<string, number>;
   decimals?: number; unit?: string; animated?: boolean;
   sparklineVariant?: 'line' | 'bar'; compact?: boolean; dateBasis?: string; showTotal?: boolean;
@@ -81,10 +82,11 @@ function Bars({ spec }: { spec: Spec }) {
   const horizontal = spec.orientation !== 'vertical';
   const legend = series.map(s => ({ label:s.label, color:s.color, value:rows.reduce((sum,row)=>sum+Number(row[s.key] || 0),0) }));
   return <ChartLegendHoverProvider hoveredIndex={hover} onHoverChange={setHover}>
-    <div className="bklit-bar-frame" style={{height: horizontal ? Math.max(180,rows.length*34+32) : 220}}>
-      <BarChart data={rows} xDataKey="name" orientation={horizontal ? 'horizontal' : 'vertical'} stacked={series.length>1}
+    <div className="bklit-bar-frame" style={{height: horizontal ? spec.grouped ? Math.max(220, rows.length * (series.length * 22 + 28) + 40) : Math.max(180,rows.length*34+32) : 220}}>
+      <BarChart data={rows} xDataKey="name" orientation={horizontal ? 'horizontal' : 'vertical'} stacked={!spec.grouped && series.length>1}
         aspectRatio="auto" animationDuration={reduced || spec.animated === false ? 0 : 450} barGap={0.38}
-        margin={{top:8,right:spec.decimals!==undefined?76:12,bottom:horizontal?12:35,left:horizontal?(spec.decimals!==undefined?116:76):12}}>
+        margin={{top:8,right:spec.grouped?40:spec.decimals!==undefined?76:12,bottom:spec.grouped?28:horizontal?12:35,left:horizontal?(spec.decimals!==undefined?116:76):12}}>
+        {spec.grouped && <Grid horizontal={false} vertical numTicksColumns={4}/>}
         {series.map(s => <Bar key={s.key} dataKey={s.key} fill={s.color} animate={!reduced && spec.animated !== false} lineCap={3} />)}
         {horizontal ? <BarYAxis /> : <BarXAxis showAllLabels />}
         <ChartTooltip className="bklit-hover-panel" showDatePill={false} showDots={false} content={({point}) => <div className="bklit-tooltip">
@@ -93,10 +95,26 @@ function Bars({ spec }: { spec: Spec }) {
           {!spec.complete && <small>확인한 범위 기준</small>}
         </div>} />
         <BarActions spec={spec} /><BarValueLabels spec={spec}/>
+        {spec.grouped && <GroupedBarLabels series={series}/>}
       </BarChart>
     </div>
     {series.length>1 && <Legend items={legend} hoveredIndex={hover} onHoverChange={setHover} className="bklit-legend"><KeyboardLegendItem complete={spec.complete}/></Legend>}
   </ChartLegendHoverProvider>;
+}
+
+// Bklit의 수평 그룹 간격(4px)에 맞춘 바깥 수치. 짧은 막대도 건수를 읽을 수 있다.
+function GroupedBarLabels({series}:{series:Series[]}) {
+  const {barScale, bandWidth, innerHeight, data, barXAccessor} = useChartStable();
+  const scale = useYScale();
+  if (!barScale || !barXAccessor || bandWidth === undefined) return null;
+  const height = (bandWidth - Math.max(0, series.length - 1) * 4) / Math.max(1, series.length);
+  const ticks = scale.ticks(4).filter(Number.isInteger);
+  return <g aria-hidden="true" className="bklit-grouped-labels">
+    {ticks.map(tick => <text key={tick} x={scale(tick)} y={innerHeight + 20} textAnchor="middle">{tick}</text>)}
+    {data.flatMap((row, index) => series.map((s, i) => Number(row[s.key]) > 0 && <text key={`${index}-${s.key}`}
+      x={scale(Number(row[s.key])) + 6} y={(barScale(barXAccessor(row)) || 0) + i * (height + 4) + height / 2}
+      dominantBaseline="middle">{Number(row[s.key]).toLocaleString('ko-KR')}</text>))}
+  </g>;
 }
 
 function Trend({ spec }: { spec: Spec }) {
