@@ -28,6 +28,74 @@ def response(parsed):
 
 
 class ExplicitConditionRegressionTests(unittest.TestCase):
+    def test_recent_list_cannot_invent_a_registration_period(self):
+        for question, filters in (
+            ('LS증권 최근 이슈 세 개만 보여줘', [
+                {'field': 'customer', 'operator': 'equals', 'value': '이베스트', 'evidence': 'LS증권'}]),
+            ('담당자 이운형의 최근 이슈 2개 보여줘', [
+                {'field': 'owner', 'operator': 'equals', 'value': '이운형', 'evidence': '이운형'}]),
+            ('화면번호 3520 관련 이슈 최근 세 개만 찾아줘', [
+                {'field': 'screen_number', 'operator': 'equals', 'value': '3520', 'evidence': '3520'}]),
+        ):
+            for evidence in ('최근', question):
+                with self.subTest(question=question, evidence=evidence):
+                    bad = proposal(operation='search', scope='default', status=NO_STATUS, filters=[
+                        *filters, {'field': 'created_at', 'operator': 'between',
+                                   'value': ['2026-10-01', '2026-11-03'], 'evidence': evidence}])
+                    with self.assertRaisesRegex(ValueError, '최근.*정렬'):
+                        validate_plan(question, bad, USER, {})
+
+    def test_planner_repairs_recent_period_and_returns_older_matching_issues(self):
+        question = '담당자 이운형의 최근 이슈 2개 보여줘'
+        filters = [{'field': 'owner', 'operator': 'equals', 'value': '이운형', 'evidence': '이운형'}]
+        bad = proposal(operation='search', scope='target', status=NO_STATUS, limit=2, filters=[
+            *filters, {'field': 'created_at', 'operator': 'between',
+                       'value': ['2026-10-01', '2026-11-03'], 'evidence': '최근'}])
+        corrected = {**bad, 'filters': filters}
+        with patch.object(unified, 'post_model_chat', side_effect=[response(bad), response(corrected)]):
+            plan = unified.plan_question(question, {'id': 'fixture-model'}, 'key', USER, {})
+        constraints = plan['resolved_constraints']
+        self.assertIsNone(constraints['created_at'])
+        self.assertTrue(issue_matches_constraints(
+            {'id': 27689, 'handler': {'real_name': '이운형'}, 'created_at': '2024-01-01'}, constraints))
+
+    def test_customer_status_target_scope_keeps_the_default_team(self):
+        question = 'LS증권에서 종료된 이슈 최근 두 개만 보여줄래?'
+        plan = validate_plan(question, proposal(operation='search', scope='target', limit=2,
+            status={'mode': 'include', 'values': ['closed'], 'evidence': '종료된 이슈'}, filters=[
+                {'field': 'customer', 'operator': 'equals', 'value': '이베스트', 'evidence': 'LS증권'}]), USER, {})
+        constraints = plan['resolved_constraints']
+        self.assertEqual(constraints['mantis_team_scope'], 'team')
+        issue = {'project': {'name': '159eBest'}, 'status': {'name': 'closed'}}
+        self.assertTrue(issue_matches_constraints({**issue, 'handler': {'real_name': '석지원'}}, constraints))
+        self.assertFalse(issue_matches_constraints({**issue, 'handler': {'real_name': '다른팀담당자'}}, constraints))
+
+    def test_explicit_period_and_inherited_period_survive_latest_list_requests(self):
+        filters = [{'field': 'created_at', 'operator': 'between',
+                    'value': ['2026-07-01', '2026-07-31'], 'evidence': '2026년 7월'}]
+        previous = validate_plan('2026년 7월 이슈 최근 세 건 보여줘', proposal(
+            operation='search', scope='team', status=NO_STATUS, filters=filters), USER, {})
+        plan = validate_plan('같은 조건에서 최근 두 건 보여줘', proposal(
+            operation='search', scope='inherit', followup=True,
+            status={'mode': 'inherit', 'values': [], 'evidence': ''}, limit=2), USER, previous)
+        self.assertEqual(plan['resolved_constraints']['created_at'],
+                         {'from': '2026-07-01', 'to': '2026-07-31'})
+        self.assertEqual(plan['resolved_constraints']['mantis_team_scope'], 'team')
+
+    def test_explicit_person_issue_and_all_team_scopes_are_preserved(self):
+        for question, scope, filters, expected in (
+            ('담당자 이운형 최근 이슈 보여줘', 'target', [
+                {'field': 'owner', 'operator': 'equals', 'value': '이운형', 'evidence': '이운형'}], 'target'),
+            ('31708 이슈 알려줘', 'target', [
+                {'field': 'issue_id', 'operator': 'equals', 'value': '31708', 'evidence': '31708'}], 'target'),
+            ('전사 최근 이슈 보여줘', 'all', [], 'all'),
+        ):
+            with self.subTest(question=question):
+                constraints = validate_plan(question, proposal(operation='search', scope=scope,
+                    status=NO_STATUS, filters=filters), USER, {})['resolved_constraints']
+                self.assertEqual(constraints['mantis_team_scope'], expected)
+                self.assertNotIn('mantis_team_members', constraints)
+
     def test_explicit_status_cannot_be_omitted_from_a_list_plan(self):
         for question in (
             '코스콤에서 확인된 이슈 최근 두 개만 보여줄래?',

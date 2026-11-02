@@ -266,6 +266,8 @@ class UnifiedIntegrationTests(unittest.TestCase):
                 self.assertEqual(p['resolved_constraints']['people']['role'], case['unified_role'])
                 if 'unified_operation' in case:
                     self.assertEqual(p['operation'], case['unified_operation'])
+                if 'unified_scope' in case:
+                    self.assertEqual(p['resolved_constraints']['mantis_team_scope'], case['unified_scope'])
                 if 'unified_customer' in case:
                     self.assertEqual(p['resolved_constraints']['customer_key'], case['unified_customer'])
                 if 'unified_terms' in case:

@@ -94,7 +94,10 @@ def constraints_from_clauses(clauses, status, scope, user, previous, *, self_fie
         c['filter_clauses'].append({'field': self_field, 'operator': 'equals', 'value': name})
     if scope == 'inherit':
         scope = previous.get('mantis_team_scope', 'default')
-    if scope == 'default':
+    if scope == 'default' or scope == 'target' and not (
+            c['people']['names'] or c['issue_ids'] or c.get('unassigned_people')):
+        # 고객사·상태·화면은 개인/번호 대상이 아니다. 모델의 target 표기로
+        # 일반 조회의 기본 팀 범위가 사라지지 않게 한다.
         scope = 'target' if c['people']['names'] or c['issue_ids'] or c.get('unassigned_people') else 'team'
     if scope == 'team':
         c.update(mantis_team_members=list(TEAM_MEMBERS), mantis_team_label=TEAM_SCOPE_LABEL)

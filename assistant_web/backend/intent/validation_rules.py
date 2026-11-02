@@ -5,7 +5,7 @@ import re
 from backend.settings.catalogs import get_customer_aliases
 from backend.settings.values import PLATFORM_ALIASES, STATUS_ALIASES, MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES
 from backend.query_filters import normalize_filter_clause, clause_supported, values_for_clause
-from backend.query.dates import extract_relative_created_at_range
+from backend.query.dates import extract_relative_created_at_range, question_has_temporal_expression
 
 
 STATUS_ALL = re.compile(r'상태(?:를|는|도)?\s*(?:모두|전부)\s*포함|전체\s*상태|상태\s*전체|모든\s*상태|상태\s*구분\s*없이|상태.{0,8}(?:무관|관계없|상관없|(?:제한|조건).{0,5}(?:없|풀|해제))|종료.{0,12}포함|종료\s*여부(?:와|에)?\s*(?:관계|상관)\s*없이')
@@ -203,6 +203,13 @@ def check_clause(item, question, source):
             forms = [canonical, *aliases.get(canonical, [])]
             require(any(form.casefold() in question.casefold() for form in forms), '고객사/매체 근거 불일치')
     if field in {'created_at', 'due_at', 'deployed_at', 'delivered_at'}:
+        if field == 'created_at' and re.search(r'최근|최신', str(evidence)):
+            # '최근 N건'은 정렬·개수 근거다. 실제 기간 없이 모델이 만든 날짜는
+            # 실행하지 않고 기존 재시도 경로에서 날짜 필터를 제거하도록 한다.
+            require(question_has_temporal_expression(str(evidence))
+                    or extract_relative_created_at_range(str(evidence))
+                    or re.search(r'20\d{2}[-./]\d{1,2}[-./]\d{1,2}', str(evidence)),
+                    '최근/최신은 정렬 근거이며 등록 기간이 아닙니다. 명시한 기간이 없으면 created_at 필터를 제거하세요')
         try:
             dates = [date.fromisoformat(v) for v in values]
         except ValueError as exc:
