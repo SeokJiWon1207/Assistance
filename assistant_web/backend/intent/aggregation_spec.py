@@ -9,6 +9,12 @@ MAX_MONTHS = 36
 MAX_TOP_N = 20
 
 
+def explanation_requested(text):
+    if re.search(r'표만|설명\s*없이|(?:설명|요약|분석|해석).{0,6}(?:빼|제외|생략|하지\s*(?:마|말))', text):
+        return False
+    return bool(re.search(r'(?:요약|분석|설명|해석)\s*(?:해|하[여라])|(?:요약|분석|설명|해석)\s*[.!?]*$', text))
+
+
 def check_shape(spec):
     from backend.intent.validation_rules import require
     require(isinstance(spec, dict), '집계 명세는 JSON 객체여야 합니다')
@@ -40,6 +46,8 @@ def validate_aggregation(question, specification, previous=None):
     spec = {'comparison': None, 'top_n': 10, 'explain': False, **deepcopy(previous or {}), **deepcopy(specification)}
     check_shape(spec)
     text = unquoted(question)
+    if explanation_requested(text):
+        require(spec['explain'], '집계 설명 요청을 보존하려면 aggregation.explain=true여야 합니다')
     require(not re.search(r'(?:수정|종료|해결|배포|QC\s*완료|개발\s*완료)\s*일\s*기준', text, re.I),
             '집계 날짜 기준은 건수의 등록일과 공수의 고객사전달일만 지원합니다')
     created_basis = bool(re.search(r'등록일\s*(?:기준|로|별)', text))

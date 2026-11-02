@@ -325,6 +325,10 @@ def validate_plan(question, parsed, user, previous):
                 c['filter_clauses'].append(clause)
     group = parsed['group_by']
     require(group in {None, 'customer', 'platform', 'status', 'owner', 'month'}, '그룹 조건 오류')
+    if source == 'mantis' and operation in {'count', 'aggregate'} and group and c.get('created_at') and not aggregation:
+        from backend.intent.aggregation_spec import explanation_requested
+        require(not explanation_requested(unquoted(question)),
+                '집계 설명 요청은 operation=aggregate, group_by=null, aggregation.group_by와 기간, explain=true로 보존하세요')
     limit = parsed['limit']
     require(limit is None or (type(limit) is int and 1 <= limit <= 200), '표시 개수 오류')
     require(operation != 'count' or limit is None, '전체 집계에 표시 개수를 적용할 수 없습니다')

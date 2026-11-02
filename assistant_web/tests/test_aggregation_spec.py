@@ -1,5 +1,6 @@
 import copy
 import unittest
+from unittest.mock import patch
 
 from backend.intent.unified_validation import validate_plan, validate_execution_contract
 
@@ -21,6 +22,45 @@ def proposal(**changes):
 
 
 class AggregationSpecTests(unittest.TestCase):
+    def test_explicit_group_summary_cannot_drop_explanation(self):
+        question = '2026년 11월 2일 등록된 미종료 이슈를 고객사별로 요약해줘'
+        spec = specification(group_by=['customer'], metrics=['issue_count'], comparison=None,
+                             period={'from': '2026-11-02', 'to': '2026-11-02', 'evidence': '2026년 11월 2일'})
+        status = {'mode': 'open', 'values': [], 'evidence': '미종료'}
+        count = proposal(operation='count', aggregation=None, group_by='customer', status=status,
+                         filters=[{'field': 'created_at', 'operator': 'between',
+                                   'value': ['2026-11-02', '2026-11-02'], 'evidence': '2026년 11월 2일'}])
+        with self.assertRaisesRegex(ValueError, '집계 설명'):
+            validate_plan(question, count, {}, {})
+        with self.assertRaisesRegex(ValueError, '집계 설명'):
+            validate_plan(question, proposal(aggregation={**spec, 'explain': False}, status=status), {}, {})
+        valid = validate_plan(question, proposal(aggregation=spec, status=status), {}, {})
+        self.assertTrue(valid['aggregation']['explain'])
+        from backend.intent import unified
+        valid_proposal = proposal(aggregation=spec, status=status)
+        calls = []
+        def propose(model, key, payload):
+            calls.append(copy.deepcopy(payload))
+            return copy.deepcopy(count if len(calls) == 1 else valid_proposal)
+        with patch.object(unified, '_propose', side_effect=propose), patch.object(
+                unified.llm, 'get_model_registry', return_value=[]), patch.object(
+                unified, 'get_customer_aliases', return_value={}), patch.object(
+                unified, 'extract_people_constraints', return_value={'names': []}):
+            repaired = unified.plan_question(question, {'id': 'fixture'}, 'test', {}, {})
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(repaired['aggregation']['explain'])
+        self.assertIn('집계 설명', calls[1]['messages'][-1]['content'])
+
+    def test_plain_counts_table_only_and_quoted_summary_remain_unchanged(self):
+        filters = [{'field': 'created_at', 'operator': 'between', 'value': ['2026-11-02', '2026-11-02'],
+                    'evidence': '2026년 11월 2일'}]
+        for suffix in ('등록 건수를 보여줘', '등록 건수를 표만 보여줘', '등록 건수만 설명 없이 보여줘'):
+            question = '2026년 11월 2일 고객사별 ' + suffix
+            planned = proposal(operation='count', aggregation=None, group_by='customer', filters=filters)
+            self.assertEqual(validate_plan(question, planned, {}, {})['operation'], 'count')
+        spec = specification(group_by=['customer'], metrics=['issue_count'], comparison=None, explain=False)
+        self.assertFalse(validate_plan('2026년 8월부터 9월까지 제목에 "요약해줘"가 있는 이슈를 고객사별로 세어줘',
+                                       proposal(aggregation=spec), {}, {})['aggregation']['explain'])
     def test_compound_spec_keeps_scalar_contract_and_fixed_dates(self):
         plan = validate_plan(QUESTION, proposal(), {}, {})
         self.assertEqual(plan.get('aggregation'), specification())
