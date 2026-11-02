@@ -49,7 +49,7 @@ class TemplatePlanTests(TestCase):
     def test_calendar_last_month_rejects_rolling_window(self):
         p = proposal(filters=[{'field':'created_at','operator':'between',
                     'value':['2026-09-20','2026-10-19'],'evidence':'지난달'}])
-        with patch('backend.intent.unified_validation.date') as today:
+        with patch('backend.intent.validation_rules.date') as today:
             today.today.return_value=date(2026,10,20)
             today.fromisoformat.side_effect=date.fromisoformat
             with self.assertRaisesRegex(ValueError,'2026-09-01'):

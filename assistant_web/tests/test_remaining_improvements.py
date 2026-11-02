@@ -1,4 +1,8 @@
 """세대 캐시·구조화 후속 조건·빠른 조회·운영 지연 통계 회귀."""
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
+from backend.services import retrieval_pipeline
 from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -174,10 +178,10 @@ class StructuredFollowupTests(unittest.TestCase):
         clause = {"field": "title", "operator": "not_contains", "value": "테스트"}
         prior["filter_clauses"].append(clause)
         q = "그중 KB만 보여줘"
-        with patch.object(chat, "get_private_model", return_value={"status": "active"}), \
-             patch.object(chat, "get_model_api_key", return_value="synthetic"), \
-             patch.object(chat, "load_audit_query_plan", return_value={"source": "mantis", "resolved_constraints": prior, "terms": ["로그인"]}), \
-             patch.object(chat, "rewrite_follow_up_query_with_model") as rewrite:
+        with patch.object(chat_prepare, "get_private_model", return_value={"status": "active"}), \
+             patch.object(chat_llm, "get_model_api_key", return_value="synthetic"), \
+             patch.object(chat_prepare, "load_audit_query_plan", return_value={"source": "mantis", "resolved_constraints": prior, "terms": ["로그인"]}), \
+             patch.object(chat_prepare, "rewrite_follow_up_query_with_model") as rewrite:
             request = ChatRequest(modelId="test", contextAuditId="a" * 32,
                 messages=[ChatMessage(role="user", content="NH MTS 미종료 로그인 이슈"), ChatMessage(role="user", content=q)])
             context = chat.prepare_chat_pipeline(request, q, {"uid": "user"})
@@ -211,7 +215,7 @@ class StructuredFollowupTests(unittest.TestCase):
         q = "NH MTS 미종료 이슈 최근 2개 보여줘"
         context = chat.ChatPipelineContext(q, {}, "synthetic", [], q, {"mantis": True}, [], extract_query_constraints(q), 5)
         with patch.dict(os.environ, {"QUERY_PLANNER_ENABLED": "true"}), \
-             patch.object(chat, "plan_search_intent_with_model") as planner:
+             patch.object(chat_planning, "plan_search_intent_with_model") as planner:
             result = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None).response
         planner.assert_not_called()
         self.assertIsNone(result)
@@ -224,11 +228,11 @@ class StructuredFollowupTests(unittest.TestCase):
                                             ("mantis_chroma_snapshot", True, True)):
             stage = {"source": "mantis_snapshot", "status": "ok", "issues_list": [],
                      "meta": {"tool": tool, "search_complete": complete}}
-            with patch.object(retrieval, "execute_mantis_snapshot_search", return_value=stage), \
-                 patch.object(retrieval, "revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage), \
-                 patch.object(retrieval, "get_mantis_snapshot_freshness", return_value=None), \
-                 patch.object(retrieval, "execute_mantis_filter_search", return_value={"status": "skipped"}), \
-                 patch.object(retrieval, "execute_mantis_page_scan", return_value={"status": "ok"}) as scan:
+            with patch.object(retrieval_pipeline, "execute_mantis_snapshot_search", return_value=stage), \
+                 patch.object(retrieval_pipeline, "revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage), \
+                 patch.object(retrieval_pipeline, "get_mantis_snapshot_freshness", return_value=None), \
+                 patch.object(retrieval_pipeline, "execute_mantis_filter_search", return_value={"status": "skipped"}), \
+                 patch.object(retrieval_pipeline, "execute_mantis_page_scan", return_value={"status": "ok"}) as scan:
                 retrieval.run_retrieval_pipeline("NH MTS 미종료 이슈 보여줘", 5, {"mantis": True}, {"source": "mantis"})
             self.assertEqual(scan.called, scan_needed)
 

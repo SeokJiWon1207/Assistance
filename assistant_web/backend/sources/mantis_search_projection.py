@@ -5,7 +5,7 @@ import json
 import sqlite3
 from typing import Any, Iterable
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.execution import checkpoint
 
 # issue_to_search_text/normalize_for_match의 검색 의미가 바뀌면 함께 올린다.
@@ -23,7 +23,7 @@ def projection_ready(db: sqlite3.Connection, saved: dict[str, Any]) -> bool:
 
 
 def update_projection(db: sqlite3.Connection, issues: Iterable[dict[str, Any]]) -> None:
-    from backend.sources.mantis import issue_to_search_text
+    from backend.sources.mantis_fields import issue_to_search_text
 
     for issue in issues:
         checkpoint()

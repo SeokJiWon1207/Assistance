@@ -1,11 +1,15 @@
 """완전한 최신 DB 목록으로 제목을 찾고 후보의 현재 속성을 재확인한다."""
+from backend.notion import crawl_transport
+from backend.notion import read_api
+from backend.notion import schema as notion_schema
+from backend.notion import transport
 from datetime import datetime, timezone
 import json
 import time
 
-from backend.common import normalize_for_match
-from backend.notion.complete_snapshot import _time, catalog_max_age_seconds
-from backend.notion.mapping import notion_title
+from backend.utils.text import normalize_for_match
+from backend.notion.snapshot_state import _time, catalog_max_age_seconds
+from backend.notion.values import notion_title
 from backend.notion.property_snapshot import pending_properties, read_full_properties
 
 
@@ -56,8 +60,11 @@ def _catalog_candidates(index, database_ids, title):
 
 def _current_candidates(index, candidates, read_scope, constraints, budget):
     """직접 DB 문서는 제목 필터로 묶어 읽고, 독립 하위 문서는 개별 확인한다."""
-    from backend.notion import search
-    from backend.notion.body_index_sync import _ReadFailure, _page_ancestors, _request, _valid_page
+    from backend.settings.notion import NOTION_API_BASE
+    from backend.notion.transport import notion_post_json as notion_post_json
+    from backend.notion.schema import notion_property_schema as notion_property_schema, notion_title_property as notion_title_property
+    from backend.notion.crawl_transport import NotionReadFailure as _ReadFailure
+    from backend.notion.crawl_validation import _page_ancestors, _valid_page
     allowed = {identifier.replace('-', '').lower() for identifier in read_scope}
     stored = {str(raw['id']).replace('-', ''): raw for _database_id, raw in candidates}
     direct = list(dict.fromkeys(database_id for database_id, raw in candidates
@@ -80,7 +87,7 @@ def _current_candidates(index, candidates, read_scope, constraints, budget):
         seen.add(identifier)
 
     for database_id in direct:
-        title_property = search.notion_title_property(search.notion_property_schema(database_id))
+        title_property = notion_schema.notion_title_property(notion_schema.notion_property_schema(database_id))
         if not title_property:
             raise _ReadFailure('catalog_title_schema_unavailable')
         payload = {'page_size': 100, 'filter': {
@@ -90,8 +97,8 @@ def _current_candidates(index, candidates, read_scope, constraints, budget):
             if time.monotonic() >= budget.deadline or budget.requests_left <= 0:
                 raise _ReadFailure('catalog_query_limit')
             budget.requests_left -= 1
-            response = search.notion_post_json(
-                f'{search.NOTION_API_BASE}/databases/{database_id}/query', payload, timeout=45, retries=2)
+            response = transport.notion_post_json(
+                f'{NOTION_API_BASE}/databases/{database_id}/query', payload, timeout=45, retries=2)
             response.raise_for_status()
             data = response.json()
             if not isinstance(data.get('results'), list):
@@ -109,16 +116,20 @@ def _current_candidates(index, candidates, read_scope, constraints, budget):
             raise _ReadFailure('catalog_query_limit')
     for database_id, raw in candidates:
         if raw.get('parent', {}).get('type') != 'database_id':
-            append(database_id, _request(f"pages/{raw['id']}", budget))
+            append(database_id, crawl_transport.request_json(f"pages/{raw['id']}", budget))
     return current
 
 
 def search_catalog_snapshot(index, database_ids, *, read_scope, constraints, terms, limit, include_blocks):
     """정확 제목·속성 조회만 처리한다. 검증 실패는 기존 실시간 조회에 맡긴다."""
     from backend.execution import CURRENT_BUDGET, checkpoint
-    from backend.notion import search
-    from backend.notion.body_index_sync import _Budget, _ReadFailure
-    from backend.notion.client import NOTION_CONTENT_INCOMPLETE
+    from backend.notion.constants import NOTION_RESULT_BODY_MAX_BLOCKS
+    from backend.notion.matching import deduplicate_notion_pages_by_id, notion_page_match_score, notion_page_sort_key
+    from backend.notion.read_api import fetch_notion_database_title as fetch_notion_database_title, fetch_notion_page_blocks as fetch_notion_page_blocks
+    from backend.notion.mapping import normalize_notion_page
+    from backend.notion.page_enrichment import notion_page_matches_and_enrich
+    from backend.notion.crawl_transport import CrawlBudget as _Budget, NotionReadFailure as _ReadFailure
+    from backend.notion.read_api import NOTION_CONTENT_INCOMPLETE
 
     title = normalize_for_match(constraints.get('exact_title', ''))
     if not title:
@@ -138,28 +149,28 @@ def search_catalog_snapshot(index, database_ids, *, read_scope, constraints, ter
         for database_id, raw in _current_candidates(index, candidates, read_scope, constraints, budget):
             checkpoint()
             if database_id not in labels:
-                label = search.fetch_notion_database_title(database_id)
+                label = read_api.fetch_notion_database_title(database_id)
                 root = read_scope.get(database_id)
                 if root and root != database_id:
-                    label = f'{search.fetch_notion_database_title(root)} / {label}'
+                    label = f'{read_api.fetch_notion_database_title(root)} / {label}'
                 labels[database_id] = label
-            page = search.normalize_notion_page(raw, include_blocks=False,
+            page = normalize_notion_page(raw, include_blocks=False,
                 database_id=database_id, database_label=labels[database_id])
-            if not search.notion_page_matches_and_enrich(page, constraints):
+            if not notion_page_matches_and_enrich(page, constraints):
                 continue
             page.update(match_method='notion_catalog_snapshot', matched_terms=terms,
-                        match_score=search.notion_page_match_score(page, terms) + 60)
+                        match_score=notion_page_match_score(page, terms) + 60)
             matched.append(page)
     except _ReadFailure:
         return None
     created = (constraints.get('sort') or {}).get('field') == 'created_at' or any(
         clause.get('field') == 'created_at' for clause in constraints.get('common_filter_clauses', []))
-    matched.sort(key=lambda page: search.notion_page_sort_key(page, created_at_filtered=created), reverse=True)
-    shown = search.deduplicate_notion_pages_by_id(matched)[:limit]
+    matched.sort(key=lambda page: notion_page_sort_key(page, created_at_filtered=created), reverse=True)
+    shown = deduplicate_notion_pages_by_id(matched)[:limit]
     incomplete = []
     if include_blocks:
         for page in shown:
-            body = search.fetch_notion_page_blocks(page['id'], max_blocks=search.NOTION_RESULT_BODY_MAX_BLOCKS)
+            body = read_api.fetch_notion_page_blocks(page['id'], max_blocks=NOTION_RESULT_BODY_MAX_BLOCKS)
             if body:
                 page['content'] = '\n\n'.join((page.get('properties_text', ''), body)).strip()
             if NOTION_CONTENT_INCOMPLETE in body:

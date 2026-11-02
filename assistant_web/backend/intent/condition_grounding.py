@@ -3,7 +3,7 @@ from copy import deepcopy
 import re
 from typing import Any
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.query_filters import values_for_clause
 
 
@@ -31,7 +31,7 @@ def build_condition_grounding(question, constraints, incoming, status, scope, us
 
 def grounded_values(question: str, constraints: dict[str, Any], plan: dict[str, Any] | None):
     """현재 실행과 일치하는 개별 조건만 인증·감사·원문 근거로 인정한다."""
-    from backend.intent.unified_validation import validate_execution_contract
+    from backend.intent.execution_contract import validate_execution_contract
     if not plan or plan.get('planner') != 'unified_llm':
         return set()
     proof = plan.get('condition_grounding')

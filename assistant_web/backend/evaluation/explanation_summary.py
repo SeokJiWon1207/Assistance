@@ -4,7 +4,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from backend.evaluation.explanation_quotes import safe_excerpts, _label
-from backend.intent.unified_validation import evidence_is_grounded
+from backend.intent.validation_rules import evidence_is_grounded
 
 _UNCERTAIN = re.compile(r'확인.{0,12}(?:없|않|못|어렵|불가|필요)|근거.{0,12}(?:없|부족)|미확정|미확인|'
                         r'(?:기록|명시|확정|입증).{0,12}(?:없|않|못|아님|아니)|단정.{0,8}(?:못|않|어렵)')
@@ -48,12 +48,28 @@ def _supported_claim(text, rows, all_rows):
     return True
 
 
+def summary_evidence_items(validated: dict[str, Any], question: str):
+    """최초 문의만 묻는 설명에는 후속 노트의 변경 값을 빌려 쓰지 않는다."""
+    items = validated.get('answer_items') or []
+    initial_only = (re.search(r'(?:최초|처음|초기).{0,24}(?:요청|문의)', question)
+                    and not re.search(r'이후|후속|나중|최종|최신|마지막|변경\s*과정|진행\s*과정', question))
+    if not initial_only:
+        return items
+    # 선택된 원문 본문이 없으면 설명을 확장하지 않고 기존 인용 답변을 남긴다.
+    return [{**item, 'evidence': [row for row in item.get('evidence') or []
+                                 if row.get('field') == 'description']} for item in items]
+
+
 def summary_items(validated: dict[str, Any], grounding: dict[str, Any], question: str):
     """출처·형식·수치·식별자·완료 범위 검사이며 문장 전체의 참을 증명하지 않는다."""
     if not validated.get('valid'):
         return []
-    items = validated.get('answer_items') or []
+    items = summary_evidence_items(validated, question)
     if not items or len(items)>5:
+        return []
+    # 근거 범위를 좁혔으면 기존 의미 검토를 재사용하지 않는다. 좁힌 근거로
+    # 설명을 다시 쓰고 별도로 검토해야 하며, 기존 문장의 출처만 제거하지 않는다.
+    if items != validated.get('answer_items'):
         return []
     all_rows = [{**e,'issue_id':issue['id']} for issue in grounding.get('issues',[])
                 if issue['id'] in validated['selected_issue_ids'] for e in safe_excerpts(issue)]

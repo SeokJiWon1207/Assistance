@@ -153,7 +153,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         self.add()
         with patch.object(snapshot, 'open_body_index', return_value=self.index), patch.object(
             snapshot, '_current_results', return_value=True), patch(
-            'backend.notion.search._indexed_body_matches', return_value=candidates):
+            'backend.notion.body_index_search._indexed_body_matches', return_value=candidates):
             result = snapshot.search_complete_snapshot(
                 ['db-1'], terms=['needle'], read_scope={'db-1': ''}, constraints={},
                 pre_body_constraints={}, body_clauses=[], keyword_clauses=[], limit=5)
@@ -168,7 +168,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         self.add()
         with patch.object(snapshot, 'open_body_index', return_value=self.index), patch.object(
             snapshot, '_current_results', return_value=False), patch(
-            'backend.notion.search._indexed_body_matches', return_value=[{'id': 'page1'}]):
+            'backend.notion.body_index_search._indexed_body_matches', return_value=[{'id': 'page1'}]):
             result = snapshot.search_complete_snapshot(
                 ['db-1'], terms=['needle'], read_scope={'db-1': ''}, constraints={},
                 pre_body_constraints={}, body_clauses=[], keyword_clauses=[], limit=5)
@@ -183,7 +183,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         self.index.replace_content('page-1', [segment('needle')], complete=True,
                                    expected_edited_time=raw['last_edited_time'])
         self.assertFalse(self.snapshot().coverage(self.index, ['db-1'])['complete'])
-        with patch('backend.notion.body_index_sync._request', side_effect=[
+        with patch('backend.notion.crawl_transport.request_json', side_effect=[
             {'results': [{'relation': {'id': 'first'}}], 'has_more': True, 'next_cursor': 'next'},
             {'results': [{'relation': {'id': 'last'}}], 'has_more': False},
         ]) as request:
@@ -223,7 +223,7 @@ class CompleteSnapshotTests(unittest.TestCase):
                                        expected_edited_time=raw['last_edited_time'])
         self.index.upsert_catalog('db-1', [parent], complete=True)
         self.assertIn('child', self.snapshot().coverage(self.index, ['db-1'])['pending_page_ids'])
-        with patch('backend.notion.snapshot_maintenance._request', return_value=child), patch(
+        with patch('backend.notion.crawl_transport.request_json', return_value=child), patch(
             'backend.notion.snapshot_maintenance._page_ancestors', return_value={'parent': parent}), patch(
             'backend.notion.snapshot_maintenance.validate_index_candidate') as crawl:
             self.assertTrue(refresh_page(self.index, 'child', ['db1'], time.monotonic() + 30))
@@ -236,8 +236,8 @@ class CompleteSnapshotTests(unittest.TestCase):
         self.add()
         candidate = {'raw_page': page(), 'database_id': 'db1',
                      'segments': [{'synced_source_id': 'source'}]}
-        with patch('backend.notion.body_index_sync._request', return_value=page()), patch(
-            'backend.notion.body_index_sync._synced_source', side_effect=_ReadFailure('http_404')):
+        with patch('backend.notion.crawl_transport.request_json', return_value=page()), patch(
+            'backend.notion.crawl_validation._synced_source', side_effect=_ReadFailure('http_404')):
             self.assertFalse(self.snapshot()._current_results(
                 self.index, [{'id': 'page-1'}], [candidate], ['db1']))
 
@@ -312,7 +312,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         for raw in [parent, child]:
             self.index.replace_content(raw['id'], [segment('needle', owner=raw['id'])], complete=True,
                                        expected_edited_time=raw['last_edited_time'])
-        with patch('backend.notion.snapshot_maintenance._request', return_value={**child, 'archived': True}), patch(
+        with patch('backend.notion.crawl_transport.request_json', return_value={**child, 'archived': True}), patch(
             'backend.notion.snapshot_maintenance._page_ancestors', return_value={'parent': parent}):
             refresh_page(self.index, 'child', ['db1'], time.monotonic() + 30)
         proof = self.snapshot().coverage(self.index, ['db1'])
@@ -335,8 +335,8 @@ class CompleteSnapshotTests(unittest.TestCase):
         self.add()
         candidate = {'raw_page': page(), 'database_id': 'db1', 'segments': [],
                      'verified_synced_references': [{'source_id': 'empty-source', 'database_id': 'db1'}]}
-        with patch('backend.notion.body_index_sync._request', return_value=page()), patch(
-            'backend.notion.body_index_sync._synced_source', side_effect=_ReadFailure('http_404')) as source:
+        with patch('backend.notion.crawl_transport.request_json', return_value=page()), patch(
+            'backend.notion.crawl_validation._synced_source', side_effect=_ReadFailure('http_404')) as source:
             self.assertFalse(self.snapshot()._current_results(self.index, [{'id': 'page-1'}], [candidate], ['db1']))
         source.assert_called_once()
 
@@ -349,7 +349,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         child = {**page('child'), 'parent': {'type': 'page_id', 'page_id': 'parent'}}
         self.index.upsert_catalog('db1', [parent], complete=True)
         self.index.upsert_page('db1', child, parent_pages={'parent': parent})
-        with patch('backend.notion.snapshot_maintenance._request', side_effect=_ReadFailure('http_429')):
+        with patch('backend.notion.crawl_transport.request_json', side_effect=_ReadFailure('http_429')):
             self.assertFalse(refresh_page(self.index, 'child', ['db1'], time.monotonic() + 30))
         proof = self.snapshot().coverage(self.index, ['db1'])
         self.assertFalse(proof['complete'])
@@ -406,7 +406,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         proof = {'complete': True, 'catalog_complete': True, 'snapshot_as_of': now, 'pending_page_ids': []}
         (root / 'notion_read_scope.json').write_text(json.dumps({'generated_at': now}))
         with patch.object(script, 'RUNTIME_DIR', root), \
-                patch.object(script, 'get_notion_settings', return_value={'database_ids': ['db1'], 'token': 't'}), \
+                patch.object(script, 'resolve_notion_settings', return_value={'database_ids': ['db1'], 'token': 't'}), \
                 patch.object(script, 'resolve_notion_read_scope', return_value=({'db1': 'db1'}, True)), \
                 patch.object(script, 'open_body_index', return_value=self.index), \
                 patch.object(script, 'coverage', return_value=proof), \
@@ -428,7 +428,7 @@ class CompleteSnapshotTests(unittest.TestCase):
         candidates = [{'id': 'page-1', 'match_score': 1, 'last_edited_time': ''}]
         with patch.object(snapshot, 'open_body_index', return_value=self.index), \
                 patch.object(snapshot, '_current_results', side_effect=current_results), \
-                patch('backend.notion.search._indexed_body_matches', return_value=candidates), \
+                patch('backend.notion.body_index_search._indexed_body_matches', return_value=candidates), \
                 patch('backend.notion.snapshot_maintenance.refresh_page', side_effect=refresh) as refresh_mock, \
                 patch('backend.config.RUNTIME_DIR', root):
             result = snapshot.search_complete_snapshot(

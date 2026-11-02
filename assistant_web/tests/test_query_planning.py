@@ -329,8 +329,8 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertIn("**ID**: 250", answer)
         self.assertNotIn("**ID**: 200", answer)
 
-    @patch("backend.reports.evaluation.post_model_chat")
-    @patch("backend.reports.evaluation.get_private_model")
+    @patch("backend.evaluation.comparison.post_model_chat")
+    @patch("backend.evaluation.comparison.get_private_model")
     def test_candidate_model_ab_uses_same_grounded_retrieval(self, get_model, post_chat):
         get_model.return_value = {
             "id": "candidate-model",
@@ -364,6 +364,8 @@ class QueryPlanningTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["modelId"], "candidate-model")
+        get_model.assert_called_once_with("candidate-model")
+        post_chat.assert_called_once()
         payload = post_chat.call_args.args[2]
         self.assertIn("검증된 검색 결과", payload["messages"][0]["content"])
         self.assertEqual(result["sources"][0]["issue_id"], 31585)
@@ -1041,9 +1043,9 @@ class QueryPlanningTests(unittest.TestCase):
         intent = next(item for item in verification["dimensions"] if item["id"] == "intent")
         self.assertEqual(intent["status"], "fail")
 
-    @patch("backend.retrieval.execute_chroma_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    @patch("backend.services.retrieval_pipeline.execute_chroma_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search")
     def test_retrieval_pipeline_executes_structured_date_filter(self, snapshot_search, page_scan, chroma_search):
         snapshot_search.return_value = {"source": "mantis_snapshot", "status": "ok", "issues_list": []}
         question = "2025년에 등록된 신한 MTS 이슈 5개 보여줘"
@@ -1062,9 +1064,9 @@ class QueryPlanningTests(unittest.TestCase):
         page_scan.assert_not_called()
         chroma_search.assert_not_called()
 
-    @patch("backend.retrieval.execute_mantis_filter_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search")
     def test_structured_customer_query_uses_snapshot_tool(
         self, snapshot_search, page_scan, filter_search
     ):
@@ -1082,11 +1084,11 @@ class QueryPlanningTests(unittest.TestCase):
         )
         snapshot_search.assert_called_once()
 
-    @patch("backend.retrieval.execute_mantis_filter_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_snapshot_search")
-    @patch("backend.retrieval.execute_chroma_search")
-    @patch("backend.retrieval.get_chroma_document")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search")
+    @patch("backend.services.retrieval_pipeline.execute_chroma_search")
+    @patch("backend.services.retrieval_pipeline.get_chroma_document")
     @patch("backend.sources.mantis.fetch_mantis_issue_by_id")
     def test_similar_issue_query_uses_reference_issue_for_chroma(
         self,
@@ -1347,7 +1349,7 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertIn("정렬: 의미 유사도 기준", answer)
         self.assertNotIn("총 3건", answer)
 
-    @patch("backend.config.requests.post")
+    @patch("backend.notion.transport.requests.post")
     def test_notion_tool_timeout_budget_caps_retries(self, post):
         post.side_effect = requests.Timeout("timeout")
         with patch.dict("os.environ", {"NOTION_TOOL_TIMEOUT_SECONDS": "7", "NOTION_TOOL_MAX_RETRIES": "0"}):
@@ -1356,7 +1358,7 @@ class QueryPlanningTests(unittest.TestCase):
         self.assertEqual(post.call_count, 1)
         self.assertEqual(post.call_args.kwargs["timeout"], 7)
 
-    @patch("backend.config.requests.post")
+    @patch("backend.notion.transport.requests.post")
     def test_notion_tool_default_budget_retries_timeout_once(self, post):
         success = MagicMock(status_code=200)
         post.side_effect = [requests.Timeout("timeout"), success]

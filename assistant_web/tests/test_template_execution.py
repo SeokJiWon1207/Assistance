@@ -53,8 +53,8 @@ class TemplateExecutionTests(TestCase):
                     {'mantis':True,'vectorDb':True},[],{},5,
                     intent_plan={'planner':'unified_llm','source':'mantis','operation':'report','report_kind':kind})
                 answer={'content':'전용 보고서','raw':{'mode':kind}}
-                with patch('backend.services.chat_service.'+builder,return_value=answer), \
-                     patch('backend.services.chat_service.build_deterministic_report',return_value=DeterministicReportResult()):
+                with patch('backend.services.unified_planning.'+builder,return_value=answer), \
+                     patch('backend.services.unified_planning.build_deterministic_report',return_value=DeterministicReportResult()):
                     actual=execute_plan(ChatRequest(modelId='test',messages=[{'role':'user','content':'NH 보고서'}]),ctx,{})
                 self.assertEqual(actual['raw']['mode'],kind)
 

@@ -1,3 +1,5 @@
+from backend.notion import cache_maintenance
+from backend.notion import read_api
 import os
 import unittest
 from unittest.mock import Mock, call, patch
@@ -5,8 +7,8 @@ from unittest.mock import Mock, call, patch
 import requests
 from fastapi import HTTPException
 
-from backend import config
-from backend.notion import client
+from backend.notion import transport
+from backend.notion import read_api as client
 
 
 class NotionClientTests(unittest.TestCase):
@@ -217,7 +219,7 @@ class NotionClientTests(unittest.TestCase):
 
     def test_warm_cache_loads_every_database_in_read_scope_once(self):
         with (
-            patch.object(client, "get_notion_settings", return_value={"token": "secret", "database_ids": ["root-1"]}),
+            patch.object(cache_maintenance, "resolve_notion_settings", return_value={"token": "secret", "database_ids": ["root-1"]}),
             patch(
                 "backend.notion.read_scope.resolve_notion_read_scope",
                 return_value=({"root1": "", "child1": "root1"}, True),
@@ -228,16 +230,16 @@ class NotionClientTests(unittest.TestCase):
                 side_effect=[{}, HTTPException(status_code=502, detail="fail")],
             ) as fetch,
         ):
-            self.assertEqual(client.warm_notion_database_cache(), 1)
+            self.assertEqual(cache_maintenance.warm_notion_database_cache(), 1)
 
         self.assertEqual([item.args[0] for item in fetch.call_args_list], ["root1", "child1"])
 
     def test_warm_cache_skips_unconfigured_notion(self):
         with (
-            patch.object(client, "get_notion_settings", return_value={"token": "", "database_ids": []}),
-            patch.object(client, "fetch_notion_database_schema") as fetch,
+            patch.object(cache_maintenance, "resolve_notion_settings", return_value={"token": "", "database_ids": []}),
+            patch.object(read_api, 'fetch_notion_database_schema') as fetch,
         ):
-            self.assertEqual(client.warm_notion_database_cache(), 0)
+            self.assertEqual(cache_maintenance.warm_notion_database_cache(), 0)
         fetch.assert_not_called()
 
     def test_schema_survives_process_cache_reset_without_an_extra_network_request(self):
@@ -298,11 +300,11 @@ class NotionPostJsonTests(unittest.TestCase):
                 {"NOTION_TOOL_TIMEOUT_SECONDS": "5", "NOTION_TOOL_MAX_RETRIES": "2",
                  "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
-            patch.object(config.requests, "post", side_effect=[requests.Timeout("slow"), success]) as post,
-            patch.object(config.time, "sleep") as sleep,
-            patch.object(config.random, "uniform", return_value=0),
+            patch.object(transport.requests, "post", side_effect=[requests.Timeout("slow"), success]) as post,
+            patch.object(transport.time, "sleep") as sleep,
+            patch.object(transport.random, "uniform", return_value=0),
         ):
-            response = config.notion_post_json(
+            response = transport.notion_post_json(
                 "https://api.notion.test/query",
                 {"query": "업무"},
                 timeout=45,
@@ -323,15 +325,15 @@ class NotionPostJsonTests(unittest.TestCase):
                  "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
             patch.object(
-                config.requests,
+                transport.requests,
                 "post",
                 side_effect=[requests.ConnectionError("first"), requests.Timeout("last")],
             ) as post,
-            patch.object(config.time, "sleep"),
-            patch.object(config.random, "uniform", return_value=0),
+            patch.object(transport.time, "sleep"),
+            patch.object(transport.random, "uniform", return_value=0),
         ):
             with self.assertRaisesRegex(requests.Timeout, "last"):
-                config.notion_post_json("https://api.notion.test/query", {}, retries=2)
+                transport.notion_post_json("https://api.notion.test/query", {}, retries=2)
 
         self.assertEqual(post.call_count, 2)
 
@@ -344,11 +346,11 @@ class NotionPostJsonTests(unittest.TestCase):
                 {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1",
                  "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
-            patch.object(config.requests, "post", side_effect=[throttled, success]) as post,
-            patch.object(config.time, "sleep") as sleep,
-            patch.object(config.random, "uniform", return_value=0),
+            patch.object(transport.requests, "post", side_effect=[throttled, success]) as post,
+            patch.object(transport.time, "sleep") as sleep,
+            patch.object(transport.random, "uniform", return_value=0),
         ):
-            response = config.notion_post_json("https://api.notion.test/query", {}, retries=2)
+            response = transport.notion_post_json("https://api.notion.test/query", {}, retries=2)
 
         self.assertIs(response, success)
         self.assertEqual(post.call_count, 2)
@@ -361,11 +363,11 @@ class NotionPostJsonTests(unittest.TestCase):
         with (
             patch.dict(os.environ, {"NOTION_TOOL_MAX_RETRIES": "1",
                                     "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"}),
-            patch.object(config.requests, "post", side_effect=[throttled, success]),
-            patch.object(config.time, "sleep") as sleep,
-            patch.object(config.random, "uniform", return_value=0),
+            patch.object(transport.requests, "post", side_effect=[throttled, success]),
+            patch.object(transport.time, "sleep") as sleep,
+            patch.object(transport.random, "uniform", return_value=0),
         ):
-            self.assertIs(config.notion_post_json("https://api.notion.test/query", {}), success)
+            self.assertIs(transport.notion_post_json("https://api.notion.test/query", {}), success)
         sleep.assert_called_once()
         self.assertAlmostEqual(sleep.call_args.args[0], 2.0, places=2)
 
@@ -377,9 +379,9 @@ class NotionPostJsonTests(unittest.TestCase):
                 {"NOTION_TOOL_TIMEOUT_SECONDS": "6", "NOTION_TOOL_MAX_RETRIES": "1",
                  "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0"},
             ),
-            patch.object(config.requests, "post", return_value=forbidden) as post,
+            patch.object(transport.requests, "post", return_value=forbidden) as post,
         ):
-            response = config.notion_post_json("https://api.notion.test/query", {}, retries=2)
+            response = transport.notion_post_json("https://api.notion.test/query", {}, retries=2)
 
         self.assertIs(response, forbidden)
         post.assert_called_once()

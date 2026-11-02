@@ -3,30 +3,18 @@
 import re
 from typing import Any, Dict, List
 
-from backend.common import (
-    derive_customer_aliases_from_project,
-    normalize_for_match,
-    text_matches_customer_aliases,
-)
-from backend.config import PLATFORM_ALIASES, STATUS_ALIASES
+from backend.customer_identity import derive_customer_aliases_from_project, text_matches_customer_aliases
+from backend.utils.text import normalize_for_match
+from backend.settings.values import PLATFORM_ALIASES, STATUS_ALIASES
 from backend.intent.constants import SOURCE_NAME_ALIASES
 from backend.intent.dates import extract_date_field_constraints, remove_date_field_phrases
-from backend.intent.entities import (
-    expression_is_excluded,
-    extract_excluded_issue_ids,
-    extract_explicit_keyword_filter_clauses,
-    extract_issue_ids,
-    extract_people_constraints,
-    extract_screen_numbers,
-    extract_status_constraints,
-    extract_unknown_customers,
-    get_customer_alias_groups,
-    strip_title_bracket_platform_instruction,
-)
+from backend.intent.entities import expression_is_excluded, extract_excluded_issue_ids, extract_explicit_keyword_filter_clauses, extract_issue_ids, extract_people_constraints, extract_screen_numbers, extract_status_constraints, extract_unknown_customers, strip_title_bracket_platform_instruction
+from backend.sources.people_catalog import get_customer_alias_groups
 from backend.intent.people import drop_people, empty_people
 from backend.intent.identifiers import COMPOUND_IDENTIFIER
 from backend.query_filters import add_filter_clause
-from backend.query_planning import extract_created_at_range, extract_group_by
+from backend.query.dates import extract_created_at_range
+from backend.query.operations import extract_group_by
 
 
 def empty_query_constraints() -> Dict[str, Any]:
@@ -253,10 +241,28 @@ def extract_scope_constraints(text: str) -> Dict[str, Any]:
     created_at = extract_created_at_range(text)
     filter_clauses: List[Dict[str, Any]] = []
 
-    if customer["customer_key"]:
+    from backend.customer_identity import canonical_customer, customer_mentions
+    from backend.intent.customer_constraints import explicit_customer_scope
+    included_customers, excluded_customers = explicit_customer_scope(customer_text)
+    ordered_customers = list(dict.fromkeys(item[2] for item in customer_mentions(customer_text)
+                                          if item[2] in included_customers))
+    mentions = customer_mentions(customer_text)
+    explicit_alternatives = any(re.fullmatch(r'\s*(?:와|과|랑|이랑|하고|및|또는|,|/|·)\s*',
+                                            customer_text[left[1]:right[0]])
+                                for left, right in zip(mentions, mentions[1:], strict=False))
+    if len(ordered_customers) > 1 and explicit_alternatives:
+        add_filter_clause(filter_clauses, 'customer', 'in', ordered_customers)
+        customer['customer_key'] = None
+        customer['customer_aliases'] = []
+    elif customer["customer_key"]:
         add_filter_clause(filter_clauses, "customer", "equals", customer["customer_key"])
     for _, excluded_customer, _ in sorted(customer["excluded_customer_matches"], reverse=True):
         add_filter_clause(filter_clauses, "customer", "not_equals", excluded_customer)
+    if len(excluded_customers) > 1:
+        filter_clauses = [clause for clause in filter_clauses if clause['field'] != 'customer'
+                         or (clause['operator'] in {'equals', 'in'}
+                             and canonical_customer(clause['value']) not in excluded_customers)]
+        add_filter_clause(filter_clauses, 'customer', 'not_in', sorted(excluded_customers))
     if platform["platform_key"]:
         add_filter_clause(filter_clauses, "platform", "equals", platform["platform_key"])
     for excluded_platform in platform["excluded_platform_keys"]:
@@ -286,6 +292,9 @@ def extract_scope_constraints(text: str) -> Dict[str, Any]:
     filter_clauses.extend(extract_explicit_keyword_filter_clauses(keyword_text))
 
     excluded_customer_matches = customer.pop("excluded_customer_matches")
+    if len(excluded_customers) > 1:
+        from backend.customer_identity import customer_forms
+        excluded_customer_matches = [(len(key), key, customer_forms(key)) for key in sorted(excluded_customers)]
     return {
         **customer,
         **platform,

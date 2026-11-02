@@ -48,6 +48,25 @@ class AbFollowupContextTests(TestCase):
         self.assertEqual(audit.load_audit_sources("a" * 32, "owner", variant="B")[0]["issue_id"], 22)
         self.assertIn("22", resolve_reference_from_context("그중 첫 번째 상세히", "a" * 32, "owner", variant="B"))
 
+    def test_reference_resolution_does_not_reuse_audit_sources_across_users(self):
+        question = "그중 첫 번째 상세히"
+        for variant, expected in (("A", "0000011"), ("B", "0000022")):
+            with self.subTest(variant=variant):
+                # 같은 감사 ID를 번갈아 조회해도 소유자의 출처가 다른 사용자에게 남지 않는다.
+                for uid in ("owner", "other", "", "owner"):
+                    with self.subTest(uid=uid):
+                        result = resolve_reference_from_context(question, "a" * 32, uid, variant=variant)
+                        self.assertEqual(result, f"{expected} {question}" if uid == "owner" else None)
+
+    def test_reference_resolution_preserves_saved_order_and_notion_title(self):
+        self.payload["sources"].append({"type": "notion", "page_id": "page-2", "title": "배포 계획"})
+        self.write()
+        for question in ("그중 두 번째 자세히", "마지막 항목 자세히"):
+            with self.subTest(question=question):
+                self.assertEqual(resolve_reference_from_context(question, "a" * 32, "owner"),
+                                 f'노션에서 "배포 계획" {question}')
+        self.assertIsNone(resolve_reference_from_context("그중 세 번째 자세히", "a" * 32, "owner"))
+
     def test_only_same_user_and_question_can_load_b(self):
         self.assertEqual(audit.load_audit_query_plan("a" * 32, "owner", "원래 질문", variant="B")["source"], "mantis")
         self.assertEqual(audit.load_audit_query_plan("a" * 32, "other", "원래 질문", variant="B"), {})
@@ -69,6 +88,7 @@ class AbFollowupContextTests(TestCase):
             self.payload["abTest"]["variantB"]["status"] = status
             self.write()
             self.assertEqual(audit.load_audit_sources("a" * 32, "owner", variant="B"), [])
+            self.assertIsNone(resolve_reference_from_context("그중 첫 번째 상세히", "a" * 32, "owner", variant="B"))
             with self.assertRaises(HTTPException):
                 bind_answer_context(self.request(), {"uid": "owner"})
 

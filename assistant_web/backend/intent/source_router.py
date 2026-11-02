@@ -4,7 +4,7 @@ import re
 from enum import Enum
 from typing import Any, Dict, List
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.intent.constants import (
     COMBINED_SOURCE_MARKERS,
     EXPLICIT_MANTIS_MARKERS,
@@ -17,7 +17,7 @@ from backend.intent.constants import (
 )
 from backend.intent.entities import is_simple_greeting
 from backend.intent.general import is_general_question
-from backend.query_planning import extract_group_by
+from backend.query.operations import extract_group_by
 
 
 class SourceAuthority(str, Enum):

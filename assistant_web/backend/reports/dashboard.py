@@ -8,9 +8,9 @@ from typing import Any, Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
 
 from backend.chart_data import daily_registrations
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.mantis_status import mantis_status_bucket
-from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
+from backend.domain.team import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
 from backend.reports.customer import _health_content, _is_closed
 from backend.reports.weekly_issues import weekly_issue_summary
 from backend.reports.team_brief import (
@@ -273,6 +273,7 @@ def build_operations_dashboard(
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
     issues, source = _load_issues(prefer_snapshot=not (refresh or live), force_refresh=refresh)
     complete = source.get("search_complete") is True
+    remaining_issues = filter_team_issues(issues, include_shared=True)
     issues = filter_team_issues(issues)
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
@@ -340,7 +341,9 @@ def build_operations_dashboard(
             "linked": bool(person),
         },
         "summary": summary,
-        "weeklyIssues": weekly_issue_summary(scoped_issues, base, complete=complete),
+        "weeklyIssues": weekly_issue_summary(
+            scoped_issues, base, complete=complete, remaining_issues=remaining_issues,
+        ),
         "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),

@@ -295,7 +295,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
     @patch.object(notion_api, "notion_is_configured", return_value=True)
-    @patch.object(notion_api, "get_notion_settings")
+    @patch.object(notion_api, "resolve_notion_settings")
     def test_notion_status_masks_token_and_database_ids(self, settings, _configured):
         settings.return_value = {
             "token": "secret-token",

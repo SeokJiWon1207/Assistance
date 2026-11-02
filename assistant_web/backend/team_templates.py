@@ -8,8 +8,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
-from backend.common import customer_project_owner, text_matches_customer_aliases
-from backend.config import CONFIG_DIR, CUSTOMER_ALIASES, CUSTOMER_DIRECTORY
+from backend.customer_identity import customer_project_owner, text_matches_customer_aliases
+from backend.config import CONFIG_DIR
+from backend.settings.catalogs import get_customer_aliases, get_customer_directory
 
 
 TEAM_TEMPLATES_PATH = CONFIG_DIR / "team_templates.json"
@@ -30,8 +31,8 @@ CUSTOMER_DISPLAY_OVERRIDES = {
 
 def _customer_display_name(canonical: str, aliases: List[str]) -> str:
     """검색 별칭 중 템플릿 선택기에 표시할 읽기 쉬운 대표 이름을 고른다."""
-    if canonical in CUSTOMER_DIRECTORY:
-        return CUSTOMER_DIRECTORY[canonical]["name"]
+    if canonical in get_customer_directory():
+        return get_customer_directory()[canonical]["name"]
     if canonical in CUSTOMER_DISPLAY_OVERRIDES:
         return CUSTOMER_DISPLAY_OVERRIDES[canonical]
     cleaned = [value.strip() for value in aliases if value.strip()]
@@ -60,7 +61,7 @@ def customer_template_options() -> List[str]:
     """고객사 별칭 설정과 같은 순서로 중복 없는 대표 이름을 반환한다."""
     options: List[str] = []
     seen = set()
-    for canonical, aliases in CUSTOMER_ALIASES.items():
+    for canonical, aliases in get_customer_aliases().items():
         display_name = _customer_display_name(canonical, aliases)
         normalized = display_name.casefold()
         if normalized in seen:
@@ -73,7 +74,7 @@ def customer_template_options() -> List[str]:
 def customer_template_search_terms() -> Dict[str, str]:
     """대표 이름을 코드명과 모든 현업 별칭으로 검색할 수 있게 만든다."""
     search_terms: Dict[str, str] = {}
-    for canonical, aliases in CUSTOMER_ALIASES.items():
+    for canonical, aliases in get_customer_aliases().items():
         display_name = _customer_display_name(canonical, aliases)
         values = [display_name, canonical, *aliases]
         search_terms[display_name] = " ".join(dict.fromkeys(value.strip() for value in values if value.strip()))
@@ -84,9 +85,9 @@ def customer_template_search_terms() -> Dict[str, str]:
 def customer_display_for_project(project_name: str) -> Optional[str]:
     """Mantis 프로젝트 이름(예: 147MiraeAsset(미래에셋증권))을 선택 목록의 대표 이름으로 바꾼다."""
     owner = customer_project_owner(project_name)
-    if owner in CUSTOMER_DIRECTORY:
-        return CUSTOMER_DIRECTORY[owner]["name"]
-    for canonical, aliases in CUSTOMER_ALIASES.items():
+    if owner in get_customer_directory():
+        return get_customer_directory()[owner]["name"]
+    for canonical, aliases in get_customer_aliases().items():
         if text_matches_customer_aliases(project_name, [canonical, *aliases]):
             return _customer_display_name(canonical, aliases)
     return None

@@ -1,6 +1,7 @@
 import unittest
 import os
 import shutil
+import sys
 import subprocess
 import tempfile
 from pathlib import Path
@@ -75,7 +76,9 @@ class DeploymentScriptTests(unittest.TestCase):
             app_root = root / "app"
             release_id = "20261012T010203Z"
             release = app_root / "releases" / release_id
-            (release / "assistant_web").mkdir(parents=True)
+            (release / "assistant_web/deploy/aws").mkdir(parents=True)
+            shutil.copy2(DEPLOY_DIR / "select_python.sh", release / "assistant_web/deploy/aws/select_python.sh")
+            (release / ".python-version").write_text("3.12.14\n")
             (release / "data").symlink_to(root)
             (app_root / "current").symlink_to(release)
             record = root / "allocated"
@@ -94,7 +97,11 @@ sudo() {
     command install "${args[@]}"
   fi
 }
-python3() {
+python3.12() {
+  if [[ "$1" == "-" ]]; then
+    "$TEST_REAL_PYTHON" "$@"
+    return
+  fi
   mkdir -p .venv/bin
   : > .venv/bin/activate
   printf '#!/usr/bin/env bash\\nexit 0\\n' > .venv/bin/python
@@ -109,7 +116,7 @@ mktemp() {
             result = subprocess.run(["bash", str(DEPLOY_DIR / "setup_server.sh")],
                 env={**os.environ, "APP_ROOT": str(app_root), "APP_USER": "fixture",
                      "STATE_DIR": str(root / "state"), "RELEASE_DIR": str(release), "RELEASE_ID": release_id,
-                     "BASH_ENV": str(stubs), "TEST_ALLOCATED_DIRECTORY": str(record)},
+                     "BASH_ENV": str(stubs), "TEST_ALLOCATED_DIRECTORY": str(record), "TEST_REAL_PYTHON": sys.executable},
                 capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 43, result.stderr)
             allocated = Path(record.read_text().strip())

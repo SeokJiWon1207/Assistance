@@ -28,6 +28,13 @@ from backend.intent.constraints import extract_query_constraints
 
 
 class IndependentAccuracyOracleTests(unittest.TestCase):
+    def test_notion_catalog_preparation_rejects_incomplete_warmup(self):
+        with patch('backend.notion.snapshot_maintenance.refresh_catalog_cache', return_value={
+            'status': 'incomplete', 'failed_property_count': 1,
+        }):
+            with self.assertRaisesRegex(RuntimeError, 'incomplete'):
+                accuracy.prepare_notion_catalog()
+
     def test_notion_accuracy_stops_before_sampling_when_child_scope_is_unverified(self):
         from backend.notion import read_scope
         root = 'a' * 32
@@ -182,6 +189,7 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
             patch.dict(accuracy.os.environ),
             patch.object(accuracy.sys, "argv", ["accuracy", "--all-cases"]),
             patch.object(accuracy, "prepare_mantis_store", return_value={"search_complete": True}),
+            patch.object(accuracy, "prepare_notion_catalog", side_effect=RuntimeError('incomplete catalog')),
             patch.object(accuracy, "fetch_mantis_snapshot", return_value=[{"id": 1}]),
             patch.object(accuracy, "fetch_notion_snapshot", return_value=[]),
             patch.object(accuracy, "build_mantis_cases", side_effect=RuntimeError("oracle unavailable")),
@@ -198,6 +206,7 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
         report = write.call_args.args[0]
         self.assertEqual(report["summary"]["status"], "incomplete")
         self.assertTrue(any("oracle" in error for error in report["errors"]))
+        self.assertTrue(any("Notion catalog" in error for error in report["errors"]))
 
     def test_customer_followup_accepts_display_alias_but_rejects_another_customer(self):
         case = AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "#31597", "exact_issue_ids", [31597])

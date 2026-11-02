@@ -1787,9 +1787,9 @@ class ExplanationQuoteTests(unittest.TestCase):
             {'issue_id': 101, 'field': 'description', 'quote': '조회 시점의 당일 날짜'},
         ]}]}
         top = self.render(self.validate(payload, grounding), grounding).split('### 핵심 근거')[0]
-        for expected in ('조회 당일', '1영업일 전', '하루 전', '개발 완료 뒤 QC', '고객사 전달'):
+        for expected in ('조회 시점의 당일 날짜', '1영업일 전', '하루 전', '개발 완료 뒤 QC', '고객사 전달'):
             self.assertIn(expected, top)
-        self.assertLess(top.index('조회 당일'), top.index('1영업일 전'))
+        self.assertLess(top.index('조회 시점의 당일 날짜'), top.index('1영업일 전'))
 
     def test_missing_studies_and_sleep_hypothesis_are_separate_conclusions(self):
         from backend.services.grounded_explanation import timeline_evidence
@@ -1861,7 +1861,7 @@ class ExplanationQuoteTests(unittest.TestCase):
              'evidence': [{'issue_id': 101, 'field': 'description', 'quote': '날짜를 1800년도로'}]},
         ]}
         top = self.render(self.validate(payload, grounding), grounding).split('### 핵심 근거')[0]
-        for expected in ('최초 문의', '2번 거래대금', 'DateTime', 'QC 완료', '고객사 전달',
+        for expected in ('본문 원문', '2번 거래대금', 'DateTime', 'QC 완료', '고객사 전달',
                          '전달 뒤 고객', '1970년', '스케일 계산', '조회 데이터'):
             self.assertIn(expected, top)
         self.assertLess(top.index('DateTime'), top.index('고객사 전달'))

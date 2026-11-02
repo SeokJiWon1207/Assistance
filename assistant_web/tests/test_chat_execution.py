@@ -1,5 +1,10 @@
 """요청 예산·취소가 실제 호출 경계와 병렬 작업까지 전달되는지 검증한다."""
 
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
+from backend.sources import mantis_client
 import asyncio
 import time
 import unittest
@@ -55,9 +60,9 @@ class ExecutionBudgetTests(unittest.TestCase):
                 return Mock(status_code=503)
 
             with execution_scope(ExecutionBudget(102.0)), \
-                    patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example"}), \
-                    patch.object(mantis, "get_mantis_headers", return_value={}), \
-                    patch.object(mantis.requests, "get", side_effect=failed) as get:
+                    patch.object(mantis_client, "get_mantis_settings", return_value={"url": "https://mantis.example"}), \
+                    patch.object(mantis_client, "get_mantis_headers", return_value={}), \
+                    patch.object(mantis_client.requests, "get", side_effect=failed) as get:
                 with self.assertRaises(RequestStopped):
                     mantis.fetch_mantis_issues({"page": 1})
                 self.assertEqual(get.call_count, 1)
@@ -79,8 +84,8 @@ class ExecutionBudgetTests(unittest.TestCase):
             raise requests.Timeout("대기 종료")
 
         with execution_scope(budget), \
-                patch.object(chat, "get_model_registry", return_value=[{**MODEL, "id": "secondary"}]), \
-                patch.object(chat, "get_model_api_key", return_value="synthetic"), \
+                patch.object(chat_generate, "get_model_registry", return_value=[{**MODEL, "id": "secondary"}]), \
+                patch.object(chat_llm, "get_model_api_key", return_value="synthetic"), \
                 patch.object(llm.requests, "post", side_effect=cancelled) as post:
             with self.assertRaises(RequestStopped) as raised:
                 chat.generate_model_response(request(True), MODEL, [], None, {}, 5)
@@ -102,11 +107,11 @@ class ExecutionBudgetTests(unittest.TestCase):
 
     def test_deterministic_answer_works_without_a_model_api_key(self):
         answer = {"content": "총 3건", "sources": [], "raw": {"mode": "deterministic_mantis_count"}}
-        with patch.object(chat, "get_private_model", return_value=MODEL), \
-                patch.object(chat, "get_model_api_key", return_value=""), \
-                patch.object(chat, "build_deterministic_report", return_value=DeterministicReportResult(answer)), \
+        with patch.object(chat_prepare, "get_private_model", return_value=MODEL), \
+                patch.object(chat_llm, "get_model_api_key", return_value=""), \
+                patch.object(chat_planning, "build_deterministic_report", return_value=DeterministicReportResult(answer)), \
                 patch.object(chat, "persist_chat_response", side_effect=lambda _request, _text, response, **_: response), \
-                patch.object(chat, "post_model_chat") as post:
+                patch.object(chat_generate, "post_model_chat") as post:
             result = chat.chat_service._build_response(request())
         self.assertEqual(result["content"], "총 3건")
         post.assert_not_called()

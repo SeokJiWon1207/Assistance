@@ -6,7 +6,8 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 
 from backend.auth import current_request_user
-from backend.config import NOTION_API_BASE, get_notion_headers, get_notion_settings, notion_is_configured
+from backend.settings.notion import NOTION_API_BASE, get_notion_headers
+from backend.notion.discovery import resolve_notion_settings, notion_is_configured
 from backend.schemas import ChromaSearchRequest, NotionPageUpdateRequest, NotionPageWriteRequest
 from backend.notion.schema import ensure_readable_notion_database
 from backend.sources.notion import (
@@ -32,7 +33,7 @@ def _require_notion_writer(request: Request) -> None:
 
 @router.get("/api/notion/status")
 def notion_status_endpoint() -> Dict[str, Any]:
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     database_ids = settings.get("database_ids", [])
     return {
         "configured": notion_is_configured(),

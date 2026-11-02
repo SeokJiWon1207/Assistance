@@ -26,13 +26,15 @@ from backend.api.search import router as search_router  # noqa: E402
 from backend.api.templates import router as templates_router  # noqa: E402
 from backend.api.workspace import router as workspace_router  # noqa: E402
 from backend.config import STATIC_DIR  # noqa: E402
+from backend.settings.catalogs import initialize_customer_catalogs  # noqa: E402
 from backend.startup_validation import get_cors_allowed_origins, validate_runtime_security  # noqa: E402
-from backend.workspace import init_workspace_db  # noqa: E402
+from backend.storage.workspace_schema import init_workspace_db  # noqa: E402
 from backend.workspace_data import load_workspace_snapshot  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(_application: FastAPI):
+    initialize_customer_catalogs()
     validate_runtime_security()
     init_users_db()
     init_workspace_db()
@@ -49,7 +51,7 @@ async def lifespan(_application: FastAPI):
         stops.append(start_store_scheduler())
     # 첫 Notion 검색이 DB마다 메타데이터 조회를 기다리지 않도록 미리 채운다.
     if os.getenv("NOTION_CACHE_WARM_ENABLED", "true").strip().lower() == "true":
-        from backend.notion.client import start_notion_cache_warmer
+        from backend.notion.cache_maintenance import start_notion_cache_warmer
         stops.append(start_notion_cache_warmer())
     try:
         yield

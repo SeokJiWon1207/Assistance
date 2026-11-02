@@ -3,7 +3,7 @@ import { icon } from "./icons.js?v=20260911-6";
 import { state, els, apiFetch, shouldSubmitPromptOnKeydown } from "./runtime.js?v=20260911-6";
 import { deleteConversationFromServer, createConversation, showToast, persistConversations, scheduleConversationSync, startNewConversation, openConversation, loadEarlierMessages, setConversationQuery, toggleConversationListExpanded, loadMoreConversations, renderWorkspace, loadMyWorkspace, loadPlaybooks, savePlaybookCandidate, savePlaybookEditor, changePlaybookStatus, showMyBrief, showTeamBrief, markNotificationsRead } from "./workspace.js?v=20260911-6";
 import { updateModelMeta, saveTheme, setShowSources, showSourcesEnabled, setAbComparison, abComparisonEnabled, renderMessages, updateComposerShadow, MESSAGE_ACTION_ICONS, openFeedbackModal, closeFeedbackModal, saveMessageFeedback, rerunWithoutCondition, closeChromaModal, openSourceDetail, autoResizeInput, resetOptions, requestAssistant } from "./chat.js?v=20260911-6";
-import { showChatView } from "./dashboard.js?v=20260911-6";
+import { showChatView, openWorkspaceIssueDetail, closeIssueDetail } from "./dashboard.js?v=20260911-6";
 import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSidebarOpen, toggleAccountMenu, toggleMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { initTemplatePicker, openTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
@@ -322,6 +322,7 @@ els.workspaceRefreshBtn?.addEventListener("click", async () => {
   }
 });
 function selectWorkspaceTab(name) {
+  closeIssueDetail({ restoreFocus: false });
   state.workspaceTab = name;
   // 주간 보고에서 팀 브리핑을 보던 중이면 다시 열 때도 불러오고 읽음으로 저장한다.
   if (name === "brief" && state.workspaceBriefKind === "team") {
@@ -367,10 +368,13 @@ els.workspaceTabs?.addEventListener("keydown", (event) => {
   tabs[next].focus();
 });
 els.workspaceContent?.addEventListener("click", async (event) => {
-  const calendarIssue = event.target.closest("[data-workspace-issue]");
-  if (calendarIssue) {
-    const { openSourceDetail } = await import("./chat_source_detail.js?v=20260911-6");
-    return openSourceDetail({ type: "chroma", issue_id: calendarIssue.dataset.workspaceIssue });
+  const issue = event.target.closest("[data-workspace-issue]");
+  if (issue) {
+    return openWorkspaceIssueDetail(issue.dataset.workspaceIssue, issue);
+  }
+  const issueRow = event.target.closest("[data-workspace-row-issue]");
+  if (issueRow && !event.target.closest("button, a, input, select, summary")) {
+    return openWorkspaceIssueDetail(issueRow.dataset.workspaceRowIssue, issueRow.querySelector("[data-workspace-issue]"));
   }
   const retry = event.target.closest("[data-workspace-retry]");
   if (retry) {
@@ -447,6 +451,7 @@ els.workspaceContent?.addEventListener("click", async (event) => {
   }
   const briefKind = event.target.closest("[data-brief-kind]");
   if (briefKind) {
+    closeIssueDetail({ restoreFocus: false });
     if (briefKind.dataset.briefKind === "team") showTeamBrief();
     else showMyBrief();
     return;

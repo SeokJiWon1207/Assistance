@@ -25,6 +25,13 @@
 .effort-answer-issues > summary, .effort-answer-original > summary { cursor: pointer; padding: 6px 0; color: var(--text-soft); font-size: 12px; }
 .effort-answer-issues > summary:focus-visible, .effort-answer-original > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
 .effort-answer-original > .bubble { margin-top: 8px; }
+.effort-issue-list { display: grid; gap: 16px; margin: 12px 0 0; padding-left: 24px; color: var(--text-soft); font-size: 13px; }
+.effort-issue-list li { min-width: 0; padding-left: 4px; }
+.effort-issue-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 16px; }
+.effort-issue-title { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; white-space: normal; line-height: 1.6; color: var(--text); }
+.effort-issue-heading strong { flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.effort-issue-track { height: 8px; margin-top: 7px; background: var(--surface-alt); border-radius: 4px; overflow: hidden; }
+.effort-issue-track span { display: block; height: 100%; background: var(--chart-1); border-radius: inherit; }
 @media (max-width: 560px) {
   .effort-chart.effort-answer { padding: 16px; }
   .effort-answer-types { grid-template-columns: repeat(2, minmax(0, 1fr)); }

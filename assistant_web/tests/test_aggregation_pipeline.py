@@ -60,8 +60,8 @@ class AggregationPipelineTests(unittest.TestCase):
         request = ChatRequest(modelId='offline', abTest=False, messages=[ChatMessage(role='user', content=question)],
                               tools={'mantis': True, 'notion': False, 'vectorDb': False})
         with patch.dict(os.environ, {'UNIFIED_QUERY_PLANNER_ENABLED': 'true', 'MANTIS_AGGREGATION_MODE': 'primary'}), patch(
-                'backend.services.chat_service.get_private_model', return_value={'id': 'offline', 'status': 'active'}), patch(
-                'backend.services.chat_service.get_model_api_key', return_value='test'), patch(
+                'backend.services.chat.prepare.get_private_model', return_value={'id': 'offline', 'status': 'active'}), patch(
+                'backend.llm.get_model_api_key', return_value='test'), patch(
                 'backend.intent.unified._propose', return_value=planned) as planner, patch(
                 'backend.sources.mantis_store.stream_complete_store', side_effect=lambda: complete_store([raw_issue(1)])):
             result = chat_service.build_response(request, user={'uid': 'aggregation-user'})

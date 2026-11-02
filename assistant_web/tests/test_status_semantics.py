@@ -1,4 +1,7 @@
 """고정 플래너 응답, 장애 경로, 실제 보고서 및 상태 상속 계약."""
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
 from contextlib import closing
 
 import json
@@ -199,7 +202,7 @@ class StatusSemanticTests(unittest.TestCase):
         rows = [{"id": i, "summary": "점검", "project": {"name": "120NH(NH증권)"},
                  "handler": {"real_name": "석지원"}, "status": {"name": status}, "created_at": "2025-01-01"}
                 for i, status in enumerate(("assigned", "resolved", "closed", "new"), 1)]
-        with patch.object(chat, "resolve_status_intent", return_value=resolution), \
+        with patch.object(chat_planning, "resolve_status_intent", return_value=resolution), \
              patch.object(sla, "read_scoped_store", return_value=IssueBatch(rows, {"search_complete": True})):
             response = chat.plan_chat_query(ChatRequest(modelId="chosen-answer-model", messages=[ChatMessage(role="user", content=q)]), context, None).response
         self.assertEqual({s["issue_id"] for s in response["sources"]}, {1, 4})
@@ -213,8 +216,8 @@ class StatusSemanticTests(unittest.TestCase):
         q = "NH MTS 챙겨야 하는 것은?"
         for reason in ("ambiguous", "planner_unavailable", "invalid_evidence"):
             context = chat.ChatPipelineContext(q, {}, "", [], q, {"mantis": True}, [], extract_query_constraints(q), 5)
-            with patch.object(chat, "resolve_status_intent", return_value={"needs_clarification": True, "reason": reason}), \
-                 patch.object(chat, "build_deterministic_report") as report:
+            with patch.object(chat_planning, "resolve_status_intent", return_value={"needs_clarification": True, "reason": reason}), \
+                 patch.object(chat_planning, "build_deterministic_report") as report:
                 response = chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None).response
             report.assert_not_called()
             self.assertEqual(response["raw"]["mode"], "status_clarification")
@@ -235,7 +238,7 @@ class StatusSemanticTests(unittest.TestCase):
     def test_notion_is_not_sent_to_mantis_status_planner(self):
         q = "노션에서 문서 찾아줘"
         context = chat.ChatPipelineContext(q, {}, "", [], q, {"notion": True, "mantis": True}, [], extract_query_constraints(q), 5)
-        with patch.object(chat, "resolve_status_intent") as planner, patch.object(chat, "_plan_chat_query", return_value=None):
+        with patch.object(chat_planning, "resolve_status_intent") as planner, patch.object(chat_planning, "_plan_chat_query", return_value=None):
             chat.plan_chat_query(ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)]), context, None)
         planner.assert_not_called()
 
@@ -245,10 +248,10 @@ class StatusSemanticTests(unittest.TestCase):
         for latest, expected in (("그중 KB만 보여줘", True), ("그중 개발완료만", False),
                                  ("그중 전체 상태 보여줘", False), ("신한 이슈 보여줘", False)):
             with self.subTest(latest=latest), \
-                 patch.object(chat, "get_private_model", return_value={"id": "answer", "status": "active"}), \
-                 patch.object(chat, "get_model_api_key", return_value="synthetic"), \
-                 patch.object(chat, "load_audit_query_plan", return_value={"source": "mantis", "status_resolution": resolution}) as load, \
-                 patch.object(chat, "rewrite_follow_up_query_with_model", return_value=None):
+                 patch.object(chat_prepare, "get_private_model", return_value={"id": "answer", "status": "active"}), \
+                 patch.object(chat_llm, "get_model_api_key", return_value="synthetic"), \
+                 patch.object(chat_prepare, "load_audit_query_plan", return_value={"source": "mantis", "status_resolution": resolution}) as load, \
+                 patch.object(chat_prepare, "rewrite_follow_up_query_with_model", return_value=None):
                 request = ChatRequest(modelId="answer", contextAuditId="a" * 32,
                     messages=[ChatMessage(role="user", content=prior), ChatMessage(role="user", content=latest)])
                 context = chat.prepare_chat_pipeline(request, latest, {"uid": "u"})
@@ -264,11 +267,11 @@ class StatusSemanticTests(unittest.TestCase):
                                           ("미종료로 보여줘", False, False),
                                           ("KB 미종료 보여줘", True, False)):
             with self.subTest(latest=latest, trusted=trusted), \
-                 patch.object(chat, "get_private_model", return_value={"id": "answer", "status": "active"}), \
-                 patch.object(chat, "get_model_api_key", return_value="synthetic"), \
-                 patch.object(chat, "load_audit_query_plan", return_value={
+                 patch.object(chat_prepare, "get_private_model", return_value={"id": "answer", "status": "active"}), \
+                 patch.object(chat_llm, "get_model_api_key", return_value="synthetic"), \
+                 patch.object(chat_prepare, "load_audit_query_plan", return_value={
                      "status_resolution": {"needs_clarification": True}} if trusted else {}), \
-                 patch.object(chat, "rewrite_follow_up_query_with_model", return_value=None):
+                 patch.object(chat_prepare, "rewrite_follow_up_query_with_model", return_value=None):
                 request = ChatRequest(modelId="answer", contextAuditId="a" * 32,
                     messages=[ChatMessage(role="user", content=prior), ChatMessage(role="user", content=latest)])
                 context = chat.prepare_chat_pipeline(request, latest, {"uid": "u"})

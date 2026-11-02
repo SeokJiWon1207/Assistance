@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.config import CONFIG_DIR, RUNTIME_DIR
 
 

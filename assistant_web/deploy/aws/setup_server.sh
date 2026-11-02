@@ -43,6 +43,9 @@ fi
 
 APP_DIR="$RELEASE_DIR/assistant_web"
 
+# 운영 자원 변경 전에 프로젝트 Python major.minor를 확인한다.
+DEPLOY_PYTHON="$(bash "$APP_DIR/deploy/aws/select_python.sh" "$RELEASE_DIR/.python-version")"
+
 sudo apt-get update
 sudo apt-get install -y python3 python3-venv python3-pip nginx sqlite3 curl
 # 배포와 수동 롤백은 같은 호스트 잠금을 사용한다.
@@ -66,7 +69,7 @@ previous_current="$(readlink -f "$CURRENT_LINK")"
 
 # 릴리스별 가상환경을 완성한 뒤에만 활성 링크를 바꾼다.
 cd "$APP_DIR"
-python3 -m venv .venv
+"$DEPLOY_PYTHON" -m venv .venv
 . .venv/bin/activate
 pip install --no-cache-dir --upgrade pip
 pip install --no-cache-dir -r requirements.lock
@@ -108,6 +111,7 @@ sudo install -d -m 700 -o "$APP_USER" -g "$APP_USER" "$APP_ROOT/backups"
 rollback_dir="$(mktemp -d "$APP_ROOT/backups/deploy-$RELEASE_ID.XXXXXX")"
 service_existed=0
 nginx_existed=0
+service_dropins_existed=0
 maintenance_created=0
 database_change_started=0
 if sudo test -f "$SERVICE_FILE"; then
@@ -117,6 +121,10 @@ fi
 if sudo test -f "$NGINX_FILE"; then
   sudo cp -a "$NGINX_FILE" "$rollback_dir/nginx"
   nginx_existed=1
+fi
+if sudo test -d "$SERVICE_FILE.d"; then
+  sudo cp -a "$SERVICE_FILE.d" "$rollback_dir/service-dropins"
+  service_dropins_existed=1
 fi
 
 atomic_switch_current() {
@@ -153,6 +161,9 @@ rollback_deployment() {
     sudo cp -a "$rollback_dir/nginx" "$NGINX_FILE"
   else
     sudo rm -f -- "$NGINX_FILE"
+  fi
+  if [[ "$service_dropins_existed" == "1" ]]; then
+    sudo cp -a "$rollback_dir/service-dropins/." "$SERVICE_FILE.d/"
   fi
   sudo systemctl daemon-reload
   sudo systemctl restart content-ai-assistant
@@ -315,6 +326,8 @@ RestartSec=3
 WantedBy=multi-user.target
 SERVICE
 
+sudo "$DEPLOY_PYTHON" -B "$APP_DIR/scripts/release_service.py" \
+  --directory "$SERVICE_FILE.d" --release-id "$RELEASE_ID"
 sudo systemctl daemon-reload
 sudo systemctl enable content-ai-assistant
 # 공유 DB를 변경하는 동안에는 외부 요청을 막고 기존 프로세스를 중지한다.

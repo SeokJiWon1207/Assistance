@@ -3,14 +3,13 @@
 import calendar
 import os
 import re
-import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
 from backend.audit import load_audit_sources
-from backend.common import normalize_for_match
-from backend.config import STATUS_ALIASES
+from backend.utils.text import normalize_for_match
+from backend.settings.values import STATUS_ALIASES
 from backend.intent.constants import (
     DEMONSTRATIVE_ISSUE_PATTERN,
     FOLLOW_UP_CONTINUATION_MARKERS,
@@ -22,22 +21,13 @@ from backend.intent.constants import (
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
 from backend.intent.list_continuation import list_continuation_mode
 from backend.intent.general import is_general_question
-from backend.intent.search_terms import wants_all_results
+from backend.intent.keyword_terms import wants_all_results
 from backend.intent.status_semantics import ALL_STATUSES
 from backend.intent.scope_changes import cleared_scope_fields, followup_created_at, has_scope_edit
 from backend.llm import extract_model_content, post_model_chat
-from backend.query_planning import extract_created_at_range
+from backend.query.dates import extract_created_at_range
 from backend.schemas import ChatMessage
-from backend.team_scope import has_mantis_team_scope
-
-
-Dependency = TypeVar("Dependency", bound=Callable[..., Any])
-
-
-def _compat_dependency(name: str, default: Dependency) -> Dependency:
-    """기존 understanding 경로에 적용된 테스트 패치를 전달한다."""
-    core = sys.modules.get("backend.intent.core")
-    return getattr(core, name, default) if core is not None else default
+from backend.domain.team import has_mantis_team_scope
 
 
 def get_latest_user_text(messages: List[ChatMessage]) -> str:
@@ -187,7 +177,6 @@ def resolve_reference_from_context(
     감사 로그에 저장된 '사용자가 실제로 본' 목록의 3번째 항목(이슈ID/제목)을
     직접 가리키게 한다. 해석에 실패하면 None을 반환해 기존 규칙 기반
     상속/LLM 재작성 경로로 폴백한다."""
-    audit_source_loader = _compat_dependency("load_audit_sources", load_audit_sources)
     if not audit_id:
         return None
     ordinal = parse_ordinal_reference(text)
@@ -203,7 +192,7 @@ def resolve_reference_from_context(
     ):
         # 자체 조건을 가진 독립 질문이면 서수는 목록 참조가 아닐 가능성이 크다.
         return None
-    sources = audit_source_loader(audit_id, user_uid=user_uid, **({"variant": variant} if variant != "A" else {}))
+    sources = load_audit_sources(audit_id, user_uid=user_uid, **({"variant": variant} if variant != "A" else {}))
     if not sources:
         return None
     if demonstrative:

@@ -9,15 +9,18 @@ from typing import Any, Dict, Iterator, Optional
 
 import requests
 
-from backend.config import CONFIG_DIR, CUSTOMER_ALIASES, PLATFORM_ALIASES
+from backend.config import CONFIG_DIR
+from backend.settings.catalogs import get_customer_aliases
+from backend.settings.values import PLATFORM_ALIASES
 from backend.llm import get_model_registry, get_model_api_key, post_model_chat, extract_model_content
 from backend.timing import measured
 
 STATUS_RESOLUTION: ContextVar[Optional[Dict[str, Any]]] = ContextVar("status_resolution", default=None)
 NON_WORK_EVIDENCE = re.compile(r"공수|기간|시간|일정|목표일|기한|예산|금액|휴가|연차|배포일")
 ALL_STATUSES = re.compile(r"상태\s*(?:무관|관계없이)|(?:전체|모든)\s*상태|종료(?:된\s*(?:것|건|이슈))?\s*(?:도\s*)?포함")
-ENTITY_EVIDENCE = {value.casefold() for mapping in (CUSTOMER_ALIASES, PLATFORM_ALIASES)
-                   for key, values in mapping.items() for value in [key, *values]}
+def entity_evidence() -> set[str]:
+    return {value.casefold() for mapping in (get_customer_aliases(), PLATFORM_ALIASES)
+            for key, values in mapping.items() for value in [key, *values]}
 
 
 def is_structured_status_neutral_query(question: str, constraints: Dict[str, Any]) -> bool:
@@ -34,8 +37,8 @@ def is_structured_status_neutral_query(question: str, constraints: Dict[str, Any
     if not values or not re.search(r"이슈|목록|리스트", question):
         return False
     from backend.intent.entities import strip_title_date_basis_instruction
-    from backend.intent.search_terms import remove_list_display_instruction
-    from backend.team_scope import remove_team_scope_phrase
+    from backend.intent.keyword_terms import remove_list_display_instruction
+    from backend.domain.team import remove_team_scope_phrase
     text = remove_team_scope_phrase(remove_list_display_instruction(strip_title_date_basis_instruction(question)))
     for value in sorted(set(values), key=len, reverse=True):
         text = re.sub(r"(?<![가-힣A-Za-z0-9_])" + re.escape(value)
@@ -72,7 +75,8 @@ def valid_open_evidence(question: str, evidence: Any) -> bool:
         return False
     if evidence not in question or NON_WORK_EVIDENCE.search(evidence):
         return False
-    if all(token.casefold() in ENTITY_EVIDENCE or re.fullmatch(r"(?:이슈|업무|티켓|건|것|거|상태)(?:들|만|은|는|이|가|을|를)?", token)
+    known_entities = entity_evidence()
+    if all(token.casefold() in known_entities or re.fullmatch(r"(?:이슈|업무|티켓|건|것|거|상태)(?:들|만|은|는|이|가|을|를)?", token)
            for token in evidence.split()):
         return False
     # 고객사·대상 명사만으로는 상태 의미의 근거가 될 수 없다.
@@ -131,7 +135,7 @@ def resolve_status_intent(question: str, constraints: Dict[str, Any]) -> Dict[st
             "messages": [{"role": "system", "content": prompt}, {"role": "user", "content": question}],
             "stream": False}, timeout=max(2, min(int(settings.get("timeoutSeconds", 8)), 15)), think=False)
         response.raise_for_status()
-        from backend.intent.constraints import extract_json_object
+        from backend.intent.json_payload import extract_json_object
         parsed = extract_json_object(extract_model_content(response.json()))
         if not isinstance(parsed, dict) or not {"status_intent", "evidence", "needs_clarification"} <= parsed.keys():
             return {**fallback, "reason": "invalid_schema"}

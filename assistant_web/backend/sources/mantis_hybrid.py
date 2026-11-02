@@ -14,10 +14,12 @@ from typing import Any, Callable
 
 import requests
 
-from backend.common import clamp_int, normalize_for_match
+from backend.utils.numbers import clamp_int
+from backend.utils.text import normalize_for_match
 from backend.config import RUNTIME_DIR
 from backend.execution import bounded_timeout, checkpoint, RequestStopped
-from backend.sources.mantis import issue_matches_constraints, issue_to_search_text, normalize_issue
+from backend.sources.mantis_matching import issue_matches_constraints
+from backend.sources.mantis_fields import issue_to_search_text, normalize_issue
 from backend.sources.mantis_chunk_index import open_index, lexical_chunks, start_index_build
 from backend.sources.mantis_chunks import embedding_text, split_issue
 from backend.sources.mantis_store import connection_key, store_path

@@ -3,7 +3,7 @@
 import re
 from typing import Any, Dict, Optional
 
-from backend.config import MANTIS_STATUS_NAMES as STATUS_NAMES, MANTIS_OPEN_STATUSES as OPEN_STATUSES
+from backend.settings.values import MANTIS_STATUS_NAMES as STATUS_NAMES, MANTIS_OPEN_STATUSES as OPEN_STATUSES
 
 
 def canonical_mantis_status(value: str) -> Optional[str]:
@@ -31,3 +31,25 @@ def source_status(source: Dict[str, Any]) -> str:
     if isinstance(value, dict):
         return str(value.get("name") or value.get("label") or "")
     return str(value)
+
+
+MANTIS_STATUS_DISPLAY_LABELS = {
+    "new": "신규 이슈",
+    "feedback": "정보 부족",
+    "acknowledged": "이슈 검토",
+    "confirmed": "확인된 이슈",
+    "assigned": "할당된 이슈",
+    "developed": "개발완료",
+    "resolved": "해결된 이슈",
+    "closed": "종료된 이슈",
+    # 검색 결과에서만 사용하는 묶음 상태다.
+    "open": "미종료",
+}
+
+
+def display_mantis_status_label(status: Any) -> str:
+    """Mantis 내부 상태 코드를 사용자용 한국어 라벨로 변환한다."""
+    normalized = str(status or "").strip()
+    return MANTIS_STATUS_DISPLAY_LABELS.get(
+        normalized.casefold(), normalized or "상태 미상"
+    )

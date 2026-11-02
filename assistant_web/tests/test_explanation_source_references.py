@@ -43,8 +43,8 @@ class ExplanationSourceReferenceTests(unittest.TestCase):
     def retrieve(self, source, target, *, query=QUERY, scope=None, extras=()):
         resolved = scope or constraints()
         plan = {'operation': 'explain', 'source': 'mantis', 'resolved_constraints': resolved}
-        with patch('backend.retrieval.execute_chroma_search', return_value=search_result(source, extras)), patch(
-            'backend.retrieval.fetch_mantis_issue_by_id', return_value=target, create=True
+        with patch('backend.services.retrieval_pipeline.execute_chroma_search', return_value=search_result(source, extras)), patch(
+            'backend.services.retrieval_pipeline.fetch_mantis_issue_by_id', return_value=target, create=True
         ) as lookup:
             result = run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True}, intent_plan=plan)
         return result, lookup
@@ -141,9 +141,9 @@ class ExplanationSourceReferenceTests(unittest.TestCase):
         base = issue(24914, '차트 화면 오류', 'HTS', '권한별')
         past = issue(23567, '차트 화면 오류 과거 사례', 'HTS', '권한별', 'QC NG로 전달 보류했습니다.')
         scope = {'issue_ids': [24914], 'filter_clauses': [{'field': 'issue_id', 'operator': 'in', 'value': [24914]}]}
-        with patch('backend.retrieval.execute_mantis_id_lookup', return_value={
+        with patch('backend.services.retrieval_pipeline.execute_mantis_id_lookup', return_value={
             'source': 'mantis_id_lookup', 'status': 'ok', 'issues_list': [normalize_issue(base, evidence_query=query)]
-        }), patch('backend.retrieval.execute_chroma_search', return_value=search_result(past)):
+        }), patch('backend.services.retrieval_pipeline.execute_chroma_search', return_value=search_result(past)):
             result = run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True},
                                             {'operation': 'explain', 'resolved_constraints': scope})
         grounding = build_model_retrieval_context(result, 5)

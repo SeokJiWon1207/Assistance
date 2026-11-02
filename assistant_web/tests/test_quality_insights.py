@@ -1,3 +1,4 @@
+from backend.sources import mantis_client
 import random
 import tempfile
 import unittest
@@ -289,6 +290,9 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.addCleanup(mantis.clear_mantis_recent_cache)
         # API 모의 응답을 검증하는 테스트가 로컬의 라이브 저장본을 읽지 않는다.
         self.enterContext(patch.object(mantis, "read_complete_store", return_value=None))
+        self.enterContext(patch.object(mantis, "get_mantis_settings", return_value={
+            "url": "https://mantis.example/api/issues", "token": "test",
+        }))
 
     @patch.object(mantis, "fetch_mantis_issues")
     def test_live_count_collection_returns_error_metadata(self, fetch_issues):
@@ -312,9 +316,9 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(set(result["issues"]), {"1", "2"})
         self.assertEqual(result["scanned_pages"], 2)
 
-    @patch.object(mantis, "get_mantis_headers", return_value={})
-    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
-    @patch.object(mantis.requests, "get")
+    @patch.object(mantis_client, "get_mantis_headers", return_value={})
+    @patch.object(mantis_client, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
+    @patch.object(mantis_client.requests, "get")
     def test_page_scan_checks_all_recent_pages_before_selecting_latest_results(
         self, get, _settings, _headers
     ):
@@ -348,10 +352,10 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(pages.count(2), 1)
         self.assertEqual(result["meta"]["searched_pages"], 2)
 
-    @patch.object(mantis, "interruptible_sleep")
-    @patch.object(mantis, "get_mantis_headers", return_value={})
-    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
-    @patch.object(mantis.requests, "get")
+    @patch.object(mantis_client, "interruptible_sleep")
+    @patch.object(mantis_client, "get_mantis_headers", return_value={})
+    @patch.object(mantis_client, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues", "token": "test"})
+    @patch.object(mantis_client.requests, "get")
     def test_page_scan_retries_transient_timeout(self, get, _settings, _headers, sleep):
         response = Mock(status_code=200)
         response.json.return_value = {"issues": [{"id": 300, "summary": "테스트"}]}
@@ -372,10 +376,10 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertEqual(sum(call.kwargs["params"]["page"] == 1 for call in get.call_args_list), 2)
         sleep.assert_called_once_with(1)
 
-    @patch.object(mantis, "interruptible_sleep")
-    @patch.object(mantis, "get_mantis_headers", return_value={})
-    @patch.object(mantis, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
-    @patch.object(mantis.requests, "get")
+    @patch.object(mantis_client, "interruptible_sleep")
+    @patch.object(mantis_client, "get_mantis_headers", return_value={})
+    @patch.object(mantis_client, "get_mantis_settings", return_value={"url": "https://mantis.example/api/issues"})
+    @patch.object(mantis_client.requests, "get")
     def test_exact_issue_lookup_retries_transient_timeout(self, get, _settings, _headers, sleep):
         response = Mock(status_code=200)
         response.json.return_value = {"issues": [{"id": 31351}]}
@@ -400,9 +404,9 @@ class ScreenNumberAccuracyTests(unittest.TestCase):
         self.assertTrue(understanding.text_matches_screen_numbers("화면번호 9413", ["9413"]))
         self.assertFalse(understanding.text_matches_screen_numbers("식별자 194130", ["9413"]))
 
-    @patch("backend.retrieval.execute_mantis_filter_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_snapshot_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search")
     def test_screen_query_uses_exact_snapshot_and_page_scan_only(
         self, snapshot_search, page_scan, filter_search
     ):

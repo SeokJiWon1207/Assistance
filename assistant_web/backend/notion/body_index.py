@@ -6,17 +6,23 @@
 
 from __future__ import annotations
 
+from backend.notion.page_ownership import _ancestor_page_path as _ancestor_page_path, _id as _id, page_belongs_to_database as page_belongs_to_database, segment_belongs_to_page as segment_belongs_to_page
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
-import sqlite3
+import sqlite3 as sqlite3
 from typing import Any, Iterator
 
-from backend.common import normalize_for_match
-from backend.config import NOTION_API_BASE, RUNTIME_DIR, get_notion_settings
+from backend.utils.text import normalize_for_match
+from backend.settings.notion import NOTION_API_BASE
+from backend.config import RUNTIME_DIR
+from backend.notion.discovery import resolve_notion_settings
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import NOTION_BODY, NOTION_BODY_INIT
 
 
 SCHEMA_VERSION = "1"
@@ -26,55 +32,6 @@ CONTENT_POLICY_VERSION = 2
 
 class BodyIndexError(RuntimeError):
     """사용할 수 없는 색인. 호출자는 실시간 검색으로 대체할 수 있다."""
-
-
-def _id(value: Any) -> str:
-    return str(value or "").replace("-", "").lower()
-
-
-def segment_belongs_to_page(segment: dict[str, Any], page_id: str) -> bool:
-    """직접 소유 근거 또는 원본 검증을 마친 동기화 복제 근거만 허용한다.
-
-    저장본의 표시는 후보 발견에만 쓰며, 결과에는 매번 API 재검증한 근거를 쓴다.
-    """
-    target = _id(page_id)
-    if _id(segment.get("owner_page_id") or segment.get("page_id")) == target:
-        return True
-    return bool(target and _id(segment.get("display_page_id")) == target
-                and segment.get("owner_page_id") and segment.get("synced_source_id")
-                and segment.get("synced_copy_id") and segment.get("source_database_id"))
-
-
-def _ancestor_page_path(raw: dict[str, Any], database_id: str,
-                         parent_pages: dict[str, dict[str, Any]] | None = None) -> list[str] | None:
-    parents = parent_pages or {}
-    current = raw
-    seen: set[str] = set()
-    page_ids: list[str] = []
-    for _ in range(65):
-        identifier = _id(current.get("id"))
-        if not identifier or identifier in seen or current.get("archived") or current.get("in_trash"):
-            return None
-        seen.add(identifier)
-        parent = current.get("parent") or {}
-        if parent.get("type") == "database_id":
-            return page_ids if _id(parent.get("database_id")) == _id(database_id) else None
-        kind = parent.get("type")
-        if kind not in {"page_id", "block_id"}:
-            return None
-        ancestor_id = _id(parent.get(kind))
-        current = parents.get(ancestor_id, {})
-        if _id(current.get("id")) != ancestor_id or current.get("object") != kind.removesuffix("_id"):
-            return None
-        if kind == "page_id":
-            page_ids.append(ancestor_id)
-    return None
-
-
-def page_belongs_to_database(raw: dict[str, Any], database_id: str,
-                             parent_pages: dict[str, dict[str, Any]] | None = None) -> bool:
-    """페이지·블록의 실제 부모 경로가 지정 DB까지 이어질 때만 인정한다."""
-    return _ancestor_page_path(raw, database_id, parent_pages) is not None
 
 
 def _now() -> str:
@@ -103,7 +60,7 @@ def body_index_path() -> Path:
 
 
 def connection_fingerprint() -> str:
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     identity = [NOTION_API_BASE, settings.get("token", ""), settings.get("version", ""),
                 sorted({_id(value) for value in settings.get("database_ids", []) if value}),
                 os.getenv("NOTION_INCLUDE_CHILD_DATABASES", "false").lower() in {"1", "true", "yes"}]
@@ -126,7 +83,7 @@ class BodyIndex:
     def _initialize(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with closing(sqlite3.connect(self.path, timeout=30)) as db, db:
+            with closing(open_sqlite(self.path, profile=NOTION_BODY_INIT)) as db, db:
                 self.path.chmod(0o600)
                 db.execute("PRAGMA journal_mode=WAL")
                 db.execute("PRAGMA synchronous=FULL")
@@ -220,10 +177,7 @@ class BodyIndex:
             if self._uses_config_fingerprint and connection_fingerprint() != self.fingerprint:
                 raise BodyIndexError("수집 또는 검색 중 Notion 연결 설정이 변경되었습니다.")
             uri = self.path.resolve().as_uri() + ("?mode=rw" if write else "?mode=ro")
-            db = sqlite3.connect(uri, uri=True, timeout=30)
-            db.row_factory = sqlite3.Row
-            db.execute("PRAGMA foreign_keys=ON")
-            db.execute("PRAGMA synchronous=FULL")
+            db = open_sqlite(uri, profile=NOTION_BODY)
             db.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             if write:
                 self._ensure_partial_schema(db)

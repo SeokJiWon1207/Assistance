@@ -1,4 +1,6 @@
 """운영 웹에서 재현한 고객사 축소와 담당자 변경의 조건 보존 회귀."""
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from unittest.mock import patch
 
@@ -67,11 +69,11 @@ class FollowupWebRefinementTests(unittest.TestCase):
             ChatMessage(role="user", content=question),
         ])
         with (
-            patch.object(chat, "get_private_model", return_value={"id": "fixture", "status": "active"}),
-            patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-            patch.object(chat, "load_audit_query_plan", return_value=plan),
-            patch.object(chat, "resolve_reference_from_context", return_value=None),
-            patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 재작성 금지")),
+            patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture", "status": "active"}),
+            patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+            patch.object(chat_prepare, "load_audit_query_plan", return_value=plan),
+            patch.object(chat_prepare, "resolve_reference_from_context", return_value=None),
+            patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 재작성 금지")),
         ):
             context = chat.prepare_chat_pipeline(request, question, {"uid": "fixture-user"})
         constraints = context.query_constraints

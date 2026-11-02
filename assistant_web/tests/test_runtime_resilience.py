@@ -1,3 +1,8 @@
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.retrieve as chat_retrieve
 import gc
 import os
 import tempfile
@@ -25,7 +30,7 @@ class RuntimeResilienceTests(unittest.TestCase):
 
         self.assertEqual(
             [model["id"] for model in models],
-            ["gemini-3.1-flash-lite", "company-qwen3.6-35b-a3b", "qwen3.5-9b-local"],
+            ["gemini-3.1-flash-lite", "gpt-6-luna", "company-qwen3.6-35b-a3b", "qwen3.5-9b-local"],
         )
         self.assertNotIn("59.6.135.38", str(models))
 
@@ -88,26 +93,26 @@ class RuntimeResilienceTests(unittest.TestCase):
             requests.ConnectionError("connection refused"),
         ):
             with self.subTest(exception=type(exception).__name__), patch.object(
-                chat_service_module, "get_private_model", return_value=model
+                chat_prepare, "get_private_model", return_value=model
             ), patch.object(
-                chat_service_module, "get_model_registry", return_value=[model]
+                chat_generate, "get_model_registry", return_value=[model]
             ), patch.object(
-                chat_service_module, "get_model_api_key", return_value="key"
+                chat_llm, "get_model_api_key", return_value="key"
             ), patch.object(
-                chat_service_module, "plan_search_intent_with_model", return_value={}
+                chat_planning, "plan_search_intent_with_model", return_value={}
             ), patch.object(
-                chat_service_module, "resolve_status_intent",
+                chat_planning, "resolve_status_intent",
                 return_value={"status_intent": None, "needs_clarification": False, "origin": "llm"},
             ), patch.object(
-                chat_service_module, "run_retrieval_pipeline", return_value=retrieval
+                chat_retrieve, "run_retrieval_pipeline", return_value=retrieval
             ), patch.object(
-                chat_service_module, "should_run_retrieval", return_value=True
+                chat_retrieve, "should_run_retrieval", return_value=True
             ), patch.object(
-                chat_service_module, "should_return_deterministic_issue_list", return_value=False
+                chat_retrieve, "should_return_deterministic_issue_list", return_value=False
             ), patch.object(
-                chat_service_module, "should_return_deterministic_notion_list", return_value=False
+                chat_retrieve, "should_return_deterministic_notion_list", return_value=False
             ), patch.object(
-                chat_service_module, "post_model_chat", side_effect=exception
+                chat_generate, "post_model_chat", side_effect=exception
             ), patch.object(
                 chat_service_module,
                 "persist_chat_response",

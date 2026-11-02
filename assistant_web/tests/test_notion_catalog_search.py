@@ -1,4 +1,7 @@
 """검증된 제목·속성 목록은 본문 수집과 독립적으로 빠르게 검색한다."""
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import schema as notion_schema
 import json
 import sqlite3
 import tempfile
@@ -29,13 +32,13 @@ class NotionCatalogSearchTests(unittest.TestCase):
         self.enterContext(patch.dict('os.environ', {'NOTION_TITLE_QUERY_CACHE_SECONDS': '0'}))
         self.enterContext(patch.object(complete_snapshot, 'open_body_index', return_value=self.index))
         self.enterContext(patch.object(complete_snapshot, '_scope_current', return_value=True))
-        self.enterContext(patch.object(search, 'get_notion_settings', return_value={
+        self.enterContext(patch.object(search, 'resolve_notion_settings', return_value={
             'token': 'fixture-token', 'database_ids': list(self.scope)}))
         self.enterContext(patch.object(search, 'resolve_notion_read_scope', return_value=(self.scope, True)))
-        self.enterContext(patch.object(search, 'fetch_notion_database_title', return_value='업무'))
-        self.enterContext(patch.object(search, 'notion_property_schema', return_value={'제목': {'type': 'title'}}))
-        self.enterContext(patch.object(search, 'notion_post_json', side_effect=self.query))
-        self.enterContext(patch('backend.notion.body_index_sync._request', side_effect=self.read_page))
+        self.enterContext(patch.object(read_api, 'fetch_notion_database_title', return_value='업무'))
+        self.enterContext(patch.object(notion_schema, 'notion_property_schema', return_value={'제목': {'type': 'title'}}))
+        self.enterContext(patch.object(transport, 'notion_post_json', side_effect=self.query))
+        self.enterContext(patch('backend.notion.crawl_transport.request_json', side_effect=self.read_page))
 
     def add(self, identifier='p1', title='배포 계획', status='진행중', database='db0'):
         raw = page(identifier, title=title, database=database)
@@ -139,7 +142,7 @@ class NotionCatalogSearchTests(unittest.TestCase):
         def query(_url, payload, **_kwargs):
             payloads.append(dict(payload))
             return responses.pop(0)
-        with patch.object(search, 'notion_post_json', side_effect=query):
+        with patch.object(transport, 'notion_post_json', side_effect=query):
             result = self.run_search()
         self.assertEqual({row['id'] for row in result['notion_pages']}, {'p1', 'p2'})
         self.assertEqual(result['meta']['candidate_count'], 2)
@@ -158,7 +161,7 @@ class NotionCatalogSearchTests(unittest.TestCase):
                 data.update(has_more=True, next_cursor='repeated')
                 response._content = json.dumps(data).encode()
             return response
-        with patch.object(search, 'notion_post_json', side_effect=query):
+        with patch.object(transport, 'notion_post_json', side_effect=query):
             result = self.run_search()
         self.assertNotEqual(result['meta'].get('coverage_basis'), 'api_properties')
         self.assertEqual([row['id'] for row in result['notion_pages']], ['p1'])
@@ -208,7 +211,7 @@ class NotionCatalogSearchTests(unittest.TestCase):
     def test_requested_content_still_fetches_live_blocks_and_marks_partial_content(self):
         from backend.notion.client import NOTION_CONTENT_INCOMPLETE
         self.add()
-        with patch.object(search, 'fetch_notion_page_blocks', return_value='현재 본문\n' + NOTION_CONTENT_INCOMPLETE):
+        with patch.object(read_api, 'fetch_notion_page_blocks', return_value='현재 본문\n' + NOTION_CONTENT_INCOMPLETE):
             result = search.execute_notion_search("노션에서 '배포 계획' 문서 보여줘", include_blocks=True)
         self.assertIn('현재 본문', result['notion_pages'][0]['content'])
         self.assertFalse(result['meta']['content_complete'])
@@ -216,7 +219,7 @@ class NotionCatalogSearchTests(unittest.TestCase):
 
     def test_body_conditions_keep_the_body_validation_path(self):
         self.add()
-        with patch('backend.notion.client.fetch_notion_page_content', return_value={'text': '다른 본문', 'segments': []}):
+        with patch('backend.notion.read_api.fetch_notion_page_content', return_value={'text': '다른 본문', 'segments': []}):
             result = self.run_search('노션에서 "배포 계획" 문서 중 본문에 "needle" 포함한 문서 찾아줘')
         self.assertNotEqual(result['meta'].get('coverage_basis'), 'api_properties')
         self.assertEqual(result['notion_pages'], [])

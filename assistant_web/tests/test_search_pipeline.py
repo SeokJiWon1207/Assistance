@@ -16,7 +16,7 @@ from backend.answers import (
 )
 from backend.schemas import ChatMessage
 from backend.query_planning import extract_group_by
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.reports.effort import (
     build_effort_report,
     build_effort_report_from_plan,
@@ -327,7 +327,7 @@ class ExactConstraintTests(unittest.TestCase):
         self.assertEqual(constraints["status"], "")
         self.assertEqual(constraints["owner"], "")
 
-    @patch("backend.retrieval.execute_notion_search")
+    @patch("backend.services.retrieval_pipeline.execute_notion_search")
     def test_quoted_notion_title_drops_filters_inferred_from_title(self, notion_search):
         notion_search.return_value = {
             "source": "notion",
@@ -352,10 +352,10 @@ class ExactConstraintTests(unittest.TestCase):
         )
         self.assertEqual(result["constraints"], passed_constraints)
 
-    @patch("backend.sources.notion.notion_property_schema")
-    @patch("backend.sources.notion.fetch_notion_database_title", return_value="이슈리스트_테스트")
-    @patch("backend.sources.notion.get_notion_settings")
-    @patch("backend.sources.notion.notion_post_json")
+    @patch("backend.notion.schema.notion_property_schema")
+    @patch("backend.notion.read_api.fetch_notion_database_title", return_value="이슈리스트_테스트")
+    @patch("backend.notion.search.resolve_notion_settings")
+    @patch("backend.notion.transport.notion_post_json")
     def test_exact_notion_title_stops_after_server_side_title_query(
         self, notion_post, notion_settings, _database_title, property_schema
     ):
@@ -391,6 +391,10 @@ class ExactConstraintTests(unittest.TestCase):
             )
 
         self.assertEqual(notion_post.call_count, 1)
+        self.assertEqual(notion_post.call_args.args[0], "https://api.notion.com/v1/databases/dbid/query")
+        property_schema.assert_called_once_with("dbid")
+        _database_title.assert_called_once_with("dbid")
+        notion_settings.assert_called_once_with()
         self.assertEqual([page["title"] for page in result["notion_pages"]], [title])
         self.assertEqual(result["meta"]["scanned_count"], 1)
 
@@ -485,7 +489,7 @@ class ExactConstraintTests(unittest.TestCase):
         self.assertEqual(notion_search_max_pages(notion_constraints), 30)
         self.assertEqual(notion_search_max_pages({}), 3)
 
-    @patch("backend.sources.notion.fetch_notion_relation_title", return_value="석지원")
+    @patch("backend.notion.read_api.fetch_notion_relation_title", return_value="석지원")
     def test_relation_backed_owner_is_resolved(self, fetch_title):
         page = {
             "owner": "담당자 미지정",
@@ -495,9 +499,9 @@ class ExactConstraintTests(unittest.TestCase):
         resolved = resolve_notion_page_owner(page)
         self.assertEqual(resolved["owner"], "석지원")
         self.assertIn("석지원", resolved["search_text"])
-        fetch_title.assert_called_once()
+        fetch_title.assert_called_once_with("042779f1-cd9f-4421-b0a6-f3554369a7c9")
 
-    @patch("backend.sources.notion.fetch_notion_user_name", return_value="우동헌")
+    @patch("backend.notion.read_api.fetch_notion_user_name", return_value="우동헌")
     def test_people_backed_owner_id_is_resolved(self, fetch_name):
         page = {
             "owner": "담당자 미지정",
@@ -508,7 +512,7 @@ class ExactConstraintTests(unittest.TestCase):
         }
         resolved = resolve_notion_page_owner(page)
         self.assertEqual(resolved["owner"], "우동헌")
-        fetch_name.assert_called_once()
+        fetch_name.assert_called_once_with("042779f1-cd9f-4421-b0a6-f3554369a7c9")
 
     def test_notion_pages_with_same_title_are_kept_by_page_id(self):
         pages = [
@@ -519,7 +523,7 @@ class ExactConstraintTests(unittest.TestCase):
         deduplicated = deduplicate_notion_pages_by_id(pages)
         self.assertEqual([page["id"] for page in deduplicated], ["page-1", "page-2"])
 
-    @patch("backend.sources.notion.fetch_notion_database_schema")
+    @patch("backend.notion.read_api.fetch_notion_database_schema")
     def test_notion_status_filter_uses_matching_select_property(self, fetch_schema):
         fetch_schema.return_value = {
             "properties": {
@@ -534,6 +538,7 @@ class ExactConstraintTests(unittest.TestCase):
             }
         }
         supported, status_filter = notion_database_status_filter("db-id", "결재요청")
+        fetch_schema.assert_called_once_with("db-id")
         self.assertTrue(supported)
         self.assertEqual(
             status_filter,
@@ -1145,17 +1150,18 @@ class DemonstrativeReferenceTests(unittest.TestCase):
         self.assertFalse(is_follow_up_question("2026년 이슈 요약해줘"))
         self.assertFalse(is_follow_up_question("KB증권 이슈를 최신순으로 보여줘"))
 
-    @patch("backend.understanding.load_audit_sources")
+    @patch("backend.intent.context.load_audit_sources")
     def test_demonstrative_reference_resolves_to_focused_issue(self, load_sources):
         # 상세 조회 뒤 후속 질문이 같은 이슈를 계속 가리켜야 한다.
         load_sources.return_value = [{"type": "mantis", "issue_id": 30892}]
         resolved = understanding.resolve_reference_from_context(
-            "그 이슈의 담당자와 상태만 다시 알려줘", "audit-1"
+            "그 이슈의 담당자와 상태만 다시 알려줘", "audit-1", "user-1"
         )
         self.assertIsNotNone(resolved)
         self.assertEqual(extract_query_constraints(resolved)["issue_ids"], [30892])
+        load_sources.assert_called_once_with("audit-1", user_uid="user-1")
 
-    @patch("backend.understanding.load_audit_sources")
+    @patch("backend.intent.context.load_audit_sources")
     def test_demonstrative_reference_does_not_guess_among_many(self, load_sources):
         # 여러 건을 보여준 직후라면 어느 것인지 알 수 없으므로 추측하지 않는다.
         load_sources.return_value = [
@@ -1165,8 +1171,9 @@ class DemonstrativeReferenceTests(unittest.TestCase):
         self.assertIsNone(
             understanding.resolve_reference_from_context("그 이슈의 담당자 알려줘", "audit-1")
         )
+        load_sources.assert_called_once_with("audit-1", user_uid="")
 
-    @patch("backend.understanding.load_audit_sources")
+    @patch("backend.intent.context.load_audit_sources")
     def test_ordinal_reference_still_resolves(self, load_sources):
         load_sources.return_value = [
             {"type": "mantis", "issue_id": 30953},
@@ -1176,6 +1183,7 @@ class DemonstrativeReferenceTests(unittest.TestCase):
             "그중 두 번째 이슈를 자세히 설명해줘", "audit-1"
         )
         self.assertEqual(extract_query_constraints(resolved)["issue_ids"], [30892])
+        load_sources.assert_called_once_with("audit-1", user_uid="")
 
 
 class UnassignedHandlerTests(unittest.TestCase):
@@ -1237,7 +1245,7 @@ class CountGroupingTests(unittest.TestCase):
                 return None
             return {"id": int(match.group(1)), "project": project.group(1) if project else ""}
 
-        with patch("backend.tools.mantis_snapshot.sqlite3.connect") as connect:
+        with patch("backend.sources.mantis_snapshot_query.sqlite3.connect") as connect:
             connection = connect.return_value.__enter__.return_value
             connection.execute.return_value = [(content,) for content in documents]
             connect.return_value.execute.return_value = [(content,) for content in documents]

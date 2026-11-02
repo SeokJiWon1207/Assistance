@@ -1,0 +1,1042 @@
+{
+  "common_symbols": {
+    "compact_text": "backend.utils.text",
+    "quoted_value_span": "backend.utils.text",
+    "extract_quoted_value": "backend.utils.text",
+    "remove_quoted_value": "backend.utils.text",
+    "normalize_for_match": "backend.utils.text",
+    "normalize_search_token": "backend.utils.text",
+    "has_lookup_request": "backend.utils.text",
+    "is_control_search_term": "backend.utils.text",
+    "text_matches_any_alias": "backend.utils.text",
+    "COUNT_EXPRESSION_PATTERN": "backend.utils.text",
+    "PERIOD_EXPRESSION_PATTERN": "backend.utils.text",
+    "LOOKUP_REQUEST_PATTERN": "backend.utils.text",
+    "clamp_float": "backend.utils.numbers",
+    "clamp_int": "backend.utils.numbers",
+    "parse_date": "backend.utils.dates",
+    "format_mantis_custom_date": "backend.utils.dates",
+    "customer_alias_owner": "backend.customer_identity",
+    "customer_project_owner": "backend.customer_identity",
+    "text_matches_customer_aliases": "backend.customer_identity",
+    "add_customer_alias": "backend.customer_identity",
+    "derive_customer_aliases_from_project": "backend.customer_identity",
+    "extract_from_names": "backend.domain.people",
+    "is_valid_person_name": "backend.domain.people",
+    "is_valid_handler_name": "backend.domain.people",
+    "strip_korean_particle": "backend.domain.people",
+    "text_contains_person_name": "backend.domain.people",
+    "KOREAN_PARTICLE_PATTERN": "backend.domain.people",
+    "extract_chroma_field": "backend.sources.chroma_document",
+    "extract_chroma_date": "backend.sources.chroma_document",
+    "extract_issue_id_from_text": "backend.sources.chroma_document",
+    "extract_title_from_chroma_text": "backend.sources.chroma_document",
+    "extract_project_from_chroma_text": "backend.sources.chroma_document",
+    "normalize_chroma_issue_document": "backend.sources.chroma_document",
+    "display_mantis_status_label": "backend.mantis_status",
+    "MANTIS_STATUS_DISPLAY_LABELS": "backend.mantis_status",
+    "AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES": "backend.settings.values",
+    "CUSTOMER_ALIASES": "backend.settings.catalogs",
+    "KOREAN_COUNT_WORDS": "backend.settings.values",
+    "MANTIS_DATE_CUSTOM_FIELDS": "backend.settings.values",
+    "PERSON_BLOCKLIST": "backend.settings.values",
+    "PERSON_ROLE_ALIASES": "backend.settings.values",
+    "PLATFORM_ALIASES": "backend.settings.values",
+    "STATUS_ALIASES": "backend.settings.values",
+    "STOPWORDS": "backend.settings.values"
+  },
+  "functions": [
+    "parse_date",
+    "clamp_float",
+    "clamp_int",
+    "compact_text",
+    "quoted_value_span",
+    "extract_quoted_value",
+    "remove_quoted_value",
+    "normalize_for_match",
+    "normalize_search_token",
+    "has_lookup_request",
+    "is_control_search_term",
+    "text_matches_any_alias",
+    "customer_alias_owner",
+    "customer_project_owner",
+    "text_matches_customer_aliases",
+    "add_customer_alias",
+    "derive_customer_aliases_from_project",
+    "extract_chroma_field",
+    "extract_chroma_date",
+    "format_mantis_custom_date",
+    "extract_issue_id_from_text",
+    "extract_title_from_chroma_text",
+    "extract_project_from_chroma_text",
+    "extract_from_names",
+    "is_valid_person_name",
+    "is_valid_handler_name",
+    "display_mantis_status_label",
+    "strip_korean_particle",
+    "text_contains_person_name",
+    "normalize_chroma_issue_document"
+  ],
+  "config_values": [
+    "STOPWORDS",
+    "KOREAN_COUNT_WORDS",
+    "DEFAULT_CUSTOMER_ALIASES",
+    "AMBIGUOUS_DYNAMIC_CUSTOMER_ALIASES",
+    "PLATFORM_ALIASES",
+    "STATUS_ALIASES",
+    "MANTIS_STATUS_NAMES",
+    "MANTIS_OPEN_STATUSES",
+    "STATUS_MATCH_ALIASES",
+    "PENDING_WORK_QUERY_PATTERN",
+    "NON_CLOSED_STATUS_PATTERNS",
+    "MANTIS_DATE_CUSTOM_FIELDS",
+    "MANTIS_DATE_FIELD_ALIASES",
+    "PERSON_ROLE_ALIASES",
+    "PERSON_BLOCKLIST"
+  ],
+  "consumers_before": [
+    {
+      "file": "assistant_web/backend/admission.py",
+      "line": 14,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/answers.py",
+      "line": 18,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/answers.py",
+      "line": 18,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/api/workspace.py",
+      "line": 13,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/conversation_history.py",
+      "line": 9,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/customer_identity.py",
+      "line": 5,
+      "symbol": "customer_project_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/customer_identity.py",
+      "line": 5,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/display.py",
+      "line": 15,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/effort_fields.py",
+      "line": 6,
+      "symbol": "format_mantis_custom_date",
+      "owner": "backend.utils.dates"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/cases.py",
+      "line": 14,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/cases.py",
+      "line": 14,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/comparison.py",
+      "line": 13,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/comparison.py",
+      "line": 13,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/issue_facts.py",
+      "line": 8,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/issue_facts.py",
+      "line": 8,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/issue_facts.py",
+      "line": 8,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/issue_facts.py",
+      "line": 8,
+      "symbol": "text_matches_any_alias",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/evaluation/verification.py",
+      "line": 11,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/condition_grounding.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/constants.py",
+      "line": 5,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/constraints.py",
+      "line": 11,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/constraints.py",
+      "line": 11,
+      "symbol": "normalize_search_token",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/context.py",
+      "line": 11,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "customer_alias_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "customer_project_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "derive_customer_aliases_from_project",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "is_valid_handler_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "is_valid_person_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "strip_korean_particle",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "text_contains_person_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/intent/entities.py",
+      "line": 14,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/explanation.py",
+      "line": 96,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/general.py",
+      "line": 34,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/literal_plans.py",
+      "line": 9,
+      "symbol": "customer_alias_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/literal_plans.py",
+      "line": 9,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "extract_chroma_date",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "extract_chroma_field",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "extract_issue_id_from_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "extract_project_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "extract_title_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "format_mantis_custom_date",
+      "owner": "backend.utils.dates"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "text_matches_any_alias",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/matching.py",
+      "line": 6,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/people.py",
+      "line": 8,
+      "symbol": "is_valid_handler_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/intent/people.py",
+      "line": 8,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/scope_extraction.py",
+      "line": 6,
+      "symbol": "derive_customer_aliases_from_project",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/scope_extraction.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/scope_extraction.py",
+      "line": 6,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/intent/search_terms.py",
+      "line": 6,
+      "symbol": "LOOKUP_REQUEST_PATTERN",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/search_terms.py",
+      "line": 6,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/search_terms.py",
+      "line": 6,
+      "symbol": "is_control_search_term",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/search_terms.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/search_terms.py",
+      "line": 6,
+      "symbol": "normalize_search_token",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/intent/source_router.py",
+      "line": 7,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/llm.py",
+      "line": 23,
+      "symbol": "clamp_float",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/llm.py",
+      "line": 23,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/llm.py",
+      "line": 23,
+      "symbol": "parse_date",
+      "owner": "backend.utils.dates"
+    },
+    {
+      "file": "assistant_web/backend/notion/body_index.py",
+      "line": 18,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/body_index_search.py",
+      "line": 10,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/catalog_search.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/complete_snapshot.py",
+      "line": 10,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/database_roles.py",
+      "line": 10,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/formatting.py",
+      "line": 8,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/formatting.py",
+      "line": 8,
+      "symbol": "has_lookup_request",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/formatting.py",
+      "line": 8,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/formatting.py",
+      "line": 8,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/mapping.py",
+      "line": 7,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/property_roles.py",
+      "line": 7,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/query_text.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/schema.py",
+      "line": 8,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "LOOKUP_REQUEST_PATTERN",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "is_valid_person_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "normalize_search_token",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/search.py",
+      "line": 19,
+      "symbol": "strip_korean_particle",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/notion/write.py",
+      "line": 10,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/write.py",
+      "line": 10,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/notion/write.py",
+      "line": 10,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/query_filters.py",
+      "line": 12,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/query_filters.py",
+      "line": 12,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/query_filters.py",
+      "line": 12,
+      "symbol": "text_matches_any_alias",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/query_filters.py",
+      "line": 326,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/aggregate.py",
+      "line": 13,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/reports/aggregate.py",
+      "line": 13,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/reports/aggregate.py",
+      "line": 13,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/aggregation.py",
+      "line": 10,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/reports/comparison_facts.py",
+      "line": 56,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/comparison_facts.py",
+      "line": 69,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/comparison_history.py",
+      "line": 4,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/dashboard.py",
+      "line": 11,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/document_context.py",
+      "line": 4,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/effort.py",
+      "line": 16,
+      "symbol": "is_valid_person_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/reports/effort.py",
+      "line": 16,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/effort.py",
+      "line": 16,
+      "symbol": "text_contains_person_name",
+      "owner": "backend.domain.people"
+    },
+    {
+      "file": "assistant_web/backend/reports/effort_trend.py",
+      "line": 21,
+      "symbol": "extract_chroma_field",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/reports/incident_triage.py",
+      "line": 10,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/incident_triage.py",
+      "line": 10,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/issue_documents.py",
+      "line": 3,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/issue_documents.py",
+      "line": 4,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/similar.py",
+      "line": 18,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/similar.py",
+      "line": 18,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/reports/team_brief.py",
+      "line": 17,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/reports/work_queries.py",
+      "line": 18,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "compact_text",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "extract_chroma_date",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "extract_chroma_field",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "extract_project_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "extract_title_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/retrieval.py",
+      "line": 18,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/services/chat_service.py",
+      "line": 37,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma.py",
+      "line": 21,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma.py",
+      "line": 21,
+      "symbol": "extract_issue_id_from_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma.py",
+      "line": 21,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma_lexical.py",
+      "line": 11,
+      "symbol": "extract_issue_id_from_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma_lexical.py",
+      "line": 11,
+      "symbol": "extract_title_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma_titles.py",
+      "line": 9,
+      "symbol": "extract_issue_id_from_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/chroma_titles.py",
+      "line": 9,
+      "symbol": "extract_title_from_chroma_text",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis.py",
+      "line": 26,
+      "symbol": "format_mantis_custom_date",
+      "owner": "backend.utils.dates"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis.py",
+      "line": 26,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis.py",
+      "line": 26,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis.py",
+      "line": 26,
+      "symbol": "text_matches_any_alias",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis.py",
+      "line": 26,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis_hybrid.py",
+      "line": 17,
+      "symbol": "clamp_int",
+      "owner": "backend.utils.numbers"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis_hybrid.py",
+      "line": 17,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis_search_projection.py",
+      "line": 8,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/sources/mantis_store.py",
+      "line": 162,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/team_scope.py",
+      "line": 6,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/team_templates.py",
+      "line": 11,
+      "symbol": "customer_project_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/team_templates.py",
+      "line": 11,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/backend/text_scope.py",
+      "line": 5,
+      "symbol": "extract_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/text_scope.py",
+      "line": 5,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/text_scope.py",
+      "line": 5,
+      "symbol": "remove_quoted_value",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/workspace.py",
+      "line": 14,
+      "symbol": "extract_chroma_field",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/workspace.py",
+      "line": 14,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/backend/workspace.py",
+      "line": 14,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "assistant_web/backend/workspace_data.py",
+      "line": 20,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_accuracy_performance.py",
+      "line": 17,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_customer_alias_filters.py",
+      "line": 4,
+      "symbol": "derive_customer_aliases_from_project",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/tests/test_effort_delivery.py",
+      "line": 35,
+      "symbol": "format_mantis_custom_date",
+      "owner": "backend.utils.dates"
+    },
+    {
+      "file": "assistant_web/tests/test_issue_list_labels_scope.py",
+      "line": 8,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_mantis_explanation.py",
+      "line": 14,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/tests/test_mantis_explanation.py",
+      "line": 226,
+      "symbol": "text_matches_customer_aliases",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/tests/test_mantis_index.py",
+      "line": 9,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_mantis_store.py",
+      "line": 199,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_store_memory.py",
+      "line": 157,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/tests/test_weekly_issues.py",
+      "line": 9,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    },
+    {
+      "file": "assistant_web/scripts/accuracy/dynamic_accuracy_check.py",
+      "line": 43,
+      "symbol": "customer_alias_owner",
+      "owner": "backend.customer_identity"
+    },
+    {
+      "file": "assistant_web/scripts/accuracy/dynamic_accuracy_check.py",
+      "line": 43,
+      "symbol": "display_mantis_status_label",
+      "owner": "backend.mantis_status"
+    },
+    {
+      "file": "assistant_web/scripts/accuracy/rebaseline_notion_titles.py",
+      "line": 21,
+      "symbol": "normalize_for_match",
+      "owner": "backend.utils.text"
+    },
+    {
+      "file": "scripts/benchmark_mantis_index.py",
+      "line": 22,
+      "symbol": "normalize_chroma_issue_document",
+      "owner": "backend.sources.chroma_document"
+    }
+  ],
+  "note": "고객사 책임은 기존 customer_identity 재사용. P2-B에서 JSON 로딩은 settings.catalogs의 명시 초기화로 이전. consumers_before는 P2-A 이전 목록. stdlib/typing import는 공개 업무 심볼에 포함하지 않음."
+}

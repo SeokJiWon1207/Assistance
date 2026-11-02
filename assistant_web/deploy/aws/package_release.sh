@@ -13,6 +13,7 @@ VERIFICATION_FILES=(
   pyproject.toml
   .github/workflows/ci.yml
   scripts/make_vector_db.py
+  scripts/benchmark_mantis_index.py
 )
 for relative in "${VERIFICATION_FILES[@]}"; do
   if [[ ! -f "$SOURCE_ROOT/$relative" ]]; then

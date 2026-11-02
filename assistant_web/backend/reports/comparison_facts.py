@@ -11,7 +11,7 @@ from typing import Any
 import requests
 
 from backend.execution import RequestStopped
-from backend.intent.constraints import extract_json_object
+from backend.intent.json_payload import extract_json_object
 from backend.llm import extract_model_content, post_model_chat
 from backend.reports.comparison_passages import passage_parts
 from backend.timing import measured
@@ -36,7 +36,7 @@ action: 실제 수행한 구체적 기술 조치 최대3개. 각 조치는 같�
 
 
 def _catalog(issue):
-    from backend.reports.similar import _resolution_notes, _without_access_lines, _note_sentences, _NOTE_METADATA
+    from backend.reports.comparison_common import _resolution_notes, _without_access_lines, _note_sentences, _NOTE_METADATA
     fields = [(field, str(issue.get(field) or '')) for field in ('summary', 'description')]
     fields += [(f"note:{n.get('id')}", str(n.get('text') or '')) for n in _resolution_notes(issue)]
     rows: list[dict[str, Any]] = []
@@ -52,8 +52,8 @@ def _catalog(issue):
     for row in rows:
         if row['field'] in {'summary', 'description'} and used + len(row['text']) <= 600:
             selected.append(row); used += len(row['text'])
-    from backend.reports.similar import _recorded_cause, _OPERATIONAL_ACTION
-    from backend.common import normalize_for_match
+    from backend.reports.comparison_common import _recorded_cause, _OPERATIONAL_ACTION
+    from backend.utils.text import normalize_for_match
     cause = normalize_for_match(_recorded_cause({k:v for k,v in issue.items() if k!='comparison_facts'})[0])
     protected = [row for row in rows if (cause and normalize_for_match(row['text']) in cause) or _OPERATIONAL_ACTION.search(row['text'])]
     for row in [*protected[:4], *reversed(rows)]:
@@ -65,8 +65,8 @@ def _catalog(issue):
 
 
 def _needs_review(issue):
-    from backend.reports.similar import _recorded_cause, _recorded_fix, _COMPLETED_NOTE, _unconfirmed_cause
-    from backend.common import normalize_for_match
+    from backend.reports.comparison_common import _recorded_cause, _recorded_fix, _COMPLETED_NOTE, _unconfirmed_cause
+    from backend.utils.text import normalize_for_match
     cause = _recorded_cause(issue)[0]
     if cause and re.search(r'롤백|하려고|원인\s*파악\s*완료|문의', cause):
         return True
@@ -94,22 +94,8 @@ def _needs_review(issue):
     return False
 
 
-def render_facts(rows, max_chars=220):
-    if not rows:
-        return '', ''
-    refs = [f" [노트 {r['field'].split(':', 1)[1]}]" if r['field'].startswith('note:') else
-            ' (제목)' if r['field'] == 'summary' else ' (본문)' for r in rows]
-    remaining = max_chars - sum(map(len, refs)) - 2 * (len(rows) - 1)
-    parts = []
-    for index, row in enumerate(rows):
-        size = min(len(row['text']), max(8, remaining // (len(rows) - index)))
-        text = row['text'] if len(row['text']) <= size else row['text'][:max(0, size - 3)].rstrip() + '...'
-        parts.append(text + refs[index]); remaining -= len(text)
-    return '. '.join(parts), 'note' if any(r['field'].startswith('note:') for r in rows) else rows[0]['field']
-
-
 def review_comparison_facts(issues, model, api_key):
-    from backend.reports.similar import _NON_TECHNICAL_CHANGE, _is_consequence
+    from backend.reports.comparison_common import _NON_TECHNICAL_CHANGE, _is_consequence
     started = perf_counter()
     meta: dict[str, Any] = {'status': 'not_needed', 'cache_hits': 0, 'requested_issue_ids': [], 'reviewed_issue_ids': []}
     if not model or not api_key:
@@ -192,3 +178,7 @@ def review_comparison_facts(issues, model, api_key):
         meta['status'] = 'rejected' if 'response' in locals() else 'unavailable'
     meta['elapsed_ms'] = round((perf_counter() - started) * 1000, 1)
     return meta
+
+from backend.reports.comparison_common import (
+    render_facts as render_facts,
+)

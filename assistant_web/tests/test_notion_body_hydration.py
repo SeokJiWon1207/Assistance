@@ -1,8 +1,9 @@
 """Exercise bounded body scanning/hydration against paginated raw Notion blocks."""
+from backend.notion import transport
 import unittest
 from unittest.mock import patch
 
-from backend.notion import client, search
+from backend.notion import read_api as client, search
 import test_notion_accuracy_regressions as fixtures
 
 
@@ -19,7 +20,7 @@ class NotionBodyHydrationTests(unittest.TestCase):
                 {"id": "late-code", "type": "code", "has_children": False,
                  "code": {"rich_text": [{"plain_text": "latecode_token()"}], "language": "cpp"}}],
         })
-        with patch.object(search, "notion_post_json", return_value=fixtures.response({"results": rows, "has_more": False})):
+        with patch.object(transport, 'notion_post_json', return_value=fixtures.response({"results": rows, "has_more": False})):
             result = search.execute_notion_search("노션 '후반 코드 문서' 찾아줘", limit=5,
                 constraints={"filter_clauses": [{"field": "keyword", "operator": "contains", "value": "latecode_token"}]},
                 include_blocks=False)

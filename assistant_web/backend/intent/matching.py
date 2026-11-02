@@ -3,20 +3,19 @@
 import re
 from typing import Any, Dict, List, Optional
 
-from backend.common import (
+from backend.sources.chroma_document import (
     extract_chroma_date,
     extract_chroma_field,
     extract_issue_id_from_text,
     extract_project_from_chroma_text,
     extract_title_from_chroma_text,
-    format_mantis_custom_date,
-    normalize_for_match,
-    text_matches_any_alias,
-    text_matches_customer_aliases,
 )
+from backend.utils.dates import format_mantis_custom_date
+from backend.utils.text import normalize_for_match, text_matches_any_alias
+from backend.customer_identity import text_matches_customer_aliases
 from backend.mantis_status import matches_mantis_status
 from backend.query_filters import normalize_filter_clauses, matches_source_filters, screen_filter_values
-from backend.query_planning import plan_created_at_matches
+from backend.query.dates import plan_created_at_matches
 
 
 def text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
@@ -155,7 +154,7 @@ def text_matches_people(
 
 
 def chroma_text_matches_constraints(text: str, constraints: Dict[str, Any]) -> bool:
-    from backend.team_scope import matches_team_constraint
+    from backend.domain.team import matches_team_constraint
 
     if not matches_team_constraint(extract_chroma_field(text, "담당자"), constraints):
         return False

@@ -1,4 +1,7 @@
 """최근 등록 목록은 본문 수집과 무관하게 속성으로 정렬·검증한다."""
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import schema as notion_schema
 import json
 import sqlite3
 import tempfile
@@ -35,13 +38,13 @@ class RecentRegistrationTests(unittest.TestCase):
         self.schema = {'제목': {'type': 'title'}}
         self.enterContext(patch.object(complete_snapshot, 'open_body_index', return_value=self.index))
         self.enterContext(patch.object(complete_snapshot, '_scope_current', return_value=True))
-        self.enterContext(patch.object(search, 'get_notion_settings', return_value={
+        self.enterContext(patch.object(search, 'resolve_notion_settings', return_value={
             'token': 'fixture-token', 'database_ids': list(self.scope)}))
         self.enterContext(patch.object(search, 'resolve_notion_read_scope', return_value=(self.scope, True)))
-        self.enterContext(patch.object(search, 'fetch_notion_database_title', return_value='업무'))
-        self.enterContext(patch.object(search, 'notion_property_schema', side_effect=lambda _db: self.schema))
-        self.enterContext(patch.object(search, 'notion_post_json', side_effect=self.query))
-        self.enterContext(patch('backend.notion.body_index_sync._request', side_effect=self.read))
+        self.enterContext(patch.object(read_api, 'fetch_notion_database_title', return_value='업무'))
+        self.enterContext(patch.object(notion_schema, 'notion_property_schema', side_effect=lambda _db: self.schema))
+        self.enterContext(patch.object(transport, 'notion_post_json', side_effect=self.query))
+        self.enterContext(patch('backend.notion.crawl_transport.request_json', side_effect=self.read))
         self.enterContext(patch.dict('os.environ', {'NOTION_TITLE_QUERY_CACHE_SECONDS': '0'}))
 
     def add(self, identifier, created, edited, *, database='db0', registered=None, title='업무 문서'):
@@ -181,7 +184,7 @@ class RecentRegistrationTests(unittest.TestCase):
 
         with patch.object(recent_catalog, 'time', SimpleNamespace(
             monotonic=lambda: clock[0], time=time.time,
-        )), patch('backend.notion.body_index_sync._request', side_effect=delayed_read):
+        )), patch('backend.notion.crawl_transport.request_json', side_effect=delayed_read):
             result = self.run_search(limit=20)
         self.assertEqual(result['meta'].get('tool'), 'notion_recent_catalog')
         self.assertEqual(len(result['notion_pages']), 20)
@@ -200,7 +203,7 @@ class RecentRegistrationTests(unittest.TestCase):
             monotonic=lambda: 100.0, time=time.time,
         )), patch.object(recent_catalog, 'CURRENT_BUDGET', SimpleNamespace(
             get=lambda: SimpleNamespace(deadline=112.0),
-        )), patch('backend.notion.body_index_sync._request', side_effect=read_with_deadline):
+        )), patch('backend.notion.crawl_transport.request_json', side_effect=read_with_deadline):
             self.run_search(limit=20)
         self.assertEqual(deadlines, [107.0])
 
@@ -288,8 +291,8 @@ class RecentRegistrationTests(unittest.TestCase):
                      '노션 최근 등록된 문서는 몇 개야', '노션 최근 등록된 문서 중 본문에 "등록된" 포함한 문서 찾아줘')
         with patch.object(complete_snapshot, '_search_snapshot_once', return_value=None), patch.object(
             search, 'find_indexed_body_candidates', return_value=None
-        ), patch.object(search, 'fetch_notion_page_blocks', return_value='등록된 배포 내용'), patch(
-            'backend.notion.client.fetch_notion_page_content', return_value={
+        ), patch.object(read_api, 'fetch_notion_page_blocks', return_value='등록된 배포 내용'), patch(
+            'backend.notion.read_api.fetch_notion_page_content', return_value={
                 'text': '등록된 배포 내용',
                 'segments': [{'owner_page_id': 'new', 'type': 'paragraph',
                               'block_id': 'fixture-block', 'text': '등록된 배포 내용'}],

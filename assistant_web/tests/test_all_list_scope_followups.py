@@ -1,4 +1,7 @@
 """전체 목록 뒤 매체·월 변경도 원문 표와 전체 표시를 유지한다."""
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from unittest.mock import patch
 
@@ -30,11 +33,11 @@ class AllListScopeFollowupTests(unittest.TestCase):
             with self.subTest(history=[message.role for message in history]):
                 request = ChatRequest(modelId="fixture", contextAuditId="a" * 32, messages=[*history, retry])
                 with (
-                    patch.object(chat, "get_private_model", return_value={"id":"fixture", "status":"active"}),
-                    patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-                    patch.object(chat, "load_audit_query_plan", side_effect=lambda aid, uid, expected: plan if expected == previous else {}) as load,
-                    patch.object(chat, "resolve_reference_from_context", return_value=None),
-                    patch.object(chat, "rewrite_follow_up_query_with_model", return_value=question),
+                    patch.object(chat_prepare, "get_private_model", return_value={"id":"fixture", "status":"active"}),
+                    patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+                    patch.object(chat_prepare, "load_audit_query_plan", side_effect=lambda aid, uid, expected: plan if expected == previous else {}) as load,
+                    patch.object(chat_prepare, "resolve_reference_from_context", return_value=None),
+                    patch.object(chat_prepare, "rewrite_follow_up_query_with_model", return_value=question),
                 ):
                     context = chat.prepare_chat_pipeline(request, question, {"uid":"fixture-user"})
                 self.assertEqual(load.call_args.args, ("a" * 32, "fixture-user", previous))
@@ -138,11 +141,11 @@ class AllListScopeFollowupTests(unittest.TestCase):
             ChatMessage(role="user",content=question),
         ])
         with (
-            patch.object(chat,"get_private_model",return_value={"id":"fixture","status":"active"}),
-            patch.object(chat,"get_model_api_key",return_value="fixture-key"),
-            patch.object(chat,"load_audit_query_plan",return_value=plan),
-            patch.object(chat,"resolve_reference_from_context",return_value=None),
-            patch.object(chat,"rewrite_follow_up_query_with_model",side_effect=AssertionError("모델 재작성 금지")),
+            patch.object(chat_prepare,"get_private_model",return_value={"id":"fixture","status":"active"}),
+            patch.object(chat_llm,"get_model_api_key",return_value="fixture-key"),
+            patch.object(chat_prepare,"load_audit_query_plan",return_value=plan),
+            patch.object(chat_prepare,"resolve_reference_from_context",return_value=None),
+            patch.object(chat_prepare,"rewrite_follow_up_query_with_model",side_effect=AssertionError("모델 재작성 금지")),
         ):
             return request, chat.prepare_chat_pipeline(request,question,{"uid":"fixture-user"})
 
@@ -163,8 +166,8 @@ class AllListScopeFollowupTests(unittest.TestCase):
                 self.assertTrue(context.query_constraints.get("list_show_all"))
                 with (
                     patch("backend.reports.work_queries.build_work_query_report",side_effect=AssertionError("업무 요약으로 우회 금지")),
-                    patch.object(chat,"resolve_status_intent",return_value={"status_intent":None}),
-                    patch.object(chat,"_plan_chat_query",return_value=None),
+                    patch.object(chat_planning,"resolve_status_intent",return_value={"status_intent":None}),
+                    patch.object(chat_planning,"_plan_chat_query",return_value=None),
                 ):
                     self.assertIsNone(chat.plan_chat_query(request,context,None).response)
                 self.assertTrue(chat.can_skip_general_planner(context.retrieval_text, context.query_constraints, {"source":"mantis"}))

@@ -1,3 +1,5 @@
+from backend.services import retrieval_pipeline
+from backend.sources import mantis_client
 import os
 import unittest
 from contextlib import closing
@@ -16,6 +18,7 @@ class MantisCollectionTests(unittest.TestCase):
         mantis.clear_mantis_recent_cache()
         self.settings = {"url": "https://mantis.test/issues", "token": "first"}
         self.enterContext(patch.object(mantis, "get_mantis_settings", return_value=self.settings))
+        self.enterContext(patch.object(mantis_client, "get_mantis_settings", return_value=self.settings))
         self.enterContext(patch.dict(os.environ, {
             "MANTIS_LIVE_MAX_WORKERS": "6", "MANTIS_LIVE_CACHE_TTL_SECONDS": "30",
         }))
@@ -146,8 +149,8 @@ class MantisCollectionTests(unittest.TestCase):
         skipped = {"status": "skipped", "issues_list": [], "meta": {}}
         with (
             patch.object(mantis, "fetch_mantis_issues", side_effect=fetch) as api,
-            patch.object(retrieval, "execute_mantis_snapshot_search", return_value=skipped),
-            patch.object(retrieval, "execute_mantis_filter_search", return_value=skipped),
+            patch.object(retrieval_pipeline, "execute_mantis_snapshot_search", return_value=skipped),
+            patch.object(retrieval_pipeline, "execute_mantis_filter_search", return_value=skipped),
         ):
             first = retrieval.run_retrieval_pipeline("KB증권 HTS 최근 이슈 5개 보여줘", 5, {"mantis": True})
             second = retrieval.run_retrieval_pipeline("KB증권 HTS 최근 이슈 3개 보여줘", 3, {"mantis": True})
@@ -264,9 +267,9 @@ class MantisCollectionTests(unittest.TestCase):
         response = Mock(status_code=200)
         response.json.return_value = {"issues": [{"id": 10}]}
         with (
-            patch.object(mantis, "get_mantis_headers", return_value={}),
-            patch.object(mantis.requests, "get", side_effect=[requests.Timeout(), Mock(status_code=429), response]) as get,
-            patch.object(mantis, "interruptible_sleep") as sleep,
+            patch.object(mantis_client, "get_mantis_headers", return_value={}),
+            patch.object(mantis_client.requests, "get", side_effect=[requests.Timeout(), Mock(status_code=429), response]) as get,
+            patch.object(mantis_client, "interruptible_sleep") as sleep,
         ):
             self.assertEqual(mantis.fetch_mantis_recent_issues(1), [{"id": 10}])
             self.assertEqual(get.call_count, 3)

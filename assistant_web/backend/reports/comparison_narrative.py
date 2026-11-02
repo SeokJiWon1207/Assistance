@@ -7,7 +7,7 @@ from typing import Any
 import requests
 
 from backend.execution import RequestStopped
-from backend.intent.constraints import extract_json_object
+from backend.intent.json_payload import extract_json_object
 from backend.llm import extract_model_content, post_model_chat
 from backend.timing import measured
 
@@ -42,10 +42,11 @@ JSON: {"supported":[true,false]} 로 claims와 정확히 같은 순서/개수의
 
 
 def comparison_facts(issues: list[dict]) -> list[dict[str, Any]]:
-    from backend.reports.similar import (
+    from backend.reports.comparison_common import (
         _recorded_cause, _recorded_fix, _unconfirmed_cause, _latest_resolution_caveat,
-        _history_lines, _without_access_lines,
+        _without_access_lines,
     )
+    from backend.reports.comparison_history import _history_lines
     facts = []
     for issue in issues:
         cause, _ = _recorded_cause(issue)
@@ -85,16 +86,16 @@ def _valid_literals(text: str, rows: list[dict]) -> bool:
 
 
 def _completed_stages_supported(text: str, rows: list[dict]) -> bool:
-    from backend.evaluation.explanation_direct import _STAGES, _completed_stage, _stage_event
-    from backend.reports.similar import _OPERATIONAL_ACTION, _NON_TECHNICAL_CHANGE, _note_sentences
+    from backend.evidence.stages import STAGES, completed_stage, stage_events
+    from backend.reports.comparison_common import _OPERATIONAL_ACTION, _NON_TECHNICAL_CHANGE, _note_sentences
     targets = {int(i) for i in re.findall(r'#(\d+)', text)} or {row['issue_id'] for row in rows}
     normalized = re.sub(r'(개발|구현|수정|QC|검수|전달|배포)(?:이|가|을|를|은|는)\s*', r'\1 ', text)
-    for stage in _STAGES:
-        if not _completed_stage(stage, normalized):
+    for stage in STAGES:
+        if not completed_stage(stage, normalized):
             continue
         for issue_id in targets:
             evidence = [row for row in rows if row['issue_id'] == issue_id]
-            events = [event for row in evidence for event in _stage_event(stage, row) if event[0] != 'unknown']
+            events = [event for row in evidence for event in stage_events(stage, row) if event[0] != 'unknown']
             done = bool(events and events[-1][0] == 'done')
             if stage == 'delivery' and any('고객사 전달 기록' in row['text'] for row in evidence):
                 done = True

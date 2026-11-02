@@ -13,22 +13,16 @@ from datetime import date
 from typing import Any, Dict, List, Optional
 
 from backend.display import customer_name
-from backend.common import (
-    is_valid_person_name,
-    normalize_for_match,
-    text_contains_person_name,
-)
+from backend.domain.people import is_valid_person_name, text_contains_person_name
+from backend.utils.text import normalize_for_match
 from backend.intent.people import build_people
-from backend.query_planning import build_query_plan, extract_created_at_range
-from backend.sources.mantis import (
-    build_sources_from_issue_rows,
-    fetch_mantis_issues,
-    issue_matches_constraints,
-    mantis_issue_effort_date,
-    mantis_live_max_workers,
-    normalize_issue,
-)
-from backend.sources.effort_collection import effort_issues, coverage_note
+from backend.query_planning import build_query_plan
+from backend.query.dates import extract_created_at_range
+from backend.sources.mantis_fields import build_sources_from_issue_rows, mantis_issue_effort_date, normalize_issue
+from backend.sources.mantis_client import fetch_mantis_issues
+from backend.sources.mantis_matching import issue_matches_constraints
+from backend.sources.mantis import mantis_live_max_workers
+from backend.sources.effort_collection import effort_issues, coverage_note, effort_chart_coverage
 from backend.effort_fields import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.reports.effort_series import daily_effort
 from backend.query_filters import add_filter_clause, matches_source_filters, values_for_clause
@@ -37,7 +31,6 @@ from backend.understanding import (
     load_known_people,
     wants_all_results,
 )
-
 
 
 def parse_effort_period(text: str) -> tuple[int, Optional[int]]:
@@ -146,7 +139,6 @@ def extract_effort_query(text: str) -> Optional[Dict[str, Any]]:
     else:
         query["period"] = "year"
     return query
-
 
 
 def build_effort_report(text: str) -> Optional[Dict[str, Any]]:
@@ -336,6 +328,7 @@ def run_filtered_effort_report(
         lines.extend(["", "해당 조건과 기간에 기록된 공수를 찾지 못했습니다."])
 
     effort_chart = {
+        **effort_chart_coverage(collection_meta),
         "person": f"{scope_label} 전체",
         "year": year,
         "periodLabel": period_label,
@@ -480,6 +473,7 @@ def run_person_effort_report(
         lines.extend(["", "해당 기간에 기록된 공수를 찾지 못했습니다."])
 
     effort_chart = {
+        **effort_chart_coverage(collection_meta),
         "person": person,
         "year": year,
         "periodLabel": period_label,
@@ -709,6 +703,7 @@ def run_effort_ranking_report(
         lines.append(f"- {label}: **{top_person_totals[field_name]:.2f}**")
 
     effort_ranking_chart = {
+        **effort_chart_coverage(collection_meta),
         "periodLabel": period_label,
         "issueCount": scanned_issue_count,
         "peopleCount": len(per_person),

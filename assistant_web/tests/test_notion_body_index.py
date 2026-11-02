@@ -177,7 +177,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_default_fingerprint_changes_with_auth_version_base_roots_and_child_policy(self):
         from backend.notion import body_index
         settings = {"token": "secret-do-not-persist", "version": "v1", "database_ids": ["DB-1", "DB-2"]}
-        with patch.object(body_index, "get_notion_settings", return_value=settings), \
+        with patch.object(body_index, "resolve_notion_settings", return_value=settings), \
                 patch.dict("os.environ", {"NOTION_INCLUDE_CHILD_DATABASES": "false"}):
             first = body_index.BodyIndex(self.path)
             first.upsert_catalog("db-1", [page()], complete=True)
@@ -422,7 +422,7 @@ class NotionBodyIndexTests(unittest.TestCase):
     def test_index_opened_with_config_rejects_later_connection_change(self):
         from backend.notion import body_index
         settings = {"token": "first", "version": "v1", "database_ids": ["db-1"]}
-        with patch.object(body_index, "get_notion_settings", return_value=settings):
+        with patch.object(body_index, "resolve_notion_settings", return_value=settings):
             index = body_index.BodyIndex(self.path)
             index.upsert_catalog("db-1", [page()], complete=True)
             settings["token"] = "second"

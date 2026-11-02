@@ -234,8 +234,8 @@ class PlannerTaskTransitionTests(TestCase):
         p=validate_plan('비교는 끝내고 기준 이슈 하나의 현재 상태만 알려줘',
                         proposal(operation='get',scope='inherit',followup=True,
                                  status={'mode':'inherit','values':[],'evidence':''},clear_fields=['terms']),{},self.previous())
-        with patch('backend.retrieval.execute_mantis_id_lookup',return_value={'status':'ok','issues_list':[]}) as lookup, \
-             patch('backend.retrieval.execute_chroma_search') as vector:
+        with patch('backend.services.retrieval_pipeline.execute_mantis_id_lookup',return_value={'status':'ok','issues_list':[]}) as lookup, \
+             patch('backend.services.retrieval_pipeline.execute_chroma_search') as vector:
             run_retrieval_pipeline(p['grounding_text'],5,{'mantis':True,'vectorDb':True},p)
         lookup.assert_called_once()
         vector.assert_not_called()

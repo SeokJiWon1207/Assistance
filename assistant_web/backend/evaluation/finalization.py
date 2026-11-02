@@ -2,39 +2,30 @@
 
 import json
 import os
-import sqlite3
-import sys
+import sqlite3 as sqlite3
 import uuid
 from time import perf_counter
 from contextlib import closing
-from typing import Any, Callable, Dict, TypeVar
+from typing import Any, Dict
 
 from backend.answers import generate_follow_up_questions
 from backend.audit import CHAT_STREAM_CONTEXT, emit_chat_event, emit_chat_status, init_audit_db
 from backend.config import AUDIT_DB_PATH
 from backend.evaluation.comparison import (
     evaluate_ab_comparison,
+    generate_basic_grounded_baseline,
     generate_candidate_model_answer,
     should_attach_ab_test,
 )
 from backend.evaluation.data_scope import build_answer_data_scope
 from backend.evaluation.delivery import BLOCKED_ANSWER, decide_delivery
 from backend.execution import checkpoint
-from backend.evaluation.verification import (
-    build_verification_report,
-    generate_basic_grounded_baseline,
-)
+from backend.evaluation.verification import build_verification_report
 from backend.schemas import ChatRequest
 from backend.notion.formatting import append_notion_completeness_notice
 
-
-Dependency = TypeVar("Dependency", bound=Callable[..., Any])
-
-
-def _compat_dependency(name: str, default: Dependency) -> Dependency:
-    """호환 파사드에 적용된 테스트 패치를 최종 조립에도 전달한다."""
-    core = sys.modules.get("backend.evaluation.core")
-    return getattr(core, name, default) if core is not None else default
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import AUDIT
 
 
 def finalize_chat_response(
@@ -47,22 +38,6 @@ def finalize_chat_response(
 ) -> Dict[str, Any]:
     checkpoint()
     finalization_started = perf_counter()
-    generate_followups = _compat_dependency(
-        "generate_follow_up_questions", generate_follow_up_questions
-    )
-    build_verification = _compat_dependency(
-        "build_verification_report", build_verification_report
-    )
-    should_attach = _compat_dependency("should_attach_ab_test", should_attach_ab_test)
-    generate_candidate = _compat_dependency(
-        "generate_candidate_model_answer", generate_candidate_model_answer
-    )
-    generate_baseline = _compat_dependency(
-        "generate_basic_grounded_baseline", generate_basic_grounded_baseline
-    )
-    evaluate_comparison = _compat_dependency(
-        "evaluate_ab_comparison", evaluate_ab_comparison
-    )
     sources = response.get("sources") or []
     # sourcesForFollowUps는 화면 출처 표시 여부(showSources)와 무관하게 항상 채워지는
     # 전체 근거 목록이다. 사용자가 "출처 표시"를 꺼서 sources가 []가 되더라도
@@ -73,7 +48,7 @@ def finalize_chat_response(
     retrieval_result = response.get("retrieval")
     mode = (response.get("raw") or {}).get("mode", "model")
     emit_chat_status("근거와 답변을 검증하고 있습니다", "verification")
-    verification = build_verification(
+    verification = build_verification_report(
         verification_question if verification_question is not None else question,
         response.get("content", ""),
         evidence_sources,
@@ -97,12 +72,12 @@ def finalize_chat_response(
         mode = "verification_blocked"
         followups = []
     else:
-        followups = response.get("followUps") or generate_followups(
+        followups = response.get("followUps") or generate_follow_up_questions(
             question, evidence_sources, retrieval_result, mode,
         )
     # 원문 선택 검증을 거친 설명은 보류 응답까지 자유서술 AB 경로로 우회하지 않는다.
     source_quote_explanation = (response.get("groundingReview") or {}).get("method") == "validated_source_quotes"
-    if delivery.allowed and not source_quote_explanation and should_attach(request, retrieval_result, mode):
+    if delivery.allowed and not source_quote_explanation and should_attach_ab_test(request, retrieval_result, mode):
         checkpoint()
         candidate_model_id = str(
             request.abModelId or os.getenv("AB_COMPARISON_MODEL_ID", "")
@@ -119,14 +94,14 @@ def finalize_chat_response(
             "comparison",
         )
         baseline = (
-            generate_candidate(
+            generate_candidate_model_answer(
                 request,
                 question,
                 retrieval_result or {},
                 candidate_model_id,
             )
             if comparing_models
-            else generate_baseline(request, question, retrieval_result or {})
+            else generate_basic_grounded_baseline(request, question, retrieval_result or {})
         )
         if baseline.get("status") == "ok":
             baseline = {**baseline, "content": append_notion_completeness_notice(
@@ -166,7 +141,7 @@ def finalize_chat_response(
                 **baseline,
             },
         }
-        response["abTest"]["evaluation"] = evaluate_comparison(
+        response["abTest"]["evaluation"] = evaluate_ab_comparison(
             question,
             variant_a_evaluation_input,
             baseline,
@@ -210,7 +185,7 @@ def finalize_chat_response(
         payload["blockedAnswer"] = blocked_answer
     checkpoint()
     init_audit_db()
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
         connection.execute(
             """
             INSERT INTO validation_logs (

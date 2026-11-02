@@ -1,4 +1,8 @@
 """운영 DB의 속성 차이와 하위 문서 범위에 대한 회귀 검사."""
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import cache_maintenance
+from backend.notion import schema as notion_schema
 import json
 import os
 import tempfile
@@ -12,7 +16,7 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
-from backend.notion import client, database_roles, mapping, read_scope, schema, search
+from backend.notion import read_api as client, database_roles, mapping, read_scope, schema, search
 from backend.notion.formatting import format_deterministic_notion_answer
 from backend.query_planning import build_query_plan, validate_query_plan
 from backend.intent.constraints import extract_query_constraints, merge_query_plan_constraints
@@ -165,7 +169,7 @@ class DatabaseRoleTests(unittest.TestCase):
         self.assertEqual(common['filter_clauses'][0]['value'], ['김지은인'])
 
     def test_server_due_filter_does_not_drop_ranges_starting_before_month(self):
-        with patch.object(search, 'notion_property_schema', return_value={'마감일': {'type': 'date'}}):
+        with patch.object(notion_schema, 'notion_property_schema', return_value={'마감일': {'type': 'date'}}):
             result = search.notion_database_date_filter('db', {'field': 'due_at', 'operator': 'between', 'value': ['2026-04-01', '2026-04-30']})
         self.assertEqual(result, {'property': '마감일', 'date': {'on_or_before': '2026-04-30'}})
 
@@ -234,7 +238,7 @@ class DatabaseRoleTests(unittest.TestCase):
         constraints = extract_query_constraints(question)
         plan = build_query_plan(question, {'source': 'notion'}, constraints)
         merged = merge_query_plan_constraints(constraints, plan)
-        with patch.object(search, 'get_notion_settings', return_value={'token': 'token', 'database_ids': ['a' * 32]}), patch.object(search, 'fetch_notion_database_title', return_value='DB03_작업'), patch.object(search, 'notion_property_schema', return_value={'이름': {'type': 'title'}, '마감일': {'type': 'date'}}), patch.object(search, 'notion_post_json', return_value=response({'results': [raw], 'has_more': False})):
+        with patch.object(search, 'resolve_notion_settings', return_value={'token': 'token', 'database_ids': ['a' * 32]}), patch.object(read_api, 'fetch_notion_database_title', return_value='DB03_작업'), patch.object(notion_schema, 'notion_property_schema', return_value={'이름': {'type': 'title'}, '마감일': {'type': 'date'}}), patch.object(transport, 'notion_post_json', return_value=response({'results': [raw], 'has_more': False})):
             result = search.execute_notion_search(question, constraints=merged, include_blocks=False)
         self.assertEqual([p['id'] for p in result['notion_pages']], ['item'])
         self.assertEqual(result['notion_pages'][0]['due_date'], '2026-04-03')
@@ -268,11 +272,11 @@ class ChildScopeTests(unittest.TestCase):
         root, child, _ = self.expired_scope()
         new_child = 'c' * 32
         settings = {'token': 'fixture-token', 'database_ids': [root]}
-        with (patch.object(client, 'get_notion_settings', return_value=settings),
+        with (patch.object(cache_maintenance, 'resolve_notion_settings', return_value=settings),
               patch.object(read_scope, 'refresh_notion_read_scope',
                   return_value=({root: root, child: root, new_child: root}, True)) as refresh,
               patch.object(client, 'fetch_notion_database_schema', return_value={}) as fetch):
-            self.assertEqual(client.warm_notion_database_cache(), 3)
+            self.assertEqual(cache_maintenance.warm_notion_database_cache(), 3)
         refresh.assert_called_once_with([root], 'fixture-token')
         scope, complete = read_scope.resolve_notion_read_scope([root], 'fixture-token')
         self.assertTrue(complete)
@@ -283,12 +287,12 @@ class ChildScopeTests(unittest.TestCase):
         root, child, saved_path = self.expired_scope()
         original = saved_path.read_bytes()
         new_child = 'c' * 32
-        with (patch.object(client, 'get_notion_settings', return_value={
+        with (patch.object(cache_maintenance, 'resolve_notion_settings', return_value={
                   'token': 'fixture-token', 'database_ids': [root]}),
               patch.object(read_scope, 'refresh_notion_read_scope',
                   return_value=({root: root, new_child: root}, False)) as refresh,
               patch.object(client, 'fetch_notion_database_schema', return_value={}) as fetch):
-            self.assertEqual(client.warm_notion_database_cache(), 3)
+            self.assertEqual(cache_maintenance.warm_notion_database_cache(), 3)
         refresh.assert_called_once()
         self.assertEqual(saved_path.read_bytes(), original)
         self.assertFalse(read_scope.resolve_notion_read_scope([root], 'fixture-token')[1])
@@ -297,14 +301,14 @@ class ChildScopeTests(unittest.TestCase):
     def test_refreshed_scope_proves_an_empty_exact_title_query_is_complete(self):
         root, child, _ = self.expired_scope()
         settings = {'token': 'fixture-token', 'database_ids': [root]}
-        with (patch.object(client, 'get_notion_settings', return_value=settings),
+        with (patch.object(cache_maintenance, 'resolve_notion_settings', return_value=settings),
               patch.object(read_scope, 'refresh_notion_read_scope', return_value=({root: root, child: root}, True)),
               patch.object(client, 'fetch_notion_database_schema', return_value={}),
-              patch.object(search, 'get_notion_settings', return_value=settings),
-              patch.object(search, 'fetch_notion_database_title', return_value='업무'),
-              patch.object(search, 'notion_property_schema', return_value={'제목': {'type': 'title'}}),
-              patch.object(search, 'notion_post_json', return_value=response({'results': [], 'has_more': False}))):
-            client.warm_notion_database_cache()
+              patch.object(search, 'resolve_notion_settings', return_value=settings),
+              patch.object(read_api, 'fetch_notion_database_title', return_value='업무'),
+              patch.object(notion_schema, 'notion_property_schema', return_value={'제목': {'type': 'title'}}),
+              patch.object(transport, 'notion_post_json', return_value=response({'results': [], 'has_more': False}))):
+            cache_maintenance.warm_notion_database_cache()
             stage = search.execute_notion_search("노션에서 '없는 문서' 찾아줘", include_blocks=False)
         self.assertEqual(stage['notion_pages'], [])
         self.assertTrue(stage['meta']['search_complete'])
@@ -507,7 +511,7 @@ class ChildScopeTests(unittest.TestCase):
 
     def test_child_read_permission_does_not_grant_write_permission(self):
         root, child = 'a' * 32, 'b' * 32
-        with patch.object(schema, 'get_notion_settings', return_value={'token': 'token', 'database_ids': [root]}), patch.object(read_scope, 'resolve_notion_read_scope', return_value=({root: root, child: root}, True)):
+        with patch.object(notion_schema, 'resolve_notion_settings', return_value={'token': 'token', 'database_ids': [root]}), patch.object(read_scope, 'resolve_notion_read_scope', return_value=({root: root, child: root}, True)):
             self.assertEqual(schema.ensure_readable_notion_database(child), child)
             with self.assertRaises(HTTPException):
                 schema.ensure_configured_notion_database(child)

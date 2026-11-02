@@ -1,4 +1,5 @@
 """전체 원본의 게시/격리/실패 보존과 실제 검색 경로 회귀."""
+from backend.services import retrieval_pipeline
 from contextlib import closing
 import json
 from pathlib import Path
@@ -139,7 +140,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.sync([{'id': 77, 'handler': {'real_name': '석지원'}, 'status': {'name': 'assigned'}, 'created_at': '2026-09-10'}])
         with patch.object(mantis_store, 'MAX_AGE_SECONDS', -1), \
              patch.object(mantis_store, 'start_store_refresh'), \
-             patch('backend.tools.mantis_snapshot._scan_chroma_documents') as legacy:
+             patch('backend.sources.mantis_snapshot_query._scan_chroma_documents') as legacy:
             response = build_mantis_count_report('우리 팀 미종료 이슈 몇 건이야', {'operation': 'count', 'source': 'mantis'})
         legacy.assert_not_called()
         self.assertIn('갱신이 지연', response['content'])
@@ -155,7 +156,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
         self.assertNotIn('실시간 병합', dated['content'])
 
     def test_expired_regular_search_requests_refresh_without_using_older_index(self):
-        from backend.tools import mantis_snapshot
+        from backend.sources import mantis_snapshot_query as mantis_snapshot
         self.sync([{'id': 77, 'summary': '옛 제목'}])
         with (patch.object(mantis_store, 'MAX_AGE_SECONDS', -1),
               patch.object(mantis_store, 'start_store_refresh') as refresh,
@@ -197,7 +198,7 @@ class MantisCompleteStoreTests(unittest.TestCase):
     def test_structured_search_uses_same_new_generation(self):
         from backend.config import CHROMA_DB_PATH
         from backend.common import normalize_chroma_issue_document
-        from backend.tools.mantis_snapshot import scan_mantis_documents
+        from backend.sources.mantis_snapshot_query import scan_mantis_documents
         self.sync([{'id': 77, 'summary': '새로운 제목', 'status': {'name': 'assigned'},
                     'handler': {'real_name': '김지원'}, 'created_at': '2026-09-29'}])
         result = scan_mantis_documents(CHROMA_DB_PATH, lambda text: '새로운 제목' in text, normalize_chroma_issue_document)
@@ -339,8 +340,8 @@ class MantisCompleteStoreTests(unittest.TestCase):
         from backend import retrieval
         self.sync([{'id': 1, 'summary': 'HTS 조회', 'project': {'name': 'KB증권'}}])
         with (patch.object(mantis_store, '_open_store_stream', wraps=mantis_store._open_store_stream) as read,
-              patch.object(retrieval, 'revalidate_mantis_snapshot_stage', side_effect=lambda stage, constraints: stage),
-              patch.object(retrieval, 'execute_mantis_filter_search', return_value={'source':'mantis_filter', 'status':'skipped'})):
+              patch.object(retrieval_pipeline, 'revalidate_mantis_snapshot_stage', side_effect=lambda stage, constraints: stage),
+              patch.object(retrieval_pipeline, 'execute_mantis_filter_search', return_value={'source':'mantis_filter', 'status':'skipped'})):
             for expected in (1, 2):
                 retrieval.run_retrieval_pipeline('KB증권 HTS 최근 이슈 5개 보여줘', 5,
                                                 {'mantis':True, 'vectorDb':False}, {'source':'mantis'})

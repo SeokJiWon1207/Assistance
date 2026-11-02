@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-import os
-import sqlite3
+
+import os as os
+import sqlite3 as sqlite3
 from contextlib import closing
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime as datetime, timedelta, timezone as timezone
+from pathlib import Path as Path
+from typing import Any, Dict, List, Optional as Optional
 
 from backend.chart_data import daily_registrations
-from backend.display import customer_name
-from backend.common import extract_chroma_field, normalize_chroma_issue_document, normalize_for_match
-from backend.config import CHROMA_DB_PATH, NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
+from backend.display import customer_name as customer_name
+from backend.sources.chroma_document import extract_chroma_field, normalize_chroma_issue_document
+from backend.utils.text import normalize_for_match
+from backend.config import CHROMA_DB_PATH, RUNTIME_DIR as RUNTIME_DIR
+from backend.settings.notion import NOTION_API_BASE
+from backend.notion.discovery import resolve_notion_settings
+from backend.notion.transport import notion_post_json
 from backend.notion.property_roles import responsible_properties
-from backend.db_migrations import run_sqlite_migrations
-from backend.sources.mantis import normalize_issue
+from backend.db_migrations import run_sqlite_migrations as run_sqlite_migrations
+from backend.sources.mantis_fields import normalize_issue
 from backend.sources.mantis_collection import collection_metadata
 from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
 from backend.sources.notion import (
@@ -26,109 +31,26 @@ from backend.sources.notion import (
 )
 from backend import conversation_history
 from backend.conversation_history import ConversationConflictError, ConversationDeletedError, ConversationQuotaError  # noqa: F401
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.workspace_data import load_workspace_snapshot
-from backend.team_scope import filter_team_issues, team_member_profiles
+from backend.domain.team import filter_team_issues, team_member_profiles
 
-
-def workspace_db_path() -> Path:
-    configured = os.getenv("WORKSPACE_DB_PATH", "").strip()
-    return Path(configured).expanduser() if configured else RUNTIME_DIR / "workspace.sqlite3"
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-
-
-def _create_workspace_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversations (
-                user_uid TEXT NOT NULL,
-                conversation_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                messages_json TEXT NOT NULL,
-                favorite INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                PRIMARY KEY (user_uid, conversation_id)
-            )
-            """
-        )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_conversations_user_updated "
-        "ON conversations(user_uid, favorite DESC, updated_at DESC)"
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS notification_reads (
-            user_uid TEXT NOT NULL,
-            notification_id TEXT NOT NULL,
-            read_at TEXT NOT NULL,
-            PRIMARY KEY (user_uid, notification_id)
-        )
-        """
-    )
-
-
-def _create_team_brief_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS weekly_team_briefs (
-            week_start TEXT PRIMARY KEY,
-            payload_json TEXT NOT NULL,
-            generated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS weekly_team_brief_reads (
-            user_uid TEXT NOT NULL,
-            week_start TEXT NOT NULL,
-            read_at TEXT NOT NULL,
-            PRIMARY KEY (user_uid, week_start)
-        )
-        """
-    )
-
-
-def _create_playbook_schema(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS resolution_playbooks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            symptom TEXT NOT NULL,
-            cause TEXT NOT NULL DEFAULT '',
-            resolution TEXT NOT NULL,
-            verification TEXT NOT NULL DEFAULT '',
-            tags_json TEXT NOT NULL DEFAULT '[]',
-            source_issue_ids_json TEXT NOT NULL DEFAULT '[]',
-            status TEXT NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'published', 'archived')),
-            created_by_uid TEXT NOT NULL,
-            created_by_name TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            published_at TEXT NOT NULL DEFAULT ''
-        )
-        """
-    )
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_resolution_playbooks_status_updated "
-        "ON resolution_playbooks(status, updated_at DESC)"
-    )
-
-
-def init_workspace_db() -> None:
-    from backend.workspace_notifications import create_notification_schema
-    run_sqlite_migrations(
-        workspace_db_path(),
-        [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, conversation_history.migrate_messages,
-         create_notification_schema],
-        database_name="workspace",
-    )
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import WORKSPACE
+from backend.storage.workspace_schema import (
+    workspace_db_path as workspace_db_path,
+    _create_workspace_schema as _create_workspace_schema,
+    _create_team_brief_schema as _create_team_brief_schema,
+    _create_playbook_schema as _create_playbook_schema,
+    init_workspace_db as init_workspace_db,
+)
+from backend.storage.workspace_rows import (
+    _parse_date as _parse_date,
+    _is_open as _is_open,
+    _due_date as _due_date,
+    _issue_summary as _issue_summary,
+)
+from backend.utils.dates import local_timestamp as _now
 
 
 def _safe_messages(messages):
@@ -168,58 +90,9 @@ def delete_conversations(user_uid: str, ids: list[str], *, all_conversations: bo
                                                      all_conversations=all_conversations)
 
 
-def _parse_date(value: Any) -> Optional[date]:
-    raw = str(value or "")[:10]
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        return None
-
-
-def _is_open(status: str) -> bool:
-    from backend.mantis_status import mantis_status_bucket
-    return mantis_status_bucket(status) == "open"
-
-
 def _is_notion_closed(status: str) -> bool:
     normalized = normalize_for_match(str(status or ""))
     return any(marker in normalized for marker in ("closed", "종료", "완료", "보관"))
-
-
-def _due_date(issue: Dict[str, Any]) -> str:
-    date_fields = issue.get("date_fields") or {}
-    preferred = ("완료예정일", "수정예정일", "배포예정일", "처리예정일", "마감일")
-    for field_name in preferred:
-        if date_fields.get(field_name):
-            return str(date_fields[field_name])[:10]
-    for field_name, value in date_fields.items():
-        if any(keyword in str(field_name) for keyword in ("예정", "마감", "완료")) and value:
-            return str(value)[:10]
-    return ""
-
-
-def _issue_summary(issue: Dict[str, Any]) -> Dict[str, Any]:
-    due = _due_date(issue)
-    today = date.today()
-    due_value = _parse_date(due)
-    created = _parse_date(issue.get("created_at"))
-    age_days = (today - created).days if created else None
-    return {
-        "id": issue.get("id"),
-        "title": issue.get("summary", "제목 없음"),
-        "project": issue.get("project", "미상"),
-        "customer_name": customer_name(issue.get("project")),
-        "status": issue.get("status", "상태 미상"),
-        "isOpen": _is_open(issue.get("status", "")),
-        "priority": issue.get("priority", ""),
-        "handler": issue.get("handler", "담당자 미지정"),
-        "createdAt": issue.get("created_at", ""),
-        "updatedAt": issue.get("updated_at", ""),
-        "dueDate": due,
-        "overdue": bool(due_value and due_value < today and _is_open(issue.get("status", ""))),
-        "ageDays": age_days,
-        "screenNumber": issue.get("screen_number", ""),
-    }
 
 
 def _matches_person(value: str, person: str) -> bool:
@@ -293,7 +166,7 @@ def _my_notion_pages(user: Dict[str, Any], limit: int = 12) -> Dict[str, Any]:
     if not person or "@" in person:
         return {"status": "skipped", "notion_pages": [], "reason": "사용자 이름이 연결되지 않았습니다."}
     try:
-        settings = get_notion_settings()
+        settings = resolve_notion_settings()
         if not settings.get("token") or not settings.get("database_ids"):
             return {"status": "skipped", "notion_pages": [], "reason": "Notion 연결 정보가 없습니다."}
         notion_user_id = next(
@@ -363,7 +236,7 @@ def _my_notion_pages(user: Dict[str, Any], limit: int = 12) -> Dict[str, Any]:
 def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: List[Dict[str, Any]],
                    *, observed_events: List[Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE)) as connection, connection:
         read_ids = {
             row[0]
             for row in connection.execute(
@@ -419,7 +292,7 @@ def _notifications(user_uid: str, issues: List[Dict[str, Any]], notion_pages: Li
 
 def mark_notification_read(user_uid: str, notification_id: str) -> None:
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE)) as connection, connection:
         connection.execute(
             """
             INSERT INTO notification_reads (user_uid, notification_id, read_at)
@@ -431,10 +304,15 @@ def mark_notification_read(user_uid: str, notification_id: str) -> None:
 
 
 def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
+    # 대시보드와 개인 업무 상세가 같은 이슈에 같은 판단 근거를 표시한다.
+    from backend.reports.team_brief import _priority_content
+
     person, all_issues, mantis_meta = _my_mantis_issues(
         user, prefer_snapshot=not (refresh or live), force_refresh=refresh
     )
     issues = [_issue_summary(issue) for issue in all_issues]
+    today = date.today()
+    issues = [_priority_content(item, today) if item["isOpen"] else item for item in issues]
     issues.sort(
         key=lambda item: (
             not item["overdue"],
@@ -445,7 +323,6 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
         )
     )
     open_issues = [item for item in issues if _is_open(item["status"])]
-    today = date.today()
     week_start = today - timedelta(days=6)
     new_this_week = [item for item in issues if week_start <= (_parse_date(item["createdAt"]) or date.min) <= today]
     updated_this_week = [item for item in issues if week_start <= (_parse_date(item["updatedAt"]) or date.min) <= today]

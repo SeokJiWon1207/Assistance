@@ -112,7 +112,7 @@ class StoreMemoryTests(unittest.TestCase):
         self.assertIsNot(current[1]["custom_fields"], summary[0]["custom_fields"])
 
     def test_simultaneous_workspace_requests_normalize_one_shared_generation(self):
-        from backend.sources import mantis
+        from backend.sources import mantis_fields as mantis
         self.write_rows(1)
         first_entered, second_entered, release = Event(), Event(), Event()
         original = mantis.normalize_issue
@@ -156,7 +156,7 @@ class StoreMemoryTests(unittest.TestCase):
     def test_snapshot_search_counts_every_match_without_retaining_every_body(self):
         from backend.common import normalize_chroma_issue_document
         from backend.config import CHROMA_DB_PATH
-        from backend.tools.mantis_snapshot import scan_mantis_documents
+        from backend.sources.mantis_snapshot_query import scan_mantis_documents
         self.write_large_text_rows()
         gc.collect()
         tracemalloc.start()

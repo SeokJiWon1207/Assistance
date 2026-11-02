@@ -16,19 +16,17 @@ import re
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.query_planning import extract_group_by, build_query_plan
+from backend.query.operations import extract_group_by
+from backend.query_planning import build_query_plan
 from backend.display import customer_name, korean_day, korean_time
 from backend.mantis_status import mantis_status_bucket
 from backend.reports.effort import parse_effort_field_value, parse_effort_period, effort_period_bounds, extract_effort_date_range, _effort_constraints
 from backend.effort_fields import issue_delivery_date, EFFORT_FIELD_LABELS
 from backend.query_filters import matches_source_filters
-from backend.query_planning import plan_created_at_matches
-from backend.sources.mantis import (
-    build_sources_from_issue_rows,
-    fetch_mantis_recent_issues,
-    issue_matches_constraints,
-    normalize_issue,
-)
+from backend.query.dates import plan_created_at_matches
+from backend.sources.mantis_fields import build_sources_from_issue_rows, normalize_issue
+from backend.sources.mantis import fetch_mantis_recent_issues
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.understanding import extract_query_constraints, extract_requested_limit
 from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.sources.mantis_collection import collection_metadata

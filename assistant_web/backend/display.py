@@ -11,8 +11,8 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
-from backend.config import CUSTOMER_PROJECT_DISPLAY_NAMES
-from backend.common import display_mantis_status_label
+from backend.settings.catalogs import get_customer_project_display_names
+from backend.mantis_status import display_mantis_status_label
 from backend.team_templates import customer_display_for_project
 
 KST = timezone(timedelta(hours=9))
@@ -24,7 +24,7 @@ def customer_name(project: Any) -> str:
         return "고객사 미상"
     code = re.split(r"[\s(]", raw, maxsplit=1)[0]
     code = re.sub(r"_Project$", "", code, flags=re.IGNORECASE)
-    override = next((name for key, name in CUSTOMER_PROJECT_DISPLAY_NAMES.items() if key.casefold() == code.casefold()), None)
+    override = next((name for key, name in get_customer_project_display_names().items() if key.casefold() == code.casefold()), None)
     return override or customer_display_for_project(raw) or raw
 
 

@@ -34,8 +34,8 @@ class NotionBodyOracleTests(unittest.TestCase):
             raw_page("own", "문서", "paragraph", "owned text")["blocks"][0],
         ]
         with patch("requests.get", side_effect=[Mock(json=lambda: {"properties": {}}),
-                   Mock(json=lambda: {"results": blocks})]), patch("backend.config.notion_request_slot"), \
-                patch("backend.config.get_notion_headers", return_value={}):
+                   Mock(json=lambda: {"results": blocks})]), patch("backend.notion.transport.notion_request_slot"), \
+                patch("backend.settings.notion.get_notion_headers", return_value={}):
             source = accuracy.fetch_oracle_page("page")
         self.assertFalse(source["complete"])
         self.assertTrue(source["supported_content_complete"])
@@ -55,7 +55,7 @@ class NotionBodyOracleTests(unittest.TestCase):
         for payload, reason in examples:
             with self.subTest(reason=reason), patch("requests.get", side_effect=[
                     Mock(json=lambda: {"properties": {}}), Mock(json=lambda value=payload: value)]), \
-                    patch("backend.config.notion_request_slot"), patch("backend.config.get_notion_headers", return_value={}):
+                    patch("backend.notion.transport.notion_request_slot"), patch("backend.settings.notion.get_notion_headers", return_value={}):
                 source = accuracy.fetch_oracle_page("page")
                 self.assertFalse(source["complete"])
                 self.assertFalse(source["supported_content_complete"])
@@ -161,8 +161,8 @@ class NotionBodyOracleTests(unittest.TestCase):
             response.json.return_value = data
             return response
 
-        with patch("requests.get", side_effect=get), patch("backend.config.notion_request_slot"), \
-                patch("backend.config.get_notion_headers", return_value={}):
+        with patch("requests.get", side_effect=get), patch("backend.notion.transport.notion_request_slot"), \
+                patch("backend.settings.notion.get_notion_headers", return_value={}):
             source = accuracy.fetch_oracle_page("page")
             self.assertTrue(source["complete"])
             self.assertEqual([s["text"] for s in accuracy.verified_segments(source)], ["same_page_evidence"])
@@ -185,8 +185,8 @@ class NotionBodyOracleTests(unittest.TestCase):
             response = Mock()
             response.json.return_value = data
             return response
-        with patch("requests.get", side_effect=get), patch("backend.config.notion_request_slot"), \
-                patch("backend.config.get_notion_headers", return_value={}):
+        with patch("requests.get", side_effect=get), patch("backend.notion.transport.notion_request_slot"), \
+                patch("backend.settings.notion.get_notion_headers", return_value={}):
             source = accuracy.fetch_oracle_page("page")
         self.assertTrue(source["complete"])
         self.assertEqual(source["errors"], [])
@@ -367,7 +367,7 @@ class NotionBodyOracleTests(unittest.TestCase):
             observed.append(CURRENT_BUDGET.get())
             raise RequestStopped()
 
-        with patch("backend.retrieval.run_retrieval_pipeline", side_effect=timed_out):
+        with patch("backend.services.retrieval_pipeline.run_retrieval_pipeline", side_effect=timed_out):
             graded = accuracy.run_case(case, evidence())
         self.assertIsNotNone(observed[0])
         self.assertIsNone(CURRENT_BUDGET.get())
@@ -379,7 +379,7 @@ class NotionBodyOracleTests(unittest.TestCase):
         old = raw_page("one", "문서", "paragraph", "first portion", complete=False)
         fresh = raw_page("one", "문서", "code", "needle_token")
         sources = evidence(old)
-        with patch("backend.retrieval.run_retrieval_pipeline", return_value=result({"id": "one", "content": "needle_token"})), \
+        with patch("backend.services.retrieval_pipeline.run_retrieval_pipeline", return_value=result({"id": "one", "content": "needle_token"})), \
                 patch.object(accuracy, "fetch_oracle_page", return_value=fresh):
             graded = accuracy.run_case(case, sources)
         self.assertTrue(graded["passed"])
@@ -389,7 +389,7 @@ class NotionBodyOracleTests(unittest.TestCase):
     def test_partial_oracle_retry_without_evidence_stays_unverified(self):
         case = accuracy.BodyCase("one", "노션 needle_token", ["needle_token"], ["one"], "code")
         partial = raw_page("one", "문서", "paragraph", "first portion", complete=False)
-        with patch("backend.retrieval.run_retrieval_pipeline", return_value=result({"id": "one", "content": "needle_token"})), \
+        with patch("backend.services.retrieval_pipeline.run_retrieval_pipeline", return_value=result({"id": "one", "content": "needle_token"})), \
                 patch.object(accuracy, "fetch_oracle_page", return_value=partial):
             graded = accuracy.run_case(case, evidence(partial))
         self.assertFalse(graded["passed"])

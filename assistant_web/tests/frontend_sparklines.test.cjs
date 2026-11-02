@@ -44,13 +44,11 @@ const sample = {person:'석지원',periodLabel:'2026년 10월',periodFrom:'2026-
   byType:[{label:'문의',amount:0},{label:'서버',amount:0},{label:'PC',amount:1.25},{label:'QC',amount:0}],
   dailyEffort:[{date:'2026-10-01',amount:1},{date:'2026-10-02',amount:0},{date:'2026-10-03',amount:.25}]};
 
-test('dashboard KPI uses the existing daily registrations and preserves incomplete coverage',async()=>{
+test('compact dashboard KPI preserves incomplete totals without duplicating the trend chart',async()=>{
   const {dashboard} = await harness();
-  const points=[{date:'2026-10-01',count:2},{date:'2026-10-02',count:0}];
-  const html=dashboard.renderIntakeCard({newIssues:2,closedNow:1,newOpen:1},false,points);
-  const spec=specs(html)[0];
-  assert.equal(spec.kind,'sparkline');assert.equal(spec.compact,true);assert.equal(spec.complete,false);
-  assert.deepEqual(spec.points,points);assert.match(html,/비교 미확정/);
+  const html=dashboard.renderIntakeCard({newIssues:2,closedNow:1,newOpen:1},false);
+  assert.equal(specs(html).length,0);
+  assert.match(html,/비교 미확정/);assert.match(html,/건 이상/);
   assert.match(html,/종료 1/);assert.match(html,/미종료 1/);
 });
 test('effort answer sends daily decimals to a bar sparkline and retains zeros and all types',async()=>{
@@ -75,6 +73,26 @@ test('saved effort answers without daily data keep totals without fabricated dat
   const long=charts.renderEffortChart({...sample,dailyEffort:null}).outerHTML;
   assert.equal(specs(long).length,0);assert.match(long,/1년 이하/);
 });
+
+test('complete snapshot totals stay exact while the saved time and freshness warning remain visible',async()=>{
+  const {charts} = await harness();
+  const html=charts.renderEffortChart({...sample,complete:true,asOf:'2026-10-30T01:12:56+00:00',asOfLabel:'저장 시각',
+    freshnessWarning:'최신 변경은 아직 반영되지 않았을 수 있습니다.'},{complete:false}).outerHTML;
+  assert.doesNotMatch(html,/이상|전체 합계는 미확정/);
+  assert.match(html,/저장/);assert.match(html,/2026/);assert.match(html,/최신 변경/);
+  assert.equal(specs(html)[0].complete,true);
+});
+
+test('top effort issues expose their complete escaped titles and amounts without a second disclosure',async()=>{
+  const {charts} = await harness();
+  const summary='[MTS] 주문 화면에서 계좌를 변경했을 때 잔고가 갱신되지 않는 오류 <img src=x>';
+  const card=charts.renderEffortChart({...sample,topIssues:[{id:31345,summary,amount:1.25}]});
+  const issues=card.children.find(child=>child.className.includes('effort-answer-issues'));
+  assert.match(issues.innerHTML,/#31345/);
+  assert.ok(issues.innerHTML.includes(escape(summary)));
+  assert.match(issues.innerHTML,/1\.25 공수/);
+  assert.doesNotMatch(issues.innerHTML,/<img|<details|data-bklit-spec|…/);
+});
 test('effort answer escapes labels and fallback dates and preserves zero-valued series',async()=>{
   const {charts} = await harness();
   const html=charts.renderEffortChart({...sample,person:'<img src=x>',byType:[{label:'<script>',amount:0}],
@@ -97,7 +115,7 @@ test('effort card retains original answer in a collapsed disclosure without copy
 test('chat collapses only completed new effort answers and passes partial coverage to the card',async()=>{
   const source=fs.readFileSync(path.join(dir,'chat.js'),'utf8');
   const original=element('div');const calls=[];
-  const context=vm.createContext({renderEffortChart:(_chart,options)=>{calls.push(options);return element('div');},renderVerificationPanel:()=>element('div')});
+  const context=vm.createContext({renderEffortChart:(_chart,options)=>{calls.push(options);return element('div');},renderVerificationPanel:()=>element('div'),presentAssistantAnswer(){}});
   const module=new vm.SourceTextModule(source.slice(source.indexOf('function appendAssistantExtras('),source.indexOf('\nfunction conditionId('))+'\nexport {appendAssistantExtras};',{context});
   await module.link(()=>{});await module.evaluate();
   const container={appendChild(){},querySelector:()=>original};

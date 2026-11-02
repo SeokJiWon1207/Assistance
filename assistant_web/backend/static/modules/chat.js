@@ -3,6 +3,7 @@ import { renderProgressSteps } from "./chat_progress.js?v=20261023-1";
 import { appendAnswerContextControls, selectAnswerContext } from "./chat_ab_context.js?v=20261024-1";
 import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { answerSearchPresentation } from "./search_conditions.js?v=20261030-1";
+import { presentAssistantAnswer, wrapRelatedSources } from "./answer_disclosure.js?v=20261030-1";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
 import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
@@ -392,9 +393,7 @@ function updateComposerShadow() {
   }
 }
 
-// 다른 생성형 AI 챗 UI처럼 텍스트 버튼 대신 아이콘+라벨 조합을 쓴다.
-// 외부 아이콘 폰트/라이브러리 의존성 없이 인라인 SVG(currentColor)로 구현해
-// 버튼 색상(hover 등)이 아이콘에도 그대로 적용되게 한다.
+// 주요 결과를 먼저 배치하고, 완료된 답변의 설명과 근거는 접어 표시한다.
 function appendAssistantExtras(container, message, messageIndex) {
   const complete = !(message.verification?.dataScope || []).some(row => ["부분 조회", "범위 미확인"].includes(row.coverage));
   if (message.effortChart) {
@@ -405,8 +404,9 @@ function appendAssistantExtras(container, message, messageIndex) {
   }
   if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking, { complete }));
   if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend, { complete }));
+  presentAssistantAnswer(container, message);
   if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {
-    container.appendChild(renderSourceList(message.sources, messageIndex));
+    container.appendChild(wrapRelatedSources(renderSourceList(message.sources, messageIndex), message, message.sources.length));
   }
   if (message.followUps?.length) {
     container.appendChild(renderFollowUps(message.followUps));
@@ -637,8 +637,9 @@ function renderAbComparison(message, aBubble, messageIndex) {
     `${messageIndex}-baseline`,
   ));
   bPanel.append(bTitle, bNote, bBubble);
+  presentAssistantAnswer(bPanel, variantB);
   if (baselineSources.length && !baselineSources.every((source) => source.type === "notion")) {
-    bPanel.appendChild(renderSourceList(baselineSources, messageIndex, "baseline"));
+    bPanel.appendChild(wrapRelatedSources(renderSourceList(baselineSources, messageIndex, "baseline"), variantB, baselineSources.length));
   }
   if (variantB.status === "ok") {
     const bActions = document.createElement("div");

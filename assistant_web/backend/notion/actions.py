@@ -1,7 +1,7 @@
 """사용자에게 확인받은 Notion 작업을 영속 저장하고 한 번만 실행한다."""
 
 import json
-import sqlite3
+import sqlite3 as sqlite3
 import time
 import uuid
 from contextlib import closing
@@ -10,10 +10,13 @@ from typing import Any, Callable
 from fastapi import HTTPException
 from backend.config import RUNTIME_DIR
 
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import NOTION_ACTIONS
+
 
 def _connect() -> sqlite3.Connection:
     path = RUNTIME_DIR / "notion_actions.sqlite3"
-    connection = sqlite3.connect(path, timeout=5)
+    connection = open_sqlite(path, profile=NOTION_ACTIONS)
     connection.execute(
         "CREATE TABLE IF NOT EXISTS actions (id TEXT PRIMARY KEY, uid TEXT NOT NULL, "
         "payload TEXT NOT NULL, expires REAL NOT NULL, state TEXT NOT NULL, result TEXT)"

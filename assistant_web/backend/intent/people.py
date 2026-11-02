@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, Optional
 
-from backend.common import is_valid_handler_name, normalize_for_match
+from backend.domain.people import is_valid_handler_name
+from backend.utils.text import normalize_for_match
 
 
 FILTERABLE_PERSON_ORIGINS = frozenset({"known", "explicit_unverified"})

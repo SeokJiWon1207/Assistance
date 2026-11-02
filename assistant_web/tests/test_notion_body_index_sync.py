@@ -1,5 +1,6 @@
 """본문 색인의 전체 순회, 재개 및 실시간 재검증 계약."""
 
+from backend.notion import crawl_transport
 import importlib.util
 import io
 import json
@@ -41,7 +42,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         clock = patch.object(sync.time, "monotonic", side_effect=lambda: self.now)
         clock.start()
         self.addCleanup(clock.stop)
-        cooldown = patch.object(sync, "_retry_after_until", 0.0, create=True)
+        cooldown = patch.object(crawl_transport, "_retry_after_until", 0.0, create=True)
         cooldown.start()
         self.addCleanup(cooldown.stop)
         self.directory = tempfile.TemporaryDirectory()
@@ -56,7 +57,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         self.catalog_has_more = False
         self.get_errors = []
         for name, value in (
-            ("get_notion_settings", {"token": "unit", "database_ids": ["db"]}),
+            ("resolve_notion_settings", {"token": "unit", "database_ids": ["db"]}),
             ("resolve_notion_read_scope", ({"db": "db"}, True)),
             ("get_notion_headers", {"Authorization": "Bearer unit"}),
         ):
@@ -68,7 +69,7 @@ class BodyIndexSyncTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         for name in ("notion_request_slot", "interruptible_sleep"):
-            patcher = patch.object(sync, name)
+            patcher = patch.object(crawl_transport, name)
             mocked = patcher.start()
             if name == "interruptible_sleep":
                 mocked.side_effect = self.advance_clock
@@ -260,7 +261,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         with patch.object(sync.requests, "get", side_effect=[limited, response({"ok": True})]):
             result = sync._request("pages/page", sync._Budget(sync.time.monotonic() + 60, 3))
         self.assertEqual(result, {"ok": True})
-        sync.interruptible_sleep.assert_called_once_with(30)
+        crawl_transport.interruptible_sleep.assert_called_once_with(30)
 
     def test_retry_after_beyond_budget_does_not_retry_early(self):
         limited = response({}, 429)
@@ -269,7 +270,7 @@ class BodyIndexSyncTests(unittest.TestCase):
             with self.assertRaisesRegex(sync._ReadFailure, "http_429"):
                 sync._request("pages/page", sync._Budget(sync.time.monotonic() + 20, 3))
         self.assertEqual(get.call_count, 1)
-        sync.interruptible_sleep.assert_not_called()
+        crawl_transport.interruptible_sleep.assert_not_called()
 
     def test_retry_after_survives_page_deadline_and_delays_next_page(self):
         limited = response({}, 429)
@@ -732,7 +733,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         self.assertFalse(missing.exists())
         with (
             patch.object(sync, "parse_notion_database_ids", return_value=[]),
-            patch.object(sync, "get_notion_settings", side_effect=AssertionError("must not auto-discover")),
+            patch.object(sync, "resolve_notion_settings", side_effect=AssertionError("must not auto-discover")),
         ):
             stats = sync.notion_body_index_status()
         self.assertFalse(stats["available"])

@@ -167,7 +167,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
         )
         with patch.object(
             workspace,
-            "get_notion_settings",
+            "resolve_notion_settings",
             return_value={"token": "", "database_ids": []},
         ):
             result = workspace._my_notion_pages({"displayName": "석지원"})
@@ -185,7 +185,7 @@ class PersonalWorkspaceTests(unittest.TestCase):
 
         with patch.object(
             workspace,
-            "get_notion_settings",
+            "resolve_notion_settings",
             return_value={"token": "token", "database_ids": ["db-1", "db-2"]},
         ), patch.object(
             workspace,
@@ -434,6 +434,23 @@ class PersonalAccuracyBoundaryTests(unittest.TestCase):
         result = self.build(issues)
         self.assertEqual(result['summary']['open'], 35)
         self.assertEqual({item['id'] for item in result['mantis']['issues']}, set(range(1, 36)))
+
+    def test_personal_detail_uses_dashboard_risk_and_excludes_closed_highlights(self):
+        today = workspace.date.today()
+        result = self.build([
+            {'id': 1, 'summary': '장기 미종료', 'status': 'assigned', 'handler': '석지원',
+             'created_at': (today - workspace.timedelta(days=60)).isoformat(),
+             'updated_at': today.isoformat()},
+            {'id': 2, 'summary': '종료 업무', 'status': 'closed', 'handler': '석지원',
+             'created_at': (today - workspace.timedelta(days=90)).isoformat(),
+             'updated_at': today.isoformat()},
+        ])
+        detail = result['mantis']['issues'][0]
+        self.assertEqual(detail.get('riskLevel'), 'attention')
+        self.assertEqual(detail.get('riskReasons'), ['60일 장기 미종료'])
+        self.assertEqual(detail.get('recommendedAction'), '종료 조건과 남은 장애 요인 재검토')
+        closed = next(item for item in result['weeklyBrief']['highlights'] if item['id'] == 2)
+        self.assertNotIn('riskLevel', closed)
 
     def test_weekly_dates_exclude_future_and_include_both_boundaries(self):
         today = workspace.date.today()

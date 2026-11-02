@@ -42,7 +42,7 @@ from backend.environment import load_dotenv
 
 load_dotenv(APP_DIR / ".env")
 
-from backend.config import CUSTOMER_ALIASES
+from backend.settings.catalogs import get_customer_aliases
 from backend.mantis_status import mantis_status_bucket
 from backend.template_questions import fill_template_question
 from backend.team_templates import (
@@ -272,7 +272,7 @@ def build_cases(
     done_issue = pick_issue(issues, rng, today=today, bucket="done", customer=customer) or pick_issue(
         issues, rng, today=today, bucket="done")
     # 일반 템플릿은 팀 기본 범위, 명시적 이슈 문서는 위에서 고른 원문 범위다.
-    from backend.team_scope import TEAM_MEMBERS
+    from backend.domain.team import TEAM_MEMBERS
     members = set(TEAM_MEMBERS)
     issues = [issue for issue in issues if handler_name(issue) in members]
     cases: List[TemplateCase] = []
@@ -366,7 +366,7 @@ def normalize_text(value: Any) -> str:
 
 
 def customer_aliases(display: str) -> set[str]:
-    for canonical, aliases in CUSTOMER_ALIASES.items():
+    for canonical, aliases in get_customer_aliases().items():
         names = [canonical, *aliases]
         if display in names or any(normalize_text(display) == normalize_text(name) for name in names):
             return {normalize_text(name) for name in names}
@@ -697,6 +697,8 @@ def emit(enabled: bool, message: str) -> None:
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", default=datetime.now().astimezone().strftime("%Y-%m-%d"))
     parser.add_argument("--model-id", default="")

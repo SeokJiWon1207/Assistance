@@ -17,7 +17,7 @@ from backend.reports.effort_trend import (
     scope_label,
     wants_effort_trend,
 )
-from backend.tools.mantis_index import INDEX_FILENAME, build_mantis_index, parse_index_document
+from backend.sources.mantis_index import INDEX_FILENAME, build_mantis_index, parse_index_document
 
 
 def issue_document(

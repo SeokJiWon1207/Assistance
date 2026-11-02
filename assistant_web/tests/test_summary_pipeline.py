@@ -10,7 +10,7 @@ from backend.sources.mantis import normalize_issue
 
 
 class SummaryPipelineTests(unittest.TestCase):
-    def run_answer(self, *, partial=False, unsafe=False, missing=False, fetch_failed=False):
+    def run_answer(self, *, partial=False, unsafe=False, missing=False, fetch_failed=False, repair=False):
         q='조회 함수와 기본값을 알려줘'
         raw={'id':91,'summary':'조회 기능','description':'ReadValue 함수의 기본값은 7입니다.',
              'notes':[{'id':11,'text':'QC NG로 재수정 요청했습니다.','created_at':'2026-01-02'}]}
@@ -24,6 +24,12 @@ class SummaryPipelineTests(unittest.TestCase):
         calls=[]
         def generate(_req,_model,messages,*_args):
             calls.append(messages)
+            if repair and len(calls) == 3:
+                return {'content': json.dumps({'answers': ['ReadValue 함수의 기본값은 7입니다.']}), 'modelId': 'test'}
+            if repair and len(calls) == 4:
+                return {'content': json.dumps({'supported': [True]})}
+            if len(calls) > 2:
+                return {'content': json.dumps({'answers': ['ReadValue 함수의 기본값은 99입니다.']})}
             shown=json.loads(messages[0]['content'].rsplit('[검색 파이프라인 결과]\n',1)[1])
             refs=[p['passage_id'] for p in shown['issues'][0]['answer_evidence']['excerpts'] if p['field']=='description']
             payload={'selected_issue_ids':[91],'sections':[{'topic':'technical','evidence_ids':refs,'unanswered':missing}],
@@ -34,6 +40,14 @@ class SummaryPipelineTests(unittest.TestCase):
                    side_effect=TimeoutError if fetch_failed else None) as fetch:
             answer=generate_grounded_explanation(req,ctx,generate)
         return answer,calls,fetch.call_count
+
+    def test_invalid_summary_is_repaired_and_reviewed_before_rendering(self):
+        answer,calls,_=self.run_answer(unsafe=True,repair=True)
+        self.assertTrue(answer['groundingReview']['summaryAccepted'])
+        self.assertEqual(len(calls),4)
+        self.assertIn('기본값은 7',answer['content'].split('### 원문 근거와 전체 이력')[0])
+        self.assertNotIn('99',answer['content'])
+        self.assertIn('QC NG',answer['content'])
 
     def test_verified_draft_approved_by_independent_review_is_rendered_with_two_calls(self):
         r,calls,_=self.run_answer()

@@ -1,3 +1,6 @@
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
+import backend.services.chat.retrieve as chat_retrieve
 import os
 import unittest
 from unittest.mock import Mock, patch
@@ -195,10 +198,10 @@ class ModelCircuitTests(unittest.TestCase):
             modelId=model["id"], messages=[{"role": "user", "content": "답변해줘"}], stream=True,
         )
         with (
-            patch.object(chat_service, "get_model_registry", return_value=[]),
-            patch.object(chat_service, "get_model_api_key", return_value="key"),
-            patch.object(chat_service, "emit_chat_event"),
-            patch.object(chat_service, "emit_chat_status"),
+            patch.object(chat_generate, "get_model_registry", return_value=[]),
+            patch.object(chat_llm, "get_model_api_key", return_value="key"),
+            patch.object(chat_retrieve, "emit_chat_event"),
+            patch.object(chat_retrieve, "emit_chat_status"),
             patch.object(chat_service.CHAT_STREAM_CONTEXT, "content_streamed", False, create=True),
         ):
             return chat_service.generate_model_response(request, model, [], None, {}, 5)

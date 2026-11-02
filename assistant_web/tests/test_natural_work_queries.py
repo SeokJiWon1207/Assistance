@@ -1,5 +1,8 @@
 """실제 웹 QA 32문항과 의미별 변형의 재발 방지."""
 
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.retrieve as chat_retrieve
 import unittest
 from copy import deepcopy
 from datetime import date
@@ -198,7 +201,7 @@ class NaturalWorkQueryTests(unittest.TestCase):
         q = "NH 차트 문제"
         context = chat.ChatPipelineContext(q, {"id": "test"}, "key", [], q, {"mantis": True}, [], extract_query_constraints(q), 10)
         request = ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=q)])
-        with patch.object(chat, "should_retrieve_chat_evidence", return_value=True), patch.object(chat, "retrieval_limit", return_value=(10, None)), patch.object(chat, "run_retrieval_pipeline", return_value={"stages": []}), patch.object(chat, "deterministic_retrieval_response", return_value=None):
+        with patch.object(chat_retrieve, "should_retrieve_chat_evidence", return_value=True), patch.object(chat_retrieve, "retrieval_limit", return_value=(10, None)), patch.object(chat_retrieve, "run_retrieval_pipeline", return_value={"stages": []}), patch.object(chat_retrieve, "deterministic_retrieval_response", return_value=None):
             response = chat.retrieve_chat_evidence(request, context).response
         self.assertEqual(response["raw"]["mode"], "empty_evidence")
         self.assertIn("0건이거나 모두 완료됐다는 뜻은 아닙니다", response["content"])
@@ -208,7 +211,7 @@ class NaturalWorkQueryTests(unittest.TestCase):
         previous = self.report("NH 모바일 쪽 아직 남은 거 있어?", extract_query_constraints("우리 팀 NH MTS 미종료 이슈"))
         plan = deepcopy(previous["retrieval"]["query_plan"])
         req = ChatRequest(modelId="test", contextAuditId="a"*32, messages=[ChatMessage(role="user", content="끝난 건 빼고."), ChatMessage(role="assistant", content=previous["content"]), ChatMessage(role="user", content=q)])
-        with patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}), patch.object(chat, "get_model_api_key", return_value="test"), patch.object(chat, "load_audit_query_plan", return_value=plan), patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unnecessary model rewrite")):
+        with patch.object(chat_prepare, "get_private_model", return_value={"id": "test", "status": "active"}), patch.object(chat_llm, "get_model_api_key", return_value="test"), patch.object(chat_prepare, "load_audit_query_plan", return_value=plan), patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unnecessary model rewrite")):
             context = chat.prepare_chat_pipeline(req, q, {"uid": "user", "displayName": "석지원"})
         self.assertEqual(context.query_constraints["customer_key"], "kb")
         self.assertEqual(context.query_constraints["platform_key"], "mts")

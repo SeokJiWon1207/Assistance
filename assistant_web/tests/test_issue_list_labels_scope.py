@@ -31,7 +31,7 @@ def raw_issue(handler="석지원"):
 
 class IssueListLabelsScopeTests(unittest.TestCase):
     def test_exact_yearless_month_question_keeps_date_and_team_filters(self):
-        with patch("backend.query_planning.date", wraps=date) as clock:
+        with patch("backend.query.dates.date", wraps=date) as clock:
             clock.today.return_value = date(2026, 10, 14)
             constraints = extract_query_constraints("10월 MTS 이슈 전체 목록 보여줘")
         self.assertEqual(constraints.get("created_at"),

@@ -11,7 +11,7 @@ import json
 import logging
 import os
 from pathlib import Path
-import sqlite3
+import sqlite3 as sqlite3
 import tempfile
 from threading import Event, Thread, Lock, RLock
 import time
@@ -29,6 +29,9 @@ from backend.sources.mantis_store_storage import check_working_space, cleanup_te
 from backend.sources.mantis_search_projection import (
     SEARCH_PAYLOAD_SQL, SEARCH_PROJECTION_VERSION, build_projection, projection_ready, update_projection,
 )
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import MANTIS_STORE_BUILD, MANTIS_STORE_READ, MANTIS_STORE_STREAM
 
 LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
@@ -77,7 +80,6 @@ def with_store_scope(function):
     return wrapped
 
 
-
 def store_path() -> Path:
     return RUNTIME_DIR / "mantis_complete.sqlite3"
 
@@ -92,7 +94,7 @@ def read_store_metadata(*, allow_stale: bool = False) -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+        with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as db:
             meta = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
         if meta["connection"] != connection_key():
             return None
@@ -159,8 +161,8 @@ class _StoreStream:
                         cursor.close()
 
     def keyword_candidates(self, keywords):
-        from backend.common import normalize_for_match
-        from backend.intent.search_terms import keyword_term_aliases
+        from backend.utils.text import normalize_for_match
+        from backend.intent.keyword_terms import keyword_term_aliases
 
         clauses, values = [], []
         for keyword in keywords:
@@ -200,7 +202,7 @@ class _StoreStream:
 def _open_store_stream(path, identity, allow_stale, *, summary_only=False):
     db = None
     try:
-        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+        db = open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_STREAM)
         db.execute("BEGIN")
         saved = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
         if saved["connection"] != identity:
@@ -315,7 +317,7 @@ def read_recent_store_rows(limit: int) -> IssueBatch | None:
     """필요한 최신 원문만 읽는다. 본문 폴백과 노트는 그대로 유지한다."""
     db = None
     try:
-        db = sqlite3.connect(f"file:{store_path()}?mode=ro", uri=True)
+        db = open_sqlite(f"file:{store_path()}?mode=ro", profile=MANTIS_STORE_READ)
         db.execute('BEGIN')
         saved = json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
         age = time.time() - datetime.fromisoformat(saved['fetchedAt']).timestamp()
@@ -342,7 +344,7 @@ def _load_complete_store(
     if not path.exists():
         return None
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+        with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as db:
             db.execute("BEGIN")
             saved = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
             if saved["connection"] != connection_key():
@@ -412,7 +414,7 @@ def sync_complete_store(
     중복된 패스는 저장 후보로 쓰지 않는다. ID 집합을 비교해 삭제/이동으로
     생긴 누락도 다음 패스에서 탐지한다. API 트랜잭션 수준의 보장은 아니다.
     """
-    from backend.sources.mantis import fetch_mantis_issues
+    from backend.sources.mantis_client import fetch_mantis_issues
     path = store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with store_write_guard(path) as storage:
@@ -426,7 +428,7 @@ def sync_complete_store(
         os.close(fd)
         meta: dict[str, Any] = {}
         try:
-            with closing(sqlite3.connect(temporary)) as db, db:
+            with closing(open_sqlite(temporary, profile=MANTIS_STORE_BUILD)) as db, db:
                 db.execute("CREATE TABLE issues (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)")
                 db.execute("CREATE TABLE metadata (value TEXT NOT NULL)")
                 previous = None
@@ -479,7 +481,7 @@ def _saved_metadata() -> dict[str, Any] | None:
     if not path.exists():
         return None
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+        with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as db:
             meta = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
         return meta if meta.get("connection") == connection_key() else None
     except (OSError, sqlite3.Error, ValueError, TypeError, HTTPException):
@@ -521,7 +523,7 @@ def refresh_changed_issues(
     밀려 페이지 경계의 이슈를 한 번 놓칠 수 있기 때문이다. 바뀐 이슈가 너무 많거나
     저장본이 없으면 'needs_full'을 돌려주고 전체 수집에 맡긴다.
     """
-    from backend.sources.mantis import fetch_mantis_issues
+    from backend.sources.mantis_client import fetch_mantis_issues
     path = store_path()
     with store_write_guard(path) as storage:
         if storage["status"] != "ready":
@@ -545,8 +547,8 @@ def refresh_changed_issues(
         fd, temporary = tempfile.mkstemp(prefix="mantis-complete-", suffix=".sqlite3", dir=path.parent)
         os.close(fd)
         try:
-            with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source, \
-                    closing(sqlite3.connect(temporary)) as db:
+            with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as source, \
+                    closing(open_sqlite(temporary, profile=MANTIS_STORE_BUILD)) as db:
                 source.backup(db, pages=256, progress=lambda *_: check_working_space(path))
                 with db:
                     projection_valid = projection_ready(db, saved)
@@ -584,8 +586,8 @@ def upgrade_search_projection() -> dict[str, Any]:
         fd, temporary = tempfile.mkstemp(prefix="mantis-complete-", suffix=".sqlite3", dir=path.parent)
         os.close(fd)
         try:
-            with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source, \
-                    closing(sqlite3.connect(temporary)) as db:
+            with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as source, \
+                    closing(open_sqlite(temporary, profile=MANTIS_STORE_BUILD)) as db:
                 source.backup(db, pages=256, progress=lambda *_: check_working_space(path))
                 with db:
                     if db.execute("SELECT count(*) FROM issues").fetchone()[0] != saved['count']:
@@ -658,7 +660,7 @@ def start_store_scheduler() -> Event:
 
 def render_document(raw: dict[str, Any]) -> str:
     """기존 구조화 검색과 동일한 필드 이름을 사용하고 본문을 자르지 않는다."""
-    from backend.sources.mantis import normalize_issue
+    from backend.sources.mantis_fields import normalize_issue
     issue = normalize_issue(raw)
     fields = {
         "이슈 ID": f"#{issue['id']}", "프로젝트(고객사)": issue['project'],

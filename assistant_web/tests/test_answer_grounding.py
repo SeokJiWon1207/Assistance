@@ -1,5 +1,8 @@
 """실제 ID에 허위 속성을 붙이는 답변과 근거 없이 생성하는 경로를 차단한다."""
 
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
+import backend.services.chat.retrieve as chat_retrieve
 import unittest
 from copy import deepcopy
 from unittest.mock import Mock, patch
@@ -173,10 +176,10 @@ class AnswerGroundingTests(unittest.TestCase):
         events = []
         CHAT_STREAM_CONTEXT.emitter = events.append
         try:
-            with patch.object(chat_service, "should_retrieve_chat_evidence", return_value=True), \
-                    patch.object(chat_service, "retrieval_limit", return_value=(5, None)), \
-                    patch.object(chat_service, "run_retrieval_pipeline", return_value=retrieval()), \
-                    patch.object(chat_service, "deterministic_retrieval_response", return_value=deterministic):
+            with patch.object(chat_retrieve, "should_retrieve_chat_evidence", return_value=True), \
+                    patch.object(chat_retrieve, "retrieval_limit", return_value=(5, None)), \
+                    patch.object(chat_retrieve, "run_retrieval_pipeline", return_value=retrieval()), \
+                    patch.object(chat_retrieve, "deterministic_retrieval_response", return_value=deterministic):
                 result = retrieve_chat_evidence(request, context)
         finally:
             CHAT_STREAM_CONTEXT.emitter = None
@@ -220,9 +223,9 @@ class AnswerGroundingTests(unittest.TestCase):
         request = ChatRequest(modelId="test", temperature=1.2, messages=[{"role": "user", "content": "원인 분석"}])
         response = Mock(status_code=200)
         response.json.return_value = {"choices": [{"message": {"content": "확인한 원문을 검토했습니다."}}]}
-        with patch.object(chat_service, "get_model_registry", return_value=[]), \
-             patch.object(chat_service, "get_model_api_key", return_value="test"), \
-             patch.object(chat_service, "post_model_chat", return_value=response) as post:
+        with patch.object(chat_generate, "get_model_registry", return_value=[]), \
+             patch.object(chat_llm, "get_model_api_key", return_value="test"), \
+             patch.object(chat_generate, "post_model_chat", return_value=response) as post:
             answer = chat_service.generate_model_response(request, model, [], result, {}, 14)
         self.assertEqual(post.call_args.args[2]["temperature"], 0)
         received_ids = {row["id"] for row in build_model_retrieval_context(result, 14)["issues"]}
@@ -251,7 +254,7 @@ class AnswerGroundingTests(unittest.TestCase):
         candidate = {"status": "ok", "content": "#31585 담당자는 김민수입니다.", "sources": sources}
         dependencies = {"generate_candidate_model_answer": Mock(return_value=candidate),
                         "should_attach_ab_test": Mock(return_value=True)}
-        with patch.object(finalization, "_compat_dependency", side_effect=lambda name, default: dependencies.get(name, default)):
+        with patch.multiple(finalization, **dependencies):
             answer = finalization.finalize_chat_response(request, "조회", response)
         self.assertNotIn("김민수", str(answer))
         self.assertEqual(answer["abTest"]["variantB"]["status"], "blocked")
@@ -262,7 +265,7 @@ class AnswerGroundingTests(unittest.TestCase):
         request = ChatRequest(modelId="test", messages=[{"role": "user", "content": query}])
         context = ChatPipelineContext(query, {"id": "test"}, "", [], query, {"mantis": True}, [],
                                       extract_query_constraints(query), 5, intent_plan={"source": "mantis"})
-        with patch.object(chat_service, "run_retrieval_pipeline", return_value=retrieval(rows)):
+        with patch.object(chat_retrieve, "run_retrieval_pipeline", return_value=retrieval(rows)):
             response = retrieve_chat_evidence(request, context).response
         self.assertEqual(response["raw"]["mode"], "deterministic_issue_list")
         self.assertEqual(len(response["sources"]), 14)
@@ -352,7 +355,7 @@ class AnswerGroundingTests(unittest.TestCase):
         no_basic_evidence = {"stages": [{"source": "chroma_db", "documents": []}]}
         dependency = {"get_private_model": lambda _: model,
                       "post_model_chat": Mock(side_effect=AssertionError("근거 없는 모델 호출"))}
-        with patch.object(comparison, "_compat_dependency", side_effect=lambda n, d: dependency.get(n, d)), \
+        with patch.multiple(comparison, **dependency), \
              patch.object(comparison, "get_model_api_key", return_value="test"):
             answer = comparison.generate_basic_grounded_baseline(request, "이슈 조회", no_basic_evidence)
         self.assertEqual(answer["status"], "unavailable")

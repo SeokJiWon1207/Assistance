@@ -1,5 +1,7 @@
 """고객사·기간·담당자·매체를 바꾸는 연속 질문의 검색 결과 회귀."""
 
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from contextlib import nullcontext
 from unittest.mock import patch
@@ -30,10 +32,10 @@ class FollowupScopeTransitionsTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch("backend.intent.entities.load_known_people", return_value=(
             ["우동헌", "정희진", "하영훈", "이영희"], [])))
-        self.enterContext(patch.object(chat, "get_private_model", return_value={"id": "fixture", "status": "active"}))
-        self.enterContext(patch.object(chat, "get_model_api_key", return_value="fixture"))
-        self.enterContext(patch.object(chat, "resolve_reference_from_context", return_value=None))
-        self.enterContext(patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unexpected rewrite")))
+        self.enterContext(patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture", "status": "active"}))
+        self.enterContext(patch.object(chat_llm, "get_model_api_key", return_value="fixture"))
+        self.enterContext(patch.object(chat_prepare, "resolve_reference_from_context", return_value=None))
+        self.enterContext(patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unexpected rewrite")))
         self.rows = [raw(1), raw(2, created="2025-07-10"), raw(3, owner="정희진"),
                      raw(4, media="MTS"), raw(5, customer="120NH(NH증권)"), raw(6, created="2024-06-10"),
                      raw(7, owner="정희진", customer="120NH(NH증권)"), raw(8, owner="정희진", created="2024-06-10"),
@@ -52,7 +54,7 @@ class FollowupScopeTransitionsTests(unittest.TestCase):
         request = ChatRequest(modelId="fixture", contextAuditId="a" * 32, messages=[
             ChatMessage(role="user", content=previous), ChatMessage(role="assistant", content="이전 조회 결과"),
             ChatMessage(role="user", content=question)])
-        with patch.object(chat, "load_audit_query_plan", return_value=prior or self.initial()):
+        with patch.object(chat_prepare, "load_audit_query_plan", return_value=prior or self.initial()):
             context = chat.prepare_chat_pipeline(request, question, {"uid": "fixture-user"})
         return context, self.plan(context.retrieval_text, context.query_constraints)
 

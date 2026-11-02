@@ -4,6 +4,7 @@
 쓰기 허용 목록은 기존 루트 목록 그대로 유지한다.
 """
 
+from backend.notion import transport
 import json
 import os
 import tempfile
@@ -16,14 +17,10 @@ from typing import Any, Dict, Tuple
 import requests
 
 from backend.execution import bounded_timeout
-from backend.config import (
-    NOTION_API_BASE,
-    RUNTIME_DIR,
-    get_notion_headers,
-    notion_post_json,
-    notion_request_slot,
-)
-from backend.notion.client import remember_notion_database_schema
+from backend.settings.notion import NOTION_API_BASE, get_notion_headers
+from backend.config import RUNTIME_DIR
+from backend.notion.transport import notion_post_json as notion_post_json, notion_request_slot as notion_request_slot
+from backend.notion.schema_cache import remember_notion_database_schema
 
 
 READ_SCOPE_FILENAME = "notion_read_scope.json"
@@ -154,7 +151,7 @@ def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int, max_seconds: 
         budget -= 1
         try:
             if post:
-                response = notion_post_json(
+                response = transport.notion_post_json(
                     f"{NOTION_API_BASE}/{path}", payload,
                     timeout=max(3, min(8, int(remaining))), retries=1,
                 )

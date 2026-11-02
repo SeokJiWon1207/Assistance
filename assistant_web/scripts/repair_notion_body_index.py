@@ -85,7 +85,7 @@ def run(output: Path, after_pids: list[int], max_seconds: float) -> None:
     # 기다리는 동안에는 API 요청·색인 쓰기·절전 방지 중복 실행이 없다.
     from backend.environment import load_dotenv
     load_dotenv(APP_DIR / ".env")
-    from backend.config import get_notion_settings
+    from backend.notion.discovery import resolve_notion_settings
     from backend.notion.body_index import open_body_index
     from backend.notion.body_index_sync import CrawlLimits, sync_notion_body_index, validate_index_candidate
     from backend.notion.read_scope import resolve_notion_read_scope
@@ -93,7 +93,7 @@ def run(output: Path, after_pids: list[int], max_seconds: float) -> None:
     deadline = time.monotonic() + max_seconds
     inhibitor = subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid()), "-t", str(int(max_seconds) + 60)])
     try:
-        settings = get_notion_settings()
+        settings = resolve_notion_settings()
         scope, complete = resolve_notion_read_scope(settings["database_ids"], settings["token"])
         if not complete:
             raise RuntimeError("read_scope_incomplete")
@@ -132,6 +132,8 @@ def run(output: Path, after_pids: list[int], max_seconds: float) -> None:
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--after-pid", action="append", type=int, default=[])
     parser.add_argument("--output", type=Path, required=True)

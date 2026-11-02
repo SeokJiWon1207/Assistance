@@ -5,11 +5,13 @@ import json
 import re
 from typing import Any
 
-from backend.common import display_mantis_status_label, normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
-from backend.config import CUSTOMER_ALIASES
+from backend.mantis_status import display_mantis_status_label
+from backend.utils.text import normalize_for_match, text_matches_any_alias
+from backend.customer_identity import text_matches_customer_aliases
+from backend.settings.catalogs import get_customer_aliases
 from backend.display import customer_name
 from backend.issue_text import decode_issue_field
-from backend.query_planning import plan_created_at_matches
+from backend.query.dates import plan_created_at_matches
 
 
 FIELD_LABELS = {
@@ -219,7 +221,7 @@ def _matches(field: str, claimed: str, actual: Any) -> bool:
     if field == "project":
         if normalize_for_match(candidate) == normalize_for_match(customer_name(expected)):
             return True
-        for canonical, aliases in CUSTOMER_ALIASES.items():
+        for canonical, aliases in get_customer_aliases().items():
             if (normalize_for_match(candidate) in {normalize_for_match(a) for a in [canonical, *aliases]}
                     and text_matches_customer_aliases(expected, aliases)):
                 return True

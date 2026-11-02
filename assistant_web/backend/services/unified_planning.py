@@ -7,6 +7,14 @@ from backend.intent.context import parse_ordinal_reference, resolve_reference_fr
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.intent.unified import plan_question
+from backend.notion.write import run_notion_write_command
+from backend.reports.aggregate import build_mantis_count_report
+from backend.reports.customer import build_customer_profile_report
+from backend.reports.incident_triage import build_incident_triage_report
+from backend.reports.monthly_customer import build_monthly_customer_report
+from backend.reports.similar import build_similar_resolution_report
+from backend.reports.weekly_customer import build_weekly_report
+from backend.services.chat.reports import build_deterministic_report
 from backend.services.contracts import ChatPipelineContext
 
 
@@ -59,7 +67,6 @@ def clarification(request, reason):
 
 
 def execute_plan(request, context, user):
-    from backend.services import chat_service as service
     plan = context.intent_plan or {}
     operation, source = plan.get('operation'), plan.get('source')
     if source == 'general':
@@ -74,9 +81,9 @@ def execute_plan(request, context, user):
             from backend.reports.aggregation_rollout import run_aggregation_report
             return {'modelId': request.modelId, **run_aggregation_report(
                 context.retrieval_text, plan, context.model, context.api_key)}
-        return {'modelId': request.modelId, **service.build_mantis_count_report(context.retrieval_text, {**plan, 'operation': 'count'})}
+        return {'modelId': request.modelId, **build_mantis_count_report(context.retrieval_text, {**plan, 'operation': 'count'})}
     if operation == 'write':
-        result = service.run_notion_write_command(context.latest_user_text, request.messages,
+        result = run_notion_write_command(context.latest_user_text, request.messages,
                     allow_write=bool(user and user.get('role') in {'manager', 'admin'}),
                     user_uid=str((user or {}).get('uid') or ''))
         return {'modelId': request.modelId, **result} if result else clarification(request, 'Notion 작업 대상을 확인해 주세요.')
@@ -87,7 +94,7 @@ def execute_plan(request, context, user):
             result = build_effort_report_from_unified_plan(context.retrieval_text, plan)
             return {'modelId': request.modelId, **result}
         if kind == 'weekly':
-            result = service.build_weekly_report(context.latest_user_text, constraints=context.query_constraints)
+            result = build_weekly_report(context.latest_user_text, constraints=context.query_constraints)
             return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
         if kind in {'handoff', 'postmortem', 'notice'}:
             from backend.reports.issue_documents import build_issue_document_report
@@ -97,17 +104,17 @@ def execute_plan(request, context, user):
             from backend.reports.effort_sla import build_effort_sla_report
             result = build_effort_sla_report(context.latest_user_text, plan=plan)
             return {'modelId': request.modelId, **result} if result else clarification(request, '공수·처리시간 조회 조건을 확인해 주세요.')
-        builders = {'profile': service.build_customer_profile_report,
-                    'monthly': service.build_monthly_customer_report,
-                    'similar': service.build_similar_resolution_report}
+        builders = {'profile': build_customer_profile_report,
+                    'monthly': build_monthly_customer_report,
+                    'similar': build_similar_resolution_report}
         if kind == 'similar' and not context.enabled_tools.get('vectorDb'):
             return clarification(request, '유사 사례 검색 도구가 꺼져 있습니다.')
         if kind == 'similar':
-            result = service.build_similar_resolution_report(context.latest_user_text, validated_plan=True,
+            result = build_similar_resolution_report(context.latest_user_text, validated_plan=True,
                                                             model=context.model, api_key=context.api_key, topic_terms=plan.get('terms'))
             return {'modelId': request.modelId, **result} if result else clarification(request, '유사 비교의 기준 이슈를 확인해 주세요.')
         if kind == 'triage':
-            result = service.build_incident_triage_report(context.latest_user_text,
+            result = build_incident_triage_report(context.latest_user_text,
                         search_similar=bool(context.enabled_tools.get('vectorDb')))
             return {'modelId': request.modelId, **result} if result else clarification(request, '장애 증상을 확인해 주세요.')
         if kind in builders:
@@ -120,7 +127,7 @@ def execute_plan(request, context, user):
             if result:
                 return {'modelId': request.modelId, **result}
         # 보고서 계산/수치 검증은 기존 결정형 구현을 유지한다. 건수/설명은 이 경로에 들어오지 않는다.
-        report_result = service.build_deterministic_report(context.latest_user_text, context.retrieval_text,
+        report_result = build_deterministic_report(context.latest_user_text, context.retrieval_text,
                                                     context.enabled_tools, request.messages, user)
         if report_result.response:
             return {'modelId': request.modelId, **report_result.response}

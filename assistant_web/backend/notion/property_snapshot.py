@@ -1,4 +1,5 @@
 """페이지 응답에서 잘릴 수 있는 속성 항목도 끝 커서까지 수집한다."""
+from backend.notion import crawl_transport
 from urllib.parse import quote, unquote
 from typing import Any
 
@@ -12,7 +13,7 @@ def pending_properties(raw):
 
 
 def read_full_properties(raw, budget):
-    from backend.notion.body_index_sync import _request, _ReadFailure
+    from backend.notion.crawl_transport import NotionReadFailure as _ReadFailure
     properties = dict(raw.get('properties', {}))
     for name, prop in pending_properties(raw):
         identifier = prop.get('id')
@@ -23,7 +24,7 @@ def read_full_properties(raw, budget):
         seen = set()
         values: list[Any] = []
         while True:
-            data = _request(f"pages/{raw['id']}/properties/{quote(unquote(identifier), safe='')}", budget,
+            data = crawl_transport.request_json(f"pages/{raw['id']}/properties/{quote(unquote(identifier), safe='')}", budget,
                             payload={'page_size': 100, **({'start_cursor': cursor} if cursor else {})})
             rows = data.get('results')
             if not isinstance(rows, list) or any(not isinstance(row, dict) or kind not in row for row in rows):

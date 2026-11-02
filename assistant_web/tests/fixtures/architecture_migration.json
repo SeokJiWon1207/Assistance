@@ -1,0 +1,2796 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "date": "2026-10-30",
+    "head": "8c9f70109a4aba67e2148f3e3e1fb358814afe47",
+    "branch": "codex/architecture-p0",
+    "python": "3.12.14",
+    "node": "v26.5.0",
+    "working_tree_source_files": 653,
+    "working_tree_sha256": "cd32d05446426c4076140ae0c5c1babba9af2c555bfcedf6bae50fe8a0c309cd",
+    "notes": "미커밋 사용자 변경 포함. 전체 파일 해시는 커밋하지 않는 runtime/architecture-p0/baseline-worktree.json에 보관. 수치와 SCC 목록은 역사적 기준선이며 테스트는 정확한 간선/사용처 예외를 검사한다.",
+    "verification": {
+      "tests": 2630,
+      "coverage_percent": 90,
+      "local_steps": [
+        "tests",
+        "compile",
+        "shell",
+        "ruff",
+        "mypy"
+      ],
+      "audit": "sandbox DNS 실패 후 권한을 확대한 audit 재실행 성공; 기존 예외 정책 유지"
+    },
+    "sccs": [
+      {
+        "modules": [
+          "backend.intent.aggregation_spec",
+          "backend.intent.condition_grounding",
+          "backend.intent.confirmed_context",
+          "backend.intent.constraints",
+          "backend.intent.context",
+          "backend.intent.entities",
+          "backend.intent.explanation",
+          "backend.intent.general",
+          "backend.intent.scope_changes",
+          "backend.intent.scope_extraction",
+          "backend.intent.search_terms",
+          "backend.intent.source_router",
+          "backend.intent.status_semantics",
+          "backend.intent.unified_validation",
+          "backend.notion.body_index_search",
+          "backend.notion.body_index_sync",
+          "backend.notion.catalog_search",
+          "backend.notion.client",
+          "backend.notion.complete_snapshot",
+          "backend.notion.mapping",
+          "backend.notion.property_snapshot",
+          "backend.notion.query_text",
+          "backend.notion.read_scope",
+          "backend.notion.recent_catalog",
+          "backend.notion.schema",
+          "backend.notion.search",
+          "backend.notion.snapshot_maintenance",
+          "backend.query_planning",
+          "backend.team_scope"
+        ],
+        "stages": [
+          "P3",
+          "P4"
+        ]
+      },
+      {
+        "modules": [
+          "backend.evaluation.comparison",
+          "backend.evaluation.core",
+          "backend.evaluation.finalization",
+          "backend.evaluation.verification"
+        ],
+        "stages": [
+          "P1-B"
+        ]
+      },
+      {
+        "modules": [
+          "backend.reports.comparison_facts",
+          "backend.reports.comparison_history",
+          "backend.reports.comparison_narrative",
+          "backend.reports.similar"
+        ],
+        "stages": [
+          "P5-A"
+        ]
+      },
+      {
+        "modules": [
+          "backend.sources.mantis",
+          "backend.sources.mantis_search_projection",
+          "backend.sources.mantis_store",
+          "backend.tools.mantis_snapshot"
+        ],
+        "stages": [
+          "P5-B"
+        ]
+      },
+      {
+        "modules": [
+          "backend.evaluation.explanation_direct",
+          "backend.evaluation.explanation_quotes"
+        ],
+        "stages": [
+          "P5-A"
+        ]
+      },
+      {
+        "modules": [
+          "backend.reports.effort",
+          "backend.reports.effort_trend"
+        ],
+        "stages": [
+          "P5-A"
+        ]
+      },
+      {
+        "modules": [
+          "backend.reports.team_brief",
+          "backend.workspace"
+        ],
+        "stages": [
+          "P6"
+        ]
+      },
+      {
+        "modules": [
+          "backend.services.chat_service",
+          "backend.services.unified_planning"
+        ],
+        "stages": [
+          "P5-C"
+        ]
+      }
+    ],
+    "dynamic_counts": {
+      "module_registry": 7,
+      "compat_definition": 4,
+      "compat_call": 26,
+      "globals_injection": 1
+    },
+    "scan_scope": "생산 backend의 명시적 Python import와 저장소의 Python/문서/스크립트/설정 경로. runtime·캐시·vendor·별도 worktree·서비스 계정은 제외. 임의 계산된 모듈 이름과 런타임 재바인딩의 완전한 해석은 제공하지 않는다.",
+    "retrieval_reference_note": "retrieval_patch_targets는 patch 후보를 포함한 Python 문자열 참조 44곳의 보수적 목록이며 실제 patch 호출 수라고 단정하지 않는다."
+  },
+  "facades": [
+    "backend.understanding",
+    "backend.sources.notion",
+    "backend.reports.evaluation",
+    "backend.intent.core",
+    "backend.notion.core",
+    "backend.evaluation.core"
+  ],
+  "reference_exclusions": {
+    "assistant_web/tests/architecture_graph.py": "분석기 구현이며 제품의 파사드 소비자가 아님",
+    "assistant_web/tests/test_architecture_dependency_graph.py": "격리된 가상 패키지와 회귀 검사의 입력 문자열",
+    "assistant_web/tests/fixtures/architecture_migration.json": "예외 목록 자체를 소비자로 재집계하지 않음",
+    "assistant_web/tests/test_evidence_architecture.py": "P5-A 의존 경계·기존 import 계약을 검사하는 입력 문자열이며 제품 소비자가 아님"
+  },
+  "rules": [
+    {
+      "id": "intent-lower-boundary",
+      "importers": [
+        "backend.intent"
+      ],
+      "targets": [
+        "backend.notion.search",
+        "backend.notion.client",
+        "backend.query_planning",
+        "backend.services",
+        "backend.api"
+      ],
+      "stage": "P3"
+    },
+    {
+      "id": "reports-lower-boundary",
+      "importers": [
+        "backend.reports"
+      ],
+      "targets": [
+        "backend.evaluation",
+        "backend.retrieval",
+        "backend.answers"
+      ],
+      "exclude_importers": [
+        "backend.reports.evaluation"
+      ],
+      "stage": "P5-A"
+    },
+    {
+      "id": "sources-lower-boundary",
+      "importers": [
+        "backend.sources"
+      ],
+      "targets": [
+        "backend.evaluation",
+        "backend.retrieval",
+        "backend.answers",
+        "backend.services",
+        "backend.api",
+        "backend.tools"
+      ],
+      "stage": "P5-B"
+    },
+    {
+      "id": "pure-lower-boundary",
+      "importers": [
+        "backend.utils",
+        "backend.settings",
+        "backend.query",
+        "backend.evidence"
+      ],
+      "targets": [
+        "backend.common",
+        "backend.config",
+        "backend.services",
+        "backend.api",
+        "backend.retrieval",
+        "backend.query_planning",
+        "backend.answers",
+        "backend.understanding",
+        "backend.sources.notion",
+        "backend.reports.evaluation",
+        "backend.intent.core",
+        "backend.notion.core",
+        "backend.evaluation.core"
+      ],
+      "stage": "P2"
+    },
+    {
+      "id": "notion-foundation-boundary",
+      "importers": [
+        "backend.notion.transport",
+        "backend.notion.values",
+        "backend.notion.schema_cache"
+      ],
+      "targets": [
+        "backend.notion.search",
+        "backend.notion.snapshot_maintenance",
+        "backend.notion.cache_maintenance"
+      ],
+      "stage": "P4"
+    },
+    {
+      "id": "chat-step-boundary",
+      "importers": [
+        "backend.services.unified_planning",
+        "backend.services.chat"
+      ],
+      "targets": [
+        "backend.services.chat_service"
+      ],
+      "stage": "P5-C"
+    },
+    {
+      "id": "configuration-foundation-boundary",
+      "importers": [
+        "backend.notion.transport",
+        "backend.notion.discovery"
+      ],
+      "targets": [
+        "backend.config",
+        "backend.notion.client",
+        "backend.notion.search",
+        "backend.notion.snapshot_maintenance",
+        "backend.services",
+        "backend.api"
+      ],
+      "stage": "P2-B"
+    },
+    {
+      "id": "settings-no-notion-runtime",
+      "importers": [
+        "backend.settings"
+      ],
+      "targets": [
+        "backend.notion"
+      ],
+      "stage": "P2-B"
+    }
+  ],
+  "external_consumers": {
+    "status": "unverified",
+    "exit_condition": "P9에서 배포 진입점 및 저장소 밖 호출자 소유자의 사용 여부를 확인하기 전 공개 경로 제거를 완료 처리하지 않는다."
+  },
+  "exit_conditions": {
+    "cycle": "해당 순환 간선을 하위 책임으로 이전하고 그래프에서 사라지면 이 예외를 삭제한다.",
+    "layer": "소비자가 실제 하위 소유자를 참조하도록 이전한 뒤 이 예외를 삭제한다.",
+    "facade": "사용처를 실제 소유자 경로로 이전한다. 호환 테스트는 마지막 소비자와 외부 사용 여부 확인 후 제거한다.",
+    "dynamic": "소비 지점 patch 이전과 동작 검증 뒤 동적 조회/치환을 제거한다.",
+    "retrieval": "검색 단계 분리 시 patch를 실제 소비 지점으로 이전하고 이 항목을 삭제한다."
+  },
+  "cyclic_imports": [],
+  "forbidden_imports": [],
+  "facade_references": [
+    {
+      "source": "assistant_web/backend/answers.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.ISSUE_ANALYSIS_INTENT_KEYWORDS",
+      "count": 1,
+      "lines": [
+        55
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/answers.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.ISSUE_LIST_INTENT_KEYWORDS",
+      "count": 1,
+      "lines": [
+        55
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/answers.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        55
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/answers.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        55
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/answers.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        55
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.build_sources_from_single_notion_page",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.create_notion_page",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.execute_notion_search",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.fetch_notion_database_title",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.normalize_notion_page",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.update_notion_page",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.validate_notion_page_id",
+      "count": 1,
+      "lines": [
+        12
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/quality.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.EVALUATION_CASES",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/quality.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.build_accuracy_analytics",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/quality.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.build_evaluation_summary",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/quality.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.run_evaluation_case_safely",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/quality.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.save_evaluation_run",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/api/search.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        14
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/cases.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/cases.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.field_matches_screen_number",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/cases.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.title_has_screen_number",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.extract_notion_constraints",
+      "count": 1,
+      "lines": [
+        25
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.merge_common_notion_constraints",
+      "count": 1,
+      "lines": [
+        25
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_page_matches_constraints",
+      "count": 1,
+      "lines": [
+        25
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.has_constraint",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_constraints",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_people",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_screen_numbers",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/comparison.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_status",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.has_constraint",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_constraints",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_people",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_screen_numbers",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/evaluation/verification.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.text_matches_status",
+      "count": 1,
+      "lines": [
+        26
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/aggregate.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/aggregate.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/aggregate.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.has_constraint",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/aggregate.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.merge_query_plan_constraints",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/customer.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        17
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/effort.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        35
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/effort.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.load_known_people",
+      "count": 1,
+      "lines": [
+        35
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/effort.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.wants_all_results",
+      "count": 1,
+      "lines": [
+        35
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/effort_trend.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        27
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core",
+      "count": 1,
+      "lines": [
+        5
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.EVALUATION_CASES",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.build_accuracy_analytics",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.build_evaluation_summary",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.build_verification_report",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.evaluate_ab_comparison",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.finalize_chat_response",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.generate_candidate_model_answer",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.run_evaluation_case_safely",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/evaluation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.evaluation.core.save_evaluation_run",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/incident_triage.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        14
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/monthly_customer.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/similar.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_similar_issue_search_text",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/similar.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/similar.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.wants_similar_issue_search",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/sla.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/sla.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        32
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/reports/weekly_customer.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/services/report_dispatcher.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        8
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/services/report_dispatcher.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.rule_based_search_intent",
+      "count": 1,
+      "lines": [
+        8
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/chroma.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        39
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/chroma.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        39
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/chroma.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.has_constraint",
+      "count": 1,
+      "lines": [
+        39
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core",
+      "count": 1,
+      "lines": [
+        5
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.build_notion_terms",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.build_sources_from_notion_pages",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.build_sources_from_single_notion_page",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.collect_retrieved_notion_pages",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.create_notion_page",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.deduplicate_notion_pages_by_id",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.ensure_configured_notion_database",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.execute_notion_search",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.extract_notion_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.fetch_notion_database_schema",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.fetch_notion_database_title",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.fetch_notion_users",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.format_deterministic_notion_answer",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.format_grouped_notion_answer",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.inherit_notion_context",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.merge_common_notion_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.normalize_notion_page",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.notion_database_status_filter",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.notion_page_matches_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.notion_properties_to_text",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.notion_search_max_pages",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.resolve_notion_page_owner",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.run_notion_write_command",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.should_return_deterministic_notion_list",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.update_notion_page",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/sources/notion.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.notion.core.validate_notion_page_id",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core",
+      "count": 1,
+      "lines": [
+        5
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.COMBINED_SOURCE_MARKERS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.EXPLICIT_MANTIS_MARKERS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.EXPLICIT_NOTION_MARKERS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.ISSUE_ANALYSIS_INTENT_KEYWORDS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.ISSUE_LIST_INTENT_KEYWORDS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.NOTION_QUERY_STOPWORDS",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.build_contextual_retrieval_text",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.build_similar_issue_search_text",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.field_matches_screen_number",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.get_latest_user_text",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.get_recent_user_texts",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.has_constraint",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.has_notion_retrieval_signal",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.is_follow_up_question",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.load_known_people",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.merge_query_plan_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.plan_search_intent_with_model",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.resolve_reference_from_context",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.resolve_result_limit",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.rewrite_follow_up_query_with_model",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.rule_based_search_intent",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.should_run_notion_search",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.should_run_retrieval",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.text_matches_constraints",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.text_matches_people",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.text_matches_screen_numbers",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.text_matches_status",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.title_has_screen_number",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.wants_all_results",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/understanding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.intent.core.wants_similar_issue_search",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/workspace.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.fetch_notion_database_schema",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/workspace.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.fetch_notion_database_title",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/workspace.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.fetch_notion_users",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/backend/workspace.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.normalize_notion_page",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/scripts/accuracy/dynamic_accuracy_check.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        51
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_answer_grounding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        21
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_chat_identity.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        6
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_compound_aggregate_scope.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_compound_aggregate_scope.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.merge_query_plan_constraints",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_condition_provenance.py",
+      "scope": "function:ConditionProvenanceTests.test_legacy_explicit_keyword_warnings_are_preserved",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        109
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_customer_alias_filters.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_intent_boundary_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_keyword_grounding.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        7
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_keyword_topic_integrity.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        13
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_legacy_import_contracts.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation",
+      "count": 1,
+      "lines": [
+        7
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_legacy_import_contracts.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion",
+      "count": 1,
+      "lines": [
+        8
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_legacy_import_contracts.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding",
+      "count": 1,
+      "lines": [
+        5
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_mantis_explanation.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_mantis_index.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        18
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_mantis_search_accuracy_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_routing.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_routing.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_routing.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.has_notion_retrieval_signal",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_routing.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.rule_based_search_intent",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_routing.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.should_run_notion_search",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_notion_search_unit.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_personal_scope.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_presence_zero_count.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        7
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_production_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        27
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_production_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.merge_query_plan_constraints",
+      "count": 1,
+      "lines": [
+        27
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_quality_insights.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_quality_insights.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding",
+      "count": 1,
+      "lines": [
+        10
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.build_verification_report",
+      "count": 1,
+      "lines": [
+        19
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.generate_candidate_model_answer",
+      "count": 1,
+      "lines": [
+        33
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_page_matches_constraints",
+      "count": 1,
+      "lines": [
+        34
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_contextual_retrieval_text",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_similar_issue_search_text",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_requested_limit",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.is_follow_up_question",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_query_planning.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.resolve_result_limit",
+      "count": 1,
+      "lines": [
+        22
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_routing_accuracy.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.rule_based_search_intent",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.reports.evaluation.evaluate_ab_comparison",
+      "count": 1,
+      "lines": [
+        28
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion",
+      "count": 1,
+      "lines": [
+        11
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.deduplicate_notion_pages_by_id",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.extract_notion_constraints",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.format_grouped_notion_answer",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_database_status_filter",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_page_matches_constraints",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_properties_to_text",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.notion_search_max_pages",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.resolve_notion_page_owner",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.sources.notion.should_return_deterministic_notion_list",
+      "count": 1,
+      "lines": [
+        30
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        41
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.is_follow_up_question",
+      "count": 1,
+      "lines": [
+        41
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.resolve_result_limit",
+      "count": 1,
+      "lines": [
+        41
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_search_pipeline.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.rule_based_search_intent",
+      "count": 1,
+      "lines": [
+        41
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_answer_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        19
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_answer_regressions.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        19
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_contracts.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_contracts.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        20
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_quality_check.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.build_keyword_terms",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "assistant_web/tests/test_template_quality_check.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.extract_query_constraints",
+      "count": 1,
+      "lines": [
+        9
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    },
+    {
+      "source": "scripts/benchmark_mantis_index.py",
+      "scope": "module",
+      "kind": "import",
+      "target": "backend.understanding.chroma_text_matches_constraints",
+      "count": 1,
+      "lines": [
+        25
+      ],
+      "stage": "P9",
+      "exit_condition": "facade"
+    }
+  ],
+  "dynamic_references": [
+    {
+      "source": "notion/core.py",
+      "scope": "module",
+      "kind": "globals_injection",
+      "target": "<dynamic>",
+      "count": 1,
+      "lines": [
+        60
+      ],
+      "stage": "P9",
+      "exit_condition": "dynamic"
+    },
+    {
+      "source": "reports/evaluation.py",
+      "scope": "module",
+      "kind": "module_registry",
+      "target": "<__name__>",
+      "count": 1,
+      "lines": [
+        31
+      ],
+      "stage": "P9",
+      "exit_condition": "dynamic"
+    },
+    {
+      "source": "sources/notion.py",
+      "scope": "module",
+      "kind": "module_registry",
+      "target": "<__name__>",
+      "count": 1,
+      "lines": [
+        66
+      ],
+      "stage": "P9",
+      "exit_condition": "dynamic"
+    },
+    {
+      "source": "understanding.py",
+      "scope": "module",
+      "kind": "module_registry",
+      "target": "<__name__>",
+      "count": 1,
+      "lines": [
+        82
+      ],
+      "stage": "P9",
+      "exit_condition": "dynamic"
+    }
+  ],
+  "retrieval_patch_targets": [],
+  "documentation_references": [
+    {
+      "source": "ROUTING_ACCURACY_PLAN_2026-08-20.md",
+      "scope": "module",
+      "kind": "text",
+      "target": "backend.understanding",
+      "count": 1,
+      "lines": [
+        97
+      ]
+    },
+    {
+      "source": "docs/superpowers/plans/2026-10-30-architecture-refactor.md",
+      "scope": "module",
+      "kind": "text",
+      "target": "backend.understanding.load_audit_sources",
+      "count": 1,
+      "lines": [
+        127
+      ]
+    },
+    {
+      "source": "docs/superpowers/specs/2026-10-30-architecture-refactor-design.md",
+      "scope": "module",
+      "kind": "text",
+      "target": "backend.evaluation.core",
+      "count": 2,
+      "lines": [
+        45,
+        46
+      ]
+    },
+    {
+      "source": "docs/superpowers/specs/2026-10-30-architecture-refactor-design.md",
+      "scope": "module",
+      "kind": "text",
+      "target": "backend.intent.core",
+      "count": 1,
+      "lines": [
+        47
+      ]
+    },
+    {
+      "source": "docs/superpowers/specs/2026-10-30-architecture-refactor-design.md",
+      "scope": "module",
+      "kind": "text",
+      "target": "backend.notion.core",
+      "count": 1,
+      "lines": [
+        44
+      ]
+    }
+  ]
+}

@@ -44,10 +44,10 @@ run_step() {
       done
       ;;
     ruff)
-      "$PYTHON" -m ruff check assistant_web/backend assistant_web/tests scripts
+      "$PYTHON" -m ruff check assistant_web/backend assistant_web/tests scripts assistant_web/scripts/release_environment.py assistant_web/scripts/release_service.py
       ;;
     mypy)
-      "$PYTHON" -m mypy
+      "$PYTHON" -m mypy assistant_web/backend assistant_web/scripts/release_environment.py assistant_web/scripts/release_service.py
       ;;
     audit)
       "$PYTHON" assistant_web/scripts/check_dependency_audit.py

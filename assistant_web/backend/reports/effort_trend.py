@@ -17,13 +17,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from backend.sources.trend_snapshot import trend_rows
-from backend.sources.mantis import build_sources_from_issue_rows
-from backend.common import extract_chroma_field
+from backend.sources.mantis_fields import build_sources_from_issue_rows
+from backend.sources.chroma_document import extract_chroma_field
 from backend.effort_fields import delivery_date
 from backend.query_filters import matches_source_filters
 from backend.query_planning import build_query_plan
 from backend.intent.matching import chroma_text_matches_constraints
-from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
+from backend.effort_fields import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.understanding import extract_query_constraints
 
 # 차트에 그릴 이슈 유형. 멘티스 severity 8종 가운데 실제 처리 업무에 해당하는

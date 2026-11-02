@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from backend.common import derive_customer_aliases_from_project
-from backend.intent import entities
+from backend.sources import people_catalog as entities
 from backend.intent.matching import chroma_text_matches_constraints
 from backend.query_filters import matches_source_filters
 from backend.sources import mantis

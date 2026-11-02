@@ -3,11 +3,14 @@ from contextlib import closing, contextmanager
 import json
 import os
 from pathlib import Path
-import sqlite3
+import sqlite3 as sqlite3
 import tempfile
 
-from backend.common import extract_issue_id_from_text, extract_title_from_chroma_text
+from backend.sources.chroma_document import extract_issue_id_from_text, extract_title_from_chroma_text
 from backend.execution import checkpoint
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA_READ, CHROMA_TITLE_BUILD, CHROMA_TITLE_READ
 
 
 def source_signature(path: Path) -> tuple:
@@ -25,7 +28,7 @@ def open_title_projection(source: Path,target: Path):
     db=None;valid=None
     try:
         if target.is_file():
-            db=sqlite3.connect(f'file:{target}?mode=ro',uri=True)
+            db=open_sqlite(f'file:{target}?mode=ro', profile=CHROMA_TITLE_READ)
             meta=json.loads(db.execute('SELECT value FROM metadata').fetchone()[0])
             if (meta['version']==1 and meta['signature']==json.dumps(source_signature(source))
                     and db.execute('SELECT count(*) FROM titles').fetchone()[0]==meta['count']):
@@ -48,8 +51,8 @@ def build_title_projection(source: Path,target: Path) -> dict:
     descriptor,name=tempfile.mkstemp(prefix=target.name+'.',suffix='.tmp',dir=target.parent)
     os.close(descriptor);temporary=Path(name)
     try:
-        with closing(sqlite3.connect(f'file:{source}?mode=ro',uri=True)) as raw, \
-             closing(sqlite3.connect(temporary)) as db,db:
+        with closing(open_sqlite(f'file:{source}?mode=ro', profile=CHROMA_READ)) as raw, \
+             closing(open_sqlite(temporary, profile=CHROMA_TITLE_BUILD)) as db,db:
             db.execute('CREATE TABLE titles(position INTEGER PRIMARY KEY,source_rowid INTEGER,issue_id INTEGER,title TEXT)')
             db.execute('CREATE TABLE metadata(value TEXT)')
             count=0

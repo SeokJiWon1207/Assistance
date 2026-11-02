@@ -3,15 +3,15 @@
 import json
 import os
 import re
-import sys
 from datetime import datetime
-from typing import Any, Callable, Dict, List, TypeVar
+from typing import Any, Dict, List
 
 import requests
 from fastapi import HTTPException
 
 from backend.answers import answer_style_instruction
-from backend.common import clamp_int, normalize_for_match
+from backend.utils.numbers import clamp_int
+from backend.utils.text import normalize_for_match
 from backend.mantis_status import source_status
 from backend.llm import (
     build_generation_options,
@@ -20,7 +20,7 @@ from backend.llm import (
     get_private_model,
     post_model_chat,
 )
-from backend.retrieval import build_model_retrieval_context, build_model_evidence_sources
+from backend.evidence.model_context import build_model_retrieval_context, build_model_evidence_sources
 from backend.schemas import ChatRequest
 from backend.sources.notion import (
     extract_notion_constraints,
@@ -37,15 +37,6 @@ from backend.understanding import (
     text_matches_status,
 )
 from backend.evaluation.verification import build_basic_grounding
-
-
-Dependency = TypeVar("Dependency", bound=Callable[..., Any])
-
-
-def _compat_dependency(name: str, default: Dependency) -> Dependency:
-    """호환 파사드에 적용된 테스트 패치를 실제 구현에도 전달한다."""
-    core = sys.modules.get("backend.evaluation.core")
-    return getattr(core, name, default) if core is not None else default
 
 
 EVASIVE_ANSWER_PHRASES = (
@@ -224,9 +215,7 @@ def generate_basic_grounded_baseline(
     retrieval_result: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Answer from raw Mantis/Notion retrieval without the A-variant post-processing."""
-    get_model = _compat_dependency("get_private_model", get_private_model)
-    post_chat = _compat_dependency("post_model_chat", post_model_chat)
-    model = get_model(request.modelId)
+    model = get_private_model(request.modelId)
     api_key = get_model_api_key(model)
     if not api_key:
         return {
@@ -267,7 +256,7 @@ def generate_basic_grounded_baseline(
 
     try:
         timeout = clamp_int(os.getenv("AB_BASELINE_TIMEOUT_SECONDS", "60"), 10, 120) or 60
-        baseline_response = post_chat(
+        baseline_response = post_model_chat(
             model,
             api_key,
             payload,
@@ -307,10 +296,8 @@ def generate_candidate_model_answer(
     candidate_model_id: str,
 ) -> Dict[str, Any]:
     """동일한 검증·검색 결과로 후보 모델 답변을 생성한다."""
-    get_model = _compat_dependency("get_private_model", get_private_model)
-    post_chat = _compat_dependency("post_model_chat", post_model_chat)
     try:
-        model = get_model(candidate_model_id)
+        model = get_private_model(candidate_model_id)
     except HTTPException:
         return {"status": "error", "content": f"비교 모델을 찾을 수 없습니다: {candidate_model_id}"}
     api_key = get_model_api_key(model)
@@ -347,7 +334,7 @@ def generate_candidate_model_answer(
     payload.update(generation_options)
     payload["max_tokens"] = min(clamp_int(request.maxTokens, 1, 1200) or 800, 1200)
     try:
-        response = post_chat(
+        response = post_model_chat(
             model,
             api_key,
             payload,

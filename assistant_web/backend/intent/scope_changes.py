@@ -79,6 +79,6 @@ def followup_created_at(previous: dict, question: str) -> dict | None:
             or re.search(r"20\d{2}|올해|금년|작년|전년|지난\s*해|이번\s*해|지난\s*년도|이번\s*년도", question)
             or not re.search(r"(?<!\d)(?:1[0-2]|0?[1-9])\s*월", question)):
         return None
-    from backend.query_planning import extract_created_at_range
+    from backend.query.dates import extract_created_at_range
     qualified = re.sub(r"(?<!\d)((?:1[0-2]|0?[1-9])\s*월)", rf"{year}년 \1", question, count=1)
     return extract_created_at_range(qualified)

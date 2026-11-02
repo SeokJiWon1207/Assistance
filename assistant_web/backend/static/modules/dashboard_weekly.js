@@ -47,7 +47,7 @@ export function renderWeeklyIssues(weekly) {
     <div class="dashboard-weekly-grid">
       ${card(weekly.received, "금주 접수현황", "고객사요청일 기준", complete, true)}
       ${card(weekly.completed, "금주 완료현황", "고객사전달일 기준 · 제목의 정기점검 제외", complete, true)}
-      ${card(weekly.remaining, "잔여현황", "전체 기간 · 매체별 잔여 이슈", complete, false)}
+      ${card(weekly.remaining, "잔여현황", "전체 기간 · 공용 계정 포함 · 매체별 잔여 이슈", complete, false)}
     </div>
     <p class="dashboard-chart-note">잔여현황은 종료된이슈·정보부족·개발완료·해결된이슈를 제외합니다. 금주 완료는 입력한 고객사전달일로 집계합니다.</p>
   </section>`;

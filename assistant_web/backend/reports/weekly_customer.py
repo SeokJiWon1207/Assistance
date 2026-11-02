@@ -9,12 +9,9 @@ from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
 from backend.effort_fields import issue_delivery_date, EFFORT_FIELD_LABELS
-from backend.sources.mantis import (
-    build_sources_from_issue_rows,
-    fetch_mantis_recent_issues,
-    issue_matches_constraints,
-    normalize_issue,
-)
+from backend.sources.mantis_fields import build_sources_from_issue_rows, normalize_issue
+from backend.sources.mantis import fetch_mantis_recent_issues
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.reports.report_data import load_report_issues, report_scope_label
 from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.understanding import extract_query_constraints

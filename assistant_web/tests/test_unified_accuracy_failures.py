@@ -143,6 +143,17 @@ class ExplicitConditionRegressionTests(unittest.TestCase):
                                       'evidence': '본문에 "차트"가 포함'}]), USER, {})
         self.assertEqual(result['filter_clauses'][0]['field'], 'keyword')
 
+    def test_body_mention_plan_is_accepted_without_title_repair(self):
+        question = "노션 본문에 '안정성'이 나오는 문서를 찾아줘"
+        parsed = proposal(source='notion', operation='search', scope='all', status=NO_STATUS,
+            filters=[{'field': 'keyword', 'operator': 'contains', 'value': '안정성',
+                      'evidence': "본문에 '안정성'이 나오는"}])
+        with patch.object(unified, 'post_model_chat', return_value=response(parsed)) as model:
+            result = unified.plan_question(question, {'id': 'fixture-model'}, 'key', USER, {})
+        self.assertEqual(result['operation'], 'search')
+        self.assertEqual(result['filter_clauses'], [{'field': 'keyword', 'operator': 'contains', 'value': '안정성'}])
+        model.assert_called_once()
+
     def test_temporary_planning_timeout_retries_without_dropping_notion_exclusion(self):
         question = "노션에서 '교보증권 2026.09 정기점검(HTS)' 항목을 찾아줘. 시작전 상태는 빼고"
         parsed = proposal(source='notion', operation='search', scope='all', status=NO_STATUS, filters=[

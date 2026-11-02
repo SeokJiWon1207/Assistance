@@ -1,7 +1,7 @@
 """기술 수정과 구분할 실패 시도·전달·불확실한 결과를 원문 출처에 결속한다."""
 import re
 
-from backend.common import compact_text
+from backend.utils.text import compact_text
 
 _FAILED = re.compile(r'(?:시도|방문|적용|처리|수정|테스트).{0,65}(?:실패|안\s*됐|되지\s*않았|효과.{0,5}없|변화.{0,5}없)')
 _DELIVERED = re.compile(r'(?:소스|수정본|패치|모듈|파일).{0,50}(?:보냈|보내\s*드렸|전달\s*(?:했|하였|완료)|송부\s*(?:했|하였|완료))')
@@ -12,7 +12,7 @@ _DELIVERY_QUESTION = re.compile(r'(?:보냈|전달했|송부했)(?:는지|나요
 
 
 def treatment_history(issue: dict) -> list[str]:
-    from backend.reports.similar import _clean_note, _note_sentences, _resolution_notes
+    from backend.reports.comparison_common import _clean_note, _note_sentences, _resolution_notes
 
     sources = [('본문', str(issue.get('description') or ''))]
     sources.extend((f"노트 {note['id']}" if note.get('id') else '노트', str(note.get('text') or ''))
@@ -55,3 +55,23 @@ def history_covered(text: str, source: str) -> bool:
         if not counts(source).issubset(counts(text)):
             return False
     return True
+
+
+def _history_lines(detail: dict) -> list[str]:
+    """중복 종료는 해결 조치로 승격하지 않고 기준 이슈의 처리 이력으로 남긴다."""
+    lines = []
+    for note in _resolution_notes(detail):
+        text = _clean_note(str(note.get('text') or ''), detail)
+        for sentence in _note_sentences(text):
+            if re.search(r'(?:동일|중복).{0,35}(?:종료|처리)', sentence):
+                lines.extend([f"- #{detail.get('id')} 처리 이력{_note_reference(note)}:", f'> {sentence}'])
+            elif re.search(r'롤백|이슈.{0,20}(?:부활|재오픈)|재확인.{0,30}부활', sentence):
+                label = '조치 계획·결정 기록' if re.search(r'하려고|하기로|예정|하겠|시키도록', sentence) else '조치 이력'
+                lines.extend([f"- #{detail.get('id')} {label}{_note_reference(note)}:",
+                              '> ' + compact_text(sentence, 220)])
+    lines = lines[-8:]
+    for event in treatment_history(detail):
+        lines.append(f"- #{detail.get('id')} 처리 이력 — {event}")
+    return lines
+
+from backend.reports.comparison_common import _clean_note, _note_reference, _note_sentences, _resolution_notes

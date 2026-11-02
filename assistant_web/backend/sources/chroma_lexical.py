@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 import heapq
 from pathlib import Path
 import re
-import sqlite3
+import sqlite3 as sqlite3
 from time import perf_counter
 
-from backend.common import extract_issue_id_from_text, extract_title_from_chroma_text
+from backend.sources.chroma_document import extract_issue_id_from_text, extract_title_from_chroma_text
 from backend.config import RUNTIME_DIR
 from backend.execution import checkpoint
 from backend.sources.chroma_titles import (
@@ -16,6 +16,9 @@ from backend.sources.chroma_titles import (
     source_signature as _signature,
     open_title_projection,
 )
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA, CHROMA_TITLE_READ
 
 TITLE_INDEX_PATH=RUNTIME_DIR/'chroma_titles.sqlite3'
 
@@ -70,7 +73,7 @@ def _projected_rankings(path: Path,queries: tuple[str,...],retained: int):
                 else:heapq.heapreplace(heap,entry)
     wanted={item[3] for heap in heaps.values() for item in heap}
     content={}
-    with closing(sqlite3.connect(f'file:{path}?mode=ro',uri=True)) as raw,raw:
+    with closing(open_sqlite(f'file:{path}?mode=ro', profile=CHROMA_TITLE_READ)) as raw,raw:
         keys=sorted(wanted)
         for start in range(0,len(keys),200):
             checkpoint();batch=keys[start:start+200]
@@ -106,7 +109,7 @@ def rank_lexical_documents(path: Path, query: str, limit: int) -> tuple[list[dic
     grams={q:_grams(q) for q in queries}
     heaps: dict[str,list[tuple]]={q:[] for q in queries}
     started=perf_counter();scanned=0
-    with closing(sqlite3.connect(path)) as db,db:
+    with closing(open_sqlite(path, profile=CHROMA)) as db,db:
         cursor=db.execute("SELECT string_value FROM embedding_metadata WHERE key='chroma:document'")
         try:
             for position,(content,) in enumerate(cursor):

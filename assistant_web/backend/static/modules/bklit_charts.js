@@ -2,7 +2,14 @@
 const mounted = new Map();
 const generations = new WeakMap();
 let bundlePromise;
+const loadBundle = () => import('../vendor/bklit/charts.js?v=20261030-1');
 const escapeAttribute = value => String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+function showChartFallback(host) {
+  host.dataset.chartError = 'true';
+  delete host.dataset.ready;
+  host.querySelector('[data-bklit-values]')?.setAttribute('open', '');
+}
 
 export function chartHost(spec, fallback = '<p class="bklit-empty">차트를 준비하고 있습니다.</p>') {
   const keepValues = spec.kind === 'bar' || spec.showValues;
@@ -24,15 +31,24 @@ export async function mountCharts(container) {
   if (!hosts.length) return;
   const generation = generations.get(container) || 0;
   try {
-    bundlePromise ||= import('../vendor/bklit/charts.js?v=20261029-1').catch(error => { bundlePromise = null; throw error; });
+    // 첫 진입의 일시적인 파일 요청 실패는 한 번 더 읽고, 계속 실패하면 수치를 유지한다.
+    bundlePromise ||= loadBundle().catch(() => loadBundle()).catch(error => { bundlePromise = null; throw error; });
     const { mountChart } = await bundlePromise;
     if ((generations.get(container) || 0) !== generation) return;
     for (const host of hosts) {
-      if (host.isConnected && !mounted.has(host)) mounted.set(host, mountChart(host, JSON.parse(host.dataset.bklitSpec)));
+      if (!host.isConnected || mounted.has(host)) continue;
+      try {
+        mounted.set(host, mountChart(host, JSON.parse(host.dataset.bklitSpec)));
+        delete host.dataset.chartError;
+      } catch (error) {
+        showChartFallback(host);
+        console.warn('차트를 표시하지 못해 기본 수치를 표시합니다.', error);
+      }
     }
   } catch (error) {
     // 수치와 필터 버튼이 들어 있는 기존 HTML 대체 화면을 계속 제공한다.
-    for (const host of hosts) host.dataset.chartError = 'true';
+    if ((generations.get(container) || 0) !== generation) return;
+    for (const host of hosts) showChartFallback(host);
     console.warn('차트 모듈을 불러오지 못해 기본 수치를 표시합니다.', error);
   }
 }

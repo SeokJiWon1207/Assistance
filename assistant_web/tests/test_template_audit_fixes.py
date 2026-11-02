@@ -28,7 +28,7 @@ class TemplateAuditFixTests(unittest.TestCase):
 
     def test_aging_condition_cannot_disappear_or_change_cutoff(self):
         q, p = self.aging()
-        with patch('backend.intent.unified_validation.date', AuditDate):
+        with patch('backend.intent.validation_rules.date', AuditDate):
             with self.assertRaisesRegex(ValueError, '30일'):
                 validate_plan(q, p, {}, {})
             p['filters'].append({'field': 'created_at', 'operator': 'lte', 'value': '2026-09-27', 'evidence': '30일 넘게'})
@@ -38,7 +38,7 @@ class TemplateAuditFixTests(unittest.TestCase):
     def test_aging_cutoff_includes_boundary_and_excludes_recent_and_other_team(self):
         q, p = self.aging()
         p['filters'].append({'field': 'created_at', 'operator': 'lte', 'value': '2026-09-26', 'evidence': '30일 넘게'})
-        with patch('backend.intent.unified_validation.date', AuditDate):
+        with patch('backend.intent.validation_rules.date', AuditDate):
             plan = validate_plan(q, p, {}, {})
             self.assertTrue(validate_execution_contract(q, plan)['valid'])
         raw = {'project': {'name': '112KBStar(KB증권)'}, 'status': {'name': 'assigned'},
@@ -51,7 +51,7 @@ class TemplateAuditFixTests(unittest.TestCase):
         q, p = self.aging()
         plan = validate_plan('KB증권 미종료 이슈를 보여줘', p, {}, {})
         plan['grounding_text'] = q
-        with patch('backend.intent.unified_validation.date', AuditDate):
+        with patch('backend.intent.validation_rules.date', AuditDate):
             self.assertFalse(validate_execution_contract(q, plan)['valid'])
 
     def test_weekly_period_cannot_disappear(self):
@@ -90,7 +90,7 @@ class TemplateAuditFixTests(unittest.TestCase):
     def test_aging_followup_retains_cutoff_until_explicitly_changed(self):
         q, p = self.aging()
         p['filters'].append({'field': 'created_at', 'operator': 'lte', 'value': '2026-09-26', 'evidence': '30일 넘게'})
-        with patch('backend.intent.unified_validation.date', AuditDate):
+        with patch('backend.intent.validation_rules.date', AuditDate):
             previous = validate_plan(q, p, {}, {})
             followup = proposal(operation='search', scope='inherit', followup=True,
                                 status={'mode': 'inherit', 'values': [], 'evidence': ''},

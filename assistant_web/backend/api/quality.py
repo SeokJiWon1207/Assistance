@@ -2,7 +2,7 @@
 
 import json
 import re
-import sqlite3
+import sqlite3 as sqlite3
 import subprocess
 import sys
 import threading
@@ -28,6 +28,9 @@ from backend.reports.evaluation import (
 )
 from backend.schemas import AccuracyRunRequest, AnswerFeedbackRequest, EvaluationRunRequest
 from backend.sources.mantis import get_mantis_snapshot_freshness_status
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import AUDIT, AUDIT_ROWS
 
 
 router = APIRouter()
@@ -55,7 +58,7 @@ def save_answer_feedback(request: AnswerFeedbackRequest, http_request: Request) 
     comment = request.comment.strip()
     template_id = (request.templateId or "").strip() or None
     user_uid = str((current_request_user(http_request) or {}).get("uid") or "").strip()
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
         audit_row = connection.execute(
             "SELECT id FROM validation_logs WHERE id = ? AND user_uid = ?",
             (request.auditId, user_uid),
@@ -111,8 +114,7 @@ def save_answer_feedback(request: AnswerFeedbackRequest, http_request: Request) 
 def get_feedback_summary(limit: int = 200) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 1000))
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT_ROWS)) as connection, connection:
         rows = connection.execute(
             """
             SELECT f.id, f.audit_id, f.created_at, f.updated_at, f.rating, f.reason,
@@ -191,8 +193,7 @@ def get_feedback_summary(limit: int = 200) -> Dict[str, Any]:
 def list_validation_logs(limit: int = 20) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 100))
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT_ROWS)) as connection, connection:
         rows = connection.execute(
             "SELECT id, created_at, question, model_id, mode, score, status FROM validation_logs ORDER BY created_at DESC LIMIT ?",
             (safe_limit,),
@@ -208,8 +209,7 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
     운영 대시보드용 엔드포인트다."""
     init_audit_db()
     safe_limit = max(1, min(limit, 2000))
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT_ROWS)) as connection, connection:
         rows = connection.execute(
             "SELECT id, created_at, question, model_id, mode, score, status, failed_checks_json, "
             "CASE WHEN json_valid(payload) THEN json_object('timings', json_extract(payload, '$.timings')) "
@@ -285,7 +285,7 @@ def get_validation_summary(limit: int = 500) -> Dict[str, Any]:
 @router.get("/api/validation/logs/{log_id}")
 def read_validation_log(log_id: str) -> Dict[str, Any]:
     init_audit_db()
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
         row = connection.execute(
             "SELECT payload FROM validation_logs WHERE id = ?",
             (log_id,),
@@ -458,8 +458,7 @@ def read_accuracy_report(name: str) -> Dict[str, Any]:
 def list_evaluation_history(limit: int = 10) -> Dict[str, Any]:
     init_audit_db()
     safe_limit = max(1, min(limit, 50))
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT_ROWS)) as connection, connection:
         rows = connection.execute(
             "SELECT id, run_at, total, passed, failed, score, duration_ms FROM evaluation_runs "
             "ORDER BY run_at DESC LIMIT ?",

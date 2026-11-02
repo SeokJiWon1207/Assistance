@@ -170,6 +170,8 @@ def run(args):
 
 
 def main():
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--chain", choices=list(conversations()))

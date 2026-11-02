@@ -31,6 +31,7 @@ test('weekly cards show independent Sat–Fri dates, grouped bars, donut and acc
   assert.match(html, /고객사요청일/);
   assert.match(html, /고객사전달일/);
   assert.match(html, /정기점검/);
+  assert.match(html, /공용 계정 포함/);
   assert.equal(charts[0].grouped, true);
   assert.equal(charts[0].rows[0].series0, 5);
   assert.equal(charts[0].rows[1].series0, 0);

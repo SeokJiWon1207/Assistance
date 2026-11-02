@@ -11,7 +11,7 @@ from typing import Deque, Dict, Iterator
 
 from fastapi import HTTPException
 
-from backend.common import clamp_int
+from backend.utils.numbers import clamp_int
 from backend.memory_pressure import available_memory_bytes
 from backend.execution import checkpoint
 

@@ -31,7 +31,7 @@ def is_general_question(text: str) -> bool:
     if not _GENERAL_REQUEST.search(text) or _INTERNAL_TARGET.search(text):
         return False
     if re.search(r'이슈|장애|오류|버그|차트|HTS|MTS', text, re.I):
-        from backend.common import normalize_for_match
+        from backend.utils.text import normalize_for_match
         from backend.intent.scope_extraction import extract_customer_scope
         if extract_customer_scope(text, normalize_for_match(text)).get('customer_key'):
             return False

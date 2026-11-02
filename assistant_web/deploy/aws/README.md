@@ -15,6 +15,13 @@ EC2 한 대에 FastAPI 앱을 올리고 nginx와 Let's Encrypt TLS로 공개하�
 
 중요: EC2에서 회사 모델 API, Mantis API, Notion API에 접근 가능해야 로컬과 같은 답변이 나옵니다.
 
+서버에는 프로젝트 기준 **Python 3.12**와 해당 venv 모듈이 먼저 준비돼 있어야 합니다.
+배포는 `python3.12`를 선택하고 `.python-version`의 major.minor와 대조합니다.
+다른 설치 경로라면 `DEPLOY_PYTHON=/absolute/path/to/python3.12`로 지정합니다.
+기본 `python3`나 활성 서비스의 venv로 자동 폴백하지 않습니다. 3.12가 없거나 버전이
+다르면 환경 파일 생성·가상환경·apt/systemd 변경 전에 중단합니다. 현재 활성 릴리스의
+Python이나 venv를 덮어쓰지 않습니다.
+
 ## 2. 로컬에서 업로드
 
 Assistance 루트에서 실행합니다.
@@ -32,8 +39,19 @@ FIREBASE_CREDENTIALS=~/.config/ai-assistant/firebase-service-account.json \
 ./assistant_web/deploy/aws/deploy_to_ec2.sh
 ```
 
-`INCLUDE_ENV=1`은 로컬 `assistant_web/.env`를 권한 600으로 복사합니다. `FIREBASE_CREDENTIALS`는
-서비스 계정 JSON을 릴리스 디렉터리 밖 `/var/lib/content-ai-assistant`에 권한 600으로 설치합니다.
+`INCLUDE_ENV=1`은 기존 운영 `.env`를 신릴리스에 보존하고, 비어 있는 `OPENAI_API_KEY`만
+로컬 `assistant_web/.env`에서 추가합니다. 기존 OpenAI/Gemini/Mantis/Notion 키·보안 설정은
+로컬 값으로 교체하지 않습니다. 값은 로그에 출력하지 않고, 임시 overlay와 완성된 환경 파일은
+권한 600으로 생성합니다. overlay에는 OpenAI 키만 전송되며 환경 생성 뒤 삭제합니다.
+`current/assistant_web/.env`가 없으면 이전 in-place 경로의 `.env`를 기준으로 사용합니다.
+
+운영 `.env`가 아예 없는 **최초 설치**에는 검토한 전체 환경 파일을
+`ENV_BOOTSTRAP_FILE=/secure/production.env`로 명시합니다. 기존 운영 환경이 있으면 이 옵션을
+거절합니다. 일반 재배포에서 로컬 `.env` 전체를 자동 업로드하는 경로는 없습니다.
+키 회전이나 다른 운영 설정 변경은 별도 검토한 운영 환경에 먼저 반영합니다.
+
+`FIREBASE_CREDENTIALS`는 서비스 계정 JSON을 릴리스 디렉터리 밖
+`/var/lib/content-ai-assistant`에 권한 600으로 설치합니다.
 배포는 파일 동기화 전에 서버 SQLite DB를 `.backup`하고 무결성을 확인하며,
 `assistant_web/runtime/`은 동기화 대상에서 제외합니다.
 
@@ -206,7 +224,7 @@ ssh -i KEY ubuntu@EC2_PUBLIC_IP "rm -f /opt/content-ai-assistant/maintenance.on"
 - 배포 후 `/ready`에서 세 SQLite DB, 스냅샷 DB, `structuredIndexDb`와 데이터 신선도를 확인하세요.
 - `/ready`의 `security.modelTransport`에는 HTTP 모델 예외 만료일과 잔여 일수가 포함됩니다.
   기본적으로 D-30부터 `warning` 상태와 기동 경고 로그가 발생합니다.
-- 로컬 스냅샷(`data/mantis_chroma_db`)도 함께 업로드하므로 로컬과 유사한 검색 결과가 나옵니다.
+- 기본 배포는 로컬 스냅샷(`data/mantis_chroma_db`)도 함께 업로드합니다. 코드만 배포할 때는 `REUSE_REMOTE_SNAPSHOT=1`로 현재 운영의 검색 DB를 유지할 수 있습니다. 이 옵션은 `current/data`가 관리 중인 `snapshots/` 아래를 가리키는지와 SQLite 무결성·문서 수·인덱스 일치 여부를 활성화 전에 검증합니다. 실패 정리는 새 배포용 경로에만 적용하며 재사용 중인 스냅샷은 제거하지 않습니다.
 
 ## 소형 서버 자원 복구
 

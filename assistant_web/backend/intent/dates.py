@@ -3,7 +3,7 @@
 import re
 from typing import Dict
 
-from backend.config import MANTIS_DATE_FIELD_ALIASES
+from backend.settings.values import MANTIS_DATE_FIELD_ALIASES
 
 
 def extract_date_field_constraints(text: str) -> Dict[str, str]:

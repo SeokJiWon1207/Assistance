@@ -1,0 +1,133 @@
+[
+  {
+    "input": {
+      "title": [
+        {
+          "plain_text": " 운영 문서 "
+        }
+      ],
+      "type": "title"
+    },
+    "kind": "value",
+    "output": "운영 문서"
+  },
+  {
+    "input": {
+      "people": [
+        {
+          "id": "u",
+          "name": "김지은"
+        },
+        {
+          "person": {
+            "email": "a@example.test"
+          }
+        }
+      ],
+      "type": "people"
+    },
+    "kind": "value",
+    "output": "김지은, a@example.test"
+  },
+  {
+    "input": {
+      "date": {
+        "end": "2026-10-31",
+        "start": "2026-10-01"
+      },
+      "type": "date"
+    },
+    "kind": "value",
+    "output": "2026-10-01 ~ 2026-10-31"
+  },
+  {
+    "input": {
+      "number": 0,
+      "type": "number"
+    },
+    "kind": "value",
+    "output": "0"
+  },
+  {
+    "input": {
+      "checkbox": false,
+      "type": "checkbox"
+    },
+    "kind": "value",
+    "output": "false"
+  },
+  {
+    "input": {
+      "rollup": {
+        "array": [
+          {
+            "title": [
+              {
+                "plain_text": "A"
+              }
+            ],
+            "type": "title"
+          }
+        ],
+        "type": "array"
+      },
+      "type": "rollup"
+    },
+    "kind": "value",
+    "output": "A"
+  },
+  {
+    "input": {
+      "formula": {
+        "string": "calculated",
+        "type": "string"
+      },
+      "type": "formula"
+    },
+    "kind": "value",
+    "output": "calculated"
+  },
+  {
+    "input": {
+      "relation": [
+        {
+          "id": "p"
+        }
+      ],
+      "type": "relation"
+    },
+    "kind": "value",
+    "output": "p"
+  },
+  {
+    "input": {
+      "type": "unique_id",
+      "unique_id": {
+        "number": 12,
+        "prefix": "TASK"
+      }
+    },
+    "kind": "value",
+    "output": "TASK-12"
+  },
+  {
+    "input": "2026-10-29T15:00:00Z",
+    "kind": "date",
+    "output": "2026-10-30"
+  },
+  {
+    "input": "2026-10-30",
+    "kind": "date",
+    "output": "2026-10-30"
+  },
+  {
+    "input": "invalid",
+    "kind": "date",
+    "output": "invalid"
+  },
+  {
+    "input": "",
+    "kind": "date",
+    "output": ""
+  }
+]

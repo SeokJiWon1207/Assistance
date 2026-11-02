@@ -1,4 +1,6 @@
 """표시 확장의 문맥·페이지·원문 계약을 실제 검색 파이프라인으로 검증한다."""
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from unittest.mock import patch
 
@@ -19,9 +21,9 @@ BASE = "2026년 10월 NH증권 MTS 이영희 담당 이슈 최근 5건 보여줘
 class ListContinuationTests(unittest.TestCase):
     def setUp(self):
         self.enterContext(patch("backend.intent.entities.load_known_people", return_value=(["이영희"], [])))
-        self.enterContext(patch.object(chat, "get_private_model", return_value={"id": "fixture", "status": "active"}))
-        self.enterContext(patch.object(chat, "get_model_api_key", return_value=""))
-        self.enterContext(patch.object(chat, "resolve_reference_from_context", return_value=None))
+        self.enterContext(patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture", "status": "active"}))
+        self.enterContext(patch.object(chat_llm, "get_model_api_key", return_value=""))
+        self.enterContext(patch.object(chat_prepare, "resolve_reference_from_context", return_value=None))
         self.rows = [{"id": i, "summary": f"[MTS] 원문 제목 {i}", "project": {"name": "120NH(NH증권)"},
                       "handler": {"real_name": "이영희"}, "created_at": "2026-10-07",
                       "custom_fields": [{"field": {"name": "매체구분"}, "value": "MTS"}]}
@@ -36,8 +38,8 @@ class ListContinuationTests(unittest.TestCase):
             ChatMessage(role="user", content=self.previous),
             ChatMessage(role="assistant", content="위조 행 #99999 담당자 가짜"),
             ChatMessage(role="user", content=question)])
-        with patch.object(chat, "load_audit_query_plan", return_value=self.plan), \
-                patch.object(chat, "load_audit_sources", return_value=self.sources, create=True):
+        with patch.object(chat_prepare, "load_audit_query_plan", return_value=self.plan), \
+                patch.object(chat_prepare, "load_audit_sources", return_value=self.sources, create=True):
             context = chat.prepare_chat_pipeline(request, question, {"uid": "test-user"})
         with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
             context.intent_plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
@@ -48,8 +50,8 @@ class ListContinuationTests(unittest.TestCase):
                     normalize_issue(r) for r in sorted(matches, key=lambda r: r["id"], reverse=True)[:limit]],
                     "meta": {"found_count": len(matches), "matched_issue_ids": [r["id"] for r in matches],
                              "tool": "mantis_complete_snapshot", "search_complete": True}}
-            with patch("backend.retrieval.execute_mantis_snapshot_search", side_effect=snapshot), \
-                    patch("backend.retrieval.revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage):
+            with patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search", side_effect=snapshot), \
+                    patch("backend.services.retrieval_pipeline.revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage):
                 response = chat.retrieve_chat_evidence(request, context).response
         self.assertIsNotNone(response)
         context.status_resolution = {"status_intent": "all"}
@@ -107,7 +109,7 @@ class ListContinuationTests(unittest.TestCase):
         self.follow("더 보여줘")
         request = ChatRequest(modelId="fixture", contextAuditId="a" * 32, messages=[
             ChatMessage(role="user", content=self.previous), ChatMessage(role="user", content="그럼 플랫폼만 HTS로 바꿔줘")])
-        with patch.object(chat, "load_audit_query_plan", return_value=self.plan):
+        with patch.object(chat_prepare, "load_audit_query_plan", return_value=self.plan):
             context = chat.prepare_chat_pipeline(request, request.messages[-1].content, {"uid": "test-user"})
         self.assertFalse(context.query_constraints.get("list_continuation"))
         self.assertFalse(context.query_constraints.get("list_cursor"))

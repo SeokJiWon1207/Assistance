@@ -250,11 +250,11 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
             "issues_list": [],
             "meta": {"snapshot_as_of": "2026-08-19", "found_count": 0},
         }
-        with patch("backend.retrieval.execute_mantis_snapshot_search", return_value=snapshot), patch(
-            "backend.retrieval.execute_mantis_filter_search",
+        with patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search", return_value=snapshot), patch(
+            "backend.services.retrieval_pipeline.execute_mantis_filter_search",
             side_effect=requests.RequestException("invalid response"),
         ), patch(
-            "backend.retrieval.execute_mantis_page_scan",
+            "backend.services.retrieval_pipeline.execute_mantis_page_scan",
             return_value={"source": "mantis_page_scan", "status": "ok", "issues_list": []},
         ):
             result = run_retrieval_pipeline(
@@ -281,7 +281,7 @@ class TemplateAnswerRegressionTests(unittest.TestCase):
         for q, expected in (("2026년 8월에 등록된 이슈 중 30일 넘게 미종료", [102]),
                             ("이번 달 등록된 이슈 중 30일 넘게 미종료", [])):
             with self.subTest(q=q), patch.object(sla, "date", FixedDate), patch(
-                "backend.query_planning.date", FixedDate,
+                "backend.query.dates.date", FixedDate,
             ), patch.object(sla, "read_scoped_store", return_value=IssueBatch(raw, {"search_complete": True})):
                 report = sla.build_sla_report(q)
             rows = report["retrieval"]["stages"][0].get("issues_list", [])

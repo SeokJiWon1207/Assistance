@@ -5,23 +5,21 @@
 """
 import hashlib
 import json
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
 
+
 from backend.sources.mantis_store import connection_key, store_path, MAX_AGE_SECONDS
 
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import MANTIS_STORE_READ, WORKSPACE
+from backend.storage.workspace_schema import create_notification_schema as create_notification_schema
 
-def create_notification_schema(db: sqlite3.Connection) -> None:
-    db.execute("""CREATE TABLE workspace_observations (
-        user_uid TEXT PRIMARY KEY, scope_key TEXT NOT NULL, observed_at TEXT NOT NULL, facts_json TEXT NOT NULL)""")
-    db.execute("""CREATE TABLE workspace_events (
-        id TEXT PRIMARY KEY, user_uid TEXT NOT NULL, scope_key TEXT NOT NULL,
-        issue_id INTEGER NOT NULL, observed_at TEXT NOT NULL, payload_json TEXT NOT NULL)""")
-    db.execute("CREATE INDEX workspace_events_user_time ON workspace_events(user_uid, observed_at DESC)")
+
 
 
 def _timestamp(value: str) -> float:
@@ -40,7 +38,7 @@ def read_notification_facts(issues: list[dict], meta: dict) -> tuple[str, dict] 
     if not path.exists():
         return None
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as db:
+        with closing(open_sqlite(f"file:{path}?mode=ro", profile=MANTIS_STORE_READ)) as db:
             db.execute("BEGIN")
             saved = json.loads(db.execute("SELECT value FROM metadata").fetchone()[0])
             identity = connection_key()
@@ -69,7 +67,7 @@ def read_notification_facts(issues: list[dict], meta: dict) -> tuple[str, dict] 
 def observe_workspace_changes(path: Path, user_uid: str, scope_key: str, facts: dict,
                               observed_at: str, *, complete: bool) -> list[dict]:
     facts = {str(key): value for key, value in facts.items()}
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         previous = db.execute("SELECT scope_key, observed_at, facts_json FROM workspace_observations WHERE user_uid = ?",
                               (user_uid,)).fetchone()

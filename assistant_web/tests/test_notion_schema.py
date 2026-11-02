@@ -1,5 +1,7 @@
+from backend.notion import schema as notion_schema
+from backend.notion import read_api
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from fastapi import HTTPException
 
@@ -8,7 +10,7 @@ from backend.notion import schema
 
 class NotionSchemaTests(unittest.TestCase):
     def test_database_selection_requires_configuration_and_matches_label(self):
-        with patch.object(schema, "get_notion_settings", return_value={"token": "", "database_ids": []}):
+        with patch.object(notion_schema, "resolve_notion_settings", return_value={"token": "", "database_ids": []}):
             with self.assertRaises(HTTPException) as raised:
                 schema.select_notion_database_id()
         self.assertEqual(raised.exception.status_code, 503)
@@ -17,21 +19,27 @@ class NotionSchemaTests(unittest.TestCase):
         with (
             patch.object(
                 schema,
-                "get_notion_settings",
+                "resolve_notion_settings",
                 return_value={"token": "token", "database_ids": database_ids},
-            ),
-            patch.object(
-                schema,
-                "fetch_notion_database_title",
+            ) as settings,
+            patch.object(read_api, 'fetch_notion_database_title',
                 side_effect=["업무 기록", "주요이슈 현황"],
-            ),
+            ) as titles,
         ):
             self.assertEqual(schema.select_notion_database_id("주요이슈"), database_ids[1])
+        settings.assert_called_once_with()
+        self.assertEqual(titles.call_args_list, [call(identifier) for identifier in database_ids])
+
+    def test_property_schema_uses_the_requested_database(self):
+        properties = {"제목": {"type": "title"}}
+        with patch.object(read_api, 'fetch_notion_database_schema', return_value={"properties": properties}) as fetch:
+            self.assertEqual(schema.notion_property_schema("db-id"), properties)
+        fetch.assert_called_once_with("db-id")
 
     def test_database_selection_prefers_single_or_primary_database(self):
         with patch.object(
             schema,
-            "get_notion_settings",
+            "resolve_notion_settings",
             return_value={"token": "token", "database_ids": ["a" * 32]},
         ):
             self.assertEqual(schema.select_notion_database_id(), "a" * 32)
@@ -40,12 +48,10 @@ class NotionSchemaTests(unittest.TestCase):
         with (
             patch.object(
                 schema,
-                "get_notion_settings",
+                "resolve_notion_settings",
                 return_value={"token": "token", "database_ids": database_ids},
             ),
-            patch.object(
-                schema,
-                "fetch_notion_database_title",
+            patch.object(read_api, 'fetch_notion_database_title',
                 side_effect=["일반 업무", "주요이슈 현황"],
             ),
         ):
@@ -61,7 +67,7 @@ class NotionSchemaTests(unittest.TestCase):
 
         with patch.object(
             schema,
-            "get_notion_settings",
+            "resolve_notion_settings",
             return_value={"database_ids": [dashed]},
         ):
             self.assertEqual(schema.ensure_configured_notion_database("a" * 32), "a" * 32)

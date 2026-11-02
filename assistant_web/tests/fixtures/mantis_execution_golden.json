@@ -1,0 +1,5911 @@
+[
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/ok",
+    "result": [
+      {
+        "created_at": "2026-10-13T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 103,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "assigned"
+        },
+        "summary": "[1001] 조건검색 서버 오류",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-12T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 102,
+        "project": {
+          "name": "신한투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-11T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 101,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 조건검색 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/timeout_retry",
+    "result": [
+      {
+        "created_at": "2026-10-13T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 103,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "assigned"
+        },
+        "summary": "[1001] 조건검색 서버 오류",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-12T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 102,
+        "project": {
+          "name": "신한투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-11T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 101,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 조건검색 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/rate_limit",
+    "result": [
+      {
+        "created_at": "2026-10-13T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 103,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "assigned"
+        },
+        "summary": "[1001] 조건검색 서버 오류",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-12T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 102,
+        "project": {
+          "name": "신한투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-11T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 101,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 조건검색 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 2
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/server_retry",
+    "result": [
+      {
+        "created_at": "2026-10-13T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 103,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "assigned"
+        },
+        "summary": "[1001] 조건검색 서버 오류",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-12T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 102,
+        "project": {
+          "name": "신한투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      },
+      {
+        "created_at": "2026-10-11T09:00:00",
+        "custom_fields": [
+          {
+            "field": {
+              "name": "매체구분"
+            },
+            "value": "HTS"
+          },
+          {
+            "field": {
+              "name": "화면번호"
+            },
+            "value": "1001"
+          }
+        ],
+        "description": "조건검색 서버 점검 본문",
+        "handler": {
+          "real_name": "김담당"
+        },
+        "id": 101,
+        "project": {
+          "name": "한국투자증권"
+        },
+        "reporter": {
+          "real_name": "이요청"
+        },
+        "status": {
+          "name": "resolved"
+        },
+        "summary": "[1001] 조건검색 서버 점검",
+        "updated_at": "2026-10-30T10:00:00"
+      }
+    ]
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/missing",
+    "result": {
+      "detail": "Mantis API failed: 404 fixed response",
+      "error": "HTTPException",
+      "status_code": 502
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/denied",
+    "result": {
+      "detail": "Mantis API failed: 403 fixed response",
+      "error": "HTTPException",
+      "status_code": 502
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      },
+      {
+        "sleep": 2
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues",
+        "params": {
+          "page": 2,
+          "page_size": 50
+        },
+        "timeout": 12
+      }
+    ],
+    "case": "page/exhausted",
+    "result": {
+      "detail": "fixed timeout",
+      "error": "Timeout"
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/ok",
+    "result": {
+      "created_at": "2026-10-13T09:00:00",
+      "custom_fields": [
+        {
+          "field": {
+            "name": "매체구분"
+          },
+          "value": "HTS"
+        },
+        {
+          "field": {
+            "name": "화면번호"
+          },
+          "value": "1001"
+        }
+      ],
+      "description": "조건검색 서버 점검 본문",
+      "handler": {
+        "real_name": "김담당"
+      },
+      "id": 103,
+      "project": {
+        "name": "한국투자증권"
+      },
+      "reporter": {
+        "real_name": "이요청"
+      },
+      "status": {
+        "name": "assigned"
+      },
+      "summary": "[1001] 조건검색 서버 오류",
+      "updated_at": "2026-10-30T10:00:00"
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/timeout_retry",
+    "result": {
+      "created_at": "2026-10-13T09:00:00",
+      "custom_fields": [
+        {
+          "field": {
+            "name": "매체구분"
+          },
+          "value": "HTS"
+        },
+        {
+          "field": {
+            "name": "화면번호"
+          },
+          "value": "1001"
+        }
+      ],
+      "description": "조건검색 서버 점검 본문",
+      "handler": {
+        "real_name": "김담당"
+      },
+      "id": 103,
+      "project": {
+        "name": "한국투자증권"
+      },
+      "reporter": {
+        "real_name": "이요청"
+      },
+      "status": {
+        "name": "assigned"
+      },
+      "summary": "[1001] 조건검색 서버 오류",
+      "updated_at": "2026-10-30T10:00:00"
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/rate_limit",
+    "result": {
+      "created_at": "2026-10-13T09:00:00",
+      "custom_fields": [
+        {
+          "field": {
+            "name": "매체구분"
+          },
+          "value": "HTS"
+        },
+        {
+          "field": {
+            "name": "화면번호"
+          },
+          "value": "1001"
+        }
+      ],
+      "description": "조건검색 서버 점검 본문",
+      "handler": {
+        "real_name": "김담당"
+      },
+      "id": 103,
+      "project": {
+        "name": "한국투자증권"
+      },
+      "reporter": {
+        "real_name": "이요청"
+      },
+      "status": {
+        "name": "assigned"
+      },
+      "summary": "[1001] 조건검색 서버 오류",
+      "updated_at": "2026-10-30T10:00:00"
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 2
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/server_retry",
+    "result": {
+      "created_at": "2026-10-13T09:00:00",
+      "custom_fields": [
+        {
+          "field": {
+            "name": "매체구분"
+          },
+          "value": "HTS"
+        },
+        {
+          "field": {
+            "name": "화면번호"
+          },
+          "value": "1001"
+        }
+      ],
+      "description": "조건검색 서버 점검 본문",
+      "handler": {
+        "real_name": "김담당"
+      },
+      "id": 103,
+      "project": {
+        "name": "한국투자증권"
+      },
+      "reporter": {
+        "real_name": "이요청"
+      },
+      "status": {
+        "name": "assigned"
+      },
+      "summary": "[1001] 조건검색 서버 오류",
+      "updated_at": "2026-10-30T10:00:00"
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/missing",
+    "result": null
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/denied",
+    "result": {
+      "detail": "Mantis 이슈 접근이 거절되었습니다.",
+      "error": "HTTPException",
+      "status_code": 403
+    }
+  },
+  {
+    "calls": [
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 1
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      },
+      {
+        "sleep": 2
+      },
+      {
+        "headers": {
+          "Authorization": "test"
+        },
+        "http": "https://mantis.test/issues/103",
+        "timeout": 20
+      }
+    ],
+    "case": "detail/exhausted",
+    "result": {
+      "detail": "fixed timeout",
+      "error": "Timeout"
+    }
+  },
+  {
+    "calls": [
+      {
+        "raw_fetch": [
+          800,
+          50,
+          12
+        ]
+      }
+    ],
+    "case": "live/customer",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-13",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 103,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 오류"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "assigned",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 오류",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "조건검색",
+        "searched_pages": 1,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "raw_fetch": [
+          800,
+          50,
+          12
+        ]
+      }
+    ],
+    "case": "live/status",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 2,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "서버",
+        "searched_pages": 1,
+        "status_excluded_count": 1
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "raw_fetch": [
+          800,
+          50,
+          12
+        ]
+      }
+    ],
+    "case": "live/title_body",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            },
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            },
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 2,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "서버",
+        "searched_pages": 1,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "raw_fetch": [
+          800,
+          50,
+          12
+        ]
+      }
+    ],
+    "case": "live/empty",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-13",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 103,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 오류"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "assigned",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 오류",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "조건검색",
+        "searched_pages": 1,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "raw_fetch": [
+          800,
+          50,
+          12
+        ]
+      }
+    ],
+    "case": "live/ascending",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "",
+        "searched_pages": 1,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [],
+    "case": "store/customer",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-13",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 103,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 오류"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "assigned",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 오류",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "조건검색",
+        "searched_pages": 0,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [],
+    "case": "store/status",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 2,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "서버",
+        "searched_pages": 0,
+        "status_excluded_count": 1
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [],
+    "case": "store/title_body",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            },
+            {
+              "field": "summary",
+              "text": "[1001] 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            },
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 2,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "서버",
+        "searched_pages": 0,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [],
+    "case": "store/empty",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-13",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 103,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 오류"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "assigned",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 오류",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "matching_evidence": [
+            {
+              "field": "summary",
+              "text": "[1001] 조건검색 서버 점검"
+            },
+            {
+              "field": "description",
+              "text": "조건검색 서버 점검 본문"
+            }
+          ],
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "조건검색",
+        "searched_pages": 0,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [],
+    "case": "store/ascending",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 2,
+        "fetchedAt": "2026-10-30T10:00:00+09:00",
+        "found_count": 3,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "scanned_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": true,
+        "search_keyword": "",
+        "searched_pages": 0,
+        "status_excluded_count": 0
+      },
+      "source": "mantis_page_scan",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "refresh": 103
+      },
+      {
+        "refresh": 102
+      },
+      {
+        "refresh": 101
+      }
+    ],
+    "case": "revalidate/changed",
+    "result": {
+      "issues_list": [],
+      "meta": {
+        "displayed_count": 0,
+        "found_count": 0,
+        "freshness_warning": "",
+        "live_fallback_count": 0,
+        "live_refill_attempt_count": 0,
+        "live_refill_limit_reached": false,
+        "live_revalidated_count": 3,
+        "live_revalidation_complete": true,
+        "matched_customer_groups": {},
+        "matched_issue_ids": [],
+        "search_complete": true,
+        "snapshot_as_of": "2026-10-01",
+        "stale_removed_count": 3
+      },
+      "source": "mantis_snapshot",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "refresh": 103
+      },
+      {
+        "refresh": 102
+      },
+      {
+        "refresh": 101
+      }
+    ],
+    "case": "revalidate/missing",
+    "result": {
+      "issues_list": [],
+      "meta": {
+        "displayed_count": 0,
+        "found_count": 0,
+        "freshness_warning": "",
+        "live_fallback_count": 0,
+        "live_refill_attempt_count": 0,
+        "live_refill_limit_reached": false,
+        "live_revalidated_count": 0,
+        "live_revalidation_complete": true,
+        "matched_customer_groups": {},
+        "matched_issue_ids": [],
+        "search_complete": true,
+        "snapshot_as_of": "2026-10-01",
+        "stale_removed_count": 3
+      },
+      "source": "mantis_snapshot",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "refresh": 103
+      },
+      {
+        "refresh": 102
+      },
+      {
+        "refresh": 101
+      }
+    ],
+    "case": "revalidate/timeout",
+    "result": {
+      "issues_list": [
+        {
+          "additional_information": "",
+          "created_at": "2026-10-13",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 103,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "assigned",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 오류",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-12",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 102,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "신한투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        },
+        {
+          "additional_information": "",
+          "created_at": "2026-10-11",
+          "date_fields": {},
+          "description": "조건검색 서버 점검 본문",
+          "effort_fields": {},
+          "handler": "김담당",
+          "history": [],
+          "id": 101,
+          "media_type": "HTS",
+          "notes": [],
+          "priority": "",
+          "priority_label": "",
+          "project": "한국투자증권",
+          "related_issue_ids": [],
+          "reporter": "이요청",
+          "resolution_fields": {},
+          "screen_number": "1001",
+          "severity": "",
+          "severity_label": "",
+          "status": "resolved",
+          "status_label": "",
+          "summary": "[1001] 조건검색 서버 점검",
+          "updated_at": "2026-10-30",
+          "work_subject": "미상"
+        }
+      ],
+      "meta": {
+        "displayed_count": 3,
+        "found_count": 3,
+        "freshness_warning": "실시간 확인이 끝나지 않아 스냅샷 참고값을 포함할 수 있습니다.",
+        "live_fallback_count": 3,
+        "live_refill_attempt_count": 0,
+        "live_refill_limit_reached": false,
+        "live_revalidated_count": 0,
+        "live_revalidation_complete": false,
+        "matched_customer_groups": {
+          "101": "한국투자증권",
+          "102": "신한투자증권",
+          "103": "한국투자증권"
+        },
+        "matched_issue_ids": [
+          101,
+          102,
+          103
+        ],
+        "search_complete": false,
+        "snapshot_as_of": "2026-10-01",
+        "stale_removed_count": 0
+      },
+      "source": "mantis_snapshot",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "refresh": 103
+      },
+      {
+        "refresh": 102
+      },
+      {
+        "refresh": 101
+      }
+    ],
+    "case": "revalidate/denied",
+    "result": {
+      "issues_list": [],
+      "meta": {
+        "displayed_count": 0,
+        "found_count": 0,
+        "freshness_warning": "",
+        "live_fallback_count": 0,
+        "live_refill_attempt_count": 0,
+        "live_refill_limit_reached": false,
+        "live_revalidated_count": 0,
+        "live_revalidation_complete": true,
+        "matched_customer_groups": {},
+        "matched_issue_ids": [],
+        "search_complete": true,
+        "snapshot_as_of": "2026-10-01",
+        "stale_removed_count": 3
+      },
+      "source": "mantis_snapshot",
+      "status": "ok"
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [
+              "HTS",
+              "H-able",
+              "Hable"
+            ],
+            "platform_key": "hts",
+            "screen_numbers": [],
+            "statuses": [
+              "open"
+            ],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_snapshot_search",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          {
+            "issues_list": [
+              {
+                "additional_information": "",
+                "created_at": "2026-10-13",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 103,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "assigned",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 오류",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-12",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 102,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "신한투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-11",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 101,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              }
+            ],
+            "meta": {
+              "displayed_count": 3,
+              "found_count": 3,
+              "matched_issue_ids": [
+                101,
+                102,
+                103
+              ],
+              "search_complete": true
+            },
+            "source": "mantis_snapshot",
+            "status": "ok"
+          },
+          {
+            "created_at": null,
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [
+              "HTS",
+              "H-able",
+              "Hable"
+            ],
+            "platform_key": "hts",
+            "screen_numbers": [],
+            "statuses": [
+              "open"
+            ],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "revalidate_mantis_snapshot_stage",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          "한국투자증권 HTS 미종료 이슈 찾아줘",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [
+              "HTS",
+              "H-able",
+              "Hable"
+            ],
+            "platform_key": "hts",
+            "screen_numbers": [],
+            "statuses": [
+              "open"
+            ],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_filter_search",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          "",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [
+              "HTS",
+              "H-able",
+              "Hable"
+            ],
+            "platform_key": "hts",
+            "screen_numbers": [],
+            "statuses": [
+              "open"
+            ],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_page_scan",
+        "kwargs": {}
+      }
+    ],
+    "case": "pipeline/한국투자증권 HTS 미종료 이슈 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [
+          "한투",
+          "한국투자증권",
+          "한투증권",
+          "117Hantu",
+          "Hantu",
+          "한국투자",
+          "117Hantu(한투증권)",
+          "Hantu(한투증권)"
+        ],
+        "customer_exact": null,
+        "customer_key": "한국투자증권",
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한국투자증권"
+          },
+          {
+            "field": "platform",
+            "operator": "equals",
+            "value": "hts"
+          },
+          {
+            "field": "status",
+            "operator": "in",
+            "value": [
+              "open"
+            ]
+          }
+        ],
+        "issue_ids": [],
+        "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+        "mantis_team_members": [
+          "김성조",
+          "이영희",
+          "정희진",
+          "강수현",
+          "우동헌",
+          "석지원",
+          "권한별",
+          "김진성",
+          "강우석",
+          "허영교",
+          "이종훈",
+          "하영훈",
+          "이상신"
+        ],
+        "mantis_team_scope": "default",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [
+          "HTS",
+          "H-able",
+          "Hable"
+        ],
+        "platform_key": "hts",
+        "screen_numbers": [],
+        "statuses": [
+          "open"
+        ],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한국투자증권"
+          },
+          {
+            "field": "platform",
+            "operator": "equals",
+            "value": "hts"
+          },
+          {
+            "field": "status",
+            "operator": "in",
+            "value": [
+              "open"
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          },
+          {
+            "applied_filters": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          },
+          {
+            "applied_filters": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "platform",
+                "operator": "equals",
+                "value": "hts"
+              },
+              {
+                "field": "status",
+                "operator": "in",
+                "value": [
+                  "open"
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한국투자증권",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한국투자증권"
+            },
+            {
+              "field": "platform",
+              "operator": "equals",
+              "value": "hts"
+            },
+            {
+              "field": "status",
+              "operator": "in",
+              "value": [
+                "open"
+              ]
+            }
+          ],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [
+            "HTS",
+            "H-able",
+            "Hable"
+          ],
+          "platform_key": "hts",
+          "screen_numbers": [],
+          "statuses": [
+            "open"
+          ],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "keyword": "",
+      "limit": 2,
+      "query": "한국투자증권 HTS 미종료 이슈 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한국투자증권",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한국투자증권"
+            },
+            {
+              "field": "platform",
+              "operator": "equals",
+              "value": "hts"
+            },
+            {
+              "field": "status",
+              "operator": "in",
+              "value": [
+                "open"
+              ]
+            }
+          ],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [
+            "HTS",
+            "H-able",
+            "Hable"
+          ],
+          "platform_key": "hts",
+          "screen_numbers": [],
+          "statuses": [
+            "open"
+          ],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "stages": [
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "customer",
+                  "operator": "equals",
+                  "value": "한국투자증권"
+                },
+                {
+                  "field": "platform",
+                  "operator": "equals",
+                  "value": "hts"
+                },
+                {
+                  "field": "status",
+                  "operator": "in",
+                  "value": [
+                    "open"
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_snapshot",
+          "status": "ok"
+        },
+        {
+          "issues_list": [],
+          "meta": {
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "customer",
+                  "operator": "equals",
+                  "value": "한국투자증권"
+                },
+                {
+                  "field": "platform",
+                  "operator": "equals",
+                  "value": "hts"
+                },
+                {
+                  "field": "status",
+                  "operator": "in",
+                  "value": [
+                    "open"
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            }
+          },
+          "source": "mantis_filter",
+          "status": "skipped"
+        },
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "customer",
+                  "operator": "equals",
+                  "value": "한국투자증권"
+                },
+                {
+                  "field": "platform",
+                  "operator": "equals",
+                  "value": "hts"
+                },
+                {
+                  "field": "status",
+                  "operator": "in",
+                  "value": [
+                    "open"
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_page_scan",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          [
+            103
+          ],
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "issue_ids": [
+              103
+            ],
+            "mantis_team_scope": "target",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_id_lookup",
+        "kwargs": {}
+      }
+    ],
+    "case": "pipeline/#103 이슈 보여줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_exact": null,
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "issue_ids": [
+          103
+        ],
+        "mantis_team_scope": "target",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "keyword": "",
+      "limit": 2,
+      "query": "#103 이슈 보여줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "stages": [
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "issue_id",
+                  "operator": "in",
+                  "value": [
+                    103
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_id_lookup",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          [
+            103
+          ],
+          {
+            "answer_query": "#103 원인을 설명해줘",
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "issue_ids": [
+              103
+            ],
+            "mantis_team_scope": "target",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_id_lookup",
+        "kwargs": {}
+      }
+    ],
+    "case": "pipeline/#103 원인을 설명해줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_exact": null,
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "issue_ids": [
+          103
+        ],
+        "mantis_team_scope": "target",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "explain",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "keyword": "",
+      "limit": 2,
+      "query": "#103 원인을 설명해줘",
+      "query_plan": {
+        "operation": "explain",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "stages": [
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_id_lookup",
+          "status": "ok"
+        }
+      ]
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          103
+        ],
+        "function": "get_chroma_document",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          [
+            103
+          ],
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "issue_ids": [
+              103
+            ],
+            "mantis_team_scope": "target",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_id_lookup",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          "조건검색 서버 오류 조건검색 서버 점검 본문",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [
+              103
+            ],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [],
+            "issue_ids": [],
+            "mantis_team_scope": "target",
+            "max_issue_id_exclusive": 103,
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "semantic_focus_terms": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_chroma_search",
+        "kwargs": {
+          "semantic": true
+        }
+      }
+    ],
+    "case": "pipeline/#103과 비슷한 이슈 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_exact": null,
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "issue_ids": [
+          103
+        ],
+        "mantis_team_scope": "target",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "issue_id",
+            "operator": "in",
+            "value": [
+              103
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          },
+          {
+            "applied_filters": [
+              {
+                "field": "issue_id",
+                "operator": "in",
+                "value": [
+                  103
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "chroma",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "keyword": "",
+      "limit": 2,
+      "query": "#103과 비슷한 이슈 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "issue_id",
+              "operator": "in",
+              "value": [
+                103
+              ]
+            }
+          ],
+          "issue_ids": [
+            103
+          ],
+          "mantis_team_scope": "target",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "stages": [
+        {
+          "issues_list": [],
+          "meta": {
+            "displayed_count": 0,
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "issue_id",
+                  "operator": "in",
+                  "value": [
+                    103
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "issue_ids": [
+              103
+            ],
+            "local_reference_count": 0,
+            "missing_ids": [],
+            "reference_issues": [
+              {
+                "additional_information": "",
+                "created_at": "2026-10-13",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 103,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "assigned",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 오류",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-12",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 102,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "신한투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-11",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 101,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              }
+            ],
+            "reference_only": true
+          },
+          "reason": "",
+          "source": "mantis_id_lookup_reference",
+          "status": "ok"
+        },
+        {
+          "documents": [],
+          "meta": {
+            "base_issue_ids": [
+              103
+            ],
+            "derived_query": "조건검색 서버 오류 조건검색 서버 점검 본문",
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "issue_id",
+                  "operator": "in",
+                  "value": [
+                    103
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "chroma",
+              "unapplied_filters": []
+            }
+          },
+          "source": "chroma_similar",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          2,
+          {
+            "created_at": {
+              "from": "2025-01-01",
+              "precision": "year",
+              "to": "2025-12-31"
+            },
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "created_at",
+                "operator": "between",
+                "value": [
+                  "2025-01-01",
+                  "2025-12-31"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_snapshot_search",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          {
+            "issues_list": [
+              {
+                "additional_information": "",
+                "created_at": "2026-10-13",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 103,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "assigned",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 오류",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-12",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 102,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "신한투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              },
+              {
+                "additional_information": "",
+                "created_at": "2026-10-11",
+                "date_fields": {},
+                "description": "조건검색 서버 점검 본문",
+                "effort_fields": {},
+                "handler": "김담당",
+                "history": [],
+                "id": 101,
+                "media_type": "HTS",
+                "notes": [],
+                "priority": "",
+                "priority_label": "",
+                "project": "한국투자증권",
+                "related_issue_ids": [],
+                "reporter": "이요청",
+                "resolution_fields": {},
+                "screen_number": "1001",
+                "severity": "",
+                "severity_label": "",
+                "status": "resolved",
+                "status_label": "",
+                "summary": "[1001] 조건검색 서버 점검",
+                "updated_at": "2026-10-30",
+                "work_subject": "미상"
+              }
+            ],
+            "meta": {
+              "displayed_count": 3,
+              "found_count": 3,
+              "matched_issue_ids": [
+                101,
+                102,
+                103
+              ],
+              "search_complete": true
+            },
+            "source": "mantis_snapshot",
+            "status": "ok"
+          },
+          {
+            "created_at": {
+              "from": "2025-01-01",
+              "precision": "year",
+              "to": "2025-12-31"
+            },
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한국투자증권",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "created_at",
+                "operator": "between",
+                "value": [
+                  "2025-01-01",
+                  "2025-12-31"
+                ]
+              }
+            ],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "revalidate_mantis_snapshot_stage",
+        "kwargs": {}
+      }
+    ],
+    "case": "pipeline/2025년 한국투자증권 이슈 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": {
+          "from": "2025-01-01",
+          "precision": "year",
+          "to": "2025-12-31"
+        },
+        "customer_aliases": [
+          "한투",
+          "한국투자증권",
+          "한투증권",
+          "117Hantu",
+          "Hantu",
+          "한국투자",
+          "117Hantu(한투증권)",
+          "Hantu(한투증권)"
+        ],
+        "customer_exact": null,
+        "customer_key": "한국투자증권",
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한국투자증권"
+          },
+          {
+            "field": "created_at",
+            "operator": "between",
+            "value": [
+              "2025-01-01",
+              "2025-12-31"
+            ]
+          }
+        ],
+        "issue_ids": [],
+        "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+        "mantis_team_members": [
+          "김성조",
+          "이영희",
+          "정희진",
+          "강수현",
+          "우동헌",
+          "석지원",
+          "권한별",
+          "김진성",
+          "강우석",
+          "허영교",
+          "이종훈",
+          "하영훈",
+          "이상신"
+        ],
+        "mantis_team_scope": "default",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한국투자증권"
+          },
+          {
+            "field": "created_at",
+            "operator": "between",
+            "value": [
+              "2025-01-01",
+              "2025-12-31"
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한국투자증권"
+              },
+              {
+                "field": "created_at",
+                "operator": "between",
+                "value": [
+                  "2025-01-01",
+                  "2025-12-31"
+                ]
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": {
+            "from": "2025-01-01",
+            "precision": "year",
+            "to": "2025-12-31"
+          },
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한국투자증권",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한국투자증권"
+            },
+            {
+              "field": "created_at",
+              "operator": "between",
+              "value": [
+                "2025-01-01",
+                "2025-12-31"
+              ]
+            }
+          ],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "keyword": "",
+      "limit": 2,
+      "query": "2025년 한국투자증권 이슈 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": {
+            "from": "2025-01-01",
+            "precision": "year",
+            "to": "2025-12-31"
+          },
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한국투자증권",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한국투자증권"
+            },
+            {
+              "field": "created_at",
+              "operator": "between",
+              "value": [
+                "2025-01-01",
+                "2025-12-31"
+              ]
+            }
+          ],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "mantis"
+      },
+      "stages": [
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "customer",
+                  "operator": "equals",
+                  "value": "한국투자증권"
+                },
+                {
+                  "field": "created_at",
+                  "operator": "between",
+                  "value": [
+                    "2025-01-01",
+                    "2025-12-31"
+                  ]
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_snapshot",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          "노션에서 한투 관련 문서 찾아줘",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [
+              "한투",
+              "한국투자증권",
+              "한투증권",
+              "117Hantu",
+              "Hantu",
+              "한국투자",
+              "117Hantu(한투증권)",
+              "Hantu(한투증권)"
+            ],
+            "customer_exact": null,
+            "customer_key": "한투",
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한투"
+              }
+            ],
+            "issue_ids": [],
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_notion_search",
+        "kwargs": {
+          "include_blocks": false,
+          "planned_terms": null
+        }
+      }
+    ],
+    "case": "pipeline/노션에서 한투 관련 문서 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [
+          "한투",
+          "한국투자증권",
+          "한투증권",
+          "117Hantu",
+          "Hantu",
+          "한국투자",
+          "117Hantu(한투증권)",
+          "Hantu(한투증권)"
+        ],
+        "customer_exact": null,
+        "customer_key": "한투",
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한투"
+          }
+        ],
+        "issue_ids": [],
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "customer",
+            "operator": "equals",
+            "value": "한투"
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "customer",
+                "operator": "equals",
+                "value": "한투"
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "notion",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한투",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한투"
+            }
+          ],
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "notion"
+      },
+      "keyword": "한투 문서",
+      "limit": 2,
+      "query": "노션에서 한투 관련 문서 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [
+            "한투",
+            "한국투자증권",
+            "한투증권",
+            "117Hantu",
+            "Hantu",
+            "한국투자",
+            "117Hantu(한투증권)",
+            "Hantu(한투증권)"
+          ],
+          "customer_exact": null,
+          "customer_key": "한투",
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "customer",
+              "operator": "equals",
+              "value": "한투"
+            }
+          ],
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "notion"
+      },
+      "stages": [
+        {
+          "meta": {
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "customer",
+                  "operator": "equals",
+                  "value": "한투"
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "notion",
+              "unapplied_filters": []
+            },
+            "search_complete": true
+          },
+          "notion_pages": [],
+          "source": "notion",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          "노션에서 본문에 '한투'가 들어간 문서 찾아줘",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [
+              {
+                "field": "keyword",
+                "operator": "contains",
+                "value": "한투"
+              }
+            ],
+            "issue_ids": [],
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_notion_search",
+        "kwargs": {
+          "include_blocks": false,
+          "planned_terms": null
+        }
+      }
+    ],
+    "case": "pipeline/노션에서 본문에 '한투'가 들어간 문서 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_exact": null,
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [
+          {
+            "field": "keyword",
+            "operator": "contains",
+            "value": "한투"
+          }
+        ],
+        "issue_ids": [],
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [
+          {
+            "field": "keyword",
+            "operator": "contains",
+            "value": "한투"
+          }
+        ],
+        "sources": [
+          {
+            "applied_filters": [
+              {
+                "field": "keyword",
+                "operator": "contains",
+                "value": "한투"
+              }
+            ],
+            "fully_applied": true,
+            "source_family": "notion",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "keyword",
+              "operator": "contains",
+              "value": "한투"
+            }
+          ],
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "notion"
+      },
+      "keyword": "한투 가 들어간 문서",
+      "limit": 2,
+      "query": "노션에서 본문에 '한투'가 들어간 문서 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [
+            {
+              "field": "keyword",
+              "operator": "contains",
+              "value": "한투"
+            }
+          ],
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "notion"
+      },
+      "stages": [
+        {
+          "meta": {
+            "filter_audit": {
+              "applied_filters": [
+                {
+                  "field": "keyword",
+                  "operator": "contains",
+                  "value": "한투"
+                }
+              ],
+              "fully_applied": true,
+              "source_family": "notion",
+              "unapplied_filters": []
+            },
+            "search_complete": true
+          },
+          "notion_pages": [],
+          "source": "notion",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [
+      {
+        "args": [
+          "멘티스와 노션에서 조건검색 찾아줘",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_notion_search",
+        "kwargs": {
+          "include_blocks": false,
+          "planned_terms": [
+            "조건검색"
+          ]
+        }
+      },
+      {
+        "args": [
+          "조건검색",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_mantis_page_scan",
+        "kwargs": {}
+      },
+      {
+        "args": [
+          "멘티스와 노션에서 조건검색 찾아줘",
+          2,
+          {
+            "created_at": null,
+            "customer_aliases": [],
+            "customer_exact": null,
+            "customer_key": null,
+            "date_fields": {},
+            "exclude_issue_ids": [],
+            "excluded_customer_aliases": [],
+            "excluded_customer_keys": [],
+            "excluded_platform_aliases": [],
+            "excluded_platform_keys": [],
+            "excluded_statuses": [],
+            "filter_clauses": [],
+            "issue_ids": [],
+            "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+            "mantis_team_members": [
+              "김성조",
+              "이영희",
+              "정희진",
+              "강수현",
+              "우동헌",
+              "석지원",
+              "권한별",
+              "김진성",
+              "강우석",
+              "허영교",
+              "이종훈",
+              "하영훈",
+              "이상신"
+            ],
+            "mantis_team_scope": "default",
+            "people": {
+              "candidates": [],
+              "name_origins": {},
+              "names": [],
+              "role": null
+            },
+            "platform_aliases": [],
+            "platform_key": null,
+            "screen_numbers": [],
+            "statuses": [],
+            "unassigned_people": false,
+            "unknown_customers": []
+          }
+        ],
+        "function": "execute_chroma_search",
+        "kwargs": {}
+      }
+    ],
+    "case": "pipeline/멘티스와 노션에서 조건검색 찾아줘",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_exact": null,
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [],
+        "issue_ids": [],
+        "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+        "mantis_team_members": [
+          "김성조",
+          "이영희",
+          "정희진",
+          "강수현",
+          "우동헌",
+          "석지원",
+          "권한별",
+          "김진성",
+          "강우석",
+          "허영교",
+          "이종훈",
+          "하영훈",
+          "이상신"
+        ],
+        "mantis_team_scope": "default",
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": [],
+        "unassigned_people": false,
+        "unknown_customers": []
+      },
+      "filter_audit": {
+        "planned_filters": [],
+        "sources": [
+          {
+            "applied_filters": [],
+            "fully_applied": true,
+            "source_family": "notion",
+            "unapplied_filters": []
+          },
+          {
+            "applied_filters": [],
+            "fully_applied": true,
+            "source_family": "mantis",
+            "unapplied_filters": []
+          },
+          {
+            "applied_filters": [],
+            "fully_applied": true,
+            "source_family": "chroma",
+            "unapplied_filters": []
+          }
+        ]
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "both"
+      },
+      "keyword": "조건검색",
+      "limit": 2,
+      "query": "멘티스와 노션에서 조건검색 찾아줘",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_exact": null,
+          "customer_key": null,
+          "date_fields": {},
+          "exclude_issue_ids": [],
+          "excluded_customer_aliases": [],
+          "excluded_customer_keys": [],
+          "excluded_platform_aliases": [],
+          "excluded_platform_keys": [],
+          "excluded_statuses": [],
+          "filter_clauses": [],
+          "issue_ids": [],
+          "mantis_team_label": "컨텐츠서비스팀 + 하영훈·이상신",
+          "mantis_team_members": [
+            "김성조",
+            "이영희",
+            "정희진",
+            "강수현",
+            "우동헌",
+            "석지원",
+            "권한별",
+            "김진성",
+            "강우석",
+            "허영교",
+            "이종훈",
+            "하영훈",
+            "이상신"
+          ],
+          "mantis_team_scope": "default",
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": [],
+          "unassigned_people": false,
+          "unknown_customers": []
+        },
+        "source": "both"
+      },
+      "stages": [
+        {
+          "meta": {
+            "filter_audit": {
+              "applied_filters": [],
+              "fully_applied": true,
+              "source_family": "notion",
+              "unapplied_filters": []
+            },
+            "search_complete": true
+          },
+          "notion_pages": [],
+          "source": "notion",
+          "status": "ok"
+        },
+        {
+          "issues_list": [
+            {
+              "additional_information": "",
+              "created_at": "2026-10-13",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 103,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "assigned",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 오류",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-12",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 102,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "신한투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            },
+            {
+              "additional_information": "",
+              "created_at": "2026-10-11",
+              "date_fields": {},
+              "description": "조건검색 서버 점검 본문",
+              "effort_fields": {},
+              "handler": "김담당",
+              "history": [],
+              "id": 101,
+              "media_type": "HTS",
+              "notes": [],
+              "priority": "",
+              "priority_label": "",
+              "project": "한국투자증권",
+              "related_issue_ids": [],
+              "reporter": "이요청",
+              "resolution_fields": {},
+              "screen_number": "1001",
+              "severity": "",
+              "severity_label": "",
+              "status": "resolved",
+              "status_label": "",
+              "summary": "[1001] 조건검색 서버 점검",
+              "updated_at": "2026-10-30",
+              "work_subject": "미상"
+            }
+          ],
+          "meta": {
+            "displayed_count": 3,
+            "filter_audit": {
+              "applied_filters": [],
+              "fully_applied": true,
+              "source_family": "mantis",
+              "unapplied_filters": []
+            },
+            "found_count": 3,
+            "matched_issue_ids": [
+              101,
+              102,
+              103
+            ],
+            "search_complete": true
+          },
+          "source": "mantis_page_scan",
+          "status": "ok"
+        },
+        {
+          "documents": [],
+          "meta": {
+            "filter_audit": {
+              "applied_filters": [],
+              "fully_applied": true,
+              "source_family": "chroma",
+              "unapplied_filters": []
+            }
+          },
+          "source": "chroma",
+          "status": "ok"
+        }
+      ],
+      "superseded_stages": []
+    }
+  },
+  {
+    "calls": [],
+    "case": "pipeline/안녕",
+    "result": {
+      "constraints": {
+        "created_at": null,
+        "customer_aliases": [],
+        "customer_key": null,
+        "date_fields": {},
+        "exclude_issue_ids": [],
+        "excluded_customer_aliases": [],
+        "excluded_customer_keys": [],
+        "excluded_platform_aliases": [],
+        "excluded_platform_keys": [],
+        "excluded_statuses": [],
+        "filter_clauses": [],
+        "issue_ids": [],
+        "people": {
+          "candidates": [],
+          "name_origins": {},
+          "names": [],
+          "role": null
+        },
+        "platform_aliases": [],
+        "platform_key": null,
+        "screen_numbers": [],
+        "statuses": []
+      },
+      "filter_audit": {
+        "planned_filters": [],
+        "sources": []
+      },
+      "intent_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_key": null,
+          "date_fields": {},
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": []
+        },
+        "source": "general"
+      },
+      "keyword": "안녕",
+      "limit": 2,
+      "query": "안녕",
+      "query_plan": {
+        "operation": "list",
+        "resolved_constraints": {
+          "created_at": null,
+          "customer_aliases": [],
+          "customer_key": null,
+          "date_fields": {},
+          "issue_ids": [],
+          "people": {
+            "candidates": [],
+            "name_origins": {},
+            "names": [],
+            "role": null
+          },
+          "platform_aliases": [],
+          "platform_key": null,
+          "screen_numbers": [],
+          "statuses": []
+        },
+        "source": "general"
+      },
+      "stages": [],
+      "superseded_stages": []
+    }
+  }
+]

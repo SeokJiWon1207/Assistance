@@ -7,7 +7,7 @@ where 필터 구성, 의미 유사도 스코어링·재랭킹, 이슈 문서 정
 """
 
 import os
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing
 from time import perf_counter
 from typing import Any, Dict, List, Optional
@@ -17,30 +17,29 @@ from fastapi import HTTPException
 
 from backend.execution import bounded_timeout, RequestStopped
 from backend.timing import measured
-from backend.intent.search_terms import keyword_term_aliases, text_matches_keyword_terms
-from backend.common import (
-    clamp_int,
-    extract_issue_id_from_text,
-    normalize_for_match,
-)
-from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR, STATUS_MATCH_ALIASES
+from backend.intent.keyword_terms import keyword_term_aliases, text_matches_keyword_terms
+from backend.utils.numbers import clamp_int
+from backend.sources.chroma_document import extract_issue_id_from_text
+from backend.utils.text import normalize_for_match
+from backend.config import CHROMA_DB_PATH, CHROMA_PERSIST_DIR
+from backend.settings.values import STATUS_MATCH_ALIASES
 from backend.sources.mantis_evidence import constraint_evidence_terms
 from backend.sources.chroma_lexical import (
     semantic_character_score as semantic_character_score,
     lexical_ranking_scope as lexical_ranking_scope,
     rank_lexical_documents,
 )
-from backend.sources.mantis import (
-    fetch_mantis_issue_by_id,
-    issue_matches_constraints,
-    issue_to_search_text,
-    normalize_issue,
-)
+from backend.sources.mantis_client import fetch_mantis_issue_by_id
+from backend.sources.mantis_matching import issue_matches_constraints
+from backend.sources.mantis_fields import issue_to_search_text, normalize_issue
 from backend.understanding import (
     build_keyword_terms,
     chroma_text_matches_constraints,
     has_constraint,
 )
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA
 
 
 def build_chroma_where(
@@ -263,7 +262,7 @@ def execute_chroma_search(
         where, params = build_chroma_where(terms, constraints, include_terms=True)
         sql = f"SELECT string_value FROM embedding_metadata WHERE {where} LIMIT 500"
         try:
-            with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
+            with closing(open_sqlite(CHROMA_DB_PATH, profile=CHROMA)) as connection, connection:
                 rows = connection.execute(sql, params).fetchall()
                 candidate_scope_complete = len(rows) < 500
         except sqlite3.Error as exc:
@@ -369,7 +368,7 @@ def get_chroma_document(issue_id: int) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
+        with closing(open_sqlite(CHROMA_DB_PATH, profile=CHROMA)) as connection, connection:
             row = connection.execute(
                 """
                 SELECT doc.string_value

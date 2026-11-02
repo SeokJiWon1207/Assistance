@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import requests
 
-from backend.config import get_notion_headers
+from backend.settings.notion import get_notion_headers
 
 
 _lock = Lock()

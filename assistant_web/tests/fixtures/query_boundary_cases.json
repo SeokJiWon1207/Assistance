@@ -1,0 +1,452 @@
+{
+  "date": "2026-10-30",
+  "cases": [
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "2024년 2월 29일"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2024-02-01",
+        "to": "2024-02-29",
+        "precision": "month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "2023년 2월 29일"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2023-02-01",
+        "to": "2023-02-28",
+        "precision": "month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "2026년 13월"
+      ],
+      "kwargs": {},
+      "result": null
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "2026년 12월 31일부터 2027년 1월 2일까지"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-12-31",
+        "to": "2027-01-02",
+        "precision": "day_range"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "지난달 이슈"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-09-01",
+        "to": "2026-09-30",
+        "precision": "last_month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "2026년 10월부터 2월까지"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-10-01",
+        "to": "2026-02-28",
+        "precision": "month_range"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_created_at_range",
+      "args": [
+        "등록일 무관한 최근 문서"
+      ],
+      "kwargs": {},
+      "result": null
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "이번 달"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-10-01",
+        "to": "2026-10-31",
+        "precision": "this_month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "지난달"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-09-01",
+        "to": "2026-09-30",
+        "precision": "last_month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "지난주"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-10-19",
+        "to": "2026-10-25",
+        "precision": "last_week"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "어제"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-10-29",
+        "to": "2026-10-29",
+        "precision": "day"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "최근 3개월"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-08-01",
+        "to": "2026-10-30",
+        "precision": "recent_months"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_created_at_range",
+      "args": [
+        "30일 넘은 미종료 이슈"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "",
+        "to": "2026-09-30",
+        "precision": "older_than"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "infer_operation",
+      "args": [
+        "노션 건 수정본 찾아줘"
+      ],
+      "kwargs": {},
+      "result": "search"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "infer_operation",
+      "args": [
+        "몇 건인지 알려줘"
+      ],
+      "kwargs": {},
+      "result": "count"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "infer_operation",
+      "args": [
+        "담당자별 공수 합계"
+      ],
+      "kwargs": {},
+      "result": "aggregate"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "infer_operation",
+      "args": [
+        "#123456 관련 사례 찾아줘"
+      ],
+      "kwargs": {},
+      "result": "search"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "infer_operation",
+      "args": [
+        "#123456 내용 알려줘"
+      ],
+      "kwargs": {},
+      "result": "get"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_group_by",
+      "args": [
+        "고객사별 월별 추이"
+      ],
+      "kwargs": {},
+      "result": "customer"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_group_by",
+      "args": [
+        "담당자별로 보여줘"
+      ],
+      "kwargs": {},
+      "result": "owner"
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_group_by",
+      "args": [
+        "담당자 김지은의 문서"
+      ],
+      "kwargs": {},
+      "result": null
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_yearless_temporal_month_range",
+      "args": [
+        "2월 마감",
+        "due_at"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2026-02-01",
+        "to": "2026-02-28",
+        "precision": "month"
+      }
+    },
+    {
+      "module": "backend.query_planning",
+      "name": "extract_relative_year_range",
+      "args": [
+        "작년"
+      ],
+      "kwargs": {},
+      "result": {
+        "from": "2025-01-01",
+        "to": "2025-12-31",
+        "precision": "year"
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 '2024년 2월 완료 보고서' 찾아줘"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "2024년 2월 완료 보고서",
+        "status": "",
+        "excluded_statuses": [],
+        "owner": "",
+        "unassigned_owner": false,
+        "status_typo": null,
+        "native_status_constraint": false,
+        "group_by": null
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 담당자 미지정 문서"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "",
+        "status": "",
+        "excluded_statuses": [],
+        "owner": "",
+        "unassigned_owner": true,
+        "status_typo": null,
+        "native_status_constraint": false,
+        "group_by": null
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 김지은이 담당하는 대기 상태 문서"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "",
+        "status": "대기",
+        "excluded_statuses": [],
+        "owner": "하는",
+        "unassigned_owner": false,
+        "status_typo": null,
+        "native_status_constraint": true,
+        "group_by": null
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 진행중 상태는 빼고 문서"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "",
+        "status": "",
+        "excluded_statuses": [
+          "진행중"
+        ],
+        "owner": "",
+        "unassigned_owner": false,
+        "status_typo": null,
+        "native_status_constraint": true,
+        "group_by": null
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 2월 마감 문서"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "",
+        "status": "",
+        "excluded_statuses": [],
+        "owner": "",
+        "unassigned_owner": false,
+        "status_typo": null,
+        "native_status_constraint": false,
+        "group_by": null,
+        "date_filter": {
+          "field": "due_at",
+          "operator": "between",
+          "value": [
+            "2026-02-01",
+            "2026-02-28"
+          ]
+        }
+      }
+    },
+    {
+      "module": "backend.notion.search",
+      "name": "extract_notion_constraints",
+      "args": [
+        "노션 본문에 '대기 김지은' 들어간 문서"
+      ],
+      "kwargs": {},
+      "result": {
+        "database_label": "",
+        "exact_title": "",
+        "status": "",
+        "excluded_statuses": [],
+        "owner": "",
+        "unassigned_owner": false,
+        "status_typo": null,
+        "native_status_constraint": false,
+        "group_by": null
+      }
+    },
+    {
+      "module": "backend.team_scope",
+      "name": "has_mantis_team_scope",
+      "args": [
+        "우리 팀 미종료 이슈"
+      ],
+      "kwargs": {},
+      "result": true
+    },
+    {
+      "module": "backend.team_scope",
+      "name": "has_mantis_team_scope",
+      "args": [
+        "노션 우리 팀 문서"
+      ],
+      "kwargs": {},
+      "result": false
+    },
+    {
+      "module": "backend.team_scope",
+      "name": "has_mantis_team_scope",
+      "args": [
+        "프로젝트가 CS 팀인 이슈"
+      ],
+      "kwargs": {},
+      "result": false
+    },
+    {
+      "module": "backend.team_scope",
+      "name": "remove_team_scope_phrase",
+      "args": [
+        "우리 팀 이슈"
+      ],
+      "kwargs": {},
+      "result": "  이슈"
+    },
+    {
+      "module": "backend.team_scope",
+      "name": "remove_team_scope_phrase",
+      "args": [
+        "노션 '우리 팀 가이드' 문서"
+      ],
+      "kwargs": {},
+      "result": "노션 '우리 팀 가이드' 문서"
+    },
+    {
+      "module": "backend.intent.search_terms",
+      "name": "wants_similar_issue_search",
+      "args": [
+        "#123456 유사 사례"
+      ],
+      "kwargs": {},
+      "result": true
+    },
+    {
+      "module": "backend.intent.search_terms",
+      "name": "wants_similar_issue_search",
+      "args": [
+        "이슈 찾아줘"
+      ],
+      "kwargs": {},
+      "result": false
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+from backend.notion import transport
 import unittest
 from unittest.mock import patch
 from backend.intent import unified
@@ -7,6 +8,68 @@ from test_unified_planner import proposal
 USER = {'uid': 'repair', 'mantisUsername': '석지원'}
 
 class AccuracyRepairTests(unittest.TestCase):
+    def test_find_and_tell_preserves_at_sign_in_exact_notion_title(self):
+        p = self.plan("노션에서 '@허영교' 항목을 찾아서 알려줘")
+        self.assertEqual(p.get('operation'), 'search')
+        self.assertEqual(p['filter_clauses'], [
+            {'field': 'title', 'operator': 'equals', 'value': '@허영교'}])
+
+    def test_standalone_platform_exclusion_is_not_a_context_reset(self):
+        q = '아이엠증권 이슈에서 HTS는 빼고 최근 세 개만 보여줘'
+        p = self.plan(q)
+        self.assertEqual(p.get('operation'), 'search')
+        self.assertIn({'field': 'platform', 'operator': 'not_equals', 'value': 'hts'}, p['filter_clauses'])
+        self.assertEqual(p['resolved_constraints']['customer_key'], '하이투자')
+        self.assertEqual(p['resolved_constraints']['mantis_team_scope'], 'team')
+        self.assertEqual(p['limit'], 3)
+        self.assertEqual(p['sort'], {'field': 'created_at', 'direction': 'desc'})
+        self.assertTrue(validate_execution_contract(q, p)['valid'])
+
+    def test_period_open_list_has_one_status_and_registration_date(self):
+        from datetime import date
+
+        class FixedDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 10, 30)
+
+        with patch('backend.query.dates.date', FixedDate), \
+                patch('backend.intent.validation_rules.date', FixedDate):
+            p = self.plan('이번 주 신한투자증권 미종료 이슈를 표로 모두 보여줘')
+        self.assertEqual(p.get('operation'), 'search')
+        c = p['resolved_constraints']
+        self.assertEqual(c['customer_key'], '신한')
+        self.assertEqual(c['statuses'], ['open'])
+        self.assertEqual(c['created_at']['from'], '2026-10-26')
+        self.assertEqual(c['created_at']['to'], '2026-11-01')
+        self.assertEqual([f for f in p['filter_clauses'] if f['field'] == 'status'], [
+            {'field': 'status', 'operator': 'in', 'value': ['open']}])
+
+    def test_standalone_literals_do_not_discard_additional_conditions(self):
+        for q in ('아이엠증권 이슈에서 HTS는 빼고 최근 세 개만 보여줘 담당자는 나만',
+                  '이번 주 신한투자증권 미종료 이슈를 표로 모두 보여줘 종료된 것도 포함해서',
+                  "노션에서 '@허영교' 항목을 찾아서 알려줘 본문에 오류가 있는 것만"):
+            self.assertEqual(self.plan(q).get('operation'), 'clarify')
+
+    def test_unindexed_exact_title_times_out_partially_instead_of_aborting_request(self):
+        import test_notion_accuracy_regressions as fixtures
+        from backend.notion import search
+        from backend.execution import ExecutionBudget, execution_scope, CURRENT_BUDGET, checkpoint
+        from backend.notion.query_cache import clear_notion_query_cache
+        clear_notion_query_cache()
+        self.addCleanup(clear_notion_query_cache)
+        fixtures.NotionAccuracyRegressionTests.search_fixture(self, [], {})
+        def slow(*args, **kwargs):
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+        with execution_scope(ExecutionBudget.create()), \
+             patch.object(search, 'indexed_exact_title_database_ids', return_value=[]), \
+             patch.object(transport, 'notion_post_json', side_effect=slow):
+            result = search.execute_notion_search("노션에서 '존재하지 않는 항목' 찾아줘", include_blocks=False)
+        self.assertEqual(result['notion_pages'], [])
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertIn('live_search_time_limit', result['meta']['incomplete_reasons'])
+
     def previous(self):
         return validate_plan('교보증권에서 종료된 이슈 최근 두 개', proposal(
             operation='search', scope='team', status={'mode':'include','values':['closed'],'evidence':'종료된 이슈'},
@@ -97,7 +160,7 @@ class AccuracyRepairTests(unittest.TestCase):
         with execution_scope(ExecutionBudget.create()), \
              patch.object(search,'resolve_notion_read_scope',return_value=({'db':'db','slow':'slow'},True)), \
              patch.object(search,'indexed_exact_title_database_ids',return_value=['db']), \
-             patch.object(search,'notion_post_json',side_effect=send):
+             patch.object(transport, 'notion_post_json',side_effect=send):
             result=search.execute_notion_search("노션에서 '운영 문서' 찾아줘",include_blocks=False)
         self.assertEqual([p['id'] for p in result['notion_pages']],['verified'])
         self.assertFalse(result['meta']['search_complete'])

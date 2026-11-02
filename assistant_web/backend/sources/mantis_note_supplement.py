@@ -7,9 +7,11 @@ from typing import Any
 from fastapi import HTTPException
 import requests
 
-from backend.evaluation.explanation_quotes import safe_excerpts
+from backend.evidence.excerpts import safe_excerpts
 from backend.execution import RequestStopped, checkpoint
-from backend.sources.mantis import fetch_mantis_issue_by_id, get_issue_custom_field_value, issue_matches_constraints
+from backend.sources.mantis_client import fetch_mantis_issue_by_id
+from backend.sources.mantis_fields import get_issue_custom_field_value
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.sources.mantis_chunks import search_tokens, split_issue
 
 

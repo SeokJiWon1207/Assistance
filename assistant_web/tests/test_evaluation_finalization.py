@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from backend.audit import CHAT_STREAM_CONTEXT
-from backend.evaluation import finalization
+from backend.evaluation import finalization, verification as verification_module
 from backend.schemas import ChatRequest
 
 
@@ -65,7 +65,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
 
         def verify(*args):
             self.assertFalse(any(event["type"] == "delta" for event in emitted))
-            return finalization.build_verification_report(*args)
+            return verification_module.build_verification_report(*args)
 
         dependencies = {"build_verification_report": verify, "generate_follow_up_questions": followups,
                         "generate_basic_grounded_baseline": baseline}
@@ -73,9 +73,10 @@ class EvaluationFinalizationTests(unittest.TestCase):
             database_path = Path(directory) / "audit.sqlite3"
             with patch.object(finalization, "AUDIT_DB_PATH", database_path), \
                     patch.object(finalization, "init_audit_db", side_effect=lambda: create_validation_log_table(database_path)), \
-                    patch.object(finalization, "_compat_dependency", side_effect=lambda name, default: dependencies.get(name, default)):
+                    patch.multiple(finalization, **dependencies):
                 result = finalization.finalize_chat_response(chat_request(abTest=True), "이슈 보여줘", response)
             with closing(sqlite3.connect(database_path)) as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM validation_logs").fetchone()[0], 1)
                 payload = json.loads(connection.execute("SELECT payload FROM validation_logs").fetchone()[0])
         self.assertEqual(result["raw"]["mode"], "verification_blocked")
         self.assertIn("issue_ids", result["raw"]["blockedChecks"])
@@ -167,11 +168,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
                     "init_audit_db",
                     side_effect=lambda: create_validation_log_table(database_path),
                 ),
-                patch.object(
-                    finalization,
-                    "_compat_dependency",
-                    side_effect=lambda name, default: dependencies.get(name, default),
-                ),
+                patch.multiple(finalization, **dependencies),
             ):
                 finalized = finalization.finalize_chat_response(
                     chat_request(),
@@ -180,6 +177,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
                     user_uid="user-1",
                 )
             with closing(sqlite3.connect(database_path)) as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM validation_logs").fetchone()[0], 1)
                 row = connection.execute(
                     "SELECT model_id, mode, payload, user_uid, failed_checks_json FROM validation_logs"
                 ).fetchone()
@@ -238,17 +236,14 @@ class EvaluationFinalizationTests(unittest.TestCase):
                     "init_audit_db",
                     side_effect=lambda: create_validation_log_table(database_path),
                 ),
-                patch.object(
-                    finalization,
-                    "_compat_dependency",
-                    side_effect=lambda name, default: dependencies.get(name, default),
-                ),
+                patch.multiple(finalization, **dependencies),
             ):
                 finalized = finalization.finalize_chat_response(request, "질문", response)
 
         candidate.assert_called_once_with(request, "질문", retrieval, "candidate-model")
         baseline.assert_not_called()
         comparison.assert_called_once()
+        self.assertEqual(dependencies["build_verification_report"].call_count, 2)
         self.assertEqual(finalized["abTest"]["variantB"]["content"], "후보 답변")
         self.assertEqual(finalized["abTest"]["evaluation"], {"winner": "A"})
 
@@ -287,11 +282,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
                     "init_audit_db",
                     side_effect=lambda: create_validation_log_table(database_path),
                 ),
-                patch.object(
-                    finalization,
-                    "_compat_dependency",
-                    side_effect=lambda name, default: dependencies.get(name, default),
-                ),
+                patch.multiple(finalization, **dependencies),
             ):
                 finalized = finalization.finalize_chat_response(chat_request(abTest=True), "질문", response)
 
@@ -330,8 +321,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
                             patch.object(finalization, 'AUDIT_DB_PATH', database_path),
                             patch.object(finalization, 'init_audit_db',
                                          side_effect=lambda path=database_path: create_validation_log_table(path)),
-                            patch.object(finalization, '_compat_dependency',
-                                         side_effect=lambda name, default, deps=dependencies: deps.get(name, default)),
+                            patch.multiple(finalization, **dependencies),
                         ):
                             result = finalization.finalize_chat_response(
                                 chat_request(abTest=True, abModelId=ab_model_id), '이슈 원인을 설명해줘', response)

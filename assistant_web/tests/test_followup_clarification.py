@@ -1,5 +1,8 @@
 """확인 질문의 미확정 표현과 확정된 검색 조건을 구분하는 회귀."""
 
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
@@ -54,11 +57,11 @@ class FollowUpClarificationTests(unittest.TestCase):
             ],
         )
         with (
-            patch.object(chat, "get_private_model", return_value={"id": "fixture-model", "status": "active"}),
-            patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-            patch.object(chat, "load_audit_query_plan", return_value=plan),
-            patch.object(chat, "resolve_reference_from_context", return_value=None),
-            patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
+            patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture-model", "status": "active"}),
+            patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+            patch.object(chat_prepare, "load_audit_query_plan", return_value=plan),
+            patch.object(chat_prepare, "resolve_reference_from_context", return_value=None),
+            patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
         ):
             return chat.prepare_chat_pipeline(request, question, {"uid": "fixture-user"})
 
@@ -148,7 +151,7 @@ class FollowUpClarificationTests(unittest.TestCase):
                 self.assertNotIn("손봐야", context.retrieval_text)
                 with (
                     patch("backend.reports.work_queries.build_work_query_report") as report,
-                    patch.object(chat, "resolve_status_intent") as status,
+                    patch.object(chat_planning, "resolve_status_intent") as status,
                 ):
                     response = chat.plan_chat_query(
                         ChatRequest(modelId="fixture-model", messages=[ChatMessage(role="user", content=question)]),

@@ -9,30 +9,8 @@ from backend.intent.constants import (
     ISSUE_LIST_INTENT_KEYWORDS as ISSUE_LIST_INTENT_KEYWORDS,
     NOTION_QUERY_STOPWORDS as NOTION_QUERY_STOPWORDS,
 )
-from backend.intent.constraints import (
-    SourceAuthority as SourceAuthority,
-    build_keyword_terms as build_keyword_terms,
-    build_similar_issue_search_text as build_similar_issue_search_text,
-    expand_compound_search_term as expand_compound_search_term,
-    extract_json_object as extract_json_object,
-    extract_limit as extract_limit,
-    extract_query_constraints as extract_query_constraints,
-    extract_requested_limit as extract_requested_limit,
-    has_constraint as has_constraint,
-    has_notion_retrieval_signal as has_notion_retrieval_signal,
-    has_targeting_constraint as has_targeting_constraint,
-    legacy_filters_to_clauses as legacy_filters_to_clauses,
-    merge_query_plan_constraints as merge_query_plan_constraints,
-    plan_search_intent_with_model as plan_search_intent_with_model,
-    resolve_result_limit as resolve_result_limit,
-    rule_based_search_intent as rule_based_search_intent,
-    should_run_notion_search as should_run_notion_search,
-    should_run_retrieval as should_run_retrieval,
-    split_project_search_terms as split_project_search_terms,
-    term_is_covered_by_constraints as term_is_covered_by_constraints,
-    wants_all_results as wants_all_results,
-    wants_similar_issue_search as wants_similar_issue_search,
-)
+from backend.intent.constraints import SourceAuthority as SourceAuthority, build_keyword_terms as build_keyword_terms, build_similar_issue_search_text as build_similar_issue_search_text, expand_compound_search_term as expand_compound_search_term, extract_limit as extract_limit, extract_query_constraints as extract_query_constraints, extract_requested_limit as extract_requested_limit, has_constraint as has_constraint, has_notion_retrieval_signal as has_notion_retrieval_signal, has_targeting_constraint as has_targeting_constraint, legacy_filters_to_clauses as legacy_filters_to_clauses, merge_query_plan_constraints as merge_query_plan_constraints, plan_search_intent_with_model as plan_search_intent_with_model, resolve_result_limit as resolve_result_limit, rule_based_search_intent as rule_based_search_intent, should_run_notion_search as should_run_notion_search, should_run_retrieval as should_run_retrieval, split_project_search_terms as split_project_search_terms, term_is_covered_by_constraints as term_is_covered_by_constraints, wants_all_results as wants_all_results, wants_similar_issue_search as wants_similar_issue_search
+from backend.intent.json_payload import extract_json_object as extract_json_object
 from backend.intent.context import (
     build_contextual_retrieval_text as build_contextual_retrieval_text,
     get_latest_user_text as get_latest_user_text,
@@ -48,22 +26,8 @@ from backend.intent.dates import (
     extract_date_field_constraints as extract_date_field_constraints,
     remove_date_field_phrases as remove_date_field_phrases,
 )
-from backend.intent.entities import (
-    expression_is_excluded as expression_is_excluded,
-    extract_excluded_issue_ids as extract_excluded_issue_ids,
-    extract_explicit_keyword_filter_clauses as extract_explicit_keyword_filter_clauses,
-    extract_issue_ids as extract_issue_ids,
-    extract_mantis_keyword as extract_mantis_keyword,
-    extract_people_constraints as extract_people_constraints,
-    extract_screen_numbers as extract_screen_numbers,
-    extract_status_constraints as extract_status_constraints,
-    extract_unknown_customers as extract_unknown_customers,
-    get_customer_alias_groups as get_customer_alias_groups,
-    infer_person_role as infer_person_role,
-    is_simple_greeting as is_simple_greeting,
-    load_known_people as load_known_people,
-    load_project_alias_groups as load_project_alias_groups,
-)
+from backend.intent.entities import expression_is_excluded as expression_is_excluded, extract_excluded_issue_ids as extract_excluded_issue_ids, extract_explicit_keyword_filter_clauses as extract_explicit_keyword_filter_clauses, extract_issue_ids as extract_issue_ids, extract_mantis_keyword as extract_mantis_keyword, extract_people_constraints as extract_people_constraints, extract_screen_numbers as extract_screen_numbers, extract_status_constraints as extract_status_constraints, extract_unknown_customers as extract_unknown_customers, infer_person_role as infer_person_role, is_simple_greeting as is_simple_greeting
+from backend.sources.people_catalog import get_customer_alias_groups as get_customer_alias_groups, load_known_people as load_known_people, load_project_alias_groups as load_project_alias_groups
 from backend.intent.matching import (
     chroma_text_matches_constraints as chroma_text_matches_constraints,
     chroma_text_matches_created_at as chroma_text_matches_created_at,

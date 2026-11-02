@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException
 
-from backend.config import CUSTOMER_ALIASES, CUSTOMER_DIRECTORY, CUSTOMER_PROJECT_DISPLAY_NAMES
+from backend.settings.catalogs import get_customer_aliases, get_customer_directory, get_customer_project_display_names
 from backend.display import customer_name
 from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.team_templates import (
@@ -58,7 +58,7 @@ def list_team_templates() -> Dict[str, Any]:
 @router.get("/api/customer-names")
 def list_customer_names() -> Dict[str, Any]:
     """표시 전용 이름표. 원본 프로젝트·검색 별칭은 변경하지 않는다."""
-    exact = {alias: customer_name(alias) for key, aliases in CUSTOMER_ALIASES.items()
+    exact = {alias: customer_name(alias) for key, aliases in get_customer_aliases().items()
              for alias in [key, *aliases]}
     # 이름표 이전부터 별칭으로만 등록됐던 프로젝트도 같은 표시 함수를 쓴다.
     projects = {}
@@ -67,8 +67,8 @@ def list_customer_names() -> Dict[str, Any]:
         if code:
             project = re.sub(r"_Project$", "", code[1], flags=re.IGNORECASE)
             projects[project] = name
-    projects.update({project: item["name"] for item in CUSTOMER_DIRECTORY.values()
+    projects.update({project: item["name"] for item in get_customer_directory().values()
                      for project in item.get("projects", [])})
-    projects.update(CUSTOMER_PROJECT_DISPLAY_NAMES)
-    exact.update(CUSTOMER_PROJECT_DISPLAY_NAMES)
+    projects.update(get_customer_project_display_names())
+    exact.update(get_customer_project_display_names())
     return {"exact": exact, "projects": projects}

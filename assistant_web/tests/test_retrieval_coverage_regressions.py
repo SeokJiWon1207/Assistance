@@ -1,5 +1,6 @@
 """전체 원본 재조회가 끝나면 오래된 인덱스를 최종 근거에 섞지 않는다."""
 
+from backend.services import retrieval_pipeline
 import unittest
 from unittest.mock import patch
 
@@ -19,12 +20,12 @@ class SupersededSnapshotTests(unittest.TestCase):
             "meta": {"search_complete": complete, "matched_issue_ids": latest_ids,
                      "scanned_issue_ids": latest_ids, "found_count": len(latest_ids)}}
         with (
-            patch.object(retrieval, "execute_mantis_snapshot_search", return_value=old),
-            patch.object(retrieval, "revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage),
-            patch.object(retrieval, "get_mantis_snapshot_freshness", return_value="2026-08-19"),
-            patch.object(retrieval, "execute_mantis_filter_search", return_value={
+            patch.object(retrieval_pipeline, "execute_mantis_snapshot_search", return_value=old),
+            patch.object(retrieval_pipeline, "revalidate_mantis_snapshot_stage", side_effect=lambda stage, _: stage),
+            patch.object(retrieval_pipeline, "get_mantis_snapshot_freshness", return_value="2026-08-19"),
+            patch.object(retrieval_pipeline, "execute_mantis_filter_search", return_value={
                 "source": "mantis_filter", "status": "skipped", "meta": {}}),
-            patch.object(retrieval, "execute_mantis_page_scan", return_value=fresh),
+            patch.object(retrieval_pipeline, "execute_mantis_page_scan", return_value=fresh),
         ):
             return retrieval.run_retrieval_pipeline("NH증권 최근 이슈 2개 보여줘", 2,
                                                     {"mantis": True}, {"source": "mantis"})

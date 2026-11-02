@@ -408,7 +408,16 @@ function statCardMarkup({ label, value, amount, suffix = "", decimals = 0 }) {
   return `<strong${numeric}>${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span>`;
 }
 
+function effortAsOfMarkup(chart) {
+  const asOf = chart.asOf && new Date(chart.asOf);
+  const time = asOf && Number.isFinite(asOf.getTime())
+    ? asOf.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", hour12: false }) : "";
+  return time || chart.freshnessWarning
+    ? `<p class="effort-answer-basis">${time ? `${escapeHtml(chart.asOfLabel || "집계 기준 시각")}: ${escapeHtml(time)} (한국 시간)` : ""}${chart.freshnessWarning ? ` · ${escapeHtml(chart.freshnessWarning)}` : ""}</p>` : "";
+}
+
 export function renderEffortChart(chart, { complete = true, originalAnswer = null } = {}) {
+  complete = chart.complete ?? complete;
   const wrap = document.createElement("div");
   wrap.className = "effort-chart effort-answer";
   const animated = shouldAnimateChart(chart);
@@ -427,17 +436,17 @@ export function renderEffortChart(chart, { complete = true, originalAnswer = nul
     ${!complete ? '<p class="bklit-note">확인한 범위의 공수입니다. 전체 합계는 미확정입니다.</p>' : ""}
     <div class="effort-answer-sparkline">${sparkline}</div>
     <div class="effort-answer-types" aria-label="유형별 공수">${(chart.byType || []).map(item => `<div><span>${escapeHtml(item.label)}</span><strong>${value(item.amount)}</strong></div>`).join("")}</div>
-    <p class="effort-answer-basis">Mantis 고객사전달일 · 공수 커스텀 필드 합산 · 전달일 없는 이슈 제외</p>`;
+    <p class="effort-answer-basis">Mantis 고객사전달일 · 공수 커스텀 필드 합산 · 전달일 없는 이슈 제외</p>
+    ${effortAsOfMarkup(chart)}`;
 
   if (chart.topIssues?.length) {
     const section = document.createElement("details");
     section.className = "summary-section effort-answer-issues";
-    section.innerHTML = `<summary>공수가 큰 이슈 보기</summary>`;
-    const items = chart.topIssues.map(({ id, summary, amount }) => ({
-      label: id ? `#${id} ${summary}` : summary,
-      amount,
-    }));
-    section.appendChild(renderBarChartSVG(items, { animated: false, complete }));
+    const maximum = Math.max(0, ...chart.topIssues.map(issue => Number(issue.amount) || 0));
+    section.innerHTML = `<summary>공수가 큰 이슈 보기</summary><ol class="effort-issue-list">${chart.topIssues.map(({ id, summary, amount }) => {
+      const width = maximum > 0 ? Math.max(0, (Number(amount) || 0) / maximum * 100) : 0;
+      return `<li><div class="effort-issue-heading"><span class="effort-issue-title">${escapeHtml(id ? `#${id} ${summary}` : summary)}</span><strong>${escapeHtml(formatChartValue(amount, {decimals: 2, unit: " 공수"}))}</strong></div><div class="effort-issue-track" aria-hidden="true"><span style="width:${width}%"></span></div></li>`;
+    }).join("")}</ol>`;
     wrap.appendChild(section);
   }
 
@@ -454,11 +463,17 @@ export function renderEffortChart(chart, { complete = true, originalAnswer = nul
 }
 
 export function renderEffortRankingChart(ranking, { complete = true } = {}) {
+  complete = ranking.complete ?? complete;
   const wrap = document.createElement("div");
   wrap.className = "effort-chart";
   const basis = document.createElement("p");
   basis.textContent = "고객사전달일 기준 · 전달일 없는 이슈 제외";
   wrap.appendChild(basis);
+  if (ranking.asOf || ranking.freshnessWarning) {
+    const asOf = document.createElement("div");
+    asOf.innerHTML = effortAsOfMarkup(ranking);
+    wrap.appendChild(asOf);
+  }
   const animated = shouldAnimateChart(ranking);
 
   const statCards = document.createElement("div");

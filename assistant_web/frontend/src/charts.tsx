@@ -1,4 +1,5 @@
 import { MetricPie, MonthlyTrend } from './report-charts';
+import { CustomerRanking, AgeDonut, MemberHeatmap } from './distribution-charts';
 import { formatChartValue } from '../../backend/static/modules/chart_models.js';
 import { curveLinear } from 'd3-shape';
 import React, { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -29,7 +30,8 @@ type Row = Record<string, unknown>;
 type Point = { date: string; count: number };
 type Series = { key: string; label: string; color: string };
 export type Spec = {
-  kind: 'bar' | 'sparkline' | 'trend' | 'cohort' | 'calendar' | 'pie' | 'monthly'; title: string; complete: boolean;
+  kind: 'bar' | 'sparkline' | 'trend' | 'cohort' | 'calendar' | 'pie' | 'monthly' | 'customer-ranking' | 'age-donut' | 'member-heatmap'; title: string; complete: boolean;
+  unknown?: number; otherCount?: number; otherCustomers?: number;
   rows?: Row[]; series?: Series[]; orientation?: 'horizontal' | 'vertical';
   grouped?: boolean; showValues?: boolean; centerLabel?: string; emptyMessage?: string;
   action?: string; selected?: string; points?: Point[]; summary?: Record<string, number>;
@@ -163,8 +165,8 @@ function Cohort({ spec }: { spec: Spec }) {
   const reduced=useReducedMotion();
   if(!total) return <p className="bklit-empty">{spec.complete?'이 기간에 등록된 이슈가 없습니다.':'확인한 범위에 신규 이슈가 없습니다. 전체 결과는 미확정입니다.'}</p>;
   // 불완전한 표본에 전체 비율처럼 보이는 도넛을 그리지 않는다.
-  return <div className="bklit-cohort">
-    {spec.complete ? <PieChart data={data} size={190} innerRadius={65} padAngle={0.025} cornerRadius={3} hoveredIndex={hover} onHoverChange={setHover}>
+  return <div className="bklit-cohort bklit-dashboard-cohort">
+    {spec.complete ? <PieChart data={data} size={260} innerRadius={88} padAngle={0.025} cornerRadius={3} hoveredIndex={hover} onHoverChange={setHover}>
       {data.map((row,index)=><PieSlice key={row.label} index={index} animate={!reduced} hoverEffect={reduced?'none':'translate'} showGlow={false}/>)}
       <PieCenter defaultLabel="기간 내 신규" suffix="건"/>
     </PieChart> : <p className="bklit-note">일부 조회 결과여서 비율은 표시하지 않습니다.</p>}
@@ -202,12 +204,12 @@ function Calendar({ spec }: { spec: Spec }) {
 class Boundary extends Component<{host: HTMLElement; children: ReactNode},{failed:boolean}> {
   state={failed:false};
   static getDerivedStateFromError(){return {failed:true};}
-  componentDidCatch(error: unknown){this.props.host.dataset.chartError='true';delete this.props.host.dataset.ready;console.warn('차트 표시 실패, 기본 목록 유지',error);}
+  componentDidCatch(error: unknown){this.props.host.dataset.chartError='true';delete this.props.host.dataset.ready;this.props.host.querySelector('[data-bklit-values]')?.setAttribute('open','');console.warn('차트 표시 실패, 기본 목록 유지',error);}
   render(){return this.state.failed ? null : this.props.children;}
 }
 function Chart({spec,host}:{spec:Spec;host:HTMLElement}) {
-  useEffect(()=>{host.dataset.ready='true';host.querySelector('[data-bklit-values]')?.removeAttribute('open');return ()=>{delete host.dataset.ready;};},[host]);
-  return <MotionConfig reducedMotion="user">{spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
+  useEffect(()=>{delete host.dataset.chartError;host.dataset.ready='true';host.querySelector('[data-bklit-values]')?.removeAttribute('open');return ()=>{delete host.dataset.ready;};},[host]);
+  return <MotionConfig reducedMotion="user">{spec.kind==='customer-ranking'?<CustomerRanking spec={spec}/>:spec.kind==='age-donut'?<AgeDonut spec={spec}/>:spec.kind==='member-heatmap'?<MemberHeatmap spec={spec}/>:spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
 }
 export function mountChart(host: HTMLElement, spec: Spec) {
   const root=createRoot(host.querySelector('[data-bklit-mount]')!);

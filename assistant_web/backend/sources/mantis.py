@@ -1,210 +1,38 @@
-"""Mantis 이슈 소스 어댑터 — API 호출·정규화·포맷·키워드 스코어링(Layer 3).
+"""Mantis 검색 실행과 저장본·실시간 조회 선택을 조정한다.
 
-Mantis REST API 조회, 이슈 정규화, 커스텀 날짜/열거형 포맷, 필터 로딩,
-스냅샷 조회 한도 파싱, 키워드 매칭 점수 계산을 담당한다.
-
-제약조건 매칭(issue_matches_constraints), Mantis 검색 실행(execute_mantis_*),
-스냅샷 신선도 확인까지 이 어댑터가 담당한다.
+필드 정규화는 mantis_fields, 조건 판정은 mantis_matching, HTTP는
+mantis_client, 저장본 순회는 mantis_snapshot_query가 소유한다.
+기존 함수 경로는 이 모듈의 명시적 재내보내기로 유지한다.
 """
 
 import json
 import os
 import re
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing
 from datetime import date, datetime
 from functools import lru_cache
-from threading import BoundedSemaphore
 from typing import Any, Dict, List, Optional
 
 import requests
 from fastapi import HTTPException
 
-from backend.effort_fields import issue_effort_people
-from backend.execution import bounded_timeout, interruptible_sleep, execution_slot
-from backend.display import customer_name
-from backend.common import (
-    format_mantis_custom_date,
-    normalize_chroma_issue_document,
-    normalize_for_match,
-    text_matches_any_alias,
-    text_matches_customer_aliases,
-)
+from backend.sources.chroma_document import normalize_chroma_issue_document
 from backend.config import (
     CHROMA_DB_PATH,
     CONFIG_DIR,
-    MANTIS_DATE_CUSTOM_FIELDS,
-    get_mantis_headers,
     get_mantis_settings,
 )
-from backend.query_planning import plan_created_at_matches
-from backend.intent.matching import extract_reporter_names
-from backend.intent.search_terms import text_matches_keyword_terms
-from backend.query_filters import matches_source_filters, screen_filter_values
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.intent.keyword_terms import text_matches_keyword_terms
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.sources.mantis_collection import clear_recent_cache, fetch_recent_cached, collection_metadata
 from backend.sources.mantis_store import read_complete_store as read_complete_store
 from backend.sources.mantis_store import read_store_metadata, stream_complete_store, read_recent_store_rows
-from backend.sources.mantis_evidence import constraint_evidence_terms, matching_issue_evidence
+from backend.sources.mantis_evidence import constraint_evidence_terms
 from backend.timing import measured
-from backend.understanding import (
-    chroma_text_matches_constraints,
-    field_matches_screen_number,
-    has_constraint,
-    text_matches_people,
-    text_matches_status,
-    title_has_screen_number,
-)
-
-
-def get_issue_custom_field_value(issue: Dict[str, Any], field_name: str) -> str:
-    for custom_field in issue.get("custom_fields", []):
-        if custom_field.get("field", {}).get("name") == field_name:
-            return str(custom_field.get("value", "")).strip()
-    return ""
-
-
-def issue_matches_date_fields(issue: Dict[str, Any], date_fields: Dict[str, str]) -> bool:
-    if not date_fields:
-        return True
-    return all(
-        format_mantis_custom_date(get_issue_custom_field_value(issue, field_name)) == expected_date
-        for field_name, expected_date in date_fields.items()
-    )
-
-
-def issue_matches_created_at(issue: Dict[str, Any], created_at: Optional[Dict[str, str]]) -> bool:
-    return plan_created_at_matches(str(issue.get("created_at") or ""), created_at)
-
-
-def issue_matches_platform(
-    issue: Dict[str, Any], platform_aliases: List[str], *, search_text: Optional[str] = None,
-) -> bool:
-    """플랫폼 조건은 원문의 '매체구분' 필드로만 판정한다.
-
-    제목·본문의 비교 언급으로 매체 미지정 이슈의 플랫폼을 추측하지 않는다.
-    매체 미지정 이슈도 플랫폼 제한이 없는 검색에서는 계속 조회할 수 있다.
-    """
-    if not platform_aliases:
-        return True
-    media_type = get_issue_custom_field_value(issue, "매체구분")
-    return text_matches_any_alias(media_type, platform_aliases)
-
-
-def mantis_date_search_variants(value: Any) -> str:
-    formatted = format_mantis_custom_date(value)
-    raw_value = str(value or "").strip()
-    variants = [raw_value, formatted]
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", formatted):
-        year, month, day = formatted.split("-")
-        variants.extend(
-            [
-                f"{year}{month}{day}",
-                f"{year}년 {int(month)}월 {int(day)}일",
-                f"{year}년 {int(month)}월",
-            ]
-        )
-    return " ".join(dict.fromkeys(variant for variant in variants if variant))
-
-
-def mantis_enum_label(value: Any, default: str = "") -> str:
-    if isinstance(value, dict):
-        return str(value.get("name") or value.get("label") or default)
-    return str(value or default)
-
-
-def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] = None, evidence_query: Optional[str] = None) -> Dict[str, Any]:
-    media_type = "기타/미상"
-    screen_number = "미상"
-    work_subject = "미상"
-    effort_fields: Dict[str, str] = {}
-    date_fields: Dict[str, str] = {}
-    resolution_fields: Dict[str, str] = {}
-    for custom_field in issue.get("custom_fields", []):
-        field_name = custom_field.get("field", {}).get("name")
-        field_value = custom_field.get("value", "")
-        if field_name == "매체구분":
-            media_type = field_value or media_type
-        elif field_name == "화면번호":
-            screen_number = field_value or screen_number
-        elif field_name == "작업주체":
-            work_subject = field_value or work_subject
-        elif field_name in MANTIS_DATE_CUSTOM_FIELDS:
-            date_fields[str(field_name)] = format_mantis_custom_date(field_value)
-        elif field_name and "공수" in field_name:
-            effort_fields[str(field_name)] = str(field_value)
-        elif field_name in {"사유 및 원인", "조치 및 개선"}:
-            resolution_fields[str(field_name)] = str(field_value or "")
-    if screen_number == "미상":
-        title_screen = re.match(r"^\s*\[\s*(\d{3,5})\s*\]", str(issue.get("summary") or ""))
-        if title_screen:
-            screen_number = title_screen.group(1)
-
-    notes = [
-        {
-            "id": note.get("id"),
-            "reporter": (note.get("reporter") or {}).get("real_name", "미상"),
-            "created_at": str(note.get("created_at", ""))[:19],
-            "updated_at": str(note.get("updated_at", ""))[:19],
-            "text": str(note.get("text", ""))[:2400],
-        }
-        for note in (issue.get("notes") or [])[-12:]
-        if note.get("text")
-    ]
-    history = [
-        {
-            "created_at": str(item.get("created_at", ""))[:19],
-            "user": (item.get("user") or {}).get("real_name", "미상"),
-            "field": (item.get("field") or {}).get("label") or (item.get("field") or {}).get("name") or "",
-            "message": str(item.get("message") or ""),
-            "change": str(item.get("change") or ""),
-        }
-        for item in (issue.get("history") or [])[-40:]
-    ]
-
-    from backend.sources.mantis_answer_evidence import build_answer_evidence
-
-    related_issue_ids = []
-    relationships = issue.get("relationships")
-    for relationship in relationships if isinstance(relationships, list) else []:
-        if not isinstance(relationship, dict):
-            continue
-        kind, related = relationship.get("type"), relationship.get("issue")
-        if not isinstance(kind, dict) or kind.get("name") != "related-to" or not isinstance(related, dict):
-            continue
-        related_id = related.get("id")
-        if (type(related_id) is int and related_id > 0 and related_id != issue.get("id")
-                and related_id not in related_issue_ids):
-            related_issue_ids.append(related_id)
-
-    return {
-        **({"answer_evidence": build_answer_evidence(issue, evidence_query)} if evidence_query else {}),
-        "id": issue.get("id"),
-        "related_issue_ids": related_issue_ids,
-        "project": (issue.get("project") or {}).get("name", "미상"),
-        "summary": issue.get("summary", "제목 없음"),
-        "status": mantis_enum_label(issue.get("status"), "상태 미상"),
-        "status_label": (issue.get("status") or {}).get("label", "") if isinstance(issue.get("status"), dict) else "",
-        "priority": mantis_enum_label(issue.get("priority"), ""),
-        "severity": mantis_enum_label(issue.get("severity"), ""),
-        "priority_label": (issue.get("priority") or {}).get("label", "") if isinstance(issue.get("priority"), dict) else "",
-        "severity_label": (issue.get("severity") or {}).get("label", "") if isinstance(issue.get("severity"), dict) else "",
-        "media_type": media_type,
-        "screen_number": screen_number,
-        "work_subject": work_subject,
-        "effort_fields": effort_fields,
-        "date_fields": date_fields,
-        "resolution_fields": resolution_fields,
-        "reporter": (issue.get("reporter") or {}).get("real_name", "미상"),
-        "handler": (issue.get("handler") or {}).get("real_name", "담당자 미지정"),
-        "created_at": str(issue.get("created_at", ""))[:10],
-        "updated_at": str(issue.get("updated_at", ""))[:10],
-        "description": str(issue.get("description", ""))[:2400],
-        "additional_information": str(issue.get("additional_information") or "")[:2400],
-        "notes": notes,
-        "history": history,
-        **({"matching_evidence": matching_issue_evidence(issue, search_terms)} if search_terms else {}),
-    }
+from backend.intent.matching import chroma_text_matches_constraints
+from backend.intent.matching import text_matches_status as text_matches_status
+from backend.intent.constraints import has_constraint
 
 
 def load_mantis_filters() -> List[Dict[str, Any]]:
@@ -233,90 +61,9 @@ def find_matching_mantis_filter(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-_mantis_request_slots = BoundedSemaphore(6)
-
 # 정상 페이지 요청은 6초 안에 끝난다. 드물게 응답 없이 멈추는 요청을 45초까지
 # 기다리면 첫 질문이 50초를 넘고, 캐시 TTL도 지나 결과가 저장되지 않는다.
 MANTIS_PAGE_SCAN_TIMEOUT_SECONDS = 12
-
-
-def fetch_mantis_issues(
-    params: Dict[str, Any],
-    timeout: int = 30,
-    attempts: int = 3,
-) -> List[Dict[str, Any]]:
-    settings = get_mantis_settings()
-    safe_attempts = max(1, min(int(attempts), 3))
-    for attempt in range(1, safe_attempts + 1):
-        try:
-            with execution_slot(_mantis_request_slots):
-                response = requests.get(
-                    settings["url"],
-                    headers=get_mantis_headers(),
-                    params=params,
-                    timeout=bounded_timeout(max(3, min(int(timeout), 60))),
-                )
-        except (requests.ConnectionError, requests.Timeout):
-            if attempt == safe_attempts:
-                raise
-            interruptible_sleep(2 ** (attempt - 1))
-            continue
-
-        retryable_status = response.status_code == 429 or response.status_code >= 500
-        if retryable_status and attempt < safe_attempts:
-            interruptible_sleep(2 ** (attempt - 1))
-            continue
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
-            )
-        return response.json().get("issues", [])
-    return []
-
-
-def fetch_mantis_issue_by_id(issue_id: int) -> Optional[Dict[str, Any]]:
-    if not issue_id:
-        return None
-    from backend.sources.mantis_refresh import fetch_with_refresh_budget
-    return fetch_with_refresh_budget(issue_id, lambda timeout, attempts:
-                                     _fetch_mantis_issue_by_id(issue_id, timeout, attempts))
-
-
-def _fetch_mantis_issue_by_id(issue_id: int, timeout: float, attempts: int) -> Optional[Dict[str, Any]]:
-
-    settings = get_mantis_settings()
-    issue_url = f"{settings['url'].rstrip('/')}/{issue_id}"
-    for attempt in range(1, attempts + 1):
-        try:
-            response = requests.get(
-                issue_url,
-                headers=get_mantis_headers(),
-                timeout=bounded_timeout(timeout),
-            )
-        except (requests.ConnectionError, requests.Timeout):
-            if attempt == attempts:
-                raise
-            interruptible_sleep(2 ** (attempt - 1))
-            continue
-
-        retryable_status = response.status_code == 429 or response.status_code >= 500
-        if retryable_status and attempt < attempts:
-            interruptible_sleep(2 ** (attempt - 1))
-            continue
-        if retryable_status:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Mantis API failed: {response.status_code} {response.text[:300]}",
-            )
-        if response.status_code == 404:
-            return None
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Mantis 이슈 접근이 거절되었습니다.")
-
-        issues = response.json().get("issues", [])
-        return issues[0] if issues else None
-    return None
 
 
 def fetch_mantis_recent_issues(
@@ -380,211 +127,6 @@ def extract_snapshot_limit(text: str, default: int = 800) -> int:
     if not match:
         return default
     return max(1, min(int(match.group(1)), 3000))
-
-
-def issue_created_year_month(issue: Dict[str, Any]) -> str:
-    created_at = str(issue.get("created_at") or "")[:10]
-    if re.match(r"\d{4}-\d{2}-\d{2}", created_at):
-        return created_at[:7]
-    return ""
-
-
-def issue_to_search_text(issue: Dict[str, Any]) -> str:
-    custom_text_parts = []
-    for field in issue.get("custom_fields", []):
-        field_name = str(field.get("field", {}).get("name", ""))
-        field_value = field.get("value", "")
-        if field_name in MANTIS_DATE_CUSTOM_FIELDS:
-            custom_text_parts.append(f"{field_name} {mantis_date_search_variants(field_value)}")
-        else:
-            custom_text_parts.append(f"{field_name} {field_value}")
-    custom_text = " ".join(custom_text_parts)
-    notes_text = " ".join(str(note.get("text") or "") for note in (issue.get("notes") or []))
-    return " ".join(
-        [
-            str((issue.get("project") or {}).get("name", "")),
-            str(issue.get("summary", "")),
-            str(issue.get("description", "")),
-            str(issue.get("additional_information") or ""),
-            str(issue.get("steps_to_reproduce", "")),
-            str((issue.get("reporter") or {}).get("real_name", "")),
-            str((issue.get("handler") or {}).get("real_name", "")),
-            custom_text,
-            notes_text,
-        ]
-    )
-
-
-def mantis_keyword_match_score(issue: Dict[str, Any], keywords: List[str]) -> int:
-    if not keywords:
-        return 0
-    title = normalize_for_match(str(issue.get("summary", "")))
-    project = normalize_for_match(str((issue.get("project") or {}).get("name", "")))
-    custom_fields = normalize_for_match(
-        " ".join(
-            f"{field.get('field', {}).get('name', '')} {field.get('value', '')}"
-            for field in issue.get("custom_fields", [])
-        )
-    )
-    body = normalize_for_match(
-        " ".join(
-            [
-                str(issue.get("description", "")),
-                str(issue.get("steps_to_reproduce", "")),
-                " ".join(str(note.get("text") or "") for note in (issue.get("notes") or [])),
-            ]
-        )
-    )
-    score = 0
-    for keyword in keywords:
-        normalized = normalize_for_match(keyword)
-        if normalized in title:
-            score += 40
-        elif normalized in custom_fields:
-            score += 30
-        elif normalized in project:
-            score += 20
-        elif normalized in body:
-            score += 10
-    return score
-
-
-def mantis_issue_effort_date(issue: Dict[str, Any]) -> str:
-    from backend.effort_fields import issue_delivery_date
-    return issue_delivery_date(issue)
-
-
-def issue_matches_screen_numbers(issue: Dict[str, Any], screen_numbers: List[str]) -> bool:
-    if not screen_numbers:
-        return True
-    screen_field = get_issue_custom_field_value(issue, "화면번호")
-    title = str(issue.get("summary", ""))
-    return any(
-        field_matches_screen_number(screen_field, screen_number)
-        or title_has_screen_number(title, screen_number)
-        for screen_number in screen_numbers
-    )
-
-
-def issue_matches_constraints(
-    issue: Dict[str, Any], constraints: Dict[str, Any], *, search_text: Optional[str] = None,
-) -> bool:
-    from backend.team_scope import matches_team_constraint
-
-    if not matches_team_constraint(str((issue.get("handler") or {}).get("real_name") or ""), constraints):
-        return False
-    if issue.get("id") in constraints.get("exclude_issue_ids", []):
-        return False
-    max_issue_id = constraints.get("max_issue_id_exclusive")
-    if max_issue_id and int(issue.get("id") or 0) >= int(max_issue_id):
-        return False
-    if constraints.get("customer_exact") and normalize_for_match(
-        str((issue.get("project") or {}).get("name", ""))
-    ) != normalize_for_match(constraints["customer_exact"]):
-        return False
-    if constraints.get("customer_aliases") and not text_matches_customer_aliases(
-        str((issue.get("project") or {}).get("name", "")),
-        constraints["customer_aliases"],
-    ):
-        return False
-    project_name = str((issue.get("project") or {}).get("name", ""))
-    if constraints.get("excluded_customer_aliases") and text_matches_customer_aliases(
-        project_name,
-        constraints["excluded_customer_aliases"],
-    ):
-        return False
-    if constraints.get("platform_aliases") and not issue_matches_platform(
-        issue,
-        constraints["platform_aliases"],
-        search_text=search_text,
-    ):
-        return False
-    if constraints.get("excluded_platform_aliases") and issue_matches_platform(
-        issue,
-        constraints["excluded_platform_aliases"],
-        search_text=search_text,
-    ):
-        return False
-    combined_text = search_text if search_text is not None else issue_to_search_text(issue)
-    status_text = str((issue.get("status") or {}).get("name") or (issue.get("status") or {}).get("label", ""))
-    if not text_matches_status(
-        status_text,
-        constraints.get("statuses", []),
-    ):
-        return False
-    if constraints.get("excluded_statuses") and text_matches_status(
-        status_text,
-        constraints["excluded_statuses"],
-    ):
-        return False
-    if constraints.get("issue_ids") and issue.get("id") not in constraints["issue_ids"]:
-        return False
-    if not issue_matches_screen_numbers(issue, constraints.get("screen_numbers", [])):
-        return False
-    if not issue_matches_date_fields(issue, constraints.get("date_fields", {})):
-        return False
-    if not issue_matches_created_at(issue, constraints.get("created_at")):
-        return False
-    handler_text = str((issue.get("handler") or {}).get("real_name", ""))
-    if constraints.get("unassigned_people") and handler_text.strip() not in {
-        "",
-        "담당자 미지정",
-        "미지정",
-        "미상",
-    }:
-        return False
-    reporter_text = str((issue.get("reporter") or {}).get("real_name", ""))
-    people = constraints.get("people", {})
-    if people.get("role") == "effort_person":
-        if not set(map(normalize_for_match, people.get("names", []))) & set(map(normalize_for_match, issue_effort_people(issue))):
-            return False
-    elif not text_matches_people(combined_text, people, handler_text, reporter_text):
-        return False
-    return matches_source_filters("mantis", {
-        "customer": project_name,
-        "platform": get_issue_custom_field_value(issue, "매체구분"),
-        "status": status_text,
-        "issue_id": str(issue.get("id") or ""),
-        "screen_number": screen_filter_values(get_issue_custom_field_value(issue, "화면번호"), str(issue.get("summary") or "")),
-        "created_at": issue.get("created_at", ""),
-        "delivered_at": mantis_issue_effort_date(issue),
-        "effort_person": issue_effort_people(issue),
-        "title": str(issue.get("summary", "")), "keyword": combined_text,
-        "owner": handler_text, "reporter": extract_reporter_names(combined_text, reporter_text),
-        "registered_reporter": reporter_text,
-    }, constraints.get("filter_clauses") or [])
-
-
-@measured("filter")
-def select_mantis_rows(rows, constraints, *, matcher=None):
-    """목록·집계·보고서가 공유하는 원본 조건 검사."""
-    match = matcher or issue_matches_constraints
-    return [row for row in rows if match(row, constraints or {})]
-
-
-def build_sources_from_issue_rows(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [
-        {
-            "type": issue.get("type", "mantis"),
-            "source": issue.get("source", ""),
-            "issue_id": issue.get("id"),
-            "title": issue.get("summary", "제목 없음"),
-            "project": issue.get("project", "미상"),
-            "customer_name": customer_name(issue.get("project")),
-            "status": issue.get("status", "상태 미상"),
-            "status_label": issue.get("status_label") or (issue.get("detail") or {}).get("status_label", ""),
-            "priority": issue.get("priority", ""),
-            "priority_label": issue.get("priority_label") or (issue.get("detail") or {}).get("priority_label", ""),
-            "severity": issue.get("severity", ""),
-            "handler": issue.get("handler", "담당자 미지정"),
-            "created_at": issue.get("created_at", ""),
-            "delivered_at": mantis_issue_effort_date(issue),
-            "effort_person": issue_effort_people(issue),
-            "preview": issue.get("preview") or issue.get("description", ""),
-            "detail": issue.get("detail") or issue,
-        }
-        for issue in issues
-    ]
 
 
 def collect_mantis_live_ids_in_range(
@@ -742,7 +284,7 @@ def _snapshot_freshness_for_mtime(_mtime: float, _metadata_mtime: float) -> str:
     # 미래 날짜는 데이터 기준일이 될 수 없으므로 오늘 이후 값은 무시한다.
     today = date.today().isoformat()
     try:
-        with closing(sqlite3.connect(CHROMA_DB_PATH)) as connection, connection:
+        with closing(open_sqlite(CHROMA_DB_PATH, profile=CHROMA)) as connection, connection:
             row = connection.execute(
                 """
                 SELECT MAX(candidate)
@@ -1108,3 +650,34 @@ def execute_mantis_page_scan(
         "issues_list": [normalize_issue(issue, search_terms=keywords + constraint_evidence_terms(constraints or {}))
                         for issue in target_batch],
     }
+
+
+# 기존 import 경로는 실제 소유자의 동일 객체를 재내보낸다.
+from backend.sources.mantis_fields import (
+    get_issue_custom_field_value as get_issue_custom_field_value,
+    mantis_date_search_variants as mantis_date_search_variants,
+    mantis_enum_label as mantis_enum_label,
+    normalize_issue as normalize_issue,
+    issue_created_year_month as issue_created_year_month,
+    issue_to_search_text as issue_to_search_text,
+    mantis_issue_effort_date as mantis_issue_effort_date,
+    build_sources_from_issue_rows as build_sources_from_issue_rows,
+)
+from backend.sources.mantis_matching import (
+    issue_matches_date_fields as issue_matches_date_fields,
+    issue_matches_created_at as issue_matches_created_at,
+    issue_matches_platform as issue_matches_platform,
+    mantis_keyword_match_score as mantis_keyword_match_score,
+    issue_matches_screen_numbers as issue_matches_screen_numbers,
+    issue_matches_constraints as issue_matches_constraints,
+    select_mantis_rows as select_mantis_rows,
+)
+from backend.sources.mantis_client import (
+    _mantis_request_slots as _mantis_request_slots,
+    fetch_mantis_issues as fetch_mantis_issues,
+    fetch_mantis_issue_by_id as fetch_mantis_issue_by_id,
+    _fetch_mantis_issue_by_id as _fetch_mantis_issue_by_id,
+)
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA

@@ -1,3 +1,5 @@
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 import unittest
 from datetime import date
 from unittest.mock import patch
@@ -120,7 +122,7 @@ class IssueRelevanceTests(unittest.TestCase):
         q = "NH"
         initial = self.report("아이폰에서 죽는다는 건 어떻게 됐어?", [row(1, "iOS 크래시"), row(2, "iOS 크래시", customer="112KBStar(KB증권)")])
         req = ChatRequest(modelId="test", contextAuditId="a"*32, messages=[ChatMessage(role="user", content="아이폰에서 죽는다는 건 어떻게 됐어?"), ChatMessage(role="assistant", content=initial["content"]), ChatMessage(role="user", content=q)])
-        with patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}), patch.object(chat, "get_model_api_key", return_value="test"), patch.object(chat, "load_audit_query_plan", return_value=initial["retrieval"]["query_plan"]), patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unnecessary rewrite")):
+        with patch.object(chat_prepare, "get_private_model", return_value={"id": "test", "status": "active"}), patch.object(chat_llm, "get_model_api_key", return_value="test"), patch.object(chat_prepare, "load_audit_query_plan", return_value=initial["retrieval"]["query_plan"]), patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unnecessary rewrite")):
             c = chat.prepare_chat_pipeline(req, q, {"uid": "user", "displayName": "석지원"}).query_constraints
         self.assertEqual(c["customer_key"], "NH")
         self.assertTrue(c["work_lookup"]["crash"])

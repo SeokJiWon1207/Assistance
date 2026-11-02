@@ -1,7 +1,7 @@
 """Liveness/readiness checks and the static application entry point."""
 
 import os
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict
@@ -14,7 +14,10 @@ from backend.config import AUDIT_DB_PATH, CHROMA_DB_PATH, MANTIS_INDEX_DB_PATH, 
 from backend.llm import model_circuit_status
 from backend.sources.mantis import get_mantis_snapshot_freshness_status
 from backend.startup_validation import get_model_transport_security_status
-from backend.workspace import workspace_db_path
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import HEALTH_READ
+from backend.storage.workspace_schema import workspace_db_path
 
 
 router = APIRouter()
@@ -34,7 +37,7 @@ def _sqlite_check(
     if not path.exists():
         return {"status": "error", "reason": "missing"}
     try:
-        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as connection:
+        with closing(open_sqlite(f"file:{path}?mode=ro", profile=HEALTH_READ)) as connection:
             quick_check = (
                 str(connection.execute("PRAGMA quick_check").fetchone()[0])
                 if verify_integrity

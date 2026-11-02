@@ -4,7 +4,7 @@ import re
 from functools import lru_cache
 from typing import Any, Dict, List
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 
 
 @lru_cache(maxsize=2048)

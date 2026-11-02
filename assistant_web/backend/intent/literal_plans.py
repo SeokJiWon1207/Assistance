@@ -5,10 +5,11 @@
 """
 import re
 
-from backend.config import MANTIS_STATUS_NAMES
-from backend.common import normalize_for_match
+from backend.settings.values import MANTIS_STATUS_NAMES
+from backend.customer_identity import customer_alias_owner
+from backend.utils.text import normalize_for_match
 
-_REQUEST = r'(?:알려\s*줘|보여\s*줘|찾아\s*줘|찾아\s*주세요|알려\s*주세요|보여\s*주세요)[.!?]?'
+_REQUEST = r'(?:찾아서\s*알려\s*(?:줘|주세요)|알려\s*줘|보여\s*줘|찾아\s*줘|찾아\s*주세요|알려\s*주세요|보여\s*주세요)[.!?]?'
 _LATEST = rf'(?:가장\s*)?최근\s*이슈\s*(?:하나|한\s*개|1개)만?\s*(?:자세히\s*)?{_REQUEST}'
 _TITLE = re.compile(
     rf'''(?:노션|Notion)에서\s*(?:상태가\s*(?P<status>[^'"“”]+?)인\s*)?'''
@@ -40,6 +41,9 @@ def literal_plan(question, previous):
             filters.append({'field': 'status', 'operator': 'not_equals' if match['excluded'] else 'equals',
                             'value': value.strip(), 'evidence': value.strip()})
         return _proposal('notion', False, filters, {'mode': 'unspecified', 'values': [], 'evidence': ''})
+    standalone = _standalone_mantis(text)
+    if standalone is not None:
+        return standalone
     if previous.get('source') != 'mantis' or previous.get('operation') != 'search' or not previous.get('resolved_constraints'):
         return None
     status = {'mode': 'inherit', 'values': [], 'evidence': ''}
@@ -55,6 +59,43 @@ def literal_plan(question, previous):
         status = {'mode': 'include', 'values': values, 'evidence': correction['status']}
     plan = _proposal('mantis', True, [], status)
     plan.update(limit=1, sort={'field': 'created_at', 'direction': 'desc'})
+    return plan
+
+
+def _standalone_mantis(text):
+    """고객사가 명시된 완결 문장만 처리하여 제외를 문맥 해제로 오인하지 않는다."""
+    from backend.intent.keyword_terms import extract_requested_limit
+    from backend.query.dates import extract_created_at_range
+    excluded = re.fullmatch(
+        rf'(?P<customer>.+?)\s*이슈에서\s*(?P<platform>HTS|MTS|WEB)(?:는|은)\s*빼고\s*'
+        rf'최근\s*(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|\d+)\s*개만\s*{_REQUEST}', text, re.I)
+    period = re.fullmatch(
+        rf'(?P<period>이번\s*주|지난\s*주|이번\s*달|지난\s*달)\s*(?P<customer>.+?)\s*'
+        rf'미종료\s*이슈(?:를)?\s*(?:표로\s*)?모두\s*{_REQUEST}', text)
+    match = excluded or period
+    if match is None:
+        return None
+    customer = customer_alias_owner(match['customer'])
+    if not customer:
+        return None
+    filters = [{'field': 'customer', 'operator': 'equals', 'value': customer, 'evidence': match['customer']}]
+    status = {'mode': 'unspecified', 'values': [], 'evidence': ''}
+    if excluded:
+        filters.append({'field': 'platform', 'operator': 'not_equals',
+                        'value': excluded['platform'].lower(), 'evidence': excluded['platform']})
+        limit = extract_requested_limit(text)
+        if not limit:
+            return None
+        plan = _proposal('mantis', False, filters, status)
+        plan.update(scope='team', limit=limit, sort={'field': 'created_at', 'direction': 'desc'})
+        return plan
+    created = extract_created_at_range(match['period'])
+    if not created:
+        return None
+    filters.append({'field': 'created_at', 'operator': 'between',
+                    'value': [created['from'], created['to']], 'evidence': match['period']})
+    plan = _proposal('mantis', False, filters, {'mode': 'open', 'values': [], 'evidence': '미종료'})
+    plan['scope'] = 'team'
     return plan
 
 

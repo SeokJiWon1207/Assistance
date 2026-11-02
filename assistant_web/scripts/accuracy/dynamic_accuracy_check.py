@@ -33,14 +33,17 @@ import requests
 
 from backend.environment import load_dotenv
 from backend.evaluation.verification import ungrounded_constraint_labels
-from backend.intent.search_terms import extract_requested_limit
-from backend.notion.search import extract_notion_constraints
+from backend.intent.keyword_terms import extract_requested_limit
+from backend.intent.notion_constraints import extract_notion_constraints
 
 load_dotenv(APP_DIR / ".env")
 
-from backend.config import CUSTOMER_ALIASES, NOTION_API_BASE, discover_notion_database_ids, parse_notion_database_ids
-from backend.config import CUSTOMER_DIRECTORY
-from backend.common import customer_alias_owner, display_mantis_status_label
+from backend.settings.catalogs import get_customer_aliases
+from backend.settings.notion import NOTION_API_BASE, parse_notion_database_ids
+from backend.notion.discovery import discover_notion_database_ids
+from backend.settings.catalogs import get_customer_directory
+from backend.customer_identity import customer_alias_owner
+from backend.mantis_status import display_mantis_status_label
 from backend.display import customer_name
 from backend.mantis_status import canonical_mantis_status
 from backend.llm import get_model_registry
@@ -49,7 +52,7 @@ from backend.services.chat_service import chat_service
 from backend.sources import mantis
 from backend.sources.mantis_store import read_complete_store, read_store_metadata, refresh_in_progress, sync_complete_store
 from backend.understanding import extract_query_constraints
-from backend.team_scope import TEAM_MEMBERS
+from backend.domain.team import TEAM_MEMBERS
 
 
 REPORT_DIR = APP_DIR / "runtime" / "accuracy_reports"
@@ -103,13 +106,13 @@ def human_project_name(value: str) -> str:
 def oracle_project_group(value: str) -> str:
     """원본 프로젝트 코드와 조사된 이름표만 사용하고 검색기 매처는 사용하지 않는다."""
     code = re.sub(r"_Project$", "", value.split("(", 1)[0].strip(), flags=re.IGNORECASE)
-    return next((key for key, entry in CUSTOMER_DIRECTORY.items() if code in entry.get("projects", [])), value)
+    return next((key for key, entry in get_customer_directory().items() if code in entry.get("projects", [])), value)
 
 
 def customer_answer_aliases(project: str) -> List[str]:
     """원본 프로젝트에 대응하는 표시 이름도 정답으로 인정한다."""
     aliases = [human_project_name(project), project]
-    matching_groups = [values for values in CUSTOMER_ALIASES.values()
+    matching_groups = [values for values in get_customer_aliases().values()
                        if any(normalize(value) in normalize(project) for value in values)]
     # 겹치는 짧은 별칭보다 프로젝트를 가장 구체적으로 식별한 그룹을 사용한다.
     if matching_groups:
@@ -1474,7 +1477,22 @@ def prepare_mantis_store() -> Dict[str, Any]:
     return metadata
 
 
+def prepare_notion_catalog() -> Dict[str, Any]:
+    """서버 사전 로딩과 같은 목록 준비를 독립 CLI에서도 수행한다.
+
+    만료 목록을 완전한 것으로 간주하거나 API 정답 대신 사용하지 않는다.
+    준비 실패는 모델 정확도 실패와 구별해 실행 오류로 남긴다.
+    """
+    from backend.notion.snapshot_maintenance import refresh_catalog_cache
+    metadata = refresh_catalog_cache()
+    if metadata.get('status') not in {'fresh', 'refreshed'}:
+        raise RuntimeError(f"Notion catalog preparation {metadata.get('status', 'unavailable')}")
+    return metadata
+
+
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--questions", type=int, default=10, choices=range(1, 11))
     parser.add_argument("--follow-up-scenarios", type=int, default=4, choices=range(0, 5))
@@ -1489,11 +1507,17 @@ def main() -> int:
     os.environ["NOTION_FETCH_PAGE_BLOCKS"] = "false"
     errors: List[str] = []
     store_metadata: Dict[str, Any] = {}
+    notion_catalog: Dict[str, Any] = {}
     emit_progress(args.progress, {"type": "status", "message": "Mantis 전체 검색 원본의 최신 상태를 확인하고 있습니다"})
     try:
         store_metadata = prepare_mantis_store()
     except Exception as exc:
         errors.append(f"Mantis complete store preparation failed: {type(exc).__name__}")
+    emit_progress(args.progress, {"type": "status", "message": "Notion 제목·속성 전체 목록의 최신 상태를 확인하고 있습니다"})
+    try:
+        notion_catalog = prepare_notion_catalog()
+    except Exception as exc:
+        errors.append(f"Notion catalog preparation failed: {type(exc).__name__}: {str(exc)[:300]}")
     emit_progress(args.progress, {"type": "status", "message": "Mantis·Notion 실시간 스냅샷을 수집하고 있습니다"})
     try:
         mantis_issues = fetch_mantis_snapshot(progress=args.progress)
@@ -1623,6 +1647,7 @@ def main() -> int:
             "notion_body_accuracy_evaluated": False,
         },
         "mantis_store": store_metadata,
+        "notion_catalog": notion_catalog,
         "summary": {
             **totals,
             "status": run_status,

@@ -126,9 +126,9 @@ class TeamChatScopeTest(unittest.TestCase):
 
     def test_resolved_reference_keeps_team_constraint(self):
         request = ChatRequest(modelId="test", messages=messages("우리 팀 미종료 이슈 보여줘", "그중 첫 번째 자세히"))
-        with patch("backend.services.chat_service.get_private_model", return_value={"status": "active"}), \
-             patch("backend.services.chat_service.get_model_api_key", return_value="test"), \
-             patch("backend.services.chat_service.resolve_reference_from_context", return_value="0012345 자세히"):
+        with patch("backend.services.chat.prepare.get_private_model", return_value={"status": "active"}), \
+             patch("backend.llm.get_model_api_key", return_value="test"), \
+             patch("backend.services.chat.prepare.resolve_reference_from_context", return_value="0012345 자세히"):
             context = prepare_chat_pipeline(request, request.messages[-1].content, {"mantisUsername": "석지원"})
         self.assertEqual(context.query_constraints["mantis_team_members"], list(TEAM_MEMBERS))
         self.assertEqual(context.query_constraints["issue_ids"], [12345])
@@ -138,8 +138,8 @@ class TeamChatScopeTest(unittest.TestCase):
         request = ChatRequest(modelId="test", messages=messages(
             "노션 DB03_작업 문서 보여줘", "우리 팀 미종료 이슈 보여줘", "그중 하영훈 담당만 보여줘",
         ))
-        with patch("backend.services.chat_service.get_private_model", return_value={"status": "active"}), \
-             patch("backend.services.chat_service.get_model_api_key", return_value="test"):
+        with patch("backend.services.chat.prepare.get_private_model", return_value={"status": "active"}), \
+             patch("backend.llm.get_model_api_key", return_value="test"):
             context = prepare_chat_pipeline(request, request.messages[-1].content, None)
         self.assertEqual(context.query_constraints["mantis_team_members"], list(TEAM_MEMBERS))
         self.assertNotIn("노션", context.retrieval_text)

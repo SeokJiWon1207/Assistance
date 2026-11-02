@@ -6,7 +6,7 @@ from functools import partial
 from time import perf_counter
 from typing import Any, Callable
 
-from backend.retrieval import build_model_retrieval_context
+from backend.evidence.model_context import build_model_retrieval_context
 from backend.evaluation.explanation_quotes import safe_excerpts
 from backend.evaluation.explanation_relations import validate_related_selection
 from backend.schemas import ChatRequest
@@ -348,7 +348,7 @@ def generate_grounded_explanation(
     response: dict[str, Any] = {}
     errors: list[str] = []
     retry_reasons: list[list[str]] = []
-    model_calls = {'selection': 0, 'review': 0}
+    model_calls = {'selection': 0, 'review': 0, 'summary_repair': 0}
     select = measured('explanation_selection_model')(generate)
     review_model = measured('explanation_review_model')(generate)
     supplement_meta: dict[str, Any] | None = None
@@ -518,6 +518,14 @@ def generate_grounded_explanation(
                     previous_questions=(context.intent_plan or {}).get('previous_explanation_questions'))
                 from backend.evaluation.explanation_summary import summary_items, render_summary
                 summaries = summary_items(validated, grounding, context.latest_user_text)
+                summary_repair = {'calls': 0, 'status': 'not_needed'}
+                if not summaries:
+                    from backend.services.explanation_narrative import repair_summary
+                    summaries, summary_repair = repair_summary(request, context, validated, grounding, generate)
+                    model_calls['summary_repair'] += summary_repair['calls']
+                    if summaries and summary_repair.get('modelId'):
+                        response['modelId'] = summary_repair['modelId']
+                        response['usedFallbackModel'] = summary_repair.get('usedFallbackModel')
                 if summaries:
                     response['content'] = render_summary(summaries, response['content'])
                 if status_table:
@@ -537,6 +545,7 @@ def generate_grounded_explanation(
                                               'attempts': attempt + 1, 'selectedIssueIds': selected,
                                               'focusedCoverageReview': True, 'focusedReviewUnchanged': unchanged,
                                               'historyComplete': history_complete, 'summaryAccepted': bool(summaries),
+                                              'summaryRepair': summary_repair,
                                               'modelCalls': model_calls, 'retryReasons': retry_reasons,
                                               'noteSupplement': supplement_meta}
                 return response
