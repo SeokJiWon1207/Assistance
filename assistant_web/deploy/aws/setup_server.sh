@@ -171,7 +171,7 @@ rollback_deployment() {
     sudo systemctl reload nginx
   fi
   if [[ "$maintenance_created" == "1" ]]; then rm -f -- "$APP_ROOT/maintenance.on"; fi
-  rm -rf -- "$rollback_dir"
+  sudo rm -rf -- "$rollback_dir"
   exit "$exit_code"
 }
 trap rollback_deployment ERR
@@ -364,7 +364,8 @@ fi
 sudo systemctl reload nginx
 if [[ "$maintenance_created" == "1" ]]; then rm -f -- "$APP_ROOT/maintenance.on"; fi
 trap - ERR
-rm -rf -- "$rollback_dir"
+# systemd 설정 사본은 root 소유 디렉터리와 권한을 그대로 보존한다.
+sudo rm -rf -- "$rollback_dir"
 
 # 정상 배포 표시가 없는 스테이징은 롤백 슬롯에서 제외한다.
 printf '{"releaseId":"%s"}\n' "$RELEASE_ID" > "$RELEASE_DIR/.deployment-ready.json"

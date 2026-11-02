@@ -56,6 +56,32 @@ class DeploymentScriptTests(unittest.TestCase):
         script = (DEPLOY_DIR / "rollback_release.sh").read_text(encoding="utf-8")
         self.assertLess(script.index('scripts/runtime_databases.py" check'), script.index('ln -s "$target"'))
 
+    def test_success_and_rollback_cleanup_remove_protected_service_backups(self):
+        script = (DEPLOY_DIR / "setup_server.sh").read_text(encoding="utf-8")
+        cleanup_commands = [line.strip() for line in script.splitlines() if 'rm -rf -- "$rollback_dir"' in line]
+        self.assertEqual(len(cleanup_commands), 2)
+        for command in cleanup_commands:
+            with self.subTest(command=command), tempfile.TemporaryDirectory() as temporary:
+                recovery = Path(temporary) / "recovery"
+                dropins = recovery / "service-dropins"
+                dropins.mkdir(parents=True)
+                (dropins / "release.conf").write_text("Environment=APP_RELEASE_ID=old\n")
+                # root 소유의 디렉터리를 일반 사용자가 정리할 수 없는 조건을 재현한다.
+                dropins.chmod(0o500)
+                try:
+                    result = subprocess.run(["bash", "-c", """
+sudo() {
+  chmod u+w "$rollback_dir/service-dropins"
+  command "$@"
+}
+""" + command], env={**os.environ, "rollback_dir": str(recovery)},
+                        capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertFalse(recovery.exists())
+                finally:
+                    if dropins.exists():
+                        dropins.chmod(0o700)
+
     def test_deploy_passes_validated_index_mode_to_setup(self):
         script = (DEPLOY_DIR / "deploy_to_ec2.sh").read_text(encoding="utf-8")
 
