@@ -5,7 +5,7 @@ from typing import Any
 
 
 def explanation_search_terms(text: str, constraints: dict[str, Any]) -> list[str]:
-    from backend.intent.search_terms import build_keyword_terms
+    from backend.intent.keyword_terms import build_keyword_terms
     return [term for term in build_keyword_terms(text, constraints)
             if not re.fullmatch(r"어떻게|왜|(?:원인|조치|수정|해결|처리|비교|설명|근거)"
                                 r"(?:(?:해|하|했|됐|되|부탁).*|내용|사항|방법|과|와|을|를|은|는|이|가|로|도|만)?|"
@@ -35,7 +35,7 @@ def wants_issue_explanation(text: str, constraints: dict[str, Any]) -> bool:
     if not scoped:
         return False
     # 기술 필드의 개수·배열 크기는 이슈 건수 집계와 다르다.
-    from backend.query_planning import infer_operation
+    from backend.query.operations import infer_operation
     count_text = re.sub(r"(?:필드|배열|원소|상수)(?:의|가|는|은|이)?\s*(?:개수|갯수|수량|몇\s*개)", " ", text)
     # 특정 이슈 안의 수정 항목 수는 원본 이슈 건수 집계와 구분한다.
     internal_quantity = (len(constraints.get('issue_ids') or []) == 1
@@ -93,7 +93,7 @@ def _model_open_evidence_describes_work_state(constraints: dict[str, Any]) -> bo
 def explanation_constraints(text: str, constraints: dict[str, Any]) -> dict[str, Any]:
     """상태를 설명 대상으로 언급한 문구만 마스킹하고 나머지 조건을 보존한다."""
     from backend.intent.scope_extraction import extract_status_scope
-    from backend.common import normalize_for_match
+    from backend.utils.text import normalize_for_match
     if (constraints.get('mantis_team_scope') == 'default'
             and not constraints.get('inherited_from_audit_id')
             and not constraints.get('statuses') and not constraints.get('excluded_statuses')):
@@ -123,7 +123,7 @@ def explanation_constraints(text: str, constraints: dict[str, Any]) -> dict[str,
                                       customer['customer_exact'] or customer['customer_key'])
     date_text = explanation_date_text(text)
     if date_text != text and not constraints.get("inherited_from_audit_id"):
-        from backend.query_planning import extract_created_at_range
+        from backend.query.dates import extract_created_at_range
         from backend.query_filters import add_filter_clause
         constraints = deepcopy(constraints)
         constraints["created_at"] = extract_created_at_range(date_text)

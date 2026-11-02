@@ -55,6 +55,44 @@ class WeeklyIssuesTests(unittest.TestCase):
         self.assertEqual(result["remaining"]["total"], 6)
         self.assertEqual(result["remaining"]["rows"], [{"name": "HTS", "count": 6}])
 
+    def test_shared_accounts_expand_only_remaining_without_changing_team_metrics(self):
+        dates = {"고객사요청일": "2026-10-29", "고객사전달일": "2026-10-29"}
+        issues = [
+            self.issue(id=1, project="팀고객", created_at="2026-10-29", date_fields=dates),
+            self.issue(id=2, handler="cs이슈", project="공용고객", media_type="MTS", date_fields=dates),
+            self.issue(id=3, handler=" CSISSUE ", project="공용고객", date_fields=dates),
+            self.issue(id=4, handler="drfnnext", project="외부고객", date_fields=dates),
+            self.issue(id=5, handler="외부담당", project="외부고객", date_fields=dates),
+            self.issue(id=6, handler="", project="미지정고객", date_fields=dates),
+        ]
+        with patch.object(dashboard, "_load_issues", return_value=(issues, {
+            "status": "snapshot", "search_complete": True,
+        })):
+            result = dashboard.build_operations_dashboard({"role": "member"}, today=date(2026, 10, 29))
+        weekly = result["weeklyIssues"]
+        self.assertEqual(weekly["remaining"], {
+            "total": 3, "rows": [{"name": "HTS", "count": 2}, {"name": "MTS", "count": 1}],
+        })
+        self.assertEqual(weekly["received"]["total"], 1)
+        self.assertEqual(weekly["completed"]["total"], 1)
+        self.assertEqual(result["summary"]["open"], 1)
+        self.assertEqual(result["summary"]["newIssues"], 1)
+        self.assertEqual(result["meta"]["loadedIssues"], 1)
+        self.assertEqual(sum(row["open"] for row in result["members"]), 1)
+        self.assertEqual({row["id"] for row in result["openIssues"]}, {1})
+        self.assertEqual({row["customer"] for row in result["customerHealth"]}, {"팀고객"})
+
+    def test_shared_accounts_preserve_remaining_status_exclusions_and_partial_coverage(self):
+        excluded = ["closed", "feedback", "developed", "resolved", "종료된이슈", "정보부족", "개발완료", "해결된이슈"]
+        issues = [self.issue(id=i, handler="csissue", status=status) for i, status in enumerate(excluded)]
+        issues.extend([
+            self.issue(id=20, handler="csissue", status="assigned"),
+            self.issue(id=21, handler="cs이슈", status="", status_label="개발완료"),
+        ])
+        result = self.build(issues, complete=False)
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["remaining"], {"total": 1, "rows": [{"name": "HTS", "count": 1}]})
+
     def test_team_scope_unknown_categories_and_partial_coverage_are_preserved(self):
         issues = [self.issue(id=1, media_type="WEB", severity_label="추가", date_fields={"고객사요청일": "2026-10-29"}),
                   self.issue(id=2, media_type="", severity_label="", date_fields={"고객사요청일": "2026-10-29"}),

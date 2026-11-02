@@ -1,5 +1,6 @@
 """10월 목록 이후 전체 표시 요청이 검색 없이 가짜 행을 만들던 오류 회귀."""
 
+import backend.services.chat.retrieve as chat_retrieve
 import unittest
 from unittest.mock import patch
 
@@ -41,7 +42,7 @@ class OctoberAllFollowupTests(unittest.TestCase):
                 result = {"query": query, "constraints": constraints,
                           "stages": [{"source": "mantis_page_scan", "status": "ok", "issues_list": rows,
                                       "meta": {"found_count": 17, "search_complete": True}}]}
-                with patch.object(chat, "run_retrieval_pipeline", return_value=result):
+                with patch.object(chat_retrieve, "run_retrieval_pipeline", return_value=result):
                     response = chat.retrieve_chat_evidence(request, context).response
                 self.assertIsNotNone(response)
                 self.assertEqual(response["raw"]["mode"], "deterministic_issue_list")

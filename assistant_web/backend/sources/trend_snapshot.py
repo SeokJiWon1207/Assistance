@@ -1,11 +1,14 @@
 """월별 집계는 검색 인덱스가 아니라 검증된 전체 원본 저장본을 사용한다."""
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing, contextmanager
 
 from backend.execution import checkpoint
-from backend.sources.mantis import mantis_issue_effort_date, normalize_issue
+from backend.sources.mantis_fields import mantis_issue_effort_date, normalize_issue
 from backend.sources.mantis_collection import collection_metadata
 from backend.sources.mantis_store import render_document
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import MANTIS_INDEX_READ
 
 
 @contextmanager
@@ -14,7 +17,7 @@ def trend_rows(index_path, start_date, *, constraints=None):
     if index_path is not None:
         if constraints is not None:
             raise LookupError('조건 집계는 검증된 전체 원본 저장본이 필요합니다.')
-        with closing(sqlite3.connect(f'file:{index_path}?mode=ro', uri=True)) as db:
+        with closing(open_sqlite(f'file:{index_path}?mode=ro', profile=MANTIS_INDEX_READ)) as db:
             index_rows = db.execute('''SELECT i.created_at,i.issue_type,i.document FROM issues i
                 LEFT JOIN issue_dates d ON d.issue_id=i.issue_id AND d.field_name='고객사전달일'
                 WHERE i.created_at>=? OR d.date_value>=?''', (start_date, start_date)).fetchall()
@@ -33,7 +36,7 @@ def trend_rows(index_path, start_date, *, constraints=None):
             for raw in stored:
                 checkpoint()
                 if constraints is not None:
-                    from backend.sources.mantis import issue_matches_constraints
+                    from backend.sources.mantis_matching import issue_matches_constraints
                     if not issue_matches_constraints(raw, constraints):
                         continue
                 created = str(raw.get('created_at') or '')[:10]

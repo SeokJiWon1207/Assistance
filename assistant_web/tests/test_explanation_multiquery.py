@@ -178,7 +178,7 @@ class ExplanationFusionTests(unittest.TestCase):
                        'filter_clauses': [{'field': 'status', 'operator': 'in', 'value': ['open']}]}
         plan = {'operation': 'explain', 'resolved_constraints': constraints,
                 'explanation_queries': ['응답 지연']}
-        with patch('backend.retrieval.execute_chroma_search',
+        with patch('backend.services.retrieval_pipeline.execute_chroma_search',
                    side_effect=[self.stage([1, 2]), self.stage([3])]) as search:
             result = run_retrieval_pipeline('화면이 멈춘 원인을 설명해줘', 5,
                                             {'mantis': True, 'vectorDb': True}, plan)

@@ -3,7 +3,7 @@ import re
 from datetime import date
 from typing import Any
 
-from backend.common import format_mantis_custom_date
+from backend.utils.dates import format_mantis_custom_date
 
 EFFORT_FIELD_LABELS = {'1문의공수': '문의', '2서버공수': '서버', '3PC공수': 'PC', '4QC공수': 'QC'}
 EFFORT_DATE_FIELD = '고객사전달일'

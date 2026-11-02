@@ -397,7 +397,7 @@ class ExplanationRetrievalTests(unittest.TestCase):
     def test_single_technical_identifier_remains_a_retrieval_focus(self):
         from backend.retrieval import run_retrieval_pipeline
         query = '신한 CMF 추세 조건검색 추가 요청은 개발 완료된 거야? 상세 수식 조건을 알려줘.'
-        with patch('backend.retrieval.execute_chroma_search',
+        with patch('backend.services.retrieval_pipeline.execute_chroma_search',
                    return_value={'source': 'chroma_db', 'status': 'ok', 'issues_list': []}) as search:
             run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True},
                                    {'operation': 'explain',
@@ -411,8 +411,8 @@ class ExplanationRetrievalTests(unittest.TestCase):
         constraints["exclude_issue_ids"] = [17]
         constraints["filter_clauses"].append({"field": "issue_id", "operator": "not_in", "value": [17]})
         base = {"source": "mantis_id_lookup", "status": "ok", "issues_list": [{"id": 31088, "summary": "AssetTree NULL 오류"}]}
-        with patch("backend.retrieval.execute_mantis_id_lookup", return_value=base), patch(
-            "backend.retrieval.execute_chroma_search", return_value={"source": "chroma_db", "status": "ok"}
+        with patch("backend.services.retrieval_pipeline.execute_mantis_id_lookup", return_value=base), patch(
+            "backend.services.retrieval_pipeline.execute_chroma_search", return_value={"source": "chroma_db", "status": "ok"}
         ) as search:
             run_retrieval_pipeline(query, 5, {"mantis": True, "vectorDb": True},
                                    {"operation": "explain", "resolved_constraints": constraints})
@@ -424,9 +424,9 @@ class ExplanationRetrievalTests(unittest.TestCase):
         from backend.retrieval import run_retrieval_pipeline
         query = "하나 차트 오류 원인을 설명해줘"
         stage = {"source": "mantis_page_scan", "status": "ok", "issues_list": [{"id": 10}]}
-        with patch("backend.retrieval.execute_mantis_page_scan", return_value=stage) as scan, patch(
-            "backend.retrieval.execute_mantis_id_lookup", return_value=stage
-        ) as lookup, patch("backend.retrieval.execute_chroma_search") as vector:
+        with patch("backend.services.retrieval_pipeline.execute_mantis_page_scan", return_value=stage) as scan, patch(
+            "backend.services.retrieval_pipeline.execute_mantis_id_lookup", return_value=stage
+        ) as lookup, patch("backend.services.retrieval_pipeline.execute_chroma_search") as vector:
             run_retrieval_pipeline(query, 5, {"mantis": True, "vectorDb": False},
                                    {"operation": "explain", "resolved_constraints": extract_query_constraints(query)})
         scan.assert_called_once()
@@ -440,8 +440,8 @@ class ExplanationRetrievalTests(unittest.TestCase):
                  '최종적으로 뭐라고 답했어? 개발 완료인지도 근거로 구분해 줘.')
         constraints = explanation_constraints(query, extract_query_constraints(query))
         stage = {'source': 'mantis_page_scan', 'status': 'ok', 'issues_list': [{'id': 31563}]}
-        with patch('backend.retrieval.execute_mantis_page_scan', return_value=stage) as scan, patch(
-            'backend.retrieval.execute_chroma_search', return_value={'source': 'chroma_db', 'status': 'ok'}
+        with patch('backend.services.retrieval_pipeline.execute_mantis_page_scan', return_value=stage) as scan, patch(
+            'backend.services.retrieval_pipeline.execute_chroma_search', return_value={'source': 'chroma_db', 'status': 'ok'}
         ):
             result = run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True},
                                             {'operation': 'explain', 'resolved_constraints': constraints})
@@ -471,11 +471,11 @@ class ExplanationRetrievalTests(unittest.TestCase):
         stage = {'source': 'mantis_page_scan', 'status': 'ok', 'issues_list': [
             {'id': 31563, 'summary': "[게시판] 전략저장 시 '관심그룹' 설정값 포함 가능 여부"},
         ]}
-        with patch('backend.retrieval.execute_mantis_page_scan', return_value=stage), patch(
-            'backend.retrieval.execute_mantis_id_lookup', return_value={
+        with patch('backend.services.retrieval_pipeline.execute_mantis_page_scan', return_value=stage), patch(
+            'backend.services.retrieval_pipeline.execute_mantis_id_lookup', return_value={
                 'source': 'mantis_id_lookup', 'status': 'ok', 'issues_list': stage['issues_list'],
             }
-        ) as lookup, patch('backend.retrieval.execute_chroma_search') as vector:
+        ) as lookup, patch('backend.services.retrieval_pipeline.execute_chroma_search') as vector:
             result = run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True},
                                             {'operation': 'explain', 'resolved_constraints': constraints})
         lookup.assert_called_once()
@@ -491,11 +491,11 @@ class ExplanationRetrievalTests(unittest.TestCase):
         stage = {'source': 'mantis_page_scan', 'status': 'ok', 'issues_list': [
             {'id': 31521, 'summary': '[7111] 종합차트 종목에 맞지 않는 차트가 표시되는 현상'},
         ]}
-        with patch('backend.retrieval.execute_mantis_page_scan', return_value=stage) as scan, patch(
-            'backend.retrieval.execute_mantis_id_lookup', return_value={
+        with patch('backend.services.retrieval_pipeline.execute_mantis_page_scan', return_value=stage) as scan, patch(
+            'backend.services.retrieval_pipeline.execute_mantis_id_lookup', return_value={
                 'source': 'mantis_id_lookup', 'status': 'ok', 'issues_list': stage['issues_list'],
             }
-        ) as lookup, patch('backend.retrieval.execute_chroma_search') as vector:
+        ) as lookup, patch('backend.services.retrieval_pipeline.execute_chroma_search') as vector:
             result = run_retrieval_pipeline(query, 5, {'mantis': True, 'vectorDb': True},
                                             {'operation': 'explain', 'resolved_constraints': constraints})
         self.assertEqual(scan.call_args.args[0], '7111 종목 차트')

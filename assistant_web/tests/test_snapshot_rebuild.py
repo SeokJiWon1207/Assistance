@@ -40,7 +40,7 @@ class SnapshotRebuildTests(unittest.TestCase):
         return document
 
     def test_published_snapshot_prepares_catalog_before_next_question(self):
-        from backend.intent import entities
+        from backend.sources import people_catalog as entities
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             staging, active = root / "staging", root / "active"

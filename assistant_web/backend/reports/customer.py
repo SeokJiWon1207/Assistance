@@ -8,12 +8,9 @@ from typing import Any, Dict, List, Optional
 from backend.display import customer_name, korean_day, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
-from backend.sources.mantis import (
-    build_sources_from_issue_rows,
-    fetch_mantis_recent_issues,
-    issue_matches_constraints,
-    normalize_issue,
-)
+from backend.sources.mantis_fields import build_sources_from_issue_rows, normalize_issue
+from backend.sources.mantis import fetch_mantis_recent_issues
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.understanding import extract_query_constraints
 from backend.sources.mantis_store import stream_complete_store
 from backend.sources.mantis_collection import IssueBatch

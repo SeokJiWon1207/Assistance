@@ -22,7 +22,7 @@ class UnifiedModelFallbackTests(unittest.TestCase):
         self.enterContext(patch.object(llm, 'get_model_api_key', side_effect=lambda model: 'ollama'))
         self.question = '노션에서 신한 관련 문서 찾아줘'
         self.parsed = proposal(source='notion', operation='search', scope='all', status=NO_STATUS,
-                               terms=['신한'])
+                               filters=[{'field':'customer','operator':'equals','value':'신한','evidence':'신한'}])
 
     def plan(self):
         return unified.plan_question(self.question, PRIMARY, 'primary-key', USER, {})
@@ -42,7 +42,8 @@ class UnifiedModelFallbackTests(unittest.TestCase):
                     result = self.plan()
                 self.assertEqual(result.get('source'), 'notion')
                 self.assertEqual(result['operation'], 'search')
-                self.assertEqual(result['terms'], ['신한'])
+                self.assertEqual(result['terms'], [])
+                self.assertEqual(result['resolved_constraints']['customer_key'], '신한')
                 self.assertEqual(result['planner_model_id'], 'local')
                 self.assertEqual(result['planner_fallback_from'], 'company')
                 self.assertEqual(calls, [('company', 'primary-key', 'company-model', 12),

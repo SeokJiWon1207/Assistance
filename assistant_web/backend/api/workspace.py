@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from backend.auth import current_request_user, list_users
-from backend.common import clamp_int
+from backend.utils.numbers import clamp_int
 from backend.schemas import ConversationMessage
 from backend.workspace import (
     ConversationQuotaError,

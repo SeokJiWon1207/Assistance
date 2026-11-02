@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta, timezone
-from backend.common import normalize_for_match, text_matches_customer_aliases, text_matches_any_alias
-from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES, STATUS_MATCH_ALIASES
+from backend.utils.text import normalize_for_match, text_matches_any_alias
+from backend.customer_identity import text_matches_customer_aliases
+from backend.settings.catalogs import get_customer_aliases
+from backend.settings.values import PLATFORM_ALIASES, STATUS_MATCH_ALIASES
 from backend.mantis_status import matches_mantis_status
 
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -127,7 +129,7 @@ def _canonical_filter_value(field: str, value: Any) -> str:
     normalized = normalize_for_match(str(value or ""))
     if field == "issue_id" and normalized.lstrip("#").isdigit():
         return str(int(normalized.lstrip("#")))
-    aliases = {"customer": CUSTOMER_ALIASES, "platform": PLATFORM_ALIASES, "status": STATUS_MATCH_ALIASES}.get(
+    aliases = {"customer": get_customer_aliases(), "platform": PLATFORM_ALIASES, "status": STATUS_MATCH_ALIASES}.get(
         field, {}
     )
     for key, variants in aliases.items():
@@ -323,7 +325,7 @@ def filter_audit_for_source(source: str, clauses: Iterable[Dict[str, Any]]) -> D
 
 def notion_temporal_field(question: str) -> str:
     """명시된 기한/반영일만 등록일과 구분한다."""
-    from backend.common import remove_quoted_value
+    from backend.utils.text import remove_quoted_value
 
     text = remove_quoted_value(question)
 

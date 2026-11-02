@@ -1,5 +1,8 @@
 """검색 건수와 본문·담당자 필터의 실제 데이터 계약을 검증한다."""
 
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import schema as notion_schema
 import json
 import os
 import unittest
@@ -8,7 +11,7 @@ from unittest.mock import patch
 
 import requests
 
-from backend.notion import client, mapping, search
+from backend.notion import read_api as client, mapping, search
 from backend.retrieval import run_retrieval_pipeline
 from backend.intent.constraints import extract_query_constraints, merge_query_plan_constraints
 
@@ -51,16 +54,16 @@ class NotionAccuracyRegressionTests(unittest.TestCase):
         stack = ExitStack()
         self.addCleanup(stack.close)
         properties = {"제목": {"type": "title"}, "메모": {"type": "rich_text"}}
-        stack.enter_context(patch.object(search, "get_notion_settings", return_value={
+        stack.enter_context(patch.object(search, "resolve_notion_settings", return_value={
             "token": "test-token", "database_ids": ["db"],
         }))
         stack.enter_context(patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)))
-        stack.enter_context(patch.object(search, "fetch_notion_database_title", return_value="문서 DB"))
-        stack.enter_context(patch.object(search, "fetch_notion_database_schema", return_value={"properties": properties}))
-        stack.enter_context(patch.object(search, "notion_property_schema", return_value=properties))
+        stack.enter_context(patch.object(read_api, 'fetch_notion_database_title', return_value="문서 DB"))
+        stack.enter_context(patch.object(read_api, 'fetch_notion_database_schema', return_value={"properties": properties}))
+        stack.enter_context(patch.object(notion_schema, 'notion_property_schema', return_value=properties))
         stack.enter_context(patch.object(search, "indexed_title_term_database_ids", return_value=[]))
         stack.enter_context(patch.dict(os.environ, {"NOTION_FETCH_PAGE_BLOCKS": "true", "NOTION_SEARCH_MAX_WORKERS": "1"}))
-        stack.enter_context(patch.object(search, "notion_post_json", side_effect=lambda _url, payload, **_kw: response({
+        stack.enter_context(patch.object(transport, 'notion_post_json', side_effect=lambda _url, payload, **_kw: response({
             "results": [] if "filter" in payload else rows, "has_more": False,
         })))
         stack.enter_context(patch.object(client, "notion_request_slot"))
@@ -73,7 +76,7 @@ class NotionAccuracyRegressionTests(unittest.TestCase):
                              "next_cursor": str(end) if len(rows) > end else None})
 
         stack.enter_context(patch.object(client.requests, "get", side_effect=block_response))
-        stack.enter_context(patch.object(search, "fetch_notion_page_blocks", side_effect=client.fetch_notion_page_blocks))
+        stack.enter_context(patch.object(read_api, 'fetch_notion_page_blocks', side_effect=client.fetch_notion_page_blocks))
 
     @staticmethod
     def paragraph(identifier, text):
@@ -188,14 +191,14 @@ class NotionAccuracyRegressionTests(unittest.TestCase):
         normalized = mapping.normalize_notion_page(page("p", owners=[
             {"id": known_id, "name": "김지은"}, {"id": unknown_id},
         ]), include_blocks=False)
-        with patch.object(mapping, "fetch_notion_user_name", side_effect=lambda identifier: "홍길동" if identifier == unknown_id else ""):
+        with patch.object(read_api, 'fetch_notion_user_name', side_effect=lambda identifier: "홍길동" if identifier == unknown_id else ""):
             self.assertTrue(search.notion_page_matches_and_enrich(normalized, {"owner": "홍길동"}))
         self.assertEqual(set(normalized["owner"].split(", ")), {"김지은", "홍길동"})
 
     def test_mixed_people_relation_owners_are_not_filtered_to_people_only(self):
-        with patch.object(search, "notion_property_schema", return_value={
+        with patch.object(notion_schema, 'notion_property_schema', return_value={
             "담당자": {"type": "people"}, "개발담당자": {"type": "relation"},
-        }), patch.object(search, "fetch_notion_users", return_value=(("홍길동", "user-2"),)):
+        }), patch.object(read_api, 'fetch_notion_users', return_value=(("홍길동", "user-2"),)):
             decisive, api_filter = search.notion_database_owner_filter("db", "홍길동")
         self.assertFalse(decisive)
         self.assertIsNone(api_filter)
@@ -268,7 +271,7 @@ class NotionAccuracyRegressionTests(unittest.TestCase):
     def test_exact_title_keyword_filter_is_checked_after_body_read(self):
         rows = [page("exact-body")]
         self.search_fixture(rows, {"exact-body": [self.paragraph("text", "needle 절차")]})
-        with patch.object(search, "notion_post_json", return_value=response({"results": rows, "has_more": False})):
+        with patch.object(transport, 'notion_post_json', return_value=response({"results": rows, "has_more": False})):
             stage = search.execute_notion_search('노션 "운영 문서" 찾아줘', constraints={"filter_clauses": [
                 {"field": "keyword", "operator": "contains", "value": "needle"},
             ]}, include_blocks=False)

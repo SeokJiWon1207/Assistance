@@ -2,7 +2,7 @@
 
 검색 결과를 모델 없이 곧바로 사용자 답변 텍스트로 조립하는 계층.
 집계 리포트는 ``backend.reports.aggregate``에 두고 기존 import 계약만 재노출한다.
-답변 스타일 지침과 검증 화면용 제약조건 표시(display_constraints)도 여기에 둔다.
+답변 스타일 지침을 제공하며 조건 표시는 reports.constraint_display에서 재내보낸다.
 
 의존: retrieval + sources + understanding.
 """
@@ -15,10 +15,9 @@ from typing import Any, Dict, List, Optional
 
 from backend.display import customer_name
 from backend.issue_text import encode_issue_field
-from backend.common import compact_text, normalize_for_match
-from backend.config import STATUS_ALIASES, STATUS_MATCH_ALIASES
+from backend.utils.text import compact_text, normalize_for_match
 from backend.intent.entities import extract_issue_ids
-from backend.query_planning import extract_group_by
+from backend.query.operations import extract_group_by
 from backend.query_filters import filter_clause_label
 from backend.reports.aggregate import (
     COUNT_GROUP_LABELS as COUNT_GROUP_LABELS,
@@ -44,14 +43,8 @@ from backend.reports.aggregate import (
     format_issue_list_criteria,
     format_month_trend_lines as format_month_trend_lines,
 )
-from backend.retrieval import (
-    build_snapshot_note,
-    collect_retrieved_issues,
-    collect_retrieved_customer_groups,
-    count_retrieved_issues,
-    merge_combined_sources,
-    similar_base_issue_ids_from_retrieval,
-)
+from backend.retrieval import build_snapshot_note, merge_combined_sources, similar_base_issue_ids_from_retrieval
+from backend.evidence.retrieval_rows import collect_retrieved_issues, collect_retrieved_customer_groups, count_retrieved_issues
 from backend.understanding import (
     ISSUE_ANALYSIS_INTENT_KEYWORDS,
     ISSUE_LIST_INTENT_KEYWORDS,
@@ -193,8 +186,6 @@ def answer_style_instruction(answer_style: str) -> str:
     )
 
 
-
-
 def wants_table_output(text: str) -> bool:
     """질문이 표 형태를 요구하는지 본다."""
     return bool(re.search(r"표\s*(?:로|형태|형식)|테이블\s*(?:로|형태|형식)|표로\s*만들", str(text or "")))
@@ -241,8 +232,6 @@ def build_unknown_customer_report(text: str) -> Optional[Dict[str, Any]]:
         },
         "raw": {"mode": "deterministic_unknown_customer"},
     }
-
-
 
 
 def should_return_deterministic_issue_list(text: str, constraints: Dict[str, Any]) -> bool:
@@ -402,8 +391,6 @@ def format_deterministic_combined_answer(sources: List[Dict[str, Any]]) -> str:
                 f"{display_status_label(source.get('status', '상태 미상'))})"
             )
     return "\n".join(lines)
-
-
 
 
 def build_issue_subject_phrase(
@@ -906,122 +893,6 @@ def format_model_timeout_fallback(
     )
     return "\n".join(lines)
 
-
-def display_constraints(constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    if constraints.get("customer_key"):
-        items.append(
-            {
-                "id": "customer",
-                "label": "고객사",
-                "value": constraints["customer_key"],
-                "values": list(dict.fromkeys([constraints["customer_key"], *constraints.get("customer_aliases", [])])),
-            }
-        )
-    if constraints.get("platform_key"):
-        items.append(
-            {
-                "id": "platform",
-                "label": "플랫폼",
-                "value": constraints["platform_key"],
-                "values": list(dict.fromkeys([constraints["platform_key"], *constraints.get("platform_aliases", [])])),
-            }
-        )
-    if constraints.get("excluded_platform_keys"):
-        values = [str(value).upper() for value in constraints["excluded_platform_keys"]]
-        items.append(
-            {
-                "id": "platform_exclude",
-                "label": "플랫폼 제외",
-                "value": ", ".join(values),
-                "values": values,
-            }
-        )
-    if constraints.get("excluded_customer_keys"):
-        values = list(constraints["excluded_customer_keys"])
-        items.append(
-            {
-                "id": "customer_exclude",
-                "label": "고객사 제외",
-                "value": ", ".join(values),
-                "values": values,
-            }
-        )
-    people = constraints.get("people", {}).get("names", [])
-    if people:
-        people_label = "공수 기입자" if constraints.get("people", {}).get("role") == "effort_person" else "담당자/인물"
-        items.append({"id": "people", "label": people_label, "value": ", ".join(people), "values": people})
-    elif constraints.get("unassigned_people"):
-        items.append(
-            {
-                "id": "people_unassigned",
-                "label": "담당자",
-                "value": "미지정",
-                "values": ["담당자 미지정"],
-            }
-        )
-    if constraints.get("statuses"):
-        status_values = list(
-            dict.fromkeys(
-                [
-                    value
-                    for status in constraints["statuses"]
-                    for value in [status, *STATUS_ALIASES.get(status, []), *STATUS_MATCH_ALIASES.get(status, [])]
-                ]
-            )
-        )
-        items.append(
-            {
-                "id": "status",
-                "label": "상태",
-                "value": ", ".join(constraints["statuses"]),
-                "values": status_values,
-            }
-        )
-    if constraints.get("excluded_statuses"):
-        values = list(constraints["excluded_statuses"])
-        items.append(
-            {
-                "id": "status_exclude",
-                "label": "상태 제외",
-                "value": ", ".join(values),
-                "values": values,
-            }
-        )
-    if constraints.get("issue_ids"):
-        issue_ids = list(map(str, constraints["issue_ids"]))
-        items.append({"id": "issue", "label": "이슈 ID", "value": ", ".join(issue_ids), "values": issue_ids})
-    if constraints.get("screen_numbers"):
-        items.append(
-            {
-                "id": "screen",
-                "label": "화면번호",
-                "value": ", ".join(constraints["screen_numbers"]),
-                "values": constraints["screen_numbers"],
-            }
-        )
-    for field_name, field_value in constraints.get("date_fields", {}).items():
-        items.append(
-            {
-                "id": "date",
-                "label": field_name,
-                "value": field_value,
-                "values": [field_name, field_value],
-            }
-        )
-    delivered_at = constraints.get("delivered_at") or {}
-    if delivered_at.get("from") and delivered_at.get("to"):
-        items.append({"id": "delivered_at", "label": "고객사전달일",
-                      "value": f"{delivered_at['from']}~{delivered_at['to']}",
-                      "values": [delivered_at["from"], delivered_at["to"]]})
-    created_at = constraints.get("created_at") or {}
-    if created_at.get("from") and created_at.get("to"):
-        items.append(
-            {
-                "id": "created_at",
-                "label": "등록일",
-                "value": f"{created_at['from']}~{created_at['to']}",
-                "values": [created_at["from"], created_at["to"]],
-            }
-        )
-    return items
+from backend.reports.constraint_display import (
+    display_constraints as display_constraints,
+)

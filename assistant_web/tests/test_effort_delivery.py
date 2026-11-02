@@ -163,7 +163,7 @@ class EffortDeliveryTests(TestCase):
         from pathlib import Path
         from test_effort_trend import issue_document
         from backend.reports.effort_trend import run_effort_trend_report
-        from backend.tools.mantis_index import build_mantis_index
+        from backend.sources.mantis_index import build_mantis_index
         first = issue_document(1, created_at='2026-09-01', issue_type='오류',
                                effort_line='- 3PC공수: 석지원(0.75), 다른사람(9)')
         first = first.replace('고객사전달일: 2026-09-01', '고객사전달일: 2026-10-01')

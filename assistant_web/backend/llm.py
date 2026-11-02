@@ -20,7 +20,8 @@ from typing import Any, Dict, Iterator, List, Optional
 import requests
 from fastapi import HTTPException
 
-from backend.common import clamp_float, clamp_int, parse_date
+from backend.utils.numbers import clamp_float, clamp_int
+from backend.utils.dates import parse_date
 from backend.config import CONFIG_DIR
 from backend.execution import RequestStopped, bounded_timeout, checkpoint
 from backend.schemas import ChatRequest
@@ -40,6 +41,20 @@ def _default_model_registry() -> List[Dict[str, Any]]:
             "apiKeyEnv": "GEMINI_API_KEY",
             "reasoningEffort": "minimal",
             "maxOutputTokens": 2048,
+            "expiresAt": "",
+            "enabled": True,
+        },
+        {
+            "id": "gpt-6-luna",
+            "label": "OpenAI GPT-6 Luna",
+            "model": "gpt-6-luna",
+            "provider": "openai",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
+            "apiKeyEnv": "OPENAI_API_KEY",
+            "reasoningEffort": "none",
+            "maxOutputTokens": 2048,
+            "preferred": True,
+            "fallbackModelIds": ["gemini-3.1-flash-lite"],
             "expiresAt": "",
             "enabled": True,
         },
@@ -120,11 +135,29 @@ def get_model_registry() -> List[Dict[str, Any]]:
                 else "disabled",
             }
         )
+    models.sort(key=lambda model: model.get("preferred") is True and model["status"] == "active", reverse=True)
     return models
 
 
 def is_ollama_model(model: Dict[str, Any]) -> bool:
     return str(model.get("provider", "")).strip().lower() == "ollama"
+
+
+def get_fallback_models(
+    model: Dict[str, Any], registry: List[Dict[str, Any]], *, default_local_only: bool = False,
+) -> List[Dict[str, Any]]:
+    """명시한 대체 목록을 우선하며, 미설정 모델은 호출 단계의 기존 정책을 따른다."""
+    available = {candidate["id"]: candidate for candidate in registry
+                 if candidate["id"] != model["id"] and candidate.get("status") == "active"}
+    if "fallbackModelIds" in model:
+        identifiers = model["fallbackModelIds"]
+        if not isinstance(identifiers, list):
+            return []
+        return [available[identifier] for identifier in dict.fromkeys(
+            identifier for identifier in identifiers if isinstance(identifier, str)
+        ) if identifier in available]
+    return [candidate for candidate in available.values()
+            if not default_local_only or is_ollama_model(candidate)]
 
 
 def get_model_api_key(model: Dict[str, Any]) -> str:
@@ -340,6 +373,18 @@ def _send_model_chat(
             output_limit = clamp_int(model.get("maxOutputTokens"), 1, 32768) or 2048
             requested_limit = clamp_int(remote_payload.get("max_tokens"), 1, 32768) or output_limit
             remote_payload["max_tokens"] = min(requested_limit, output_limit)
+        elif str(model.get("provider", "")).strip().lower() == "openai":
+            for name in ("seed", "top_k", "min_p", "repetition_penalty", "chat_template_kwargs", "num_ctx"):
+                remote_payload.pop(name, None)
+            effort = str(model.get("reasoningEffort", "none"))
+            remote_payload["reasoning_effort"] = effort
+            if effort != "none":
+                for name in ("temperature", "top_p", "top_logprobs", "logprobs"):
+                    remote_payload.pop(name, None)
+            output_limit = clamp_int(model.get("maxOutputTokens"), 1, 32768) or 2048
+            legacy_limit = remote_payload.pop("max_tokens", None)
+            requested_limit = clamp_int(remote_payload.get("max_completion_tokens", legacy_limit), 1, 32768) or output_limit
+            remote_payload["max_completion_tokens"] = min(requested_limit, output_limit)
         elif effective_think is not None:
             chat_template_kwargs = dict(remote_payload.get("chat_template_kwargs") or {})
             chat_template_kwargs["enable_thinking"] = bool(effective_think)
@@ -352,7 +397,7 @@ def _send_model_chat(
             stream=stream,
         )
 
-        if str(model.get("provider", "")).strip().lower() == "gemini":
+        if str(model.get("provider", "")).strip().lower() in {"gemini", "openai"}:
             # SSE는 UTF-8이다. charset이 없을 때 requests의 Latin-1 기본값을 쓰지 않는다.
             response.encoding = "utf-8"
         return response

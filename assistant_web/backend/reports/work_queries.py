@@ -11,12 +11,14 @@ from datetime import date, datetime, timedelta
 
 from backend.intent.confirmed_context import confirmed_scope_text
 from backend.mantis_status import mantis_status_bucket
-from backend.query_planning import build_query_plan, extract_created_at_range, extract_relative_created_at_range
-from backend.sources.mantis import normalize_issue, issue_matches_constraints, build_sources_from_issue_rows
+from backend.query_planning import build_query_plan
+from backend.query.dates import extract_created_at_range, extract_relative_created_at_range
+from backend.sources.mantis_fields import normalize_issue, build_sources_from_issue_rows
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.sources.mantis_store import read_scoped_store, with_store_scope
-from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL
-from backend.common import display_mantis_status_label
-from backend.intent.search_terms import wants_all_results
+from backend.domain.team import TEAM_MEMBERS, TEAM_SCOPE_LABEL
+from backend.mantis_status import display_mantis_status_label
+from backend.intent.keyword_terms import wants_all_results
 from backend.intent.scope_changes import has_scope_edit
 from backend.display import customer_name as _customer, korean_day as _day, korean_day_range as _day_range
 from backend.reports.issue_relevance import (
@@ -305,10 +307,10 @@ def _response(question, constraints, operation, body, shown, meta, rows, notice)
 
 def verify_work_report(question: str, content: str, sources: list, retrieval: dict) -> dict:
     """운영 조회 계약을 검증한다. 미조회/과거 저장본을 성공으로 포장하지 않는다."""
-    from backend.sources.mantis import issue_matches_constraints
-    from backend.answers import display_constraints
+    from backend.sources.mantis_matching import issue_matches_constraints
+    from backend.reports.constraint_display import display_constraints
     from backend.intent.scope_extraction import extract_scope_constraints
-    from backend.team_scope import has_mantis_team_scope, remove_team_scope_phrase
+    from backend.domain.team import has_mantis_team_scope, remove_team_scope_phrase
     c = retrieval.get("constraints") or {}
     plan = retrieval.get("query_plan") or {}
     stages = retrieval.get("stages") or []

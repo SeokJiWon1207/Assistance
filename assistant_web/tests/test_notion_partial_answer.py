@@ -1,4 +1,6 @@
 """Partial Notion evidence must remain visible in model answers and final streams."""
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
 import json
 import sqlite3
 import unittest
@@ -8,7 +10,7 @@ from unittest.mock import patch
 import requests
 from backend import llm
 from backend.audit import CHAT_STREAM_CONTEXT
-from backend.evaluation import comparison, core, finalization
+from backend.evaluation import comparison, finalization
 from backend.notion.client import NOTION_CONTENT_INCOMPLETE
 from backend.schemas import ChatRequest
 from backend.services import chat_service as chat
@@ -55,8 +57,8 @@ class NotionPartialAnswerTests(unittest.TestCase):
     def generate(self, evidence, *, content=ANSWER, stream=False):
         request = ChatRequest(modelId=MODEL["id"], messages=[{"role": "user", "content": QUESTION}],
                               stream=stream, abTest=False)
-        with patch.object(chat, "get_model_registry", return_value=[]), \
-             patch.object(chat, "get_model_api_key", return_value="test-key"), \
+        with patch.object(chat_generate, "get_model_registry", return_value=[]), \
+             patch.object(chat_llm, "get_model_api_key", return_value="test-key"), \
              patch.object(llm.requests, "post", return_value=model_response(content, stream)):
             response = chat.generate_model_response(request, MODEL, [{"role": "user", "content": QUESTION}],
                                                     evidence, {}, 5)
@@ -123,8 +125,8 @@ class NotionPartialAnswerTests(unittest.TestCase):
     def test_notion_timeout_fallback_shows_known_documents_and_partial_body_notice(self):
         request = ChatRequest(modelId=MODEL["id"], messages=[{"role": "user", "content": QUESTION}], abTest=False)
         evidence = retrieval(search_complete=False, content_complete=False)
-        with patch.object(chat, "get_model_registry", return_value=[]), \
-             patch.object(chat, "get_model_api_key", return_value="test-key"), \
+        with patch.object(chat_generate, "get_model_registry", return_value=[]), \
+             patch.object(chat_llm, "get_model_api_key", return_value="test-key"), \
              patch.object(llm.requests, "post", side_effect=requests.Timeout("fixture timeout")):
             response = chat.generate_model_response(request, MODEL, [{"role": "user", "content": QUESTION}],
                                                     evidence, {}, 5)
@@ -142,7 +144,7 @@ class NotionPartialAnswerTests(unittest.TestCase):
                 request, response = self.generate(evidence)
                 request.abTest = True
                 request.abModelId = candidate_id
-                with patch.object(core, "get_private_model", side_effect=lambda identifier: {**MODEL, "id": identifier}), \
+                with patch.object(comparison, "get_private_model", side_effect=lambda identifier: {**MODEL, "id": identifier}), \
                      patch.object(comparison, "get_model_api_key", return_value="test-key"), \
                      patch.object(llm.requests, "post", return_value=model_response(ANSWER, False)):
                     finalized = finalization.finalize_chat_response(request, QUESTION, response,

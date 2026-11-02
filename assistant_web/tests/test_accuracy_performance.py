@@ -16,7 +16,7 @@ from backend.sources.mantis_store import render_document
 from backend.intent.matching import chroma_text_matches_constraints
 from backend.common import normalize_chroma_issue_document
 from backend.config import CHROMA_DB_PATH
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.timing import TIMINGS, measured, request_timing
 
 

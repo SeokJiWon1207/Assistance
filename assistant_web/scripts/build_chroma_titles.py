@@ -9,6 +9,8 @@ from backend.sources.chroma_titles import build_title_projection
 
 
 def main():
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--target',type=Path,required=True)

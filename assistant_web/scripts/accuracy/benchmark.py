@@ -243,6 +243,8 @@ def git_commit() -> str:
 
 
 def command_run(args: argparse.Namespace) -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     from backend.environment import load_dotenv
 
     load_dotenv(APP_DIR / ".env")

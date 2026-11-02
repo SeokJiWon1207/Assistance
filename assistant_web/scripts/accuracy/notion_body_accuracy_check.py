@@ -318,7 +318,8 @@ def grade_retrieval(case: BodyCase, retrieval: dict[str, Any], evidence: dict[st
 def fetch_oracle_page(page_id: str) -> dict[str, Any]:
     """Independent bounded REST traversal; skipped/failed children stay incomplete."""
     import requests
-    from backend.config import NOTION_API_BASE, get_notion_headers, notion_request_slot
+    from backend.settings.notion import NOTION_API_BASE, get_notion_headers
+    from backend.notion.transport import notion_request_slot
     page: dict[str, Any] = {"page_id": page_id, "segments": [], "blocks": [], "complete": True, "errors": [],
                             "unsupported_elements": [], "child_database_ids": []}
     reasons: set[str] = set()
@@ -420,7 +421,7 @@ def fetch_oracle_page(page_id: str) -> dict[str, Any]:
 def model_evidence_check(case: BodyCase, retrieval: dict[str, Any]) -> bool | None:
     if not case.expected_present:
         return None
-    from backend.retrieval import build_model_retrieval_context
+    from backend.evidence.model_context import build_model_retrieval_context
     context = build_model_retrieval_context(retrieval, 5)
     return all(any(normalize_id(page.get("id")) == normalize_id(identifier)
         and contains(page.get("content"), case.terms) for page in context.get("notion_pages") or [])
@@ -494,7 +495,7 @@ def run_case(case: BodyCase, evidence: dict[str, Any], mode: str = "natural_retr
              chat_model_id: str = "", user_uid: str = "") -> dict[str, Any]:
     started = time.perf_counter()
     try:
-        from backend.retrieval import run_retrieval_pipeline
+        from backend.services.retrieval_pipeline import run_retrieval_pipeline
         response: dict[str, Any] = {}
         from backend.execution import checkpoint, execution_scope
         with execution_scope() as budget:
@@ -575,6 +576,8 @@ def write_report(report: dict[str, Any], directory: Path) -> None:
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)

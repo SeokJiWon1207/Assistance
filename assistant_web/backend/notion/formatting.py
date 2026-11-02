@@ -5,14 +5,20 @@ from datetime import datetime
 
 from typing import Any, Dict, List, Optional
 
-from backend.common import extract_quoted_value, has_lookup_request, normalize_for_match, remove_quoted_value
+from backend.utils.text import (
+    extract_quoted_value,
+    has_lookup_request,
+    normalize_for_match,
+    remove_quoted_value,
+)
 from backend.intent.constants import ISSUE_ANALYSIS_INTENT_KEYWORDS, ISSUE_LIST_INTENT_KEYWORDS
-from backend.notion.client import NOTION_CONTENT_INCOMPLETE
-from backend.notion.search import collect_retrieved_notion_pages, notion_requested_information_fields
-from backend.notion.query_text import notion_structural_query
-from backend.notion.mapping import KST
+from backend.notion.read_api import NOTION_CONTENT_INCOMPLETE
+from backend.notion.matching import collect_retrieved_notion_pages
+from backend.notion.search import notion_requested_information_fields
+from backend.query.notion_text import notion_structural_query
+from backend.notion.values import KST
 from backend.query_filters import filter_clause_label
-from backend.query_planning import extract_group_by, has_count_intent
+from backend.query.operations import extract_group_by, has_count_intent
 
 
 def append_notion_completeness_notice(

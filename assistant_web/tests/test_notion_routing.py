@@ -113,7 +113,7 @@ class RoutingFixtureTest(unittest.TestCase):
                         self.assertEqual(constraints["screen_numbers"], case["screen_numbers"])
                     for alias in case.get("customer_forbidden_aliases", []):
                         self.assertNotIn(alias, constraints["customer_aliases"])
-                    with patch("backend.notion.search.load_known_people", return_value=(
+                    with patch("backend.intent.notion_constraints.load_known_people", return_value=(
                         tuple(case.get("notion_known_people", ["김보람", "svn"])), (),
                     )):
                         for key, value in case.get("notion_constraints", {}).items():

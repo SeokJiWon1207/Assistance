@@ -1,5 +1,6 @@
 """검색 조건과 현재 원본이 다른 후보를 답변·집계에 포함하지 않는 회귀 검사."""
 
+from backend.services import retrieval_pipeline
 import sqlite3
 import tempfile
 import unittest
@@ -57,7 +58,7 @@ class HistoricalKeywordTests(unittest.TestCase):
             stored = complete_batch(rows)
         self.enterContext(patch.object(mantis_store, "stream_complete_store", side_effect=lambda: nullcontext(stored)))
         self.enterContext(patch.object(mantis, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
-        self.enterContext(patch.object(retrieval, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
+        self.enterContext(patch.object(retrieval_pipeline, "get_mantis_snapshot_freshness", return_value="2026-10-12"))
         self.enterContext(patch.object(mantis, "fetch_mantis_issue_by_id",
                                       side_effect=lambda issue_id: next(row for row in rows if row["id"] == issue_id)))
         plan = build_query_plan(query, {"source": "mantis"}, extract_query_constraints(query))

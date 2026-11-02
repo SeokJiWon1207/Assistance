@@ -12,7 +12,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import sqlite3
+import sqlite3 as sqlite3
 import statistics
 import sys
 import tempfile
@@ -20,6 +20,9 @@ from time import perf_counter
 
 APP_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(APP_DIR))
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import BACKUP_READ, BACKUP_WRITE, CHROMA
 
 
 def ranking_metrics(ids: list[int], expected: list[int], k: int = 5) -> dict:
@@ -43,11 +46,13 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def backup(source: Path, target: Path) -> None:
-    with closing(sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True)) as src, closing(sqlite3.connect(target)) as dst:
+    with closing(open_sqlite(f"{source.resolve().as_uri()}?mode=ro", profile=BACKUP_READ)) as src, closing(open_sqlite(target, profile=BACKUP_WRITE)) as dst:
         src.backup(dst)
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
@@ -71,7 +76,7 @@ def main() -> int:
         if INDEX_PATH.exists():
             backup(INDEX_PATH, target)
         index_stats = build_index(source, target, connection_key())
-        with closing(sqlite3.connect(source)) as raw_db:
+        with closing(open_sqlite(source, profile=CHROMA)) as raw_db:
             for case in cases:
                 for issue_id in case["expected_ids"]:
                     if raw_db.execute("SELECT 1 FROM issues WHERE id=?", [issue_id]).fetchone() is None:

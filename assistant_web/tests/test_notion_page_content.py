@@ -1,9 +1,10 @@
 """Typed block evidence and plain text must share one bounded source traversal."""
+from backend.notion import transport
 import os
 import unittest
 from unittest.mock import patch
 
-from backend.notion import client
+from backend.notion import read_api as client
 import test_notion_accuracy_regressions as fixtures
 
 
@@ -49,7 +50,7 @@ class NotionPageContentTests(unittest.TestCase):
             return ordinary_get(url, **kwargs)
 
         db_page = fixtures.page("db-page", memo="property_only_token")
-        with patch.object(client.requests, "get", side_effect=get), patch.object(client, "notion_post_json",
+        with patch.object(client.requests, "get", side_effect=get), patch.object(transport, 'notion_post_json',
             return_value=fixtures.response({"results": [db_page], "has_more": False})):
             content = client.fetch_notion_page_content("root", max_blocks=200)
         typed = {segment["block_id"]: segment for segment in content["segments"]}

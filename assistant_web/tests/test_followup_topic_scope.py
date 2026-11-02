@@ -1,5 +1,8 @@
 """후속 질문의 주제 교체와 원문 검색을 실제 서비스 경계에서 검증한다."""
 
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
+from backend.services import retrieval_pipeline
 import sqlite3
 import tempfile
 import unittest
@@ -37,11 +40,11 @@ class FollowupTopicScopeTests(unittest.TestCase):
             ChatMessage(role="assistant", content="전환 요청은 확인되지 않았습니다."),
             ChatMessage(role="user", content=question),
         ])
-        with (patch.object(chat, "get_private_model", return_value={"id": "fixture-model", "status": "active"}),
-              patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-              patch.object(chat, "load_audit_query_plan", return_value=plan),
-              patch.object(chat, "resolve_reference_from_context", return_value=None),
-              patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unexpected rewrite"))):
+        with (patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture-model", "status": "active"}),
+              patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+              patch.object(chat_prepare, "load_audit_query_plan", return_value=plan),
+              patch.object(chat_prepare, "resolve_reference_from_context", return_value=None),
+              patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("unexpected rewrite"))):
             return chat.prepare_chat_pipeline(request, question, {"uid": "fixture-user"})
 
     def test_new_related_topic_replaces_old_keywords_and_preserves_platform(self):
@@ -99,7 +102,7 @@ class FollowupTopicScopeTests(unittest.TestCase):
         context = self.followup()
         with (patch.object(mantis, "read_complete_store", return_value=stored),
               patch.object(mantis, "stream_complete_store", return_value=nullcontext(stored), create=True),
-              patch.object(retrieval, "execute_mantis_filter_search", return_value={"source": "mantis_filter", "status": "skipped"}),
+              patch.object(retrieval_pipeline, "execute_mantis_filter_search", return_value={"source": "mantis_filter", "status": "skipped"}),
               confirmed_constraints_scope(context.retrieval_text, context.query_constraints)):
             plan = build_query_plan(context.retrieval_text, {"source": "mantis"}, context.query_constraints)
             result = retrieval.run_retrieval_pipeline(context.retrieval_text, 10, {"mantis": True}, plan)

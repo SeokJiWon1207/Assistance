@@ -21,6 +21,8 @@ from backend.notion.body_index_sync import notion_body_index_status, sync_notion
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database-id", action="append", help="설정된 읽기 범위의 DB ID. 여러 번 지정 가능")
     parser.add_argument("--max-pages", type=int, default=100, help="이번 배치에서 읽을 본문 수. 0은 목록만 갱신")

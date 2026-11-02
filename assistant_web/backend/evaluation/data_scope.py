@@ -21,6 +21,8 @@ def build_answer_data_scope(retrieval: dict[str, Any] | None) -> list[dict[str, 
         coverage = "범위 미확인"
         if stage.get("status") == "error":
             coverage = "조회 실패"
+        elif meta.get("aggregation_complete") is True and meta.get("snapshot_complete") is True:
+            coverage = "저장본 전체 집계 완료"
         elif meta.get("search_complete") is False:
             coverage = "부분 조회"
         elif meta.get("search_complete") is True:
@@ -61,7 +63,8 @@ def build_answer_data_scope(retrieval: dict[str, Any] | None) -> list[dict[str, 
             "asOfLabel": "저장 시각" if snapshot else "조회 시각",
             "coverage": coverage,
             "databaseCount": database_count,
-            "warning": coverage in {"부분 조회", "조회 실패", "범위 미확인"} or meta.get("content_complete") is False,
+            "warning": (coverage in {"부분 조회", "조회 실패", "범위 미확인"}
+                        or meta.get("content_complete") is False or bool(meta.get("freshness_warning"))),
             "notes": list(dict.fromkeys(notes)),
         })
     # 동일 출처가 여러 검색 단계를 거쳤으면 각 범위를 유지하되 같은 표시만 합친다.

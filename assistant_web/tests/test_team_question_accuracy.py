@@ -1,9 +1,15 @@
 """팀원 질문의 조건 충족, 오답 차단, 평가기의 거짓 통과를 검증한다."""
 
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import schema as notion_schema
+from backend.notion import page_enrichment
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from backend.query import notion_constraints as notion_rules
+from backend.intent import notion_constraints as notion_parser
 from backend.evaluation.verification import build_verification_report
 from backend.notion import search
 from backend.notion.formatting import format_deterministic_notion_answer
@@ -31,8 +37,8 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
         search._known_notion_owner_matcher.cache_clear()
         self.addCleanup(search._known_notion_owner_matcher.cache_clear)
         with (
-            patch.object(search, "load_known_people", return_value=(("김지은", "남궁지은"), ("김지은", "문서"))),
-            patch.object(search, "is_valid_person_name", wraps=search.is_valid_person_name) as validate,
+            patch.object(notion_parser, "load_known_people", return_value=(("김지은", "남궁지은"), ("김지은", "문서"))),
+            patch.object(notion_rules, "is_valid_person_name", wraps=notion_rules.is_valid_person_name) as validate,
             patch.object(search.re, "compile", wraps=search.re.compile) as compile_pattern,
         ):
             for _ in range(20):
@@ -45,7 +51,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
     def test_owner_matcher_tracks_directory_changes_and_empty_directory(self):
         search._known_notion_owner_matcher.cache_clear()
         self.addCleanup(search._known_notion_owner_matcher.cache_clear)
-        with patch.object(search, "load_known_people") as directory:
+        with patch.object(notion_parser, "load_known_people") as directory:
             for people, expected in (((), ""), (("김지은",), "김지은"), (("남궁지은",), ""), ((), "")):
                 directory.return_value = (people, ())
                 self.assertEqual(search.known_notion_owner("김지은의 문서"), expected)
@@ -54,7 +60,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
 
     def test_implicit_owner_requires_actual_people_evidence(self):
         for known in ((), ("김지은", "남궁지은")):
-            with patch.object(search, "load_known_people", return_value=(known, ())):
+            with patch.object(notion_parser, "load_known_people", return_value=(known, ())):
                 for phrase in ("결제오류 처리 방법 문서 찾아줘", "로그인 처리 문서", "환불요청 처리 절차",
                                "배포작업 처리 현황", "결제모듈의 이슈", "프로젝트의 문서", "운영팀의 업무"):
                     with self.subTest(phrase=phrase, known=known):
@@ -66,7 +72,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                                              name if name in known else "")
 
     def test_explicit_four_character_names_are_preserved_without_directory(self):
-        with patch.object(search, "load_known_people", return_value=((), ())):
+        with patch.object(notion_parser, "load_known_people", return_value=((), ())):
             for name in ("남궁지은", "남궁지인", "남궁지이"):
                 question = f"노션에서 담당자 {name} 항목"
                 with self.subTest(name=name):
@@ -90,7 +96,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
     def test_owner_inflections_keep_owner_in_compound_conditions(self):
         phrases = ("김지은이 맡은거", "김지은이 맡고있는", "김지은의 문서",
                    "담당자는 김지은이고 시작전인 항목")
-        with patch.object(search, "load_known_people", return_value=(("김지은",), ())):
+        with patch.object(notion_parser, "load_known_people", return_value=(("김지은",), ())):
             for phrase in phrases:
                 with self.subTest(phrase=phrase):
                     constraints = search.extract_notion_constraints(phrase)
@@ -137,7 +143,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                 self.assertEqual(extract_query_constraints(phrase)["statuses"], ["need_info"])
 
     def test_unknown_owner_subject_particle_uses_following_predicate(self):
-        with patch.object(search, "load_known_people", return_value=((), ())):
+        with patch.object(notion_parser, "load_known_people", return_value=((), ())):
             for name in ("김지은", "김지인", "김지이"):
                 for particle in ("이", "가", "은", "는"):
                     question = f"노션에서 담당자 {name}{particle} 맡은 항목"
@@ -148,11 +154,11 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                         prefix = search.inherit_notion_context(["그중 상태만 완료로 바꿔서 찾아줘", question])
                         self.assertEqual(search.extract_notion_constraints(prefix)["owner"], name)
                 self.assertEqual(search.extract_notion_constraints(f"담당자 {name} 항목")["owner"], name)
-        with patch.object(search, "load_known_people", return_value=(("김지은이",), ())):
+        with patch.object(notion_parser, "load_known_people", return_value=(("김지은이",), ())):
             self.assertEqual(search.extract_notion_constraints("담당자 김지은이 맡은 항목")["owner"], "김지은이")
 
     def test_owner_names_and_followups_preserve_full_name(self):
-        with patch.object(search, "load_known_people", return_value=(("김지",), ())):
+        with patch.object(notion_parser, "load_known_people", return_value=(("김지",), ())):
             for name in ("김지은", "김지인", "김지이"):
                 with self.subTest(name=name):
                     prior = f"노션에서 담당자 {name} 항목 찾아줘"
@@ -172,7 +178,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
             "상태": {"type": "select", "select": {"options": [{"name": "결재완료"}]}},
             "구상태": {"type": "status", "status": {"options": [{"name": "완료"}]}},
         }
-        with patch.object(search, "fetch_notion_database_schema", return_value={"properties": properties}):
+        with patch.object(read_api, 'fetch_notion_database_schema', return_value={"properties": properties}):
             self.assertEqual(search.notion_database_status_filter("db", "완료"),
                              (True, {"property": "구상태", "status": {"equals": "완료"}}))
             properties["진행상태"] = {"type": "select", "select": {"options": [{"name": "완료"}]}}
@@ -293,11 +299,12 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                 self.assertTrue(extract_query_constraints(query)["customer_key"])
 
     def test_notion_single_item_reference_uses_the_actual_previous_source(self):
-        with patch("backend.understanding.load_audit_sources", return_value=[{
+        with patch("backend.intent.context.load_audit_sources", return_value=[{
             "type": "notion", "page_id": "p1", "title": "배포 계획",
-        }]):
+        }]) as load_sources:
             query = resolve_reference_from_context("그 항목의 제목을 정확히 다시 알려줘", "audit-1", "user-1")
         self.assertEqual(query, '노션에서 "배포 계획" 그 항목의 제목을 정확히 다시 알려줘')
+        load_sources.assert_called_once_with("audit-1", user_uid="user-1")
 
     def test_query_and_display_use_the_same_status_property(self):
         fields = {
@@ -313,7 +320,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                 self.assertEqual(page["status"], "시작전")
                 self.assertEqual(page["status_property"], "진행상태")
                 self.assertFalse(search.notion_page_matches_and_enrich(page, {"excluded_statuses": ["시작전"]}))
-                with patch.object(search, "fetch_notion_database_schema", return_value={"properties": properties}):
+                with patch.object(read_api, 'fetch_notion_database_schema', return_value={"properties": properties}):
                     self.assertEqual(search.notion_database_status_filter("db", "시작전")[1]["property"], "진행상태")
                     self.assertEqual(search.notion_database_status_filter("db", "종료된이슈")[1]["property"], "상태")
 
@@ -364,7 +371,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
                 self.assertEqual(result["status"].replace(" ", ""), status)
                 self.assertEqual(result["excluded_statuses"], excluded)
 
-    @patch.object(search, "load_known_people", return_value=(("홍길동",), ()))
+    @patch.object(notion_parser, "load_known_people", return_value=(("홍길동",), ()))
     def test_status_change_preserves_title_and_owner(self, _known_people):
         latest = "그 항목에서 상태만 시작전으로 바꿔서 찾아줘"
         prior = '노션에서 담당자 홍길동인 "배포 계획" 중 결재요청 상태 찾아줘'
@@ -399,7 +406,7 @@ class TeamQuestionUnderstandingTests(unittest.TestCase):
 
     def test_relation_owner_is_resolved_before_unassigned_filter(self):
         page = {"title": "배포 계획", "owner": "담당자 미지정"}
-        with patch.object(search, "resolve_notion_page_owner", side_effect=lambda row: row.update(owner="홍길동")):
+        with patch.object(page_enrichment, "resolve_notion_page_owner", side_effect=lambda row: row.update(owner="홍길동")):
             self.assertFalse(search.notion_page_matches_and_enrich(page, {"unassigned_owner": True}))
 
 
@@ -413,13 +420,13 @@ class TeamQuestionSearchTests(unittest.TestCase):
             ], "has_more": False}
             with (
                 self.subTest(noun=noun),
-                patch.object(search, "load_known_people", return_value=((), ())),
-                patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-                patch.object(search, "fetch_notion_database_title", return_value="업무"),
+                patch.object(notion_parser, "load_known_people", return_value=((), ())),
+                patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+                patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
                 patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-                patch.object(search, "notion_property_schema", return_value={}),
-                patch.object(search, "notion_post_json", return_value=response),
-                patch.object(search, "fetch_notion_page_blocks", return_value=""),
+                patch.object(notion_schema, 'notion_property_schema', return_value={}),
+                patch.object(transport, 'notion_post_json', return_value=response),
+                patch.object(read_api, 'fetch_notion_page_blocks', return_value=""),
                 patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
             ):
                 result = search.execute_notion_search(f"노션에서 {noun}인 항목 보여줘", include_blocks=False)
@@ -442,13 +449,13 @@ class TeamQuestionSearchTests(unittest.TestCase):
                 })
             with (
                 self.subTest(phrase=phrase),
-                patch.object(search, "load_known_people", return_value=(("김보람",), ())),
-                patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-                patch.object(search, "fetch_notion_database_title", return_value="업무"),
+                patch.object(notion_parser, "load_known_people", return_value=(("김보람",), ())),
+                patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+                patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
                 patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-                patch.object(search, "notion_property_schema", return_value={}),
-                patch.object(search, "notion_post_json", return_value=response),
-                patch.object(search, "fetch_notion_page_blocks", return_value=""),
+                patch.object(notion_schema, 'notion_property_schema', return_value={}),
+                patch.object(transport, 'notion_post_json', return_value=response),
+                patch.object(read_api, 'fetch_notion_page_blocks', return_value=""),
                 patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
             ):
                 result = search.execute_notion_search("노션에서 " + phrase, include_blocks=False)
@@ -492,12 +499,12 @@ class TeamQuestionSearchTests(unittest.TestCase):
             with (
                 self.subTest(question=question),
                 patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
-                patch.object(search, "load_known_people", return_value=(("김지은",) if not question.startswith("담당자") else (), ())),
-                patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-                patch.object(search, "fetch_notion_database_title", return_value="업무"),
+                patch.object(notion_parser, "load_known_people", return_value=(("김지은",) if not question.startswith("담당자") else (), ())),
+                patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+                patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
                 patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-                patch.object(search, "notion_property_schema", return_value={}),
-                patch.object(search, "notion_post_json", return_value=response),
+                patch.object(notion_schema, 'notion_property_schema', return_value={}),
+                patch.object(transport, 'notion_post_json', return_value=response),
                 patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
             ):
                 result = search.execute_notion_search(question, include_blocks=False)
@@ -530,12 +537,12 @@ class TeamQuestionSearchTests(unittest.TestCase):
         response.json.return_value = {"results": [{"id": "p1", "title": "배포 계획"}],
                                       "has_more": True, "next_cursor": "next"}
         with (
-            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-            patch.object(search, "fetch_notion_database_title", return_value="업무"),
+            patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(notion_schema, 'notion_property_schema', return_value={"제목": {"type": "title"}}),
             patch.object(search, "notion_search_max_pages", return_value=1),
-            patch.object(search, "notion_post_json", return_value=response),
+            patch.object(transport, 'notion_post_json', return_value=response),
             patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
         ):
             result = search.execute_notion_search('노션에서 "배포 계획" 찾아줘', include_blocks=False)
@@ -549,17 +556,15 @@ class TeamQuestionSearchTests(unittest.TestCase):
             "has_more": False,
         }
         with (
-            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
             patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
-            patch.object(search, "fetch_notion_database_title", return_value="기술공유"),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="기술공유"),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
-            patch.object(search, "notion_title_property", return_value="제목"),
-            patch.object(search, "notion_post_json", return_value=response),
+            patch.object(notion_schema, 'notion_property_schema', return_value={"제목": {"type": "title"}}),
+            patch.object(notion_schema, 'notion_title_property', return_value="제목"),
+            patch.object(transport, 'notion_post_json', return_value=response),
             patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: {**page, **kwargs}),
-            patch.object(
-                search,
-                "fetch_notion_page_blocks",
+            patch.object(read_api, 'fetch_notion_page_blocks',
                 return_value=f"본문\n{search.NOTION_CONTENT_INCOMPLETE}",
             ),
         ):
@@ -587,11 +592,11 @@ class TeamQuestionSearchTests(unittest.TestCase):
             responses.append(response)
         with (
             patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
-            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-            patch.object(search, "fetch_notion_database_title", return_value="업무"),
+            patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
             patch.object(search, "notion_database_status_filter", return_value=(False, None)),
-            patch.object(search, "notion_property_schema", return_value={}),
-            patch.object(search, "notion_post_json", side_effect=responses),
+            patch.object(notion_schema, 'notion_property_schema', return_value={}),
+            patch.object(transport, 'notion_post_json', side_effect=responses),
             patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
         ):
             stage = search.execute_notion_search("노션에서 대기시간 문서 찾아줘", include_blocks=False)
@@ -624,11 +629,11 @@ class TeamQuestionSearchTests(unittest.TestCase):
         status_filter = {"property": "상태", "status": {"equals": "시작전"}}
         with (
             patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db"}, True)),
-            patch.object(search, "get_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
-            patch.object(search, "fetch_notion_database_title", return_value="업무"),
+            patch.object(search, "resolve_notion_settings", return_value={"token": "t", "database_ids": ["db"]}),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="업무"),
             patch.object(search, "notion_database_status_filter", return_value=(True, status_filter)),
-            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
-            patch.object(search, "notion_post_json", side_effect=responses) as post,
+            patch.object(notion_schema, 'notion_property_schema', return_value={"제목": {"type": "title"}}),
+            patch.object(transport, 'notion_post_json', side_effect=responses) as post,
             patch.object(search, "normalize_notion_page", side_effect=lambda page, **kwargs: dict(page)),
         ):
             result = search.execute_notion_search('노션에서 상태가 시작전인 "배포 계획" 찾아줘', include_blocks=False)

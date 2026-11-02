@@ -1,13 +1,18 @@
 """사용자별 대화 메시지를 순번별로 보존하고 작은 페이지·부분 쓰기로 제공한다."""
 import json
 import os
-import sqlite3
+import sqlite3 as sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.common import clamp_int
-from backend.schemas import ConversationMessage
+from backend.utils.numbers import clamp_int
+from backend.schemas import ConversationMessage as ConversationMessage
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import WORKSPACE
+from backend.storage.conversation_rows import safe_messages as safe_messages, write_rows as write_rows
+from backend.storage.workspace_schema import migrate_messages as migrate_messages
 
 
 class ConversationConflictError(ValueError):
@@ -22,37 +27,10 @@ class ConversationQuotaError(ValueError):
     """용량을 초과하면 기존 기록을 자르지 않고 쓰기를 거절한다."""
 
 
-def safe_messages(messages):
-    safe = []
-    for raw in messages:
-        try:
-            safe.append(ConversationMessage.model_validate(raw).model_dump(exclude_none=True))
-        except (TypeError, ValueError):
-            continue
-    return safe
 
 
-def migrate_messages(db):
-    db.execute('''CREATE TABLE IF NOT EXISTS conversation_messages (
-        user_uid TEXT NOT NULL, conversation_id TEXT NOT NULL, position INTEGER NOT NULL,
-        message_json TEXT NOT NULL, message_bytes INTEGER NOT NULL,
-        PRIMARY KEY(user_uid, conversation_id, position))''')
-    for user, conversation, payload in db.execute('SELECT user_uid,conversation_id,messages_json FROM conversations').fetchall():
-        try:
-            values = json.loads(payload)
-        except (TypeError, ValueError):
-            values = []
-        if isinstance(values, list):
-            write_rows(db, user, conversation, 0, safe_messages(values))
-        db.execute("UPDATE conversations SET messages_json='[]' WHERE user_uid=? AND conversation_id=?", (user, conversation))
 
 
-def write_rows(db, user, conversation, start, messages):
-    rows = []
-    for index, message in enumerate(messages, start):
-        value = json.dumps(message, ensure_ascii=False)
-        rows.append((user, conversation, index, value, len(value.encode('utf-8'))))
-    db.executemany('INSERT OR REPLACE INTO conversation_messages VALUES (?,?,?,?,?)', rows)
 
 
 def hydrate_legacy(db, user, conversation):
@@ -85,7 +63,7 @@ def read_page(db, user, conversation, *, before=None, limit=60):
 
 
 def get_conversation(path: Path, user, conversation, *, before=None, limit=60):
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         return read_page(db, user, conversation, before=before, limit=limit)
 
 
@@ -94,7 +72,7 @@ def list_conversations(path: Path, user, limit=40):
 
 
 def conversation_listing(path: Path, user, limit=40):
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         # 메시지 페이지 밖의 대화도 같은 스냅샷에서 확인해야 삭제와 미조회 상태를 구분할 수 있다.
         db.execute('BEGIN')
         ids = db.execute('SELECT conversation_id FROM conversations WHERE user_uid=? '
@@ -111,7 +89,7 @@ def save_conversation(path: Path, user, conversation, title, messages, favorite,
     limit_count = clamp_int(os.getenv('CONVERSATION_MAX_PER_USER','200'),1,5000) or 200
     limit_total = clamp_int(os.getenv('CONVERSATION_MAX_TOTAL_BYTES_PER_USER','50000000'),1000000,1000000000) or 50000000
     # 1MB는 전송 요청의 제한이다. 대화 전체는 사용자별 보관 용량 안에서 여러 요청으로 저장한다.
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         db.execute('BEGIN IMMEDIATE')
         old = db.execute('SELECT updated_at,created_at FROM conversations WHERE user_uid=? AND conversation_id=?', (user,conversation)).fetchone()
         if old is None and expected_updated_at:
@@ -146,7 +124,7 @@ def save_conversation(path: Path, user, conversation, title, messages, favorite,
 
 
 def delete_conversation(path: Path, user, conversation):
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         deleted = db.execute('DELETE FROM conversations WHERE user_uid=? AND conversation_id=?',(user,conversation)).rowcount
         if deleted:
             db.execute('DELETE FROM conversation_messages WHERE user_uid=? AND conversation_id=?',(user,conversation))
@@ -156,7 +134,7 @@ def delete_conversation(path: Path, user, conversation):
 def delete_conversations(path: Path, user: str, ids: list[str], *, all_conversations: bool = False) -> list[str]:
     if not user or (all_conversations and ids) or (not all_conversations and not ids):
         raise ValueError('삭제할 대화 범위가 올바르지 않습니다.')
-    with closing(sqlite3.connect(path)) as db, db:
+    with closing(open_sqlite(path, profile=WORKSPACE)) as db, db:
         db.execute('BEGIN IMMEDIATE')
         parameters: list[str] = [user]
         condition = 'user_uid=?'

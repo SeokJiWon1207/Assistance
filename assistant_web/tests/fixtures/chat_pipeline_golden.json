@@ -1,0 +1,841 @@
+[
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "테스트 사용자님으로 로그인되어 있습니다.\n\n- 역할: 사용자\n- 팀: 미설정\n- Mantis 담당자: 테스트 사용자",
+      "followUps": [
+        "내 담당 미종료 이슈 보여줘",
+        "내 장기 미종료 이슈 알려줘",
+        "이번 주 내 업무보고서 작성해줘"
+      ],
+      "modelId": "fixture",
+      "raw": {
+        "mode": "authenticated_identity"
+      },
+      "sources": []
+    },
+    "scenario": "identity",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "내가 누구야",
+        "response": {
+          "content": "테스트 사용자님으로 로그인되어 있습니다.\n\n- 역할: 사용자\n- 팀: 미설정\n- Mantis 담당자: 테스트 사용자",
+          "followUps": [
+            "내 담당 미종료 이슈 보여줘",
+            "내 장기 미종료 이슈 알려줘",
+            "이번 주 내 업무보고서 작성해줘"
+          ],
+          "modelId": "fixture",
+          "raw": {
+            "mode": "authenticated_identity"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "테스트 사용자님으로 로그인되어 있습니다.\n\n- 역할: 사용자\n- 팀: 미설정\n- Mantis 담당자: 테스트 사용자",
+      "followUps": [
+        "내 담당 미종료 이슈 보여줘",
+        "내 장기 미종료 이슈 알려줘",
+        "이번 주 내 업무보고서 작성해줘"
+      ],
+      "modelId": "fixture",
+      "raw": {
+        "mode": "authenticated_identity"
+      },
+      "sources": []
+    },
+    "scenario": "identity",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "내가 누구야",
+        "response": {
+          "content": "테스트 사용자님으로 로그인되어 있습니다.\n\n- 역할: 사용자\n- 팀: 미설정\n- Mantis 담당자: 테스트 사용자",
+          "followUps": [
+            "내 담당 미종료 이슈 보여줘",
+            "내 장기 미종료 이슈 알려줘",
+            "이번 주 내 업무보고서 작성해줘"
+          ],
+          "modelId": "fixture",
+          "raw": {
+            "mode": "authenticated_identity"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "deterministic_count"
+      },
+      "sources": []
+    },
+    "scenario": "plan_answer",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "deterministic_count"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "deterministic_count"
+      },
+      "sources": []
+    },
+    "scenario": "plan_answer",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "deterministic_count"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "status_clarification"
+      },
+      "sources": []
+    },
+    "scenario": "clarification",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "status_clarification"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "status_clarification"
+      },
+      "sources": []
+    },
+    "scenario": "clarification",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "status_clarification"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "deterministic_list"
+      },
+      "sources": []
+    },
+    "scenario": "retrieved_answer",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "deterministic_list"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "deterministic_list"
+      },
+      "sources": []
+    },
+    "scenario": "retrieved_answer",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "deterministic_list"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "empty_evidence"
+      },
+      "sources": []
+    },
+    "scenario": "empty_evidence",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "empty_evidence"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "empty_evidence"
+      },
+      "sources": []
+    },
+    "scenario": "empty_evidence",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "empty_evidence"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "model"
+      },
+      "sources": []
+    },
+    "scenario": "generation",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "model"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "model"
+      },
+      "sources": []
+    },
+    "scenario": "generation",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "model"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate",
+      "persist",
+      "release"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "model"
+      },
+      "sources": []
+    },
+    "scenario": "unified_generation",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user",
+          "verification_question": "확정 질문"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "model"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate",
+      "persist"
+    ],
+    "error": null,
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": {
+      "content": "확정 답변",
+      "modelId": "fixture",
+      "raw": {
+        "mode": "model"
+      },
+      "sources": []
+    },
+    "scenario": "unified_generation",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [
+      {
+        "kwargs": {
+          "user_uid": "fixture-user",
+          "verification_question": "확정 질문"
+        },
+        "question": "고정 질문",
+        "response": {
+          "content": "확정 답변",
+          "modelId": "fixture",
+          "raw": {
+            "mode": "model"
+          },
+          "sources": []
+        }
+      }
+    ],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate",
+      "release"
+    ],
+    "error": {
+      "detail": "고정 모델 오류",
+      "status": 502
+    },
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": null,
+    "scenario": "model_failure",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve",
+      "generate"
+    ],
+    "error": {
+      "detail": "고정 모델 오류",
+      "status": 502
+    },
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": null,
+    "scenario": "model_failure",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "release"
+    ],
+    "error": {
+      "detail": "요청이 취소되었습니다.",
+      "status": 499
+    },
+    "events": [],
+    "result": null,
+    "scenario": "cancel_before",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [],
+    "error": {
+      "detail": "요청이 취소되었습니다.",
+      "status": 499
+    },
+    "events": [],
+    "result": null,
+    "scenario": "cancel_before",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  },
+  {
+    "admitted": false,
+    "budget_restored": true,
+    "calls": [
+      "admit",
+      "prepare",
+      "plan",
+      "retrieve",
+      "release"
+    ],
+    "error": {
+      "detail": "요청이 취소되었습니다.",
+      "status": 499
+    },
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": null,
+    "scenario": "cancel_during",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  },
+  {
+    "admitted": true,
+    "budget_restored": true,
+    "calls": [
+      "prepare",
+      "plan",
+      "retrieve"
+    ],
+    "error": {
+      "detail": "요청이 취소되었습니다.",
+      "status": 499
+    },
+    "events": [
+      {
+        "message": "질문과 대화 맥락을 분석하고 있습니다",
+        "stage": "analysis",
+        "type": "status"
+      }
+    ],
+    "result": null,
+    "scenario": "cancel_during",
+    "shared_budget": true,
+    "shared_context": true,
+    "shared_timing": true,
+    "stored": [],
+    "timing_restored": true
+  }
+]

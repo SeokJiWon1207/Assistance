@@ -126,15 +126,15 @@ class CompoundAggregateScopeTests(unittest.TestCase):
 
         by_id = {row["id"]: row for row in rows}
         with (
-            patch("backend.services.chat_service.get_private_model", return_value={"id": "offline", "status": "active"}),
-            patch("backend.services.chat_service.get_model_api_key", return_value=""),
+            patch("backend.services.chat.prepare.get_private_model", return_value={"id": "offline", "status": "active"}),
+            patch("backend.llm.get_model_api_key", return_value=""),
             patch("backend.intent.status_semantics.get_model_api_key", return_value=""),
             patch("backend.sources.mantis_store.stream_complete_store", side_effect=snapshot),
             patch("backend.sources.mantis.fetch_mantis_issue_by_id", side_effect=lambda issue_id: by_id.get(int(issue_id))),
             patch("backend.reports.aggregate.collect_mantis_live_ids_in_range", return_value={
                 "status": "ok", "issues": {}, "scanned_ids": [], "scanned_pages": 0, "complete": True,
             }),
-            patch("backend.retrieval.get_mantis_snapshot_freshness", return_value="2026-10-01"),
+            patch("backend.services.retrieval_pipeline.get_mantis_snapshot_freshness", return_value="2026-10-01"),
             patch("backend.sources.mantis.get_mantis_snapshot_freshness", return_value="2026-10-01"),
         ):
             for question, expected, mode in (

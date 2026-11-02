@@ -1,3 +1,8 @@
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.reports as chat_reports
+import backend.services.chat.scope as chat_scope
 import unittest
 from unittest.mock import Mock, patch
 
@@ -28,7 +33,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
                 **response,
                 "capturedUserUid": user_uid,
             },
-        ), patch.object(chat_service_module, "get_private_model") as get_model:
+        ), patch.object(chat_prepare, "get_private_model") as get_model:
             response = chat_service_module.chat_service.build_response(request, user=user)
 
         get_model.assert_not_called()
@@ -195,11 +200,11 @@ class AuthenticatedIdentityTests(unittest.TestCase):
             messages=[{"role": "user", "content": question}],
         )
         with patch.object(
-            chat_service_module,
+            chat_prepare,
             "get_private_model",
             return_value={"id": "test-model", "status": "active"},
         ), patch.object(
-            chat_service_module,
+            chat_llm,
             "get_model_api_key",
             return_value="test-key",
         ):
@@ -217,7 +222,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
     def test_explicit_other_person_is_not_overridden_by_login(self):
         with patch.object(
-            chat_service_module,
+            chat_scope,
             "extract_query_constraints",
             return_value={"people": {"names": ["김담당"], "role": "handler"}},
         ):
@@ -278,19 +283,19 @@ class AuthenticatedIdentityTests(unittest.TestCase):
                     ],
                 )
                 with patch.object(
-                    chat_service_module, "load_audit_query_plan",
+                    chat_prepare, "load_audit_query_plan",
                     return_value={"source": "mantis", "limit": 5, "resolved_constraints":
                                   chat_service_module.extract_query_constraints("석지원 담당 MTS 미종료 이슈")},
-                ), patch.object(chat_service_module, "load_audit_sources", return_value=[]), patch.object(
-                    chat_service_module,
+                ), patch.object(chat_prepare, "load_audit_sources", return_value=[]), patch.object(
+                    chat_prepare,
                     "get_private_model",
                     return_value=model,
                 ), patch.object(
-                    chat_service_module,
+                    chat_llm,
                     "get_model_api_key",
                     return_value="test-key",
                 ), patch.object(
-                    chat_service_module,
+                    chat_planning,
                     "build_deterministic_report",
                     side_effect=capture_report,
                 ), patch.object(
@@ -330,7 +335,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
             name: Mock(side_effect=record(name))
             for name in builder_names
         }
-        with patch.multiple(chat_service_module, **builders):
+        with patch.multiple(chat_reports, **builders):
             result = chat_service_module.build_deterministic_report(
                 "고객사 이슈 현황",
                 "고객사 이슈 현황",
@@ -344,7 +349,7 @@ class AuthenticatedIdentityTests(unittest.TestCase):
 
     def test_follow_up_for_an_explicit_other_person_does_not_inherit_login(self):
         with patch.object(
-            chat_service_module,
+            chat_scope,
             "extract_query_constraints",
             return_value={"people": {"names": ["김담당"], "role": "handler"}},
         ):

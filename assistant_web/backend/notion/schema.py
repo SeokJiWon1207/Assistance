@@ -1,31 +1,19 @@
 """Notion 데이터베이스와 속성 스키마를 해석한다."""
 
+from backend.notion import read_api
 import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
-from backend.common import normalize_for_match
-from backend.config import get_notion_settings as _get_notion_settings, notion_unavailable_reason
-from backend.notion.client import (
-    fetch_notion_database_schema as _fetch_notion_database_schema,
-    fetch_notion_database_title as _fetch_notion_database_title,
-)
-from backend.notion.compat import compat_dependency
-
-
-def get_notion_settings() -> Dict[str, Any]:
-    return compat_dependency("get_notion_settings", _get_notion_settings)()
-
-def fetch_notion_database_schema(database_id: str) -> Dict[str, Any]:
-    return compat_dependency("fetch_notion_database_schema", _fetch_notion_database_schema)(database_id)
-
-def fetch_notion_database_title(database_id: str) -> str:
-    return compat_dependency("fetch_notion_database_title", _fetch_notion_database_title)(database_id)
+from backend.utils.text import normalize_for_match
+from backend.notion.discovery import resolve_notion_settings
+from backend.settings.notion import notion_unavailable_reason
+from backend.notion.read_api import fetch_notion_database_schema as fetch_notion_database_schema, fetch_notion_database_title as fetch_notion_database_title
 
 
 def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     database_ids = settings.get("database_ids", [])
     if not settings["token"] or not database_ids:
         raise HTTPException(status_code=503, detail=notion_unavailable_reason(settings))
@@ -35,7 +23,7 @@ def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
         for database_id in database_ids:
             if normalized_target in normalize_for_match(database_id):
                 return database_id
-            title = fetch_notion_database_title(database_id)
+            title = read_api.fetch_notion_database_title(database_id)
             if normalized_target in normalize_for_match(title):
                 return database_id
 
@@ -43,7 +31,7 @@ def select_notion_database_id(label_or_id: Optional[str] = None) -> str:
         return database_ids[0]
 
     for database_id in database_ids:
-        title = fetch_notion_database_title(database_id)
+        title = read_api.fetch_notion_database_title(database_id)
         if "주요이슈" in normalize_for_match(title):
             return database_id
     return database_ids[0]
@@ -64,7 +52,7 @@ def ensure_configured_notion_database(database_id: str) -> str:
     normalized = normalize_notion_id(database_id)
     allowed = {
         normalize_notion_id(item)
-        for item in get_notion_settings().get("database_ids", [])
+        for item in resolve_notion_settings().get("database_ids", [])
         if normalize_notion_id(item)
     }
     if not normalized or normalized not in allowed:
@@ -75,7 +63,7 @@ def ensure_configured_notion_database(database_id: str) -> str:
 def ensure_readable_notion_database(database_id: str) -> str:
     """읽기에만 자손 DB를 허용하고 쓰기 허용 목록은 확장하지 않는다."""
     from backend.notion.read_scope import resolve_notion_read_scope
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     scope, _ = resolve_notion_read_scope(settings.get("database_ids", []), settings.get("token", ""))
     normalized = normalize_notion_id(database_id)
     if not normalized or normalized not in scope:
@@ -84,7 +72,7 @@ def ensure_readable_notion_database(database_id: str) -> str:
 
 
 def notion_property_schema(database_id: str) -> Dict[str, Dict[str, Any]]:
-    return fetch_notion_database_schema(database_id).get("properties", {})
+    return read_api.fetch_notion_database_schema(database_id).get("properties", {})
 
 
 def find_notion_property(

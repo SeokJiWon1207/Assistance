@@ -7,10 +7,10 @@ import requests
 from fastapi import HTTPException
 
 from backend.display import customer_name, status_name
-from backend.common import compact_text, extract_quoted_value
+from backend.utils.text import compact_text, extract_quoted_value
 from backend.intent.constants import TRIAGE_REQUEST_PATTERN
 from backend.sources.chroma import execute_chroma_search
-from backend.sources.mantis import build_sources_from_issue_rows
+from backend.sources.mantis_fields import build_sources_from_issue_rows
 from backend.understanding import extract_query_constraints
 
 
@@ -108,7 +108,6 @@ def build_incident_triage_report(text: str, *, search_similar: bool = True) -> O
         lines.append(f"- {result.get('reason') or '유사 사례 검색을 완료하지 못했습니다.'}")
     else:
         lines.append("- 현재 검색 범위에서는 참고할 만한 과거 사례를 찾지 못했습니다.")
-
 
 
     sources = build_sources_from_issue_rows(examples)

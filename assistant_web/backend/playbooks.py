@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import sqlite3 as sqlite3
 import uuid
 from contextlib import closing
 from typing import Any, Dict, Iterable, List, Optional
 
-from backend.workspace import _now, init_workspace_db, workspace_db_path
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import WORKSPACE, WORKSPACE_ROWS
+from backend.utils.dates import local_timestamp as _now
+from backend.storage.workspace_schema import init_workspace_db, workspace_db_path
+
 
 
 PLAYBOOK_STATUSES = {"draft", "published", "archived"}
@@ -106,8 +110,7 @@ def list_playbooks(
         parameters.extend([like] * 7)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     parameters.append(max(1, min(int(limit or 100), 200)))
-    with closing(sqlite3.connect(workspace_db_path())) as connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE_ROWS)) as connection:
         rows = connection.execute(
             f"""
             SELECT * FROM resolution_playbooks
@@ -124,8 +127,7 @@ def list_playbooks(
 
 def get_playbook(playbook_id: str) -> Optional[Dict[str, Any]]:
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE_ROWS)) as connection:
         row = connection.execute(
             "SELECT * FROM resolution_playbooks WHERE id = ?", (playbook_id,)
         ).fetchone()
@@ -153,7 +155,7 @@ def create_playbook(payload: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, 
         now,
         now if status == "published" else "",
     )
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE)) as connection, connection:
         connection.execute(
             """
             INSERT INTO resolution_playbooks (
@@ -200,7 +202,7 @@ def update_playbook(playbook_id: str, changes: Dict[str, Any]) -> Optional[Dict[
         return current
     assignments.append("updated_at = ?")
     parameters.extend([_now(), playbook_id])
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
+    with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE)) as connection, connection:
         connection.execute(
             f"UPDATE resolution_playbooks SET {', '.join(assignments)} WHERE id = ?",
             parameters,

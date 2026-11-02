@@ -18,10 +18,13 @@ from backend.environment import load_dotenv
 
 load_dotenv(APP_DIR / ".env")
 
-from backend.common import normalize_for_match
-from backend.config import NOTION_API_BASE, RUNTIME_DIR, get_notion_settings, notion_post_json
+from backend.utils.text import normalize_for_match
+from backend.settings.notion import NOTION_API_BASE
+from backend.config import RUNTIME_DIR
+from backend.notion.discovery import resolve_notion_settings
+from backend.notion.transport import notion_post_json
 from backend.notion.client import notion_title
-from backend.notion.client import fetch_notion_database_schema, fetch_notion_database_title
+from backend.notion.read_api import fetch_notion_database_schema, fetch_notion_database_title
 from backend.notion.database_roles import (
     build_notion_database_role_catalog,
     save_notion_database_role_catalog,
@@ -122,10 +125,12 @@ def build_title_index(
 
 
 def main() -> int:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     roots = list(settings.get("database_ids") or [])
     if not settings.get("token") or not roots:
         raise SystemExit("Notion token or database list is not configured")

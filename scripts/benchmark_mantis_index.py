@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
-import sqlite3
+import sqlite3 as sqlite3
 import statistics
 import sys
 import tempfile
@@ -19,7 +19,10 @@ ASSISTANT_WEB_DIR = PROJECT_ROOT / "assistant_web"
 if str(ASSISTANT_WEB_DIR) not in sys.path:
     sys.path.insert(0, str(ASSISTANT_WEB_DIR))
 
-from backend.common import normalize_chroma_issue_document  # noqa: E402
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA
+
+from backend.sources.chroma_document import normalize_chroma_issue_document  # noqa: E402
 from backend.tools.mantis_index import INDEX_FILENAME, build_mantis_index  # noqa: E402
 from backend.tools.mantis_snapshot import scan_mantis_documents  # noqa: E402
 from backend.understanding import chroma_text_matches_constraints  # noqa: E402
@@ -66,6 +69,8 @@ def run_scan(chroma_path: Path, constraints: dict, mode: str) -> tuple[dict, flo
 
 
 def main() -> None:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--documents", type=int, default=100_000)
     parser.add_argument("--runs", type=int, default=7)
@@ -80,7 +85,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         chroma_path = root / "chroma.sqlite3"
-        with closing(sqlite3.connect(chroma_path)) as connection, connection:
+        with closing(open_sqlite(chroma_path, profile=CHROMA)) as connection, connection:
             connection.execute(
                 "CREATE TABLE embedding_metadata (id INTEGER, key TEXT, string_value TEXT)"
             )

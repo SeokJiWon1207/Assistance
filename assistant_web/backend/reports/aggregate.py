@@ -8,27 +8,19 @@ from backend.sources.mantis_store import with_store_scope
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.config import STATUS_ALIASES
+from backend.settings.values import STATUS_ALIASES
 from backend.display import customer_name, korean_day_range, status_name
-from backend.common import (
-    display_mantis_status_label,
-    normalize_chroma_issue_document,
-    normalize_for_match,
-)
+from backend.mantis_status import display_mantis_status_label
+from backend.sources.chroma_document import normalize_chroma_issue_document
+from backend.utils.text import normalize_for_match
 from backend.config import CHROMA_DB_PATH
 from backend.query_filters import filter_clause_label, normalize_filter_clauses, filter_audit_for_source
 from backend.query_planning import build_query_plan
-from backend.retrieval import collect_retrieved_issues
-from backend.sources.mantis import (
-    build_sources_from_issue_rows,
-    collect_mantis_live_ids_in_range,
-    extract_snapshot_limit,
-    fetch_mantis_recent_issues,
-    issue_created_year_month,
-    issue_matches_constraints,
-    normalize_issue,
-)
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.evidence.retrieval_rows import collect_retrieved_issues
+from backend.sources.mantis_fields import build_sources_from_issue_rows, issue_created_year_month, normalize_issue
+from backend.sources.mantis import collect_mantis_live_ids_in_range, extract_snapshot_limit, fetch_mantis_recent_issues
+from backend.sources.mantis_matching import issue_matches_constraints
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.understanding import (
     chroma_text_matches_constraints,
     extract_query_constraints,

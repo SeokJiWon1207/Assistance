@@ -1,5 +1,7 @@
 """본문 색인 후보가 실제 검색 필터·출처·집계 계약을 지키는지 검증한다."""
 
+from backend.notion import read_api
+from backend.notion import transport
 import os
 import unittest
 from unittest.mock import Mock, patch
@@ -220,7 +222,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
 
     def test_validated_index_content_is_reused_without_truncated_refetch(self):
         self.install_index(indexed_candidate("late-code", "needle();", kind="code"))
-        with patch.object(search, "fetch_notion_page_blocks", side_effect=AssertionError("unexpected refetch")):
+        with patch.object(read_api, 'fetch_notion_page_blocks', side_effect=AssertionError("unexpected refetch")):
             result = search.execute_notion_search('노션 코드에 "needle" 포함된 문서 찾아줘')
         self.assertEqual([page["id"] for page in result["notion_pages"]], ["late-code"])
         self.assertIn("needle();", result["notion_pages"][0]["content"])
@@ -228,7 +230,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
     def test_partial_index_evidence_is_not_replaced_by_legacy_cached_body(self):
         self.install_index(indexed_candidate("large-code", "needle(current_value);", kind="code", complete=False),
                            validation_complete=False, reasons=["body_index_content_incomplete"])
-        with patch.object(search, "fetch_notion_page_blocks", side_effect=AssertionError("unexpected cached refetch")):
+        with patch.object(read_api, 'fetch_notion_page_blocks', side_effect=AssertionError("unexpected cached refetch")):
             result = search.execute_notion_search('노션 코드에 "needle" 포함된 문서 찾아줘')
         self.assertEqual([page["id"] for page in result["notion_pages"]], ["large-code"])
         self.assertIn("needle(current_value);", result["notion_pages"][0]["content"])
@@ -238,7 +240,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
     def test_index_schema_failure_falls_back_without_aborting_live_search(self):
         self.install_index(indexed_candidate("indexed"), rows=[fixtures.page("fresh")],
                            blocks={"fresh": [self.paragraph("current", "needle 정상 절차")]})
-        with patch.object(search, "fetch_notion_database_title", side_effect=[
+        with patch.object(read_api, 'fetch_notion_database_title', side_effect=[
             HTTPException(status_code=503, detail="database unavailable"), "문서 DB",
         ]):
             result = search.execute_notion_search('노션 본문에 "needle" 포함된 문서 찾아줘',
@@ -258,11 +260,11 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
             return "다른 DB"
 
         with (
-            patch.object(search, "get_notion_settings", return_value={
+            patch.object(search, "resolve_notion_settings", return_value={
                 "token": "test-token", "database_ids": ["db", "db2"],
             }),
             patch.object(search, "resolve_notion_read_scope", return_value=({"db": "db", "db2": "db2"}, True)),
-            patch.object(search, "fetch_notion_database_title", side_effect=database_title),
+            patch.object(read_api, 'fetch_notion_database_title', side_effect=database_title),
         ):
             result = search.execute_notion_search('노션 본문에 "needle" 포함된 문서 찾아줘',
                                                   include_blocks=False)
@@ -324,7 +326,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
     def test_live_catalog_stops_after_collecting_the_body_candidate_window(self):
         self.install_index(indexed_candidate("old"))
         rows = [fixtures.page(f"recent-{i}") for i in range(100)]
-        with patch.object(search, "notion_post_json", side_effect=lambda _url, payload, **_kw: fixtures.response({
+        with patch.object(transport, 'notion_post_json', side_effect=lambda _url, payload, **_kw: fixtures.response({
             "results": rows, "has_more": True,
             "next_cursor": str(int(payload.get("start_cursor", "0")) + 1),
         })) as query:
@@ -352,7 +354,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
             # 현재 검색의 마감만 소진하며 상위 채팅 요청에는 시간이 남아 있다.
             CURRENT_BUDGET.get().deadline = 0
             checkpoint()
-        with execution_scope(ExecutionBudget.create()), patch.object(search, 'notion_post_json', side_effect=slow_query):
+        with execution_scope(ExecutionBudget.create()), patch.object(transport, 'notion_post_json', side_effect=slow_query):
             result = search.execute_notion_search('노션 needle 찾아줘', planned_terms=['needle'], include_blocks=False)
         self.assertEqual([page['id'] for page in result['notion_pages']], ['verified'])
         self.assertFalse(result['meta']['search_complete'])
@@ -366,7 +368,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
         def cancel_query(*_args, **_kwargs):
             parent.cancel()
             checkpoint()
-        with execution_scope(parent), patch.object(search, 'notion_post_json', side_effect=cancel_query):
+        with execution_scope(parent), patch.object(transport, 'notion_post_json', side_effect=cancel_query):
             with self.assertRaises(RequestStopped) as stopped:
                 search.execute_notion_search('노션 needle 찾아줘', planned_terms=['needle'], include_blocks=False)
         self.assertEqual(stopped.exception.status_code, 499)
@@ -376,7 +378,7 @@ class NotionBodyIndexSearchTests(unittest.TestCase):
         def slow_query(*_args, **_kwargs):
             CURRENT_BUDGET.get().deadline = 0
             checkpoint()
-        with execution_scope(ExecutionBudget.create()), patch.object(search, 'notion_post_json', side_effect=slow_query):
+        with execution_scope(ExecutionBudget.create()), patch.object(transport, 'notion_post_json', side_effect=slow_query):
             with self.assertRaises(RequestStopped):
                 search.execute_notion_search('노션 needle 문서 몇 개야', planned_terms=['needle'], include_blocks=False)
 

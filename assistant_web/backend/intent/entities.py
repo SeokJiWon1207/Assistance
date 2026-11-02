@@ -1,34 +1,30 @@
 """고객사·플랫폼·담당자·상태·식별자를 추출한다."""
 
-import json
-import os
+import json as json
+import os as os
 import re
-import sqlite3
-import tempfile
-import threading
-from contextlib import closing
-from functools import lru_cache
-from pathlib import Path
-from typing import Any, Callable, Dict, List, TypeVar
+import sqlite3 as sqlite3
+import tempfile as tempfile
+import threading as threading
+from contextlib import closing as closing
+from functools import lru_cache as lru_cache
+from pathlib import Path as Path
+from typing import Any as Any, Callable as Callable, Dict as Dict, List as List, TypeVar as TypeVar
 
-from backend.common import (
-    customer_alias_owner,
-    customer_project_owner,
-    derive_customer_aliases_from_project,
+from backend.customer_identity import customer_alias_owner as customer_alias_owner, customer_project_owner as customer_project_owner, derive_customer_aliases_from_project as derive_customer_aliases_from_project, text_matches_customer_aliases as text_matches_customer_aliases
+from backend.domain.people import (
     is_valid_handler_name,
     is_valid_person_name,
-    normalize_for_match,
     strip_korean_particle,
     text_contains_person_name,
-    text_matches_customer_aliases,
 )
-from backend.config import (
-    CHROMA_DB_PATH,
-    CUSTOMER_ALIASES,
+from backend.utils.text import normalize_for_match
+from backend.config import CHROMA_DB_PATH as CHROMA_DB_PATH, RUNTIME_DIR as RUNTIME_DIR
+from backend.settings.catalogs import get_customer_aliases as get_customer_aliases
+from backend.settings.values import (
     NON_CLOSED_STATUS_PATTERNS,
     PENDING_WORK_QUERY_PATTERN,
     PERSON_ROLE_ALIASES,
-    RUNTIME_DIR,
     STATUS_ALIASES,
     STOPWORDS,
 )
@@ -72,246 +68,33 @@ def extract_mantis_keyword(text: str) -> str:
     return " ".join(tokens)
 
 
-_FileStamp = tuple[int, int, int, int, int]
-_SnapshotKey = tuple[str, _FileStamp, _FileStamp]
-_HeaderCatalog = tuple[tuple[str, ...], ...]
-_T = TypeVar("_T")
-_CATALOG_FIELDS = ("프로젝트(고객사)", "담당자", "요청자")
-_CATALOG_MAX_BYTES = 2 * 1024 * 1024
-_CATALOG_LOCK = threading.Lock()
-
-
-class _CatalogSourceChanged(sqlite3.OperationalError):
-    """A different source generation became current while reading headers."""
-
-
-def _file_stamp(path: Path) -> _FileStamp:
-    try:
-        stat = path.stat()
-        return stat.st_dev, stat.st_ino, stat.st_ctime_ns, stat.st_mtime_ns, stat.st_size
-    except FileNotFoundError:
-        return 0, 0, 0, 0, 0
-
-
-def _source_cache_key(path: Path) -> _SnapshotKey:
-    path = path.resolve()
-    return str(path), _file_stamp(path), _file_stamp(Path(str(path) + "-wal"))
-
-
-def _snapshot_cache_key() -> _SnapshotKey:
-    return _source_cache_key(CHROMA_DB_PATH)
-
-
-def _catalog_path() -> Path:
-    return RUNTIME_DIR / "entity-header-catalog-v1.json"
-
-
-def _read_header_catalog(key: _SnapshotKey) -> _HeaderCatalog | None:
-    try:
-        with _catalog_path().open("rb") as stream:
-            data = stream.read(_CATALOG_MAX_BYTES + 1)
-        if len(data) > _CATALOG_MAX_BYTES:
-            return None
-        payload = json.loads(data)
-        if not isinstance(payload, dict) or payload.get("version") != 1:
-            return None
-        if payload.get("source") != [key[0], list(key[1]), list(key[2])]:
-            return None
-        fields = payload.get("fields")
-        if not isinstance(fields, dict) or set(fields) != set(_CATALOG_FIELDS):
-            return None
-        if any(not isinstance(values, list) or any(not isinstance(value, str) for value in values)
-               for values in fields.values()):
-            return None
-        return tuple(tuple(fields[field]) for field in _CATALOG_FIELDS)
-    except (OSError, ValueError, UnicodeError, RecursionError):
-        return None
-
-
-def _write_header_catalog(key: _SnapshotKey, catalog: _HeaderCatalog) -> None:
-    data = json.dumps({"version": 1, "source": key,
-                       "fields": dict(zip(_CATALOG_FIELDS, catalog, strict=True))},
-                      ensure_ascii=False).encode("utf-8")
-    if len(data) > _CATALOG_MAX_BYTES:
-        return
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=RUNTIME_DIR, prefix=".entity-headers-", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, _catalog_path())
-    except OSError:
-        # Read-only runtime directories must not prevent accurate source reads.
-        pass
-    finally:
-        if temporary is not None:
-            try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-
-@lru_cache(maxsize=1)
-def _load_chroma_header_catalog_cached(key: _SnapshotKey) -> _HeaderCatalog:
-    path = Path(key[0])
-    catalog = _read_header_catalog(key)
-    if catalog is None:
-        if not path.exists():
-            return (), (), ()
-        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as connection, connection:
-            # One read snapshot keeps the three fields consistent under WAL writers.
-            connection.execute("BEGIN")
-            catalog = tuple(tuple(_distinct_chroma_header_values(connection, field)) for field in _CATALOG_FIELDS)
-        if _source_cache_key(path) != key:
-            raise _CatalogSourceChanged("Chroma changed while collecting entity headers")
-        _write_header_catalog(key, catalog)
-    elif _source_cache_key(path) != key:
-        raise _CatalogSourceChanged("Chroma changed while loading entity headers")
-    return catalog
-
-
-def _load_chroma_header_catalog(key: _SnapshotKey) -> _HeaderCatalog:
-    # lru_cache alone permits concurrent misses to repeat the expensive scan.
-    with _CATALOG_LOCK:
-        return _load_chroma_header_catalog_cached(key)
-
-
-def warm_entity_catalog(database_path: Path | None = None) -> bool:
-    """Prime a published source for the next process; report verified disk persistence."""
-    source_path = CHROMA_DB_PATH if database_path is None else database_path
-    for _ in range(2):
-        try:
-            key = _source_cache_key(source_path)
-            if key[1] == (0, 0, 0, 0, 0):
-                return False
-            catalog = _load_chroma_header_catalog(key)
-            if _source_cache_key(source_path) != key:
-                continue
-            if _read_header_catalog(key) is None:
-                # A prior read may have succeeded while runtime writes were denied.
-                _write_header_catalog(key, catalog)
-            return _read_header_catalog(key) is not None and _source_cache_key(source_path) == key
-        except _CatalogSourceChanged:
-            continue
-        except (OSError, sqlite3.Error):
-            return False
-    return False
-
-
-def _load_current_snapshot(loader: Callable[..., _T], fallback: _T) -> _T:
-    for _ in range(2):
-        try:
-            key = _snapshot_cache_key()
-            result = loader(*key)
-            if key == _snapshot_cache_key():
-                return result
-        except _CatalogSourceChanged:
-            continue
-        except (OSError, sqlite3.Error):
-            break
-    # Failures are handled outside the LRUs so a transient error is retryable.
-    return fallback
-
-
-@lru_cache(maxsize=1)
-def _load_known_people_cached(
-    database_path: str,
-    database_stamp: _FileStamp,
-    wal_stamp: _FileStamp,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    _, handlers, reporters = _load_chroma_header_catalog((database_path, database_stamp, wal_stamp))
-    valid_handlers = {
-        name
-        for name in handlers
-        if name not in {"미상", "담당자 미지정"} and is_valid_handler_name(name)
-    }
-    valid_reporters = {name for name in reporters if name != "미상" and is_valid_person_name(name)}
-    return tuple(sorted(valid_handlers)), tuple(sorted(valid_reporters))
-
-
-def load_known_people() -> tuple[tuple[str, ...], tuple[str, ...]]:
-    empty: tuple[tuple[str, ...], tuple[str, ...]] = (tuple(), tuple())
-    return _load_current_snapshot(_load_known_people_cached, empty)
-
-
-def _distinct_chroma_header_values(
-    connection: sqlite3.Connection,
-    field_name: str,
-) -> List[str]:
-    """Extract distinct ``- field: value`` headers without loading full docs into Python."""
-    marker = f"- {field_name}:"
-    rows = connection.execute(
-        """
-        SELECT DISTINCT trim(
-            substr(rest, 1, instr(rest || char(10), char(10)) - 1)
-        ) AS value
-        FROM (
-            SELECT substr(string_value, instr(string_value, ?) + length(?)) AS rest
-            FROM embedding_metadata
-            WHERE key = 'chroma:document'
-              AND instr(string_value, ?) > 0
-        )
-        """,
-        (marker, marker, marker),
-    )
-    return [str(row[0]).strip() for row in rows if row[0]]
-
-
-@lru_cache(maxsize=1)
-def _load_project_alias_groups_cached(
-    database_path: str,
-    database_stamp: _FileStamp,
-    wal_stamp: _FileStamp,
-) -> tuple[tuple[str, ...], ...]:
-    projects, _, _ = _load_chroma_header_catalog((database_path, database_stamp, wal_stamp))
-    return tuple(tuple(derive_customer_aliases_from_project(project)) for project in set(projects))
-
-
-def load_project_alias_groups() -> tuple[tuple[str, ...], ...]:
-    return _load_current_snapshot(_load_project_alias_groups_cached, tuple())
-
-
-@lru_cache(maxsize=1)
-def _get_customer_alias_groups_cached(
-    database_path: str,
-    database_stamp: _FileStamp,
-    wal_stamp: _FileStamp,
-) -> tuple[tuple[str, ...], ...]:
-    groups = [
-        list(dict.fromkeys([key, *aliases]))
-        for key, aliases in CUSTOMER_ALIASES.items()
-    ]
-
-    for dynamic_aliases in _load_project_alias_groups_cached(database_path, database_stamp, wal_stamp):
-        normalized_dynamic = {normalize_for_match(alias) for alias in dynamic_aliases}
-        project_owner = next((
-            owner for alias in dynamic_aliases if (owner := customer_project_owner(alias))
-        ), None)
-        merged = False
-        for group in groups:
-            if project_owner and group[0] != project_owner:
-                continue
-            normalized_group = {normalize_for_match(alias) for alias in group}
-            if project_owner or normalized_dynamic & normalized_group:
-                # 114Solomon(아이엠증권)의 옛 표시명이 현재 하이투자 별칭으로
-                # 다시 유입되어 두 프로젝트가 합쳐지지 않게 한다.
-                group.extend(
-                    alias for alias in dynamic_aliases if alias not in group
-                    and (not project_owner or customer_alias_owner(alias) in {None, project_owner})
-                )
-                merged = True
-                break
-        if not merged:
-            groups.append(list(dynamic_aliases))
-
-    return tuple(tuple(dict.fromkeys(group)) for group in groups)
-
-
-def get_customer_alias_groups() -> List[List[str]]:
-    fallback = tuple(tuple(dict.fromkeys([key, *aliases])) for key, aliases in CUSTOMER_ALIASES.items())
-    return [list(group) for group in _load_current_snapshot(_get_customer_alias_groups_cached, fallback)]
+from backend.sources.people_catalog import (
+    _FileStamp as _FileStamp,
+    _SnapshotKey as _SnapshotKey,
+    _HeaderCatalog as _HeaderCatalog,
+    _T as _T,
+    _CATALOG_FIELDS as _CATALOG_FIELDS,
+    _CATALOG_MAX_BYTES as _CATALOG_MAX_BYTES,
+    _CATALOG_LOCK as _CATALOG_LOCK,
+    _CatalogSourceChanged as _CatalogSourceChanged,
+    _file_stamp as _file_stamp,
+    _source_cache_key as _source_cache_key,
+    _snapshot_cache_key as _snapshot_cache_key,
+    _catalog_path as _catalog_path,
+    _read_header_catalog as _read_header_catalog,
+    _write_header_catalog as _write_header_catalog,
+    _load_chroma_header_catalog_cached as _load_chroma_header_catalog_cached,
+    _load_chroma_header_catalog as _load_chroma_header_catalog,
+    warm_entity_catalog as warm_entity_catalog,
+    _load_current_snapshot as _load_current_snapshot,
+    _load_known_people_cached as _load_known_people_cached,
+    load_known_people as load_known_people,
+    _distinct_chroma_header_values as _distinct_chroma_header_values,
+    _load_project_alias_groups_cached as _load_project_alias_groups_cached,
+    load_project_alias_groups as load_project_alias_groups,
+    _get_customer_alias_groups_cached as _get_customer_alias_groups_cached,
+    get_customer_alias_groups as get_customer_alias_groups,
+)
 
 
 def extract_status_constraints(text: str) -> List[str]:
@@ -628,7 +411,7 @@ def extract_people_constraints(text: str) -> Dict[str, Any]:
         text,
     )
     handlers, reporters = load_known_people()
-    from backend.team_scope import TEAM_MEMBERS
+    from backend.domain.team import TEAM_MEMBERS
     known_people = sorted(set(handlers) | set(reporters) | set(TEAM_MEMBERS), key=len, reverse=True)
     pairs: List[tuple[str, str]] = []
     # 존칭이 붙은 이름은 명부 전체에서 유일할 때만 성을 보완한다.

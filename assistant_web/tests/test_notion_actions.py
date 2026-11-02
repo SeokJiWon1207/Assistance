@@ -1,3 +1,4 @@
+from backend.notion import schema as notion_schema
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,7 +23,7 @@ class NotionActionTests(unittest.TestCase):
         with (
             patch.object(write, "execute_notion_search", return_value={"notion_pages": [page]}) as search,
             patch.object(write, "ensure_configured_notion_database", return_value="b" * 32),
-            patch.object(write, "notion_property_schema", return_value=schema),
+            patch.object(notion_schema, 'notion_property_schema', return_value=schema),
         ):
             preview = write.run_notion_write_command('노션에서 "업무" 상태를 완료로 바꿔줘', [], user_uid="manager")
         search.assert_called_once()

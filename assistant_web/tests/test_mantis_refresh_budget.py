@@ -6,7 +6,7 @@ from unittest.mock import Mock,patch
 import requests
 from fastapi import HTTPException
 
-from backend.sources import mantis
+from backend.sources import mantis_client as mantis
 
 
 class MantisRefreshBudgetTests(TestCase):

@@ -100,6 +100,8 @@ def main() -> int:
                 patch.object(socket.socket, "connect", side_effect=RuntimeError("Test network access blocked")),
                 patch.object(socket.socket, "connect_ex", side_effect=RuntimeError("Test network access blocked")),
             ):
+                from backend.settings.catalogs import initialize_customer_catalogs
+                initialize_customer_catalogs()
                 suite = unittest.defaultTestLoader.discover(str(APP_DIR / "tests"), pattern="test_*.py")
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
                 return 0 if result.wasSuccessful() else 1

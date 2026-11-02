@@ -1,5 +1,7 @@
 """모델 헤더 이후 스트림 장애와 부분 답변 폴백을 네트워크 없이 검증한다."""
 
+import backend.services.chat.generate as chat_generate
+import backend.llm as chat_llm
 import os
 import json
 import unittest
@@ -41,8 +43,8 @@ class StreamFallbackTests(unittest.TestCase):
         self.addCleanup(llm.reset_model_circuits)
         self.events = []
         patches = [
-            patch.object(chat_service, "get_model_registry", return_value=[PRIMARY, SECONDARY]),
-            patch.object(chat_service, "get_model_api_key", return_value="test-key"),
+            patch.object(chat_generate, "get_model_registry", return_value=[PRIMARY, SECONDARY]),
+            patch.object(chat_llm, "get_model_api_key", return_value="test-key"),
             patch.object(chat_service.CHAT_STREAM_CONTEXT, "emitter", self.events.append, create=True),
             patch.object(chat_service.CHAT_STREAM_CONTEXT, "content_streamed", False, create=True),
             patch.dict(os.environ, {
@@ -87,10 +89,10 @@ class StreamFallbackTests(unittest.TestCase):
         failed = stream_response(prefix="폐기", error=requests.ConnectionError("본문 중단"))
         retrieval = {"issues": [{"id": 12345}]}
         with (
-            patch.object(chat_service, "get_model_registry", return_value=[]),
+            patch.object(chat_generate, "get_model_registry", return_value=[]),
             patch.object(llm.requests, "post", return_value=failed),
-            patch.object(chat_service, "build_sources", return_value=[{"issue_id": 12345}]),
-            patch.object(chat_service, "format_model_timeout_fallback", return_value="확인한 근거 답변"),
+            patch.object(chat_generate, "build_sources", return_value=[{"issue_id": 12345}]),
+            patch.object(chat_generate, "format_model_timeout_fallback", return_value="확인한 근거 답변"),
         ):
             result = self.generate(retrieval)
         self.assertEqual(result["raw"]["mode"], "model_timeout_fallback")
@@ -105,7 +107,7 @@ class StreamFallbackTests(unittest.TestCase):
     def test_exhausted_body_failure_without_evidence_returns_controlled_502(self):
         failed = stream_response(error=requests.ConnectionError("본문 중단"))
         with (
-            patch.object(chat_service, "get_model_registry", return_value=[]),
+            patch.object(chat_generate, "get_model_registry", return_value=[]),
             patch.object(llm.requests, "post", return_value=failed),
             self.assertRaises(HTTPException) as raised,
         ):
@@ -187,14 +189,14 @@ class StreamFallbackTests(unittest.TestCase):
             'data: {"choices":[{"delta":{"role":"assistant"}}]}',
             'data: {"choices":[{"delta":{"reasoning_content":"추론"}}]}',
         ])
-        with patch.object(chat_service, "perf_counter", side_effect=[59.0, 60.0]):
+        with patch.object(chat_generate, "perf_counter", side_effect=[59.0, 60.0]):
             with self.assertRaises(requests.Timeout):
                 chat_service._read_model_response(response, PRIMARY, True, first_content_deadline=60.0)
         self.assertFalse(any(event["type"] == "delta" for event in self.events))
 
     def test_first_content_deadline_does_not_limit_ongoing_answer(self):
         response = stream_response(content="마지막", prefix="처음")
-        with patch.object(chat_service, "perf_counter", return_value=59.0) as clock:
+        with patch.object(chat_generate, "perf_counter", return_value=59.0) as clock:
             data = chat_service._read_model_response(response, PRIMARY, True, first_content_deadline=60.0)
         self.assertEqual(data["choices"][0]["message"]["content"], "처음마지막")
         # 첫 내용 이후에는 deadline 시계를 더 검사하지 않는다.
@@ -206,7 +208,7 @@ class StreamFallbackTests(unittest.TestCase):
             'data: {"choices":[{"delta":{"content":" "}}]}',
             'data: {"choices":[{"delta":{"reasoning_content":"추론"}}]}',
         ])
-        with patch.object(chat_service, "perf_counter", side_effect=[59.0, 60.0]):
+        with patch.object(chat_generate, "perf_counter", side_effect=[59.0, 60.0]):
             with self.assertRaises(requests.Timeout):
                 chat_service._read_model_response(response, PRIMARY, True, first_content_deadline=60.0)
         self.assertEqual(self.events, [])

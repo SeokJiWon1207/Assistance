@@ -1,12 +1,14 @@
 """한 이슈의 원문으로 작성하는 읽기 전용 업무 문서. 미확정 항목은 추정하지 않는다."""
 import re
-from backend.common import compact_text
-from backend.common import normalize_for_match
+from backend.utils.text import compact_text
+from backend.utils.text import normalize_for_match
 from backend.display import status_name
 from backend.issue_text import encode_issue_field
-from backend.evaluation.explanation_direct import _stage_event
-from backend.reports.similar import _recorded_cause, _recorded_fix, _clean_note, _latest_resolution_caveat
-from backend.sources.mantis import fetch_mantis_issue_by_id, normalize_issue, build_sources_from_issue_rows, issue_matches_constraints
+from backend.evidence.stages import stage_events
+from backend.reports.comparison_common import _recorded_cause, _recorded_fix, _clean_note, _latest_resolution_caveat
+from backend.sources.mantis_client import fetch_mantis_issue_by_id
+from backend.sources.mantis_fields import normalize_issue, build_sources_from_issue_rows
+from backend.sources.mantis_matching import issue_matches_constraints
 from backend.reports.document_presentation import document_options, present_document
 from backend.reports.document_context import latest_customer_record
 
@@ -18,7 +20,7 @@ def _progress(notes, date_fields=None):
               'failed':'실패·재확인 기록 있음','unknown':'완료 근거 미확인'}
     lines=[]
     for stage,label in labels.items():
-        events=[event for row in notes for event in _stage_event(stage,row)]
+        events=[event for row in notes for event in stage_events(stage,row)]
         meaningful=[event for event in events if event[0]!='unknown']
         state=meaningful[-1][0] if meaningful else 'unknown'
         reference = f' [노트 {meaningful[-1][1]["note_id"]}]' if meaningful else ''

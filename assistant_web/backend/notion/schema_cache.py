@@ -6,9 +6,10 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict
 
-from backend.config import RUNTIME_DIR
+from backend.settings.paths import RUNTIME_DIR
+from backend.settings.notion import get_notion_headers
 
 
 def _path(database_id: str, headers: dict[str, str]) -> Path:
@@ -56,3 +57,20 @@ def load_schema(database_id: str, headers: dict[str, str], max_age: float) -> tu
         return age, schema
     except (OSError, ValueError, TypeError, KeyError):
         return None
+
+
+_schema_seeds: Dict[tuple[str, str], tuple[float, Dict[str, Any]]] = {}
+
+
+def remember_notion_database_schema(data: Dict[str, Any]) -> None:
+    """범위 조회가 이미 받은 스키마를 재사용해 DB마다 같은 요청을 반복하지 않는다."""
+    key = (str(data.get("id", "")).replace("-", ""), get_notion_headers().get("Authorization", ""))
+    if key[0] and data.get("object") == "database" and "properties" in data:
+        _schema_seeds[key] = (time.monotonic() + 300, data)
+        while len(_schema_seeds) > 128:
+            _schema_seeds.pop(next(iter(_schema_seeds)))
+
+
+def _seed_schema(database_id: str) -> Dict[str, Any]:
+    cached = _schema_seeds.get((database_id.replace("-", ""), get_notion_headers().get("Authorization", "")))
+    return cached[1] if cached and cached[0] > time.monotonic() else {}

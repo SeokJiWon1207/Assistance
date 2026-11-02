@@ -78,6 +78,8 @@ def run(model_id):
 
 
 def main():
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-id", required=True)
     args = parser.parse_args()

@@ -1,7 +1,7 @@
 """회귀 평가 케이스의 정의, 실행, 결과 저장을 담당한다."""
 
 import json
-import sqlite3
+import sqlite3 as sqlite3
 import sys
 import time
 import uuid
@@ -11,17 +11,22 @@ from typing import Any, Dict, List
 
 from backend.answers import build_mantis_month_count_report
 from backend.audit import init_audit_db
-from backend.common import normalize_for_match, text_matches_customer_aliases
+from backend.utils.text import normalize_for_match
+from backend.customer_identity import text_matches_customer_aliases
 from backend.config import AUDIT_DB_PATH, CONFIG_DIR
 from backend.reports.effort import build_effort_report
 from backend.reports.aggregate import extract_month_count_query
 from backend.sources.mantis import fetch_mantis_recent_issues
-from backend.retrieval import build_sources, retrieval_trace, run_retrieval_pipeline
+from backend.retrieval import build_sources, retrieval_trace
+from backend.services.retrieval_pipeline import run_retrieval_pipeline
 from backend.understanding import (
     extract_query_constraints,
     field_matches_screen_number,
     title_has_screen_number,
 )
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import AUDIT
 
 
 DEFAULT_EVALUATION_CASES = [
@@ -350,7 +355,7 @@ def build_evaluation_summary(results: List[Dict[str, Any]], duration_ms: int) ->
 def save_evaluation_run(summary: Dict[str, Any], results: List[Dict[str, Any]]) -> str:
     run_id = uuid.uuid4().hex[:12]
     init_audit_db()
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
         connection.execute(
             "INSERT INTO evaluation_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (

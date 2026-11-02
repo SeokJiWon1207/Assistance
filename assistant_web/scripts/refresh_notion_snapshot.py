@@ -12,14 +12,17 @@ APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
 from backend.environment import load_dotenv
 load_dotenv(APP_DIR / '.env')
-from backend.config import RUNTIME_DIR, get_notion_settings
+from backend.config import RUNTIME_DIR
+from backend.notion.discovery import resolve_notion_settings
 from backend.notion.body_index import open_body_index
-from backend.notion.complete_snapshot import coverage
+from backend.notion.snapshot_state import coverage
 from backend.notion.read_scope import resolve_notion_read_scope, refresh_notion_read_scope, save_complete_notion_read_scope
 from backend.notion.snapshot_maintenance import refresh_snapshot
 
 
 def main():
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--max-seconds', type=float, default=3600)
     parser.add_argument('--max-pages', type=int, default=1000)
@@ -33,7 +36,7 @@ def main():
         except BlockingIOError:
             print(json.dumps({'status': 'already_running'}))
             return 0
-        settings = get_notion_settings()
+        settings = resolve_notion_settings()
         roots = settings['database_ids']
         scope, complete = resolve_notion_read_scope(roots, settings['token'])
         index = open_body_index()
@@ -46,7 +49,7 @@ def main():
             required = max(256 * 1024**2, size + size // 4 + 160 * 1024**2)
             if shutil.disk_usage(RUNTIME_DIR).free < required:
                 raise RuntimeError('insufficient_disk_space')
-            from backend.notion.complete_snapshot import _time
+            from backend.notion.snapshot_state import _time
             try:
                 saved_scope = json.loads((RUNTIME_DIR / 'notion_read_scope.json').read_text())
                 scope_age = datetime.now(timezone.utc).timestamp() - _time(saved_scope.get('generated_at', ''))

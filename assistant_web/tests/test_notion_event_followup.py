@@ -1,5 +1,11 @@
 """회식 공지의 검색 대상과 본문 질문을 구분하는 회귀 검증."""
 
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.retrieve as chat_retrieve
+from backend.notion import read_api
+from backend.notion import transport
+from backend.notion import schema as notion_schema
 import unittest
 from unittest.mock import Mock, patch
 
@@ -46,13 +52,13 @@ class NotionEventSearchTests(unittest.TestCase):
             return response
 
         with (
-            patch.object(search, "get_notion_settings", return_value={"token": "test", "database_ids": ["db-event"]}),
+            patch.object(search, "resolve_notion_settings", return_value={"token": "test", "database_ids": ["db-event"]}),
             patch.object(search, "resolve_notion_read_scope", return_value=({"db-event": "db-event"}, True)),
-            patch.object(search, "fetch_notion_database_title", return_value="주요이슈현황"),
-            patch.object(search, "notion_property_schema", return_value={"제목": {"type": "title"}}),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="주요이슈현황"),
+            patch.object(notion_schema, 'notion_property_schema', return_value={"제목": {"type": "title"}}),
             patch.object(search, "normalize_notion_page", side_effect=lambda raw, **kwargs: {**raw, **kwargs}),
-            patch.object(search, "notion_post_json", side_effect=query) as post,
-            patch.object(search, "fetch_notion_page_blocks", return_value="일시 :\n장소 :") as blocks,
+            patch.object(transport, 'notion_post_json', side_effect=query) as post,
+            patch.object(read_api, 'fetch_notion_page_blocks', return_value="일시 :\n장소 :") as blocks,
         ):
             result = search.execute_notion_search(question, planned_terms=terms, constraints=constraints)
         return result, post, blocks
@@ -110,11 +116,11 @@ class NotionReadFollowUpTests(unittest.TestCase):
         messages.append(ChatMessage(role="user", content=texts[-1]))
         request = ChatRequest(modelId="test", contextAuditId="a" * 32, messages=messages)
         with (
-            patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}),
-            patch.object(chat, "get_model_api_key", return_value="test"),
-            patch.object(chat, "load_audit_query_plan", return_value={"source": prior_source, "grounding_text": grounding_text}),
-            patch.object(chat, "resolve_reference_from_context", return_value=None),
-            patch.object(chat, "rewrite_follow_up_query_with_model", return_value=None),
+            patch.object(chat_prepare, "get_private_model", return_value={"id": "test", "status": "active"}),
+            patch.object(chat_llm, "get_model_api_key", return_value="test"),
+            patch.object(chat_prepare, "load_audit_query_plan", return_value={"source": prior_source, "grounding_text": grounding_text}),
+            patch.object(chat_prepare, "resolve_reference_from_context", return_value=None),
+            patch.object(chat_prepare, "rewrite_follow_up_query_with_model", return_value=None),
         ):
             return chat.prepare_chat_pipeline(request, texts[-1], {"uid": "test-user"})
 
@@ -158,10 +164,10 @@ class NotionReadFollowUpTests(unittest.TestCase):
         context.intent_plan = {"source": "notion"}
         request = ChatRequest(modelId="test", messages=[ChatMessage(role="user", content=question)])
         with (
-            patch.object(chat, "should_retrieve_chat_evidence", return_value=True),
-            patch.object(chat, "retrieval_limit", return_value=(5, None)),
-            patch.object(chat, "run_retrieval_pipeline", return_value={"stages": [{"source": "notion", "notion_pages": []}]}),
-            patch.object(chat, "deterministic_retrieval_response", return_value=None),
+            patch.object(chat_retrieve, "should_retrieve_chat_evidence", return_value=True),
+            patch.object(chat_retrieve, "retrieval_limit", return_value=(5, None)),
+            patch.object(chat_retrieve, "run_retrieval_pipeline", return_value={"stages": [{"source": "notion", "notion_pages": []}]}),
+            patch.object(chat_retrieve, "deterministic_retrieval_response", return_value=None),
         ):
             response = chat.retrieve_chat_evidence(request, context).response
         self.assertEqual(response["raw"]["mode"], "empty_evidence")

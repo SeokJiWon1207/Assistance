@@ -1,3 +1,7 @@
+import backend.llm as chat_llm
+import backend.services.chat.planning as chat_planning
+import backend.services.chat.prepare as chat_prepare
+import backend.services.unified_planning as chat_unified
 import copy
 import importlib
 import importlib.util
@@ -200,13 +204,13 @@ class UnifiedIntegrationTests(unittest.TestCase):
             seen.append(c)
             return {'content': '총 2건', 'sources': [], 'retrieval': {'constraints': c, 'stages': []}}
         with (patch.dict('os.environ', {'UNIFIED_QUERY_PLANNER_ENABLED': 'true'}),
-              patch.object(service, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
-              patch.object(service, 'get_model_api_key', return_value='key'),
+              patch.object(chat_prepare, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
+              patch.object(chat_llm, 'get_model_api_key', return_value='key'),
               patch('backend.intent.unified.post_model_chat', return_value=response) as model,
-              patch.object(service, 'resolve_status_intent', side_effect=AssertionError('legacy status')),
-              patch.object(service, 'plan_search_intent_with_model', side_effect=AssertionError('legacy planner')),
-              patch.object(service, 'build_contextual_retrieval_text', side_effect=AssertionError('legacy rewrite')),
-              patch.object(service, 'build_mantis_count_report', side_effect=count),
+              patch.object(chat_planning, 'resolve_status_intent', side_effect=AssertionError('legacy status')),
+              patch.object(chat_planning, 'plan_search_intent_with_model', side_effect=AssertionError('legacy planner')),
+              patch.object(chat_prepare, 'build_contextual_retrieval_text', side_effect=AssertionError('legacy rewrite')),
+              patch.object(chat_unified, 'build_mantis_count_report', side_effect=count),
               patch.object(service, 'persist_chat_response', side_effect=lambda request, text, result, **kw: result)):
             result = service.chat_service.build_response(request, user={'uid': 'test', 'mantisUsername': '석지원'})
         self.assertEqual(model.call_count, 1)
@@ -260,6 +264,12 @@ class UnifiedIntegrationTests(unittest.TestCase):
                     self.assertEqual(p['resolved_constraints']['excluded_statuses'], case['unified_excluded_statuses'])
                     self.assertIsNone(p['resolved_constraints']['created_at'])
                 self.assertEqual(p['resolved_constraints']['people']['role'], case['unified_role'])
+                if 'unified_operation' in case:
+                    self.assertEqual(p['operation'], case['unified_operation'])
+                if 'unified_customer' in case:
+                    self.assertEqual(p['resolved_constraints']['customer_key'], case['unified_customer'])
+                if 'unified_terms' in case:
+                    self.assertEqual(p['terms'], case['unified_terms'])
 
 
 class UnifiedSchemaNormalizationTests(unittest.TestCase):
@@ -372,7 +382,7 @@ class RelativeCreatedAtValidationTests(unittest.TestCase):
             def today(cls):
                 return today
 
-        patcher = patch('backend.intent.unified_validation.date', FixedDate)
+        patcher = patch('backend.intent.validation_rules.date', FixedDate)
         patcher.start()
         self.addCleanup(patcher.stop)
 

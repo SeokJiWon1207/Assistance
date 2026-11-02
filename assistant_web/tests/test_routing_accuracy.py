@@ -111,11 +111,11 @@ class PeopleFilterGroundingTest(unittest.TestCase):
 
 
 class RetrievalSourceContractTest(unittest.TestCase):
-    @patch("backend.retrieval.execute_chroma_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_filter_search")
-    @patch("backend.retrieval.execute_mantis_snapshot_search")
-    @patch("backend.retrieval.execute_notion_search")
+    @patch("backend.services.retrieval_pipeline.execute_chroma_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_snapshot_search")
+    @patch("backend.services.retrieval_pipeline.execute_notion_search")
     def test_notion_plan_does_not_execute_mantis_for_platform_scope(
         self,
         notion_search,
@@ -142,9 +142,9 @@ class RetrievalSourceContractTest(unittest.TestCase):
         page_scan.assert_not_called()
         chroma_search.assert_not_called()
 
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_filter_search")
-    @patch("backend.retrieval.execute_notion_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_notion_search")
     def test_mantis_plan_does_not_execute_notion_for_document_word(
         self,
         notion_search,
@@ -173,9 +173,9 @@ class RetrievalSourceContractTest(unittest.TestCase):
         self.assertNotIn("notion", [stage["source"] for stage in result["stages"]])
         notion_search.assert_not_called()
 
-    @patch("backend.retrieval.execute_chroma_search")
-    @patch("backend.retrieval.execute_mantis_page_scan")
-    @patch("backend.retrieval.execute_mantis_filter_search")
+    @patch("backend.services.retrieval_pipeline.execute_chroma_search")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_page_scan")
+    @patch("backend.services.retrieval_pipeline.execute_mantis_filter_search")
     def test_verbless_recency_request_scans_mantis_without_a_count_keyword(
         self,
         filter_search,

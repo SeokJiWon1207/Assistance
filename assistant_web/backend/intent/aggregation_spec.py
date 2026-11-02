@@ -10,7 +10,7 @@ MAX_TOP_N = 20
 
 
 def check_shape(spec):
-    from backend.intent.unified_validation import require
+    from backend.intent.validation_rules import require
     require(isinstance(spec, dict), '집계 명세는 JSON 객체여야 합니다')
     require(set(spec) == {'group_by', 'metrics', 'period', 'comparison', 'top_n', 'explain'}, '지원하지 않는 집계 명세 항목')
     groups, metrics = spec['group_by'], spec['metrics']
@@ -35,7 +35,7 @@ def check_shape(spec):
 
 
 def validate_aggregation(question, specification, previous=None):
-    from backend.intent.unified_validation import check_clause, check_query_period, require, unquoted
+    from backend.intent.validation_rules import check_clause, check_query_period, require, unquoted
     require(isinstance(specification, dict), '집계 명세 형식 오류')
     spec = {'comparison': None, 'top_n': 10, 'explain': False, **deepcopy(previous or {}), **deepcopy(specification)}
     check_shape(spec)

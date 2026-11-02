@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 
 def main():
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--offline", action="store_true", help="외부 요청을 차단하고 상태 의미 응답을 고정 픽스처로 대체")
@@ -52,7 +54,7 @@ def run(model_id):
     from backend.schemas import ChatRequest, ChatMessage
     from backend.services.chat_service import chat_service
     from backend.sources.mantis_store import read_complete_store
-    from backend.team_scope import TEAM_MEMBERS
+    from backend.domain.team import TEAM_MEMBERS
     rows = read_complete_store()
     if rows is None:
         raise RuntimeError("최신 전체 저장본이 없어 검증을 중단합니다.")

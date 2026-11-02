@@ -1,6 +1,6 @@
 """검색 조건, 데이터 소스, 결과 제한과 모델 의도 계획을 구성한다."""
 
-import json
+import json as json
 import os
 import re
 from datetime import date
@@ -8,14 +8,8 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from backend.common import (
-    normalize_for_match,
-    normalize_search_token,
-)
-from backend.config import (
-    PLATFORM_ALIASES,
-    STOPWORDS,
-)
+from backend.utils.text import normalize_for_match, normalize_search_token
+from backend.settings.values import PLATFORM_ALIASES, STOPWORDS
 from backend.intent.constants import (
     NOTION_QUERY_STOPWORDS,
 )
@@ -26,19 +20,8 @@ from backend.intent.people import (
     empty_people,
     grounded_model_people,
 )
-from backend.intent.search_terms import (
-    build_keyword_terms,
-    build_similar_issue_search_text,
-    expand_compound_search_term,
-    extract_limit,
-    extract_requested_limit,
-    resolve_result_limit,
-    remove_list_display_instruction,
-    split_project_search_terms,
-    term_is_covered_by_constraints,
-    wants_all_results,
-    wants_similar_issue_search,
-)
+from backend.intent.keyword_terms import build_keyword_terms, build_similar_issue_search_text, expand_compound_search_term, extract_limit, extract_requested_limit, resolve_result_limit, remove_list_display_instruction, split_project_search_terms, term_is_covered_by_constraints, wants_all_results
+from backend.intent.keyword_terms import wants_similar_issue_search as _wants_similar_issue_search
 from backend.intent.scope_extraction import (
     empty_query_constraints,
     extract_scope_constraints,
@@ -52,10 +35,17 @@ from backend.intent.source_router import (
 )
 from backend.llm import extract_model_content, post_model_chat
 from backend.query_filters import add_filter_clause, normalize_filter_clauses
-from backend.query_planning import infer_operation
+from backend.query.operations import infer_operation
 from backend.intent.request_scope import AUTHENTICATED_OWNER
 from backend.intent.scope_changes import cleared_scope_fields
-from backend.team_scope import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase, apply_default_team_scope
+from backend.domain.team import TEAM_MEMBERS, TEAM_SCOPE_LABEL, has_mantis_team_scope, remove_team_scope_phrase
+from backend.intent.team_scope import apply_default_team_scope
+
+
+def wants_similar_issue_search(text: str, constraints: Optional[Dict[str, Any]] = None) -> bool:
+    if constraints is None:
+        constraints = extract_query_constraints(text)
+    return _wants_similar_issue_search(text, constraints)
 
 
 def extract_query_constraints(text: str) -> Dict[str, Any]:
@@ -371,7 +361,7 @@ def merge_query_plan_constraints(
         merged["filter_clauses"] = [clause for clause in merged["filter_clauses"] if clause["field"] != "created_at"]
 
     if (query_plan or {}).get("source") == "notion":
-        from backend.notion.search import extract_notion_constraints
+        from backend.intent.notion_constraints import extract_notion_constraints
         native = extract_notion_constraints(str((query_plan or {}).get("grounding_text") or ""))
         if native.get("status") or native.get("excluded_statuses"):
             merged["statuses"] = [native["status"]] if native.get("status") else []
@@ -386,20 +376,9 @@ def merge_query_plan_constraints(
     return merged
 
 
-def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
-    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(text or "").strip(), flags=re.IGNORECASE)
-    try:
-        parsed = json.loads(cleaned)
-        return parsed if isinstance(parsed, dict) else None
-    except json.JSONDecodeError:
-        match = re.search(r"\{[\s\S]*\}", cleaned)
-        if not match:
-            return None
-        try:
-            parsed = json.loads(match.group(0))
-            return parsed if isinstance(parsed, dict) else None
-        except json.JSONDecodeError:
-            return None
+from backend.intent.json_payload import (
+    extract_json_object as extract_json_object,
+)
 
 
 def plan_search_intent_with_model(

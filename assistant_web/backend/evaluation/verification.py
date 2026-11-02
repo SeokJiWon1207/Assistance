@@ -8,19 +8,17 @@ from typing import Any, Dict, List, Optional, Tuple, cast
 from backend.answers import display_constraints
 from backend.effort_fields import issue_effort_people, issue_delivery_date
 from backend.query_filters import matches_source_filters
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 from backend.mantis_status import source_status
-from backend.notion.search import extract_notion_constraints, notion_page_matches_constraints
-from backend.query_planning import plan_created_at_matches, validate_query_plan, infer_operation, extract_group_by
+from backend.intent.notion_constraints import extract_notion_constraints
+from backend.notion.matching import notion_page_matches_constraints
+from backend.query.dates import plan_created_at_matches
+from backend.query_planning import validate_query_plan
+from backend.query.operations import infer_operation, extract_group_by
 from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
-from backend.retrieval import (
-    build_model_retrieval_context,
-    build_model_evidence_sources,
-    count_retrieved_issues,
-    retrieval_trace,
-    similar_base_issue_ids_from_retrieval,
-)
-from backend.schemas import ChatRequest
+from backend.evidence.model_context import build_model_retrieval_context, build_model_evidence_sources
+from backend.evidence.retrieval_rows import count_retrieved_issues
+from backend.retrieval import retrieval_trace, similar_base_issue_ids_from_retrieval
 from backend.evaluation.issue_facts import check_issue_fields, extract_issue_claims, has_definite_scope_mismatch, plain_text
 from backend.evaluation.report_scopes import report_evidence_constraints
 from backend.understanding import (
@@ -50,12 +48,13 @@ def ungrounded_constraint_labels(
     조건을 물려받은 경우까지 근거 없음으로 잡히면 경고가 무의미해진다.
     """
     from backend.intent.condition_grounding import grounded_values
-    from backend.config import CUSTOMER_ALIASES, PLATFORM_ALIASES
+    from backend.settings.catalogs import get_customer_aliases
+    from backend.settings.values import PLATFORM_ALIASES
     certified = grounded_values(grounding_text, constraints, query_plan)
     def grounded(field, value):
         # 서버가 검증한 정식 명칭과 실행용 키를 같은 정적 별칭 집합으로 대조한다.
         # 모델이 제공한 임의 aliases는 인증 근거를 확장하는 데 사용하지 않는다.
-        aliases = {'customer': CUSTOMER_ALIASES, 'platform': PLATFORM_ALIASES}.get(field, {})
+        aliases = {'customer': get_customer_aliases(), 'platform': PLATFORM_ALIASES}.get(field, {})
         return any((field, normalize_for_match(str(alias).lstrip('#'))) in certified
                    for alias in [value, *aliases.get(value, [])])
     normalized = normalize_for_match(grounding_text)
@@ -704,20 +703,8 @@ def build_basic_grounding(
     return build_model_retrieval_context(basic_result, limit), build_model_evidence_sources(basic_result, limit)
 
 
-def generate_basic_grounded_baseline(
-    request: ChatRequest,
-    question: str,
-    retrieval_result: Dict[str, Any],
-) -> Dict[str, Any]:
-    """기존 공개 경로를 유지하며 비교 답변 구현을 지연 호출한다."""
-    from backend.evaluation.core import generate_basic_grounded_baseline as generate
-
-    return generate(request, question, retrieval_result)
-
-
 __all__ = [
     "build_basic_grounding",
     "build_verification_report",
-    "generate_basic_grounded_baseline",
     "ungrounded_constraint_labels",
 ]

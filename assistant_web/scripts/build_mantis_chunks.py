@@ -7,6 +7,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def main() -> None:
+    from backend.settings.catalogs import initialize_customer_catalogs
+    initialize_customer_catalogs()
     from backend.environment import load_dotenv
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
     from backend.sources.mantis_chunk_index import build_index

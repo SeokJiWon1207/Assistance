@@ -1,6 +1,6 @@
 """인증된 감사 기록의 확정 조건을 후속 질문 문맥으로 복원한다."""
 
-from backend.config import STATUS_ALIASES
+from backend.settings.values import STATUS_ALIASES
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -29,7 +29,7 @@ def restore_confirmed_constraints(plan: dict) -> dict:
         constraints["unconfirmed_search_terms"] = deepcopy(terms)
     if not resolution.get("needs_clarification"):
         terms = plan.get("terms") or terms
-    from backend.intent.search_terms import without_report_request_terms
+    from backend.intent.keyword_terms import without_report_request_terms
     terms = without_report_request_terms(terms, str(plan.get("grounding_text") or ""))
     # 확인 질문의 terms에는 '아직 손봐야 할' 같은 미확정 상태 표현도 있다.
     # 이전 검색에서 이미 확정된 검색어와 명시적 keyword/title 절은 그대로
@@ -69,7 +69,7 @@ def merge_confirmed_constraints(previous: dict, current: dict, question: str) ->
     절 사이 AND, in/not_in 값 사이 OR 계약을 문자열로 재해석하지 않는다.
     """
     from backend.intent.status_semantics import ALL_STATUSES
-    from backend.intent.search_terms import replacement_topic_terms
+    from backend.intent.keyword_terms import replacement_topic_terms
     from backend.intent.scope_changes import cleared_scope_fields, followup_created_at
     result = deepcopy(previous)
     current = deepcopy(current)

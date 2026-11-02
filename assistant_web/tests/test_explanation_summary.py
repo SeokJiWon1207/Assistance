@@ -4,6 +4,24 @@ from backend.evaluation.explanation_summary import summary_items, render_summary
 
 
 class ExplanationSummaryTests(unittest.TestCase):
+    def test_initial_request_cannot_borrow_later_changed_values(self):
+        initial={'issue_id':91,'field':'description','text':'최초 요청한 기본값은 7입니다.'}
+        later={'issue_id':91,'field':'note:12','note_id':12,'text':'기본값을 8로 변경 요청했습니다.'}
+        validated={'valid':True,'selected_issue_ids':[91],'answer_items':[
+            {'question_part':'최초 요청한 기본값','unanswered':False,'evidence':[initial,later],
+             'draft_answer':'최초 요청한 기본값은 8입니다.'}]}
+        grounding={'issues':[{'id':91,'answer_evidence':{'excerpts':[initial,later]}}]}
+        self.assertEqual(summary_items(validated,grounding,'최초 요청한 기본값을 설명해줘'),[])
+        validated['answer_items'][0]['evidence']=[initial]
+        self.assertEqual(summary_items(validated,grounding,'최초 요청한 기본값을 설명해줘'),[])
+        validated['answer_items'][0]['draft_answer']='최초 요청한 기본값은 7입니다.'
+        items=summary_items(validated,grounding,'최초 요청한 기본값을 설명해줘')
+        self.assertEqual(items[0]['evidence'],[initial])
+        validated['answer_items'][0]['draft_answer']='최초 요청은 7이고 이후 변경 요청은 8입니다.'
+        validated['answer_items'][0]['evidence']=[initial,later]
+        items=summary_items(validated,grounding,'최초 요청한 기본값과 이후 변경을 설명해줘')
+        self.assertEqual(items[0]['evidence'],[initial,later])
+
     def data(self, answer='캐시 덮어쓰기 로직을 수정했습니다.', **updates):
         row={'issue_id':91,'field':'note:11','note_id':11,'created_at':'2026-06-10','text':'캐시 덮어쓰기 로직을 수정했습니다.'}
         item={'question_part':'어떤 조치','unanswered':False,'evidence':[row],'draft_answer':answer}|updates

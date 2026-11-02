@@ -1,11 +1,13 @@
 """최근 등록 목록을 본문 색인의 완전성과 분리해 속성만으로 조회한다."""
+from backend.notion import crawl_transport
+from backend.notion import read_api
 from datetime import datetime, timezone
 import json
 import logging
 import time
 
 from backend.execution import CURRENT_BUDGET, checkpoint
-from backend.notion.complete_snapshot import _time, catalog_max_age_seconds
+from backend.notion.snapshot_state import _time, catalog_max_age_seconds
 from backend.notion.property_snapshot import read_full_properties
 from backend.notion.property_roles import REGISTRATION_NAMES, role_properties
 
@@ -14,7 +16,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _recent_candidates(index, database_ids, read_scope, constraints, limit):
-    from backend.notion import search
+    from backend.notion.mapping import normalize_notion_page
+    from backend.notion.matching import notion_page_matches_constraints, notion_page_sort_key
 
     with index._database() as db:
         placeholders, params = index._scope(database_ids)
@@ -62,13 +65,13 @@ def _recent_candidates(index, database_ids, read_scope, constraints, limit):
             # 항목을 모든 문서에서 표시 문자열로 변환하지 않는다.
             properties = raw.get('properties', {})
             date_properties = {name: properties[name] for name in role_properties(properties, REGISTRATION_NAMES, {'date'})}
-            page = search.normalize_notion_page({**raw, 'properties': date_properties}, include_blocks=False,
+            page = normalize_notion_page({**raw, 'properties': date_properties}, include_blocks=False,
                                                database_id=database_id, database_label=label)
-            if not search.notion_page_matches_constraints(page, constraints):
+            if not notion_page_matches_constraints(page, constraints):
                 continue
             matched += 1
             shown.append(page)
-            shown.sort(key=lambda item: search.notion_page_sort_key(item, created_at_filtered=True), reverse=True)
+            shown.sort(key=lambda item: notion_page_sort_key(item, created_at_filtered=True), reverse=True)
             del shown[limit:]
         return shown, {
             'snapshot_as_of': snapshot_as_of, 'scanned_count': scanned,
@@ -77,19 +80,21 @@ def _recent_candidates(index, database_ids, read_scope, constraints, limit):
 
 
 def _database_label(database_id, read_scope):
-    from backend.notion import search
+    from backend.notion.read_api import fetch_notion_database_title as fetch_notion_database_title
 
-    label = search.fetch_notion_database_title(database_id)
+    label = read_api.fetch_notion_database_title(database_id)
     root = read_scope.get(database_id)
     if root and root != database_id:
-        label = f'{search.fetch_notion_database_title(root)} / {label}'
+        label = f'{read_api.fetch_notion_database_title(root)} / {label}'
     return label
 
 
 def search_recent_catalog(index, database_ids, *, read_scope, constraints, limit):
     """검증된 목록 시점의 상위 N건을 고르고 현재 접근·정렬 속성을 재확인한다."""
-    from backend.notion import search
-    from backend.notion.body_index_sync import _Budget, _ReadFailure, _page_ancestors, _request, _valid_page
+    from backend.notion.mapping import normalize_notion_page
+    from backend.notion.matching import notion_page_matches_constraints, notion_page_sort_key
+    from backend.notion.crawl_transport import CrawlBudget as _Budget, NotionReadFailure as _ReadFailure
+    from backend.notion.crawl_validation import _page_ancestors, _valid_page
 
     outcome = _recent_candidates(index, database_ids, read_scope, constraints, max(1, limit))
     if outcome is None:
@@ -111,18 +116,18 @@ def search_recent_catalog(index, database_ids, *, read_scope, constraints, limit
             checkpoint()
             identifier = candidate['id'].replace('-', '').lower()
             database_id = candidate['database_id']
-            raw = _request(f'pages/{identifier}', budget)
+            raw = crawl_transport.request_json(f'pages/{identifier}', budget)
             parents = _page_ancestors(raw, budget)
             if not _valid_page(raw, identifier, database_id, allowed, parents):
                 return None
             raw = read_full_properties(raw, budget)
             if database_id not in labels:
                 labels[database_id] = _database_label(database_id, read_scope)
-            page = search.normalize_notion_page(raw, include_blocks=False,
+            page = normalize_notion_page(raw, include_blocks=False,
                                                database_id=database_id, database_label=labels[database_id])
-            if (not search.notion_page_matches_constraints(page, constraints)
-                    or search.notion_page_sort_key(page, created_at_filtered=True)
-                    != search.notion_page_sort_key(candidate, created_at_filtered=True)):
+            if (not notion_page_matches_constraints(page, constraints)
+                    or notion_page_sort_key(page, created_at_filtered=True)
+                    != notion_page_sort_key(candidate, created_at_filtered=True)):
                 # 등록일이 바뀌면 기존 상위 N건을 그대로 확정하지 않는다.
                 return None
             page.update(match_method='notion_recent_catalog', matched_terms=[], match_score=0)

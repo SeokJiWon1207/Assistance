@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from backend.intent.search_terms import keyword_term_aliases
+from backend.intent.keyword_terms import keyword_term_aliases
 
 
 def constraint_evidence_terms(constraints: dict[str, Any]) -> list[str]:

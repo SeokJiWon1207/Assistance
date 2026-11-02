@@ -6,10 +6,10 @@ from datetime import date
 
 import requests
 
-from backend.config import CUSTOMER_ALIASES
+from backend.settings.catalogs import get_customer_aliases
 from backend import llm
 from backend.llm import post_model_chat, extract_model_content
-from backend.intent.constraints import extract_json_object
+from backend.intent.json_payload import extract_json_object
 from backend.intent.entities import extract_people_constraints
 from backend.intent.unified_validation import validate_plan
 from backend.intent.document_continuation import eligible, expand
@@ -70,7 +70,8 @@ report일 때 report_kind=effort|effort_sla|weekly|monthly|profile|sla|pivot|spi
 고객사 프로필을 고객사별 건수 aggregate로, 유사 사례 비교를 단일 이슈 explain으로 대체하지 않는다. 특정 이슈 문서/비교의 scope=target, 그 외 고객사 보고서는 기본 team 범위를 유지한다.
 조건이 모호하거나 필요한 기능/근거가 없으면 operation=clarify, reason에 이유. 누락된 조건으로 전체를 조회하지 않는다. JSON 외 문장을 출력하지 않는다.
 최종 확인: evidence는 현재 question에서 연속된 문자열을 그대로 복사한다. '질문:' 접두사, 설명, 원문에 없는 따옴표를 추가하지 않는다. 고객사 별칭을 정규화하더라도 evidence는 원문 그대로다.
-Notion에서 'OO 관련 문서 찾아줘'는 제목·본문의 관련 내용 검색이다. 제목/고객사 속성을 명시하지 않았으면 title/customer 필터를 추측하지 않고 terms에 질문의 OO를 그대로 둔다. 예: '노션에서 인증 관련 문서 찾아줘' → {"source":"notion","operation":"search","scope":"default","followup":false,"filters":[],"status":{"mode":"unspecified","values":[],"evidence":""},"clear_fields":[],"terms":["인증"],"group_by":null,"limit":null}.
+Notion의 등록된 고객사 별칭은 customer 필터로 보존하며 terms에 중복하지 않는다. '노션에서 한투 관련 최근 문서 찾아줘'는 customer equals 한투, terms=[]이다. '한투에서 조건검색 서버 관련 문서 찾아줘'는 customer equals 한투, terms=["조건검색","서버"]이다. '한투 빼고'는 customer not_equals 한투, '한투랑 신한'은 customer in [한투,신한]이다. 한투는 한국투자증권이며 신한투자증권의 부분 문자열과 혼동하지 않는다.
+일반 주제 '인증 관련 문서'는 filters=[], terms=["인증"]이다. 관련 문서의 일반 주제는 keyword 필터로 만들지 않는다. Notion keyword는 명시한 본문/내용 검색에 사용한다. 제목·본문에서 문자 그대로 찾는 요청의 고객사명은 그 title/keyword 조건만 유지한다. 예: "본문에 '한투'가 포함된 문서"는 keyword contains 한투이며 customer를 추가하지 않는다. 이전 대화가 있어도 독립적인 새 질문은 followup=false, clear_fields=[]로 이전 조건을 상속하지 않는다. 실제 후속의 고객사 변경은 새 customer 조건을, 해제는 clear_fields=["customer"]를 사용한다.
 '''
 
 
@@ -92,7 +93,14 @@ def enabled():
 
 @measured('unified_planning')
 def plan_question(question, model, api_key, user, previous):
-    if not api_key:
+    explicit_fallback = 'fallbackModelIds' in model
+    if not api_key and not explicit_fallback:
+        return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
+    candidates = [(model, api_key)] if api_key else []
+    for candidate in llm.get_fallback_models(model, llm.get_model_registry(), default_local_only=True):
+        if key := llm.get_model_api_key(candidate):
+            candidates.append((candidate, key))
+    if not candidates:
         return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
     from backend.intent.literal_plans import literal_plan
     literal = literal_plan(question, previous or {})
@@ -105,7 +113,9 @@ def plan_question(question, model, api_key, user, previous):
             # 지원 문법처럼 보여도 근거 계약에 맞지 않으면 일반 해석으로 보낸다.
             pass
     previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'aggregation', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
-    prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(CUSTOMER_ALIASES, ensure_ascii=False)
+    from backend.intent.customer_constraints import CustomerScopeError
+    from backend.execution import checkpoint
+    prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(get_customer_aliases(), ensure_ascii=False)
     compact_document = eligible(question,previous or {})
     if compact_document:
         prompt += '\n이번 입력은 직전 단일 이슈 문서의 표현 변경 후보이다. 질문 전체를 확인하고 대상·조회 조건·문서 종류 변경 없이 형식·말투·인수 대상만 바꾸는 경우 {"document_presentation_only":true}만 출력하라. 그 밖의 경우 기존 필수 키를 갖춘 전체 계획을 출력하라.'
@@ -125,19 +135,20 @@ def plan_question(question, model, api_key, user, previous):
                                     '현재 질문에 번호 없이 같은 기준이라고만 하면 기존 issue_id를 서버가 상속한다.',
                     },
                     'mentioned_people': extract_people_constraints(question).get('names', [])}, ensure_ascii=False)}]}
-    candidates = [(model, api_key)]
-    for candidate in llm.get_model_registry():
-        if (candidate['id'] != model['id'] and candidate.get('status') == 'active'
-                and llm.is_ollama_model(candidate) and (key := llm.get_model_api_key(candidate))):
-            candidates.append((candidate, key))
+    customer_reinterpretation = None
     for index, (candidate, key) in enumerate(candidates):
         candidate_payload = {**deepcopy(payload), 'model': candidate.get('model', candidate['id'])}
+        if customer_reinterpretation:
+            candidate_payload['messages'].append({'role': 'user', 'content': customer_reinterpretation})
         if llm.is_ollama_model(candidate):
             # 기본 2K/4K 창은 해석 규칙 앞부분을 잘라 필수 JSON 계약까지 잃는다.
             candidate_payload['num_ctx'] = 16384
-        for attempt in range(2):
+        for attempt in range(1 if customer_reinterpretation else 2):
             try:
+                checkpoint()
                 parsed = _propose(candidate, key, candidate_payload)
+                if explicit_fallback and not isinstance(parsed, dict):
+                    raise requests.ConnectionError('질문 해석 모델이 JSON 응답을 반환하지 않았습니다.')
                 if isinstance(parsed,dict) and parsed.get('document_presentation_only') is True:
                     if set(parsed)!={'document_presentation_only'} or not compact_document:
                         raise ValueError('표현 변경 축약 계획에 새로운 조건을 섞을 수 없습니다')
@@ -149,7 +160,7 @@ def plan_question(question, model, api_key, user, previous):
                 return plan
             except ValueError as exc:
                 reason = str(exc)
-                if attempt == 0:
+                if attempt == 0 and not customer_reinterpretation:
                     repair_hint = (
                         '. 복합 집계는 최상위 group_by=null, limit=null이어야 합니다. '
                         '그룹은 aggregation.group_by, 상위 N개는 aggregation.top_n에만 적으세요. '
@@ -168,12 +179,20 @@ def plan_question(question, model, api_key, user, previous):
                         '이전 상태·기간을 filters에 반복하지 마세요. 그룹 집계에서 건수로 전환하면 operation=count, group_by=null이며 group_by를 clear_fields에 넣지 마세요. '
                         '보고서에 담을 지표/상태를 검색 조건으로 좁히지 마세요. 검증을 생략하지 마세요.'})
                     continue
+                if (isinstance(exc, CustomerScopeError) and not customer_reinterpretation
+                        and explicit_fallback and index == 0 and index + 1 < len(candidates)
+                        and candidates[index + 1][0].get('provider') == 'gemini'):
+                    customer_reinterpretation = '고객사 조건 검증 실패: ' + reason + ' 원래 질문을 다시 해석하고 모든 조건을 보존한 JSON 계획을 반환하세요.'
+                    break
             except requests.RequestException as exc:
                 reason = '질문 해석 모델 응답을 확인하지 못했습니다.'
+                if customer_reinterpretation:
+                    return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': reason}
                 status_code = getattr(exc.response, 'status_code', None)
                 transient = isinstance(exc, (requests.Timeout, requests.ConnectionError)) or status_code in {429, 502, 503, 504}
-                if transient and index + 1 < len(candidates):
-                    # 연결 장애·회로 차단이면 같은 회사 모델을 기다리지 않고 로컬로 전환한다.
+                can_switch = transient or (explicit_fallback and status_code is not None and status_code >= 400)
+                if can_switch and index + 1 < len(candidates):
+                    # 명시한 대체 모델을 우선하고, 기존 모델은 로컬 대체 정책을 유지한다.
                     break
                 if attempt == 0 and transient:
                     continue

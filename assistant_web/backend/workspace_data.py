@@ -17,12 +17,12 @@ from backend.sources.mantis_store import read_scoped_store, with_store_scope, st
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
-from backend.common import normalize_chroma_issue_document
+from backend.sources.chroma_document import normalize_chroma_issue_document
 from backend.config import CHROMA_DB_PATH
-from backend.tools.mantis_index import INDEX_FILENAME
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_index import INDEX_FILENAME
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.config import get_mantis_settings
-from backend.sources.mantis import fetch_mantis_issues
+from backend.sources.mantis_client import fetch_mantis_issues
 
 
 _live_lock = Lock()
@@ -165,7 +165,7 @@ def _freeze(value):
 @with_store_scope
 def _complete_workspace_cached(path: str, mtime: int, size: int, identity: str):
     del path, mtime, size, identity
-    from backend.sources.mantis import normalize_issue
+    from backend.sources.mantis_fields import normalize_issue
     stored = read_scoped_store(summary_only=True)
     if stored is None:
         # lru_cache는 예외를 저장하지 않으므로 일시적인 읽기 실패는 바로 복구된다.

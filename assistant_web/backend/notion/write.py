@@ -1,5 +1,7 @@
 """Notion 생성·수정·확인 흐름과 허용 DB 검증을 담당한다."""
 
+from backend.notion import read_api
+from backend.notion import schema as notion_schema
 import re
 from typing import Any, Dict, List, Optional
 
@@ -7,15 +9,10 @@ import requests
 from fastapi import HTTPException
 
 from backend.execution import bounded_timeout
-from backend.common import extract_quoted_value, normalize_for_match, remove_quoted_value
-from backend.config import (
-    NOTION_API_BASE,
-    get_notion_headers,
-    get_notion_settings as _get_notion_settings,
-)
-from backend.notion.client import fetch_notion_database_title, fetch_notion_users
+from backend.utils.text import extract_quoted_value, normalize_for_match, remove_quoted_value
+from backend.settings.notion import NOTION_API_BASE, get_notion_headers
+from backend.notion.read_api import fetch_notion_database_title as fetch_notion_database_title, fetch_notion_users as fetch_notion_users
 from backend.notion.actions import consume_action, save_action
-from backend.notion.compat import compat_dependency
 from backend.notion.constants import (
     NOTION_WRITE_CANCEL_PHRASES,
     NOTION_WRITE_CONFIRM_HEADER_CREATE,
@@ -27,29 +24,17 @@ from backend.notion.constants import (
 from backend.notion.formatting import build_sources_from_notion_pages, build_sources_from_single_notion_page
 from backend.notion.mapping import normalize_notion_page
 from backend.notion.query_cache import clear_notion_query_cache
-from backend.notion.schema import (
-    ensure_configured_notion_database,
-    find_notion_option_property,
-    find_notion_property,
-    notion_property_payload,
-    notion_property_schema,
-    notion_title_property,
-    select_notion_database_id,
-    validate_notion_page_id,
-)
-from backend.notion.search import execute_notion_search, extract_notion_database_label_from_text
+from backend.notion.schema import ensure_configured_notion_database as ensure_configured_notion_database, find_notion_option_property as find_notion_option_property, find_notion_property as find_notion_property, notion_property_payload as notion_property_payload, notion_property_schema as notion_property_schema, notion_title_property as notion_title_property, select_notion_database_id as select_notion_database_id, validate_notion_page_id as validate_notion_page_id
+from backend.notion.search import execute_notion_search
+from backend.query.notion_constraints import extract_notion_database_label_from_text
 from backend.schemas import ChatMessage, NotionPageUpdateRequest, NotionPageWriteRequest
-
-
-def get_notion_settings() -> Dict[str, Any]:
-    return compat_dependency("get_notion_settings", _get_notion_settings)()
 
 
 def notion_people_payload(prop: Dict[str, Any], value: str) -> Optional[Dict[str, Any]]:
     names = [name.strip() for name in re.split(r"[,/]", str(value or "")) if name.strip()]
     people = []
     for name in names:
-        for user_name, user_id in fetch_notion_users():
+        for user_name, user_id in read_api.fetch_notion_users():
             if normalize_for_match(name) in normalize_for_match(user_name):
                 people.append({"id": user_id})
                 break
@@ -63,12 +48,12 @@ def build_notion_write_properties(
     request_data: Dict[str, Any],
     require_title: bool = False,
 ) -> Dict[str, Any]:
-    properties = notion_property_schema(database_id)
+    properties = notion_schema.notion_property_schema(database_id)
     payload: Dict[str, Any] = {}
 
     title = request_data.get("title")
     if title:
-        title_prop = notion_title_property(properties)
+        title_prop = notion_schema.notion_title_property(properties)
         payload[title_prop] = notion_property_payload(properties[title_prop], title)
     elif require_title:
         raise HTTPException(status_code=400, detail="Notion 항목 제목이 필요합니다.")
@@ -156,7 +141,7 @@ def create_notion_page(request: NotionPageWriteRequest, *, prepared_properties: 
         response.json(),
         include_blocks=True,
         database_id=database_id,
-        database_label=fetch_notion_database_title(database_id),
+        database_label=read_api.fetch_notion_database_title(database_id),
     )
 
 
@@ -202,7 +187,7 @@ def update_notion_page(page_id: str, request: NotionPageUpdateRequest, *, expect
         response.json(),
         include_blocks=True,
         database_id=database_id,
-        database_label=fetch_notion_database_title(database_id),
+        database_label=read_api.fetch_notion_database_title(database_id),
     )
 
 
@@ -507,7 +492,7 @@ def run_notion_write_command(
     allow_write: bool = True,
     user_uid: str = "",
 ) -> Optional[Dict[str, Any]]:
-    pending = compat_dependency("find_pending_notion_write_command", find_pending_notion_write_command)(messages)
+    pending = find_pending_notion_write_command(messages)
     action_id = messages[-2].notionActionId if len(messages) >= 2 and messages[-2].role == "assistant" else ""
     if (pending or action_id) and (is_notion_write_confirm_phrase(text) or is_notion_write_cancel_phrase(text)):
         if not allow_write or not user_uid:
@@ -534,7 +519,7 @@ def run_notion_write_command(
     properties = build_notion_write_properties(database_id, request_data, require_title=resolved["action"] == "create")
     if not properties:
         raise HTTPException(status_code=400, detail="수정할 수 있는 Notion 속성이 없습니다.")
-    schema = notion_property_schema(database_id)
+    schema = notion_schema.notion_property_schema(database_id)
     # 속성 이름이 바뀌더라도 다른 속성으로 재해석하지 않도록 안정적인 ID를 저장한다.
     resolved["prepared_properties"] = {str(schema[name].get("id") or name): value for name, value in properties.items()}
     preview = build_notion_write_preview(text, write_intent, resolved=resolved)

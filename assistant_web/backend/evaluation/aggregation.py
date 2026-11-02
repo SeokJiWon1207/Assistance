@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from backend.answers import display_constraints
-from backend.intent.unified_validation import validate_execution_contract
+from backend.intent.execution_contract import validate_execution_contract
 from backend.reports.aggregation_narrative import build_facts, validate_claim
 
 

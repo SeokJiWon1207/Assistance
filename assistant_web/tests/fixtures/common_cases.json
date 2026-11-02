@@ -1,0 +1,1168 @@
+{
+  "signatures": {
+    "parse_date": "(value: str) -> Optional[datetime.date]",
+    "clamp_float": "(value: Optional[float], minimum: float, maximum: float) -> Optional[float]",
+    "clamp_int": "(value: Union[int, str, NoneType], minimum: int, maximum: int) -> Optional[int]",
+    "compact_text": "(value: str, max_chars: int = 520) -> str",
+    "quoted_value_span": "(text: str) -> Optional[tuple[int, int]]",
+    "extract_quoted_value": "(text: str) -> str",
+    "remove_quoted_value": "(text: str) -> str",
+    "normalize_for_match": "(value: str) -> str",
+    "normalize_search_token": "(token: str) -> str",
+    "has_lookup_request": "(text: str) -> bool",
+    "is_control_search_term": "(term: str) -> bool",
+    "text_matches_any_alias": "(text: str, aliases: List[str]) -> bool",
+    "customer_alias_owner": "(alias: str) -> Optional[str]",
+    "customer_project_owner": "(project_name: str) -> Optional[str]",
+    "text_matches_customer_aliases": "(text: str, aliases: List[str]) -> bool",
+    "add_customer_alias": "(aliases: set[str], value: str) -> None",
+    "derive_customer_aliases_from_project": "(project_name: str) -> List[str]",
+    "extract_chroma_field": "(text: str, field_name: str) -> str",
+    "extract_chroma_date": "(text: str) -> str",
+    "format_mantis_custom_date": "(value: Any) -> str",
+    "extract_issue_id_from_text": "(text: str) -> int",
+    "extract_title_from_chroma_text": "(text: str) -> str",
+    "extract_project_from_chroma_text": "(text: str) -> str",
+    "extract_from_names": "(text: str) -> List[str]",
+    "is_valid_person_name": "(name: str) -> bool",
+    "is_valid_handler_name": "(name: str) -> bool",
+    "display_mantis_status_label": "(status: Any) -> str",
+    "strip_korean_particle": "(name: str) -> str",
+    "text_contains_person_name": "(text: str, name: str) -> bool",
+    "normalize_chroma_issue_document": "(text: str) -> Optional[Dict[str, Any]]"
+  },
+  "cases": [
+    {
+      "symbol": "parse_date",
+      "args": [
+        "2024-02-29"
+      ],
+      "expected": "2024-02-29",
+      "return_type": "date"
+    },
+    {
+      "symbol": "parse_date",
+      "args": [
+        "2023-02-29"
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "parse_date",
+      "args": [
+        "2026-2-1"
+      ],
+      "expected": "2026-02-01",
+      "return_type": "date"
+    },
+    {
+      "symbol": "parse_date",
+      "args": [
+        ""
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "parse_date",
+      "args": [
+        null
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "clamp_float",
+      "args": [
+        null,
+        0,
+        10
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "clamp_float",
+      "args": [
+        "2.5",
+        0,
+        10
+      ],
+      "expected": 2.5,
+      "return_type": "float"
+    },
+    {
+      "symbol": "clamp_float",
+      "args": [
+        -5,
+        0,
+        10
+      ],
+      "expected": 0,
+      "return_type": "int"
+    },
+    {
+      "symbol": "clamp_float",
+      "args": [
+        99,
+        0,
+        10
+      ],
+      "expected": 10,
+      "return_type": "int"
+    },
+    {
+      "symbol": "clamp_float",
+      "args": [
+        "bad",
+        0,
+        10
+      ],
+      "error": {
+        "type": "ValueError",
+        "message": "could not convert string to float: 'bad'"
+      }
+    },
+    {
+      "symbol": "clamp_int",
+      "args": [
+        null,
+        1,
+        20
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "clamp_int",
+      "args": [
+        "4",
+        1,
+        20
+      ],
+      "expected": 4,
+      "return_type": "int"
+    },
+    {
+      "symbol": "clamp_int",
+      "args": [
+        -1,
+        1,
+        20
+      ],
+      "expected": 1,
+      "return_type": "int"
+    },
+    {
+      "symbol": "clamp_int",
+      "args": [
+        100,
+        1,
+        20
+      ],
+      "expected": 20,
+      "return_type": "int"
+    },
+    {
+      "symbol": "clamp_int",
+      "args": [
+        "2.5",
+        1,
+        20
+      ],
+      "error": {
+        "type": "ValueError",
+        "message": "invalid literal for int() with base 10: '2.5'"
+      }
+    },
+    {
+      "symbol": "compact_text",
+      "args": [
+        "  가\n 나\t다 "
+      ],
+      "expected": "가 나 다",
+      "return_type": "str"
+    },
+    {
+      "symbol": "compact_text",
+      "args": [
+        "  긴 문장을 자릅니다 ",
+        5
+      ],
+      "expected": "긴 문장을...",
+      "return_type": "str"
+    },
+    {
+      "symbol": "compact_text",
+      "args": [
+        null
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "quoted_value_span",
+      "args": [
+        "'[1892] '일중' 신규조건' 항목"
+      ],
+      "expected": [
+        0,
+        18
+      ],
+      "return_type": "tuple"
+    },
+    {
+      "symbol": "quoted_value_span",
+      "args": [
+        "먼저 “한투” 다음 '신한'"
+      ],
+      "expected": [
+        3,
+        7
+      ],
+      "return_type": "tuple"
+    },
+    {
+      "symbol": "quoted_value_span",
+      "args": [
+        "없음"
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "extract_quoted_value",
+      "args": [
+        "제목 '[1892] '일중' 신규조건' 찾아줘"
+      ],
+      "expected": "[1892] '일중' 신규조건",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_quoted_value",
+      "args": [
+        "“ 내용 ”"
+      ],
+      "expected": "내용",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_quoted_value",
+      "args": [
+        "없음"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "remove_quoted_value",
+      "args": [
+        "제목 '한투' 본문"
+      ],
+      "expected": "제목   본문",
+      "return_type": "str"
+    },
+    {
+      "symbol": "remove_quoted_value",
+      "args": [
+        "없음"
+      ],
+      "expected": "없음",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_for_match",
+      "args": [
+        "  Kb 증권\n "
+      ],
+      "expected": "kb증권",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_for_match",
+      "args": [
+        "Straße"
+      ],
+      "expected": "strasse",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_for_match",
+      "args": [
+        ""
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_search_token",
+      "args": [
+        "한투에서"
+      ],
+      "expected": "한투",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_search_token",
+      "args": [
+        "로그인"
+      ],
+      "expected": "로그인",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_search_token",
+      "args": [
+        "원인"
+      ],
+      "expected": "원인",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_search_token",
+      "args": [
+        "배포으로부터"
+      ],
+      "expected": "배포",
+      "return_type": "str"
+    },
+    {
+      "symbol": "normalize_search_token",
+      "args": [
+        "가"
+      ],
+      "expected": "가",
+      "return_type": "str"
+    },
+    {
+      "symbol": "has_lookup_request",
+      "args": [
+        "찾아 주세요"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "has_lookup_request",
+      "args": [
+        "보여줄 수 있어"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "has_lookup_request",
+      "args": [
+        "배포 문서"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "세건"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "한 건만"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "3개월"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "로그인"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "2026년"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        "좀"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_control_search_term",
+      "args": [
+        ""
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "customer_alias_owner",
+      "args": [
+        "117Hantu"
+      ],
+      "expected": "한투",
+      "return_type": "str"
+    },
+    {
+      "symbol": "customer_alias_owner",
+      "args": [
+        "신한투자증권"
+      ],
+      "expected": "신한",
+      "return_type": "str"
+    },
+    {
+      "symbol": "customer_alias_owner",
+      "args": [
+        "가상미등록고객"
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "customer_project_owner",
+      "args": [
+        "117Hantu_Project"
+      ],
+      "expected": "한투",
+      "return_type": "str"
+    },
+    {
+      "symbol": "customer_project_owner",
+      "args": [
+        "132SHGM(옛이름)"
+      ],
+      "expected": "신한",
+      "return_type": "str"
+    },
+    {
+      "symbol": "customer_project_owner",
+      "args": [
+        "no-project"
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    },
+    {
+      "symbol": "derive_customer_aliases_from_project",
+      "args": [
+        "117Hantu_Project(한국투자증권)"
+      ],
+      "expected": [
+        "117Hantu_Project",
+        "117Hantu_Project(한국투자증권)",
+        "Hantu_Project",
+        "Hantu_Project(한국투자증권)",
+        "한국",
+        "한국투자",
+        "한국투자증권"
+      ],
+      "return_type": "list"
+    },
+    {
+      "symbol": "derive_customer_aliases_from_project",
+      "args": [
+        "Samsung(삼성증권)"
+      ],
+      "expected": [
+        "Samsung(삼성증권)",
+        "삼성증권"
+      ],
+      "return_type": "list"
+    },
+    {
+      "symbol": "derive_customer_aliases_from_project",
+      "args": [
+        "A/B·C"
+      ],
+      "expected": [
+        "A",
+        "A/B·C",
+        "B",
+        "C"
+      ],
+      "return_type": "list"
+    },
+    {
+      "symbol": "derive_customer_aliases_from_project",
+      "args": [
+        ""
+      ],
+      "expected": [],
+      "return_type": "list"
+    },
+    {
+      "symbol": "add_customer_alias",
+      "args": [
+        [],
+        "117Hantu_Project(한국투자증권)"
+      ],
+      "expected": null,
+      "return_type": "NoneType",
+      "mutated_aliases": [
+        "117Hantu_Project",
+        "117Hantu_Project(한국투자증권)",
+        "Hantu_Project",
+        "Hantu_Project(한국투자증권)",
+        "한국",
+        "한국투자",
+        "한국투자증권"
+      ]
+    },
+    {
+      "symbol": "add_customer_alias",
+      "args": [
+        [
+          "기존"
+        ],
+        "A/B·C"
+      ],
+      "expected": null,
+      "return_type": "NoneType",
+      "mutated_aliases": [
+        "A",
+        "A/B·C",
+        "B",
+        "C",
+        "기존"
+      ]
+    },
+    {
+      "symbol": "add_customer_alias",
+      "args": [
+        [],
+        ""
+      ],
+      "expected": null,
+      "return_type": "NoneType",
+      "mutated_aliases": []
+    },
+    {
+      "symbol": "extract_chroma_field",
+      "args": [
+        "담당자: 석지원\n요청자: 홍길동",
+        "담당자"
+      ],
+      "expected": "석지원",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_field",
+      "args": [
+        "담당자:\n요청자: 홍길동",
+        "담당자"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_field",
+      "args": [
+        "없음",
+        "담당자"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_date",
+      "args": [
+        "등록일: 2026-10-30"
+      ],
+      "expected": "2026-10-30",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_date",
+      "args": [
+        "등록일: 미상\n2026-10-30 메일 수신"
+      ],
+      "expected": "미상",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_date",
+      "args": [
+        "2026-10-30 메일 수신"
+      ],
+      "expected": "2026-10-30",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_chroma_date",
+      "args": [
+        "없음"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        null
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "0"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "-"
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "20240229"
+      ],
+      "expected": "2024-02-29",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "20230230"
+      ],
+      "expected": "2023-02-30",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "2023-02-30"
+      ],
+      "expected": "2023-02-30",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "1735657200"
+      ],
+      "expected": "2025-01-01",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "1735657200000"
+      ],
+      "expected": "2025-01-01",
+      "return_type": "str"
+    },
+    {
+      "symbol": "format_mantis_custom_date",
+      "args": [
+        "미상"
+      ],
+      "expected": "미상",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_issue_id_from_text",
+      "args": [
+        "이슈 ID: #0031708"
+      ],
+      "expected": 31708,
+      "return_type": "int"
+    },
+    {
+      "symbol": "extract_issue_id_from_text",
+      "args": [
+        "이슈 ID: 42"
+      ],
+      "expected": 42,
+      "return_type": "int"
+    },
+    {
+      "symbol": "extract_issue_id_from_text",
+      "args": [
+        "#31708"
+      ],
+      "expected": 0,
+      "return_type": "int"
+    },
+    {
+      "symbol": "extract_title_from_chroma_text",
+      "args": [
+        "[제목]\n제목\n\n[고객사 본문 요청 내용]\n본문"
+      ],
+      "expected": "제목",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_title_from_chroma_text",
+      "args": [
+        "[제목]\n제목[고객사 본문 요청 내용]본문"
+      ],
+      "expected": "제목",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_title_from_chroma_text",
+      "args": [
+        "[제목]\n끝"
+      ],
+      "expected": "제목 없음",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_project_from_chroma_text",
+      "args": [
+        "프로젝트(고객사): 117Hantu_Project\n본문"
+      ],
+      "expected": "117Hantu_Project",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_project_from_chroma_text",
+      "args": [
+        "없음"
+      ],
+      "expected": "프로젝트 미상",
+      "return_type": "str"
+    },
+    {
+      "symbol": "extract_from_names",
+      "args": [
+        "From. 석지원\n홍길동 선임\n석지원 과장"
+      ],
+      "expected": [
+        "석지원",
+        "홍길동"
+      ],
+      "return_type": "list"
+    },
+    {
+      "symbol": "extract_from_names",
+      "args": [
+        "From. 담당자\n파트너매니저"
+      ],
+      "expected": [],
+      "return_type": "list"
+    },
+    {
+      "symbol": "extract_from_names",
+      "args": [
+        "없음"
+      ],
+      "expected": [],
+      "return_type": "list"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "석지원"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "Alice"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "담당자"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "KB증권"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "MTS"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "confirmed"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "파트너"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        "a1"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_person_name",
+      "args": [
+        ""
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_handler_name",
+      "args": [
+        "user_01"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_handler_name",
+      "args": [
+        "담당자"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_handler_name",
+      "args": [
+        "석지원"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_handler_name",
+      "args": [
+        "a"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "is_valid_handler_name",
+      "args": [
+        ""
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "display_mantis_status_label",
+      "args": [
+        "CONFIRMED"
+      ],
+      "expected": "확인된 이슈",
+      "return_type": "str"
+    },
+    {
+      "symbol": "display_mantis_status_label",
+      "args": [
+        "open"
+      ],
+      "expected": "미종료",
+      "return_type": "str"
+    },
+    {
+      "symbol": "display_mantis_status_label",
+      "args": [
+        "custom"
+      ],
+      "expected": "custom",
+      "return_type": "str"
+    },
+    {
+      "symbol": "display_mantis_status_label",
+      "args": [
+        null
+      ],
+      "expected": "상태 미상",
+      "return_type": "str"
+    },
+    {
+      "symbol": "strip_korean_particle",
+      "args": [
+        "담당자로"
+      ],
+      "expected": "담당자",
+      "return_type": "str"
+    },
+    {
+      "symbol": "strip_korean_particle",
+      "args": [
+        "제목과"
+      ],
+      "expected": "제목",
+      "return_type": "str"
+    },
+    {
+      "symbol": "strip_korean_particle",
+      "args": [
+        "홍길동에게"
+      ],
+      "expected": "홍길동",
+      "return_type": "str"
+    },
+    {
+      "symbol": "strip_korean_particle",
+      "args": [
+        "담당자"
+      ],
+      "expected": "담당자",
+      "return_type": "str"
+    },
+    {
+      "symbol": "strip_korean_particle",
+      "args": [
+        ""
+      ],
+      "expected": "",
+      "return_type": "str"
+    },
+    {
+      "symbol": "text_contains_person_name",
+      "args": [
+        "석지원에게 요청",
+        "석지원"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_contains_person_name",
+      "args": [
+        "파트너사업팀",
+        "파트너"
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_contains_person_name",
+      "args": [
+        "홍길동",
+        "홍길동"
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_any_alias",
+      "args": [
+        "신한투자증권",
+        [
+          "한투"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_any_alias",
+      "args": [
+        "ABC",
+        [
+          "ab"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_any_alias",
+      "args": [
+        "없음",
+        []
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "신한투자증권",
+        [
+          "한투"
+        ]
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "한투에서",
+        [
+          "한투"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "sandbox",
+        [
+          "db"
+        ]
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "DB에서",
+        [
+          "db"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "117Hantu(신한투자증권)",
+        [
+          "신한"
+        ]
+      ],
+      "expected": false,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "117Hantu_Project",
+        [
+          "한투"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "text_matches_customer_aliases",
+      "args": [
+        "한투랑 신한",
+        [
+          "한투"
+        ]
+      ],
+      "expected": true,
+      "return_type": "bool"
+    },
+    {
+      "symbol": "normalize_chroma_issue_document",
+      "args": [
+        "[Mantis 이슈 정보]\n- 이슈 ID: #42\n- 프로젝트(고객사): 117Hantu_Project\n- 매체구분: HTS\n- 담당자: 석지원\n- 고객사전달일: 1735657200\n- 등록일: 2025-01-01\n\n[제목]\n조건검색 문의\n\n[고객사 본문 요청 내용]\n본문"
+      ],
+      "expected": {
+        "id": 42,
+        "project": "117Hantu_Project",
+        "summary": "조건검색 문의",
+        "status": "상태 미상",
+        "status_label": "",
+        "priority": "",
+        "priority_label": "",
+        "severity": "",
+        "severity_label": "",
+        "media_type": "HTS",
+        "screen_number": "미상",
+        "work_subject": "미상",
+        "effort_fields": {},
+        "date_fields": {
+          "고객사전달일": "2025-01-01"
+        },
+        "reporter": "미상",
+        "handler": "석지원",
+        "created_at": "2025-01-01",
+        "updated_at": "",
+        "description": "[Mantis 이슈 정보]\n- 이슈 ID: #42\n- 프로젝트(고객사): 117Hantu_Project\n- 매체구분: HTS\n- 담당자: 석지원\n- 고객사전달일: 1735657200\n- 등록일: 2025-01-01\n\n[제목]\n조건검색 문의\n\n[고객사 본문 요청 내용]\n본문"
+      },
+      "return_type": "dict"
+    },
+    {
+      "symbol": "normalize_chroma_issue_document",
+      "args": [
+        "이슈 ID: #12"
+      ],
+      "expected": {
+        "id": 12,
+        "project": "프로젝트 미상",
+        "summary": "제목 없음",
+        "status": "상태 미상",
+        "status_label": "",
+        "priority": "",
+        "priority_label": "",
+        "severity": "",
+        "severity_label": "",
+        "media_type": "기타/미상",
+        "screen_number": "미상",
+        "work_subject": "미상",
+        "effort_fields": {},
+        "date_fields": {},
+        "reporter": "미상",
+        "handler": "담당자 미지정",
+        "created_at": "",
+        "updated_at": "",
+        "description": "이슈 ID: #12"
+      },
+      "return_type": "dict"
+    },
+    {
+      "symbol": "normalize_chroma_issue_document",
+      "args": [
+        "제목만"
+      ],
+      "expected": null,
+      "return_type": "NoneType"
+    }
+  ]
+}

@@ -1,4 +1,6 @@
 """고객사 하나와 수량 하나가 함께 있는 후속 검색의 회귀 검사."""
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 from contextlib import closing
 
 import json
@@ -71,9 +73,9 @@ class FollowUpCustomerScopeTests(unittest.TestCase):
             ChatMessage(role="user", content=question),
         ])
         with (
-            patch.object(chat, "get_private_model", return_value={"id": "fixture", "status": "active"}),
-            patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-            patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
+            patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture", "status": "active"}),
+            patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+            patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
         ):
             context = chat.prepare_chat_pipeline(request, question, None)
         rows = [
@@ -103,9 +105,9 @@ class FollowUpCustomerScopeTests(unittest.TestCase):
             with (
                 patch.object(audit, "AUDIT_DB_PATH", db),
                 patch.object(audit, "init_audit_db"),
-                patch.object(chat, "get_private_model", return_value={"id": "fixture", "status": "active"}),
-                patch.object(chat, "get_model_api_key", return_value="fixture-key"),
-                patch.object(chat, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
+                patch.object(chat_prepare, "get_private_model", return_value={"id": "fixture", "status": "active"}),
+                patch.object(chat_llm, "get_model_api_key", return_value="fixture-key"),
+                patch.object(chat_prepare, "rewrite_follow_up_query_with_model", side_effect=AssertionError("모델 호출 금지")),
                 patch.object(chat.chat_service, "build_response",
                              side_effect=lambda req, user: chat.prepare_chat_pipeline(req, question, user)),
             ):

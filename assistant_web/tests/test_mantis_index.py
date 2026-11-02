@@ -7,14 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.common import normalize_chroma_issue_document
-from backend.tools.mantis_index import (
-    INDEX_FILENAME,
-    MantisIndexError,
-    build_mantis_index,
-    parse_index_document,
-    validate_mantis_index,
-)
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_index import INDEX_FILENAME, MantisIndexError, build_mantis_index, parse_index_document, validate_mantis_index
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.understanding import chroma_text_matches_constraints
 
 

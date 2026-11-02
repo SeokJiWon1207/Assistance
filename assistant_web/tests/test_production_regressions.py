@@ -1,5 +1,8 @@
 """운영 검증에서 발견한 사용자 결과·장애·데이터 복구 회귀 테스트."""
 
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.reports as chat_reports
 import os
 import sqlite3
 import tempfile
@@ -47,10 +50,10 @@ class SearchRegressionTests(unittest.TestCase):
         for title in ("코스콤 KRX 거래시간 연장 관련 테스트 범위 및 공수 확인", "주간보고"):
             question = f"노션에서 '{title}' 항목을 찾아서 알려줘"
             with (
-                patch.object(chat, "build_unknown_customer_report") as guard,
-                patch.object(chat, "build_weekly_report") as weekly,
-                patch.object(chat, "build_effort_report") as effort,
-                patch.object(chat, "run_notion_write_command", return_value=None),
+                patch.object(chat_reports, "build_unknown_customer_report") as guard,
+                patch.object(chat_reports, "build_weekly_report") as weekly,
+                patch.object(chat_reports, "build_effort_report") as effort,
+                patch.object(chat_reports, "run_notion_write_command", return_value=None),
             ):
                 result = chat.build_deterministic_report(
                     question, question, {"mantis": True, "notion": True}, [], None,
@@ -77,8 +80,8 @@ class SearchRegressionTests(unittest.TestCase):
             modelId="test", abTest=False, messages=[ChatMessage(role="user", content="내 장기 미종료 이슈 알려줘")]
         )
         with (
-            patch.object(chat, "get_private_model", return_value={"id": "test", "status": "active"}),
-            patch.object(chat, "get_model_api_key", return_value="synthetic"),
+            patch.object(chat_prepare, "get_private_model", return_value={"id": "test", "status": "active"}),
+            patch.object(chat_llm, "get_model_api_key", return_value="synthetic"),
             patch.object(sla, "read_scoped_store", return_value=IssueBatch([issue(1), issue(2, "테스트을")], {"search_complete": True})),
         ):
             result = chat.chat_service.build_response(

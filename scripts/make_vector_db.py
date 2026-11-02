@@ -25,7 +25,7 @@ import json
 import os
 import re
 import shutil
-import sqlite3
+import sqlite3 as sqlite3
 import sys
 import tempfile
 import time
@@ -42,6 +42,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 ASSISTANT_WEB_DIR = PROJECT_ROOT / "assistant_web"
 if str(ASSISTANT_WEB_DIR) not in sys.path:
     sys.path.insert(0, str(ASSISTANT_WEB_DIR))
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import CHROMA
 
 from backend.tools.mantis_index import (  # noqa: E402
     INDEX_FILENAME,
@@ -278,7 +281,7 @@ def load_existing_issue_ids(database_path: Path | None = None) -> set[int]:
     if not database_path.exists():
         return set()
     issue_ids: set[int] = set()
-    with closing(sqlite3.connect(database_path)) as connection:
+    with closing(open_sqlite(database_path, profile=CHROMA)) as connection:
         rows = connection.execute(
             "SELECT string_value FROM embedding_metadata WHERE key = 'chroma:document'"
         )
@@ -586,7 +589,7 @@ def validate_snapshot(snapshot_dir: Path, expected_documents: int) -> None:
     database_path = snapshot_dir / "chroma.sqlite3"
     if not database_path.exists():
         raise SnapshotBuildError("새 스냅샷에 chroma.sqlite3가 없습니다.")
-    with closing(sqlite3.connect(database_path)) as connection:
+    with closing(open_sqlite(database_path, profile=CHROMA)) as connection:
         integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         if integrity != "ok":
             raise SnapshotBuildError(f"새 스냅샷 무결성 검사 실패: {integrity}")
@@ -660,7 +663,7 @@ def activate_snapshot(temporary_dir: Path) -> Path | None:
             os.replace(backup, CHROMA_DIR)
         raise
     prune_snapshot_backups()
-    from backend.intent.entities import warm_entity_catalog
+    from backend.sources.people_catalog import warm_entity_catalog
 
     if not warm_entity_catalog(CHROMA_DIR / "chroma.sqlite3"):
         print("⚠️ 검색 명부 사전 준비 실패: 다음 조회에서 원본을 확인합니다.")

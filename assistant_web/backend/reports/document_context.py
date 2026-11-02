@@ -1,8 +1,8 @@
 """인수인계의 최신 고객 기록을 같은 이슈 원문에서 짧게 보존한다."""
 import re
 
-from backend.common import compact_text
-from backend.evaluation.explanation_quotes import safe_excerpts
+from backend.utils.text import compact_text
+from backend.evidence.excerpts import safe_excerpts
 
 
 def latest_customer_record(issue):

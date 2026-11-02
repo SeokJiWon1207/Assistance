@@ -1,12 +1,12 @@
 """전체 목록과 달라진 본문만 갱신하여 검색 가능한 저장본을 유지한다."""
+from backend.notion import crawl_transport
 import time
 
-from backend.notion.body_index_sync import (
-    CrawlLimits, _Budget, _ReadFailure, _request, _page_ancestors, _valid_page, _wait_for_retry_after,
-    validate_index_candidate, sync_notion_body_index,
-)
-from backend.notion.complete_snapshot import coverage, _state
-from backend.notion.body_index import page_belongs_to_database
+from backend.notion.body_index_sync import CrawlLimits, validate_index_candidate, sync_notion_body_index
+from backend.notion.crawl_transport import CrawlBudget as _Budget, NotionReadFailure as _ReadFailure, request_json as request_json, _wait_for_retry_after as _wait_for_retry_after
+from backend.notion.crawl_validation import _page_ancestors, _valid_page
+from backend.notion.snapshot_state import coverage, _state
+from backend.notion.page_ownership import page_belongs_to_database
 
 
 def refresh_page(index, identifier, database_ids, deadline, *, limits=None):
@@ -23,7 +23,7 @@ def refresh_page(index, identifier, database_ids, deadline, *, limits=None):
     if parent_type in {'page_id', 'block_id'}:
         try:
             budget = _Budget(min(deadline, time.monotonic() + 30), 100)
-            raw = _request(f'pages/{identifier}', budget)
+            raw = crawl_transport.request_json(f'pages/{identifier}', budget)
             if raw.get('archived') or raw.get('in_trash'):
                 index.exclude_page(identifier, 'archived')
                 return True
@@ -88,7 +88,7 @@ def _refresh_catalog_properties(index, database_ids, deadline, refresh_age):
     """DB 목록에 열거되지 않는 자식 속성과 잘린 제목만 보완한다. 본문은 읽지 않는다."""
     import json
     from backend.notion.property_snapshot import pending_properties, read_full_properties
-    from backend.notion.complete_snapshot import _time
+    from backend.notion.snapshot_state import _time
     allowed = {identifier.replace('-', '').lower() for identifier in database_ids}
     now = time.time()
     with index._database() as db:
@@ -111,7 +111,7 @@ def _refresh_catalog_properties(index, database_ids, deadline, refresh_age):
             return refreshed, failures + 1
         try:
             if row['child']:
-                raw = _request(f"pages/{row['page_id']}", budget)
+                raw = crawl_transport.request_json(f"pages/{row['page_id']}", budget)
                 if raw.get('archived') or raw.get('in_trash'):
                     index.exclude_page(row['page_id'], 'archived')
                     continue
@@ -144,11 +144,12 @@ def refresh_catalog_cache(*, max_seconds=900):
     """앱의 사전 로딩에서 제목·속성 목록을 유지한다. 운영 타이머와 같은 잠금을 쓴다."""
     import fcntl
     import shutil
-    from backend.config import RUNTIME_DIR, get_notion_settings
+    from backend.config import RUNTIME_DIR
+    from backend.notion.discovery import resolve_notion_settings
     from backend.notion.body_index import BodyIndex, body_index_path, open_body_index
-    from backend.notion.complete_snapshot import _time, catalog_max_age_seconds
+    from backend.notion.snapshot_state import _time, catalog_max_age_seconds
     from backend.notion.read_scope import ensure_notion_read_scope
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     if not settings.get('token') or not settings.get('database_ids'):
         return {'status': 'skipped'}
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
@@ -187,3 +188,6 @@ def refresh_catalog_cache(*, max_seconds=900):
             failures += 1
         return {'status': 'incomplete' if failures else 'refreshed' if refresh or refreshed else 'fresh',
                 'refreshed_property_count': refreshed, 'failed_property_count': failures}
+
+
+_request = request_json

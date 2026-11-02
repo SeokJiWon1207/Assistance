@@ -2,27 +2,41 @@
 
 from __future__ import annotations
 
+from backend.notion.crawl_transport import (
+    _ReadFailure as _ReadFailure,
+    _Budget as _Budget,
+    _retry_after_until as _retry_after_until,
+    _retry_after_lock as _retry_after_lock,
+    _wait_for_retry_after as _wait_for_retry_after,
+    _request as _request,
+)
+from backend.notion.crawl_validation import (
+    _id as _id,
+    _source_signature as _source_signature,
+    _synced_source as _synced_source,
+    _source_owner as _source_owner,
+    _page_ancestors as _page_ancestors,
+    _valid_page as _valid_page,
+)
+from backend.notion import crawl_transport
 import os
-import math
+import math as math
 import time
-import threading
+import threading as threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import requests
+import requests as requests
 
-from backend.config import (
-    NOTION_API_BASE, get_notion_headers, get_notion_settings, notion_request_slot, parse_notion_database_ids,
-)
-from backend.execution import bounded_timeout, interruptible_sleep
-from backend.notion.body_index import BodyIndex, open_body_index, page_belongs_to_database
-from backend.notion.mapping import notion_block_text
+from backend.settings.notion import NOTION_API_BASE as NOTION_API_BASE, get_notion_headers as get_notion_headers, parse_notion_database_ids as parse_notion_database_ids
+from backend.notion.discovery import resolve_notion_settings
+from backend.notion.transport import notion_request_slot as notion_request_slot
+from backend.execution import bounded_timeout as bounded_timeout, interruptible_sleep as interruptible_sleep
+from backend.notion.body_index import BodyIndex, open_body_index
+from backend.notion.page_ownership import page_belongs_to_database
+from backend.notion.values import notion_block_text
 from backend.notion.read_scope import resolve_notion_read_scope
-
-
-def _id(value: Any) -> str:
-    return str(value or "").replace("-", "").lower()
 
 
 def _configured_int(name: str, default: int, ceiling: int) -> int:
@@ -44,7 +58,7 @@ def notion_body_index_status(database_ids: list[str] | None = None, *,
     if not roots:
         return {**unavailable, "scope_complete": False,
                 "incomplete_reasons": ["configured_scope_unavailable"]}
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     scope, scope_complete = resolve_notion_read_scope(roots, settings["token"])
     allowed = {_id(identifier) for identifier in scope}
     selected = list(dict.fromkeys(_id(identifier) for identifier in (database_ids if database_ids is not None else scope)))
@@ -75,91 +89,6 @@ class CrawlLimits:
             max_requests=_configured_int("NOTION_BODY_INDEX_MAX_REQUESTS", 1000, 10000),
             max_seconds=_configured_int("NOTION_BODY_INDEX_PAGE_SECONDS", 180, 3600),
         )
-
-
-class _ReadFailure(Exception):
-    pass
-
-
-@dataclass
-class _Budget:
-    deadline: float
-    requests_left: int
-
-
-_retry_after_until = 0.0
-_retry_after_lock = threading.Lock()
-
-
-def _wait_for_retry_after(budget: _Budget) -> None:
-    # 페이지 예산이 끝나도 같은 프로세스의 다음 요청은 서버 대기를 지킨다.
-    while True:
-        with _retry_after_lock:
-            until = _retry_after_until
-        delay = until - time.monotonic()
-        if delay <= 0:
-            return
-        if until >= budget.deadline:
-            raise _ReadFailure("http_429")
-        interruptible_sleep(delay)
-
-
-def _request(path: str, budget: _Budget, *, payload: dict[str, Any] | None = None,
-             post: bool = False) -> dict[str, Any]:
-    """모든 시도는 공유 요청 간격과 현재 실행의 남은 예산을 지킨다."""
-    global _retry_after_until
-    for attempt in range(3):
-        remaining = budget.deadline - time.monotonic()
-        if remaining <= 0:
-            raise _ReadFailure("time_limit")
-        if budget.requests_left <= 0:
-            raise _ReadFailure("request_limit")
-        _wait_for_retry_after(budget)
-        budget.requests_left -= 1
-        notion_request_slot()
-        remaining = budget.deadline - time.monotonic()
-        if remaining <= 0:
-            raise _ReadFailure("time_limit")
-        try:
-            kwargs: dict[str, Any] = {"headers": get_notion_headers(), "timeout": bounded_timeout(min(15, remaining))}
-            response = (
-                requests.post(f"{NOTION_API_BASE}/{path}", json=payload or {}, **kwargs)
-                if post else requests.get(f"{NOTION_API_BASE}/{path}", params=payload or {}, **kwargs)
-            )
-            status = response.status_code
-            if status == 200:
-                data = response.json()
-                if not isinstance(data, dict):
-                    raise _ReadFailure("invalid_response")
-                return data
-            if status != 429 and status < 500:
-                raise _ReadFailure(f"http_{status}")
-            try:
-                retry_after = float(response.headers.get("Retry-After", "0"))
-            except (AttributeError, TypeError, ValueError):
-                retry_after = 0
-            if not math.isfinite(retry_after):
-                retry_after = 0
-            if status == 429:
-                with _retry_after_lock:
-                    _retry_after_until = max(
-                        _retry_after_until, time.monotonic() + max(retry_after, 0.5 * 2**attempt))
-            if attempt == 2:
-                raise _ReadFailure(f"http_{status}")
-        except requests.RequestException as exc:
-            if attempt == 2:
-                raise _ReadFailure("request_failed") from exc
-            retry_after = 0
-        except (TypeError, ValueError) as exc:
-            raise _ReadFailure("invalid_response") from exc
-        # 서버가 지정한 대기 시간을 줄이면 같은 제한을 연속 소진한다.
-        if not math.isfinite(retry_after):
-            retry_after = 0
-        delay = max(retry_after, 0.5 * 2**attempt)
-        if time.monotonic() + delay >= budget.deadline:
-            raise _ReadFailure(f"http_{status}" if retry_after > 0 else "time_limit")
-        interruptible_sleep(delay)
-    raise _ReadFailure("request_failed")
 
 
 def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None,
@@ -208,7 +137,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
             if cursor:
                 payload["start_cursor"] = cursor
             try:
-                data = _request(f"blocks/{identifier}/children", budget, payload=payload)
+                data = crawl_transport.request_json(f"blocks/{identifier}/children", budget, payload=payload)
             except _ReadFailure as exc:
                 reasons.add(str(exc))
                 walk_failures.add(str(exc))
@@ -313,7 +242,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
             if _source_signature(source, parents) != _source_signature(current, current_parents):
                 raise _ReadFailure("synced_source_changed")
             # 페이지 수정 시각만으로는 복제 블록의 참조 교체를 판별할 수 없다.
-            current_copy = _request(f"blocks/{copy['id']}", budget)
+            current_copy = crawl_transport.request_json(f"blocks/{copy['id']}", budget)
             if (current_copy.get("object") != "block" or _id(current_copy.get("id")) != _id(copy["id"])
                     or current_copy.get("archived") or current_copy.get("in_trash")
                     or current_copy.get("type") != "synced_block"
@@ -344,72 +273,6 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
             "child_database_ids": sorted(child_databases), "block_count": block_count}
 
 
-def _source_signature(raw: dict[str, Any], parents: dict[str, dict[str, Any]]) -> list[Any]:
-    return [(key, *(obj.get(field) for field in
-             ("id", "object", "parent", "last_edited_time", "archived", "in_trash", "synced_block")))
-            for key, obj in sorted({"source": raw, **parents}.items())]
-
-
-def _synced_source(identifier: str, allowed: set[str], budget: _Budget
-                   ) -> tuple[dict[str, Any], dict[str, dict[str, Any]], str, str]:
-    raw = _request(f"blocks/{identifier}", budget)
-    if (raw.get("object") != "block" or _id(raw.get("id")) != identifier
-            or raw.get("type") != "synced_block" or (raw.get("synced_block") or {}).get("synced_from")
-            or not raw.get("last_edited_time") or raw.get("archived") or raw.get("in_trash")):
-        raise _ReadFailure("synced_source_invalid")
-    parents = _page_ancestors(raw, budget)
-    database_id = next((db for db in sorted(allowed) if page_belongs_to_database(raw, db, parents)), "")
-    if not database_id:
-        raise _ReadFailure("synced_source_outside_scope")
-    owner = _source_owner(raw, parents)
-    if not owner:
-        raise _ReadFailure("synced_source_owner_unknown")
-    return raw, parents, owner, database_id
-
-
-def _source_owner(raw: dict[str, Any], parents: dict[str, dict[str, Any]]) -> str:
-    current = raw
-    for _ in range(64):
-        parent = current.get("parent") or {}
-        kind = parent.get("type")
-        current = parents.get(_id(parent.get(kind)), {})
-        if current.get("object") == "page" and current.get("last_edited_time"):
-            return _id(current["id"])
-    return ""
-
-
-def _page_ancestors(raw: dict[str, Any], budget: _Budget,
-                    cache: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
-    parents = cache if cache is not None else {}
-    current = raw
-    seen = {_id(raw.get("id"))}
-    for _ in range(64):
-        parent = current.get("parent") or {}
-        kind = parent.get("type")
-        if kind not in {"page_id", "block_id"}:
-            break
-        identifier = _id(parent.get(kind))
-        if not identifier or identifier in seen:
-            break
-        seen.add(identifier)
-        if identifier not in parents:
-            endpoint = "pages" if kind == "page_id" else "blocks"
-            parents[identifier] = _request(f"{endpoint}/{identifier}", budget)
-        current = parents[identifier]
-    return parents
-
-
-def _valid_page(raw: dict[str, Any], page_id: str, database_id: str,
-                allowed_database_ids: set[str], parent_pages: dict[str, dict[str, Any]] | None = None) -> bool:
-    return bool(
-        raw.get("object") == "page" and _id(raw.get("id")) == _id(page_id)
-        and not raw.get("archived") and not raw.get("in_trash")
-        and page_belongs_to_database(raw, database_id, parent_pages)
-        and _id(database_id) in allowed_database_ids
-        and raw.get("last_edited_time")
-    )
-
-
 def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[str], *,
                              index: BodyIndex | None = None, deadline: float | None = None,
                              limits: CrawlLimits | None = None,
@@ -438,7 +301,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             if old_enough and _valid_page(catalog_page, page_id, database_id, allowed):
                 before = catalog_page
         if before is None:
-            before = _request(f"pages/{page_id}", budget)
+            before = crawl_transport.request_json(f"pages/{page_id}", budget)
         before_parents = _page_ancestors(before, budget)
     except _ReadFailure as exc:
         if index is not None:
@@ -459,7 +322,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
     content = crawl_notion_page_content(page_id, limits=limits, deadline=end, allowed_database_ids=allowed)
     reasons = set(content["incomplete_reasons"])
     try:
-        after = _request(f"pages/{page_id}", budget)
+        after = crawl_transport.request_json(f"pages/{page_id}", budget)
         # 부모 이동은 자식의 수정 시각을 바꾸지 않을 수 있어 수집 뒤 다시 읽는다.
         after_parents = _page_ancestors(after, budget)
     except _ReadFailure as exc:
@@ -482,7 +345,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
         registered = True
         for child_id in content["unsupported_child_page_ids"]:
             try:
-                child = _request(f"pages/{child_id}", budget)
+                child = crawl_transport.request_json(f"pages/{child_id}", budget)
                 _page_ancestors(child, budget, parents)
             except _ReadFailure as exc:
                 reasons.add(str(exc))
@@ -531,7 +394,7 @@ def sync_notion_body_index(database_ids: list[str] | None = None, *, max_pages: 
         raise ValueError("max_pages must be nonnegative and max_seconds positive")
     started = time.monotonic()
     deadline = started + max_seconds
-    settings = get_notion_settings()
+    settings = resolve_notion_settings()
     roots = list(settings.get("database_ids") or [])
     if not settings.get("token") or not roots:
         raise ValueError("Notion token or database list is not configured")
@@ -565,7 +428,7 @@ def sync_notion_body_index(database_ids: list[str] | None = None, *, max_pages: 
             if cursor:
                 payload["start_cursor"] = cursor
             try:
-                data = _request(f"databases/{database_id}/query", budget, payload=payload, post=True)
+                data = crawl_transport.request_json(f"databases/{database_id}/query", budget, payload=payload, post=True)
             except _ReadFailure as exc:
                 reasons.add(str(exc))
                 break

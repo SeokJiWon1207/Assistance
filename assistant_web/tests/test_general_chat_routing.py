@@ -1,4 +1,7 @@
 """일반 질문은 사내 검색·이슈 근거 생성 경로를 실행하지 않는다."""
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
+import backend.services.chat.retrieve as chat_retrieve
 import json
 import unittest
 from pathlib import Path
@@ -50,8 +53,8 @@ class GeneralRoutingTests(unittest.TestCase):
             with (
                 self.subTest(unified=unified),
                 patch.dict('os.environ', {'UNIFIED_QUERY_PLANNER_ENABLED': unified}),
-                patch.object(service, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
-                patch.object(service, 'get_model_api_key', return_value='key'),
+                patch.object(chat_prepare, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
+                patch.object(chat_llm, 'get_model_api_key', return_value='key'),
                 patch('backend.intent.unified._propose', return_value={
                     'source': 'general', 'operation': 'explain', 'scope': 'default', 'followup': False,
                     'filters': [], 'status': {'mode': 'unspecified', 'values': [], 'evidence': ''},
@@ -60,7 +63,7 @@ class GeneralRoutingTests(unittest.TestCase):
                 patch.object(service, 'generate_model_response', return_value={'content': '일반 회사 소개', 'sources': [], 'retrieval': None}),
                 patch('backend.services.grounded_explanation.generate_grounded_explanation',
                       side_effect=AssertionError('일반 질문에 이슈 근거 생성을 실행함')),
-                patch.object(service, 'run_retrieval_pipeline', side_effect=AssertionError('일반 질문에 사내 검색을 실행함')),
+                patch.object(chat_retrieve, 'run_retrieval_pipeline', side_effect=AssertionError('일반 질문에 사내 검색을 실행함')),
                 patch.object(service, 'persist_chat_response', side_effect=lambda request, text, result, **kw: result),
             ):
                 request = ChatRequest(modelId='test', messages=[ChatMessage(role='user', content=question)])

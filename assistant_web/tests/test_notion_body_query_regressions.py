@@ -18,6 +18,52 @@ class NotionBodyQueryTests(unittest.TestCase):
     search_fixture = fixtures.NotionAccuracyRegressionTests.search_fixture
     paragraph = staticmethod(fixtures.NotionAccuracyRegressionTests.paragraph)
 
+    def test_body_mention_predicates_are_not_literal_titles(self):
+        for predicate in ("나오는", "나온", "언급된", "적힌", "포함된"):
+            for quoted in ("'안정성'", '"안정성"', "“안정성”", "‘안정성’"):
+                with self.subTest(predicate=predicate, quoted=quoted):
+                    query = f"노션 본문에 {quoted}이 {predicate} 문서를 찾아줘"
+                    subject, clauses = split_notion_body_query(query)
+                    self.assertNotIn("안정성", subject)
+                    self.assertEqual(notion_literal_title(query), "")
+                    self.assertEqual(clauses, [{"field": "keyword", "operator": "contains",
+                                               "value": "안정성", "block_type": ""}])
+
+    def test_body_mention_negative_predicates_keep_exclusion(self):
+        for predicate in ("나오지 않는", "언급되지 않은", "포함되지 않은"):
+            with self.subTest(predicate=predicate):
+                query = f"노션 본문에 'deprecated'가 {predicate} 문서를 찾아줘"
+                self.assertEqual(notion_literal_title(query), "")
+                self.assertEqual(split_notion_body_query(query)[1], [
+                    {"field": "keyword", "operator": "not_contains", "value": "deprecated", "block_type": ""}])
+
+    def test_mention_words_inside_a_title_are_not_body_filters(self):
+        for title in ("본문에 안정성이 나오는 문서", "내용에 차트가 언급된 가이드", "안정성"):
+            query = f"노션 '{title}' 문서를 찾아줘"
+            self.assertEqual(split_notion_body_query(query), (query, []))
+            self.assertEqual(notion_literal_title(query), title)
+
+    def test_body_mention_search_does_not_match_title_or_metadata_only(self):
+        title_only = page("title-only")
+        title_only["properties"]["제목"]["title"] = [{"plain_text": "안정성"}]
+        self.search_fixture([page("target"), page("metadata-only", memo="안정성"), title_only], {
+            "target": [self.paragraph("a", "시스템 안정성 유지")],
+            "metadata-only": [self.paragraph("b", "운영 안내")],
+            "title-only": [self.paragraph("c", "설정 안내")],
+        })
+        stage = run_retrieval_pipeline("노션 본문에 '안정성'이 나오는 문서를 찾아줘", 5,
+                                       {"notion": True})["stages"][0]
+        self.assertEqual([entry["id"] for entry in stage["notion_pages"]], ["target"])
+        self.assertEqual(stage["meta"]["constraints"]["exact_title"], "")
+
+    def test_title_and_body_mention_exclusion_remain_separate(self):
+        query = "노션 '운영 가이드' 문서 중 본문에 '안정성'이 나오는 문서에서 코드에 'deprecated'가 나오지 않는 문서 찾아줘"
+        self.assertEqual(notion_literal_title(query), "운영 가이드")
+        self.assertEqual(split_notion_body_query(query)[1], [
+            {"field": "keyword", "operator": "contains", "value": "안정성", "block_type": ""},
+            {"field": "keyword", "operator": "not_contains", "value": "deprecated", "block_type": "code"},
+        ])
+
     def test_natural_body_requests_find_original_blocks_without_a_plan(self):
         self.search_fixture([page("target")], {"target": [
             self.paragraph("block", "MARKETTYPE_FUTOPT"),
@@ -40,6 +86,19 @@ class NotionBodyQueryTests(unittest.TestCase):
         self.search_fixture([page("target", status="진행중")], {"target": [self.paragraph("block", "완료") ]})
         result = run_retrieval_pipeline('노션 본문에 "완료" 포함한 문서 찾아줘', 5, {"notion": True})
         self.assertEqual([entry["id"] for entry in result["stages"][0]["notion_pages"]], ["target"])
+
+    def test_body_search_reuses_native_constraints_without_duplicate_parsing(self):
+        from backend.intent import notion_grounding
+        self.search_fixture([page("target", status="진행중")], {"target": [self.paragraph("block", "완료")]})
+        query = '노션 본문에 "완료" 포함한 문서 찾아줘'
+        with (
+            patch.object(search, 'extract_notion_constraints', wraps=search.extract_notion_constraints) as native,
+            patch.object(notion_grounding, 'extract_query_constraints', wraps=notion_grounding.extract_query_constraints) as common,
+        ):
+            result = search.execute_notion_search(query, 5)
+        self.assertEqual([entry['id'] for entry in result['notion_pages']], ['target'])
+        native.assert_called_once_with(query)
+        common.assert_called_once()
 
     def test_title_and_separately_quoted_body_keep_independent_meanings(self):
         self.search_fixture([page("target")], {"target": [self.paragraph("block", "needle") ]})

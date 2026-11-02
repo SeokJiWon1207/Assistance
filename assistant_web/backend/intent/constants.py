@@ -2,7 +2,7 @@
 
 import re
 
-from backend.common import normalize_for_match
+from backend.utils.text import normalize_for_match
 
 
 SIMPLE_GREETING_TERMS = {

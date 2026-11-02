@@ -12,6 +12,8 @@ from backend.sources.mantis_store import sync_complete_store  # noqa: E402
 
 if __name__ == '__main__':
     try:
+        from backend.settings.catalogs import initialize_customer_catalogs
+        initialize_customer_catalogs()
         print(json.dumps(sync_complete_store(), ensure_ascii=False))
     except Exception as exc:
         print(f"Mantis 동기화 실패: {type(exc).__name__}", file=sys.stderr)

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.intent import entities
+from backend.sources import people_catalog as entities
 
 
 class EntityCatalogLatencyTests(unittest.TestCase):

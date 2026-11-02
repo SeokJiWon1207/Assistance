@@ -16,7 +16,7 @@ class UnifiedCustomerAliasTests(unittest.TestCase):
             @classmethod
             def today(cls):
                 return cls(2026, 10, 28)
-        self.enterContext(patch('backend.intent.unified_validation.date', FixedDate))
+        self.enterContext(patch('backend.intent.validation_rules.date', FixedDate))
         self.user = {'mantisUsername': '석지원'}
 
     def customer_plan(self, value='NH투자증권', evidence='NH에서', operator='equals'):

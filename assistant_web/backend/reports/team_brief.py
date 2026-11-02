@@ -1,23 +1,29 @@
 """매주 기준본으로 보존되는 인앱 팀 브리핑."""
 
 import json
-import sqlite3
+import sqlite3 as sqlite3
 from collections import Counter
-from contextlib import closing
+from contextlib import closing as closing
 from datetime import date, timedelta
 from typing import Any, Dict, List, Tuple
 
 from backend.config import CHROMA_DB_PATH
-from backend.sources.mantis import normalize_issue
+from backend.sources.mantis_fields import normalize_issue
 from backend.sources.mantis_collection import collection_metadata
 from backend.workspace_data import fetch_workspace_recent_issues, load_complete_workspace, complete_store_expired
-from backend.tools.mantis_snapshot import scan_mantis_documents
+from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.display import customer_name
 from backend.mantis_status import mantis_status_bucket
-from backend.common import normalize_chroma_issue_document
-from backend.workspace import _issue_summary, _is_open, _now, init_workspace_db, workspace_db_path
+from backend.sources.chroma_document import normalize_chroma_issue_document
+from backend.storage.workspace_rows import _issue_summary, _is_open
+from backend.storage.workspace_schema import init_workspace_db, workspace_db_path as workspace_db_path
+from backend.storage.workspace_repository import (
+    read_team_brief, store_team_brief, team_brief_viewed,
+    mark_weekly_team_brief_read as mark_weekly_team_brief_read,
+)
+from backend.utils.dates import local_timestamp as _now
 from backend.workspace_data import load_workspace_snapshot
-from backend.team_scope import TEAM_MEMBERS, filter_team_issues
+from backend.domain.team import TEAM_MEMBERS, filter_team_issues
 
 
 TEAM_BRIEF_FETCH_LIMIT = 1000
@@ -300,11 +306,7 @@ def get_weekly_team_brief(user_uid: str, *, refresh: bool = False, today: date |
     base = today or date.today()
     week_start = _week_bounds(base)[0].isoformat()
     init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-        connection.row_factory = sqlite3.Row
-        row = None if refresh else connection.execute(
-            "SELECT payload_json FROM weekly_team_briefs WHERE week_start = ?", (week_start,)
-        ).fetchone()
+    row = read_team_brief(week_start, refresh=refresh)
     stored_payload = json.loads(row["payload_json"]) if row else None
     if (stored_payload and stored_payload.get("contentVersion") == TEAM_BRIEF_CONTENT_VERSION
             and stored_payload.get("scopeMembers") == list(TEAM_MEMBERS)):
@@ -312,36 +314,7 @@ def get_weekly_team_brief(user_uid: str, *, refresh: bool = False, today: date |
     else:
         generated = _generate_team_brief(base, force_refresh=refresh)
         serialized = json.dumps(generated, ensure_ascii=False)
-        with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-            if refresh or row:
-                connection.execute(
-                    """INSERT INTO weekly_team_briefs (week_start, payload_json, generated_at)
-                       VALUES (?, ?, ?) ON CONFLICT(week_start) DO UPDATE SET
-                       payload_json = excluded.payload_json, generated_at = excluded.generated_at""",
-                    (week_start, serialized, generated["generatedAt"]),
-                )
-            else:
-                connection.execute(
-                    "INSERT OR IGNORE INTO weekly_team_briefs (week_start, payload_json, generated_at) VALUES (?, ?, ?)",
-                    (week_start, serialized, generated["generatedAt"]),
-                )
-            stored = connection.execute(
-                "SELECT payload_json FROM weekly_team_briefs WHERE week_start = ?", (week_start,)
-            ).fetchone()
+        stored = store_team_brief(week_start, serialized, generated["generatedAt"], replace=refresh or bool(row))
         payload = json.loads(stored[0]) if stored else generated
-    with closing(sqlite3.connect(workspace_db_path())) as connection:
-        viewed = connection.execute(
-            "SELECT 1 FROM weekly_team_brief_reads WHERE user_uid = ? AND week_start = ?",
-            (user_uid, week_start),
-        ).fetchone() is not None
+    viewed = team_brief_viewed(user_uid, week_start)
     return {**payload, "viewed": viewed}
-
-
-def mark_weekly_team_brief_read(user_uid: str, week_start: str) -> None:
-    init_workspace_db()
-    with closing(sqlite3.connect(workspace_db_path())) as connection, connection:
-        connection.execute(
-            """INSERT INTO weekly_team_brief_reads (user_uid, week_start, read_at)
-               VALUES (?, ?, ?) ON CONFLICT(user_uid, week_start) DO UPDATE SET read_at = excluded.read_at""",
-            (user_uid, week_start, _now()),
-        )

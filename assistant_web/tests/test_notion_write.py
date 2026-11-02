@@ -1,3 +1,5 @@
+from backend.notion import read_api
+from backend.notion import schema as notion_schema
 import unittest
 from unittest.mock import Mock, patch
 
@@ -10,7 +12,7 @@ from backend.schemas import ChatMessage, NotionPageUpdateRequest, NotionPageWrit
 
 class NotionWritePropertyTests(unittest.TestCase):
     def test_people_and_write_properties_map_supported_fields(self):
-        with patch.object(write, "fetch_notion_users", return_value=(("홍길동", "u1"), ("김개발", "u2"))):
+        with patch.object(read_api, 'fetch_notion_users', return_value=(("홍길동", "u1"), ("김개발", "u2"))):
             self.assertEqual(
                 write.notion_people_payload({"type": "people"}, "홍길동/없는사람"),
                 {"people": [{"id": "u1"}]},
@@ -26,7 +28,7 @@ class NotionWritePropertyTests(unittest.TestCase):
             "사용자 정의": {"type": "number"},
         }
         with (
-            patch.object(write, "notion_property_schema", return_value=properties),
+            patch.object(notion_schema, 'notion_property_schema', return_value=properties),
             patch.object(write, "notion_people_payload", return_value={"people": [{"id": "u1"}]}),
         ):
             payload = write.build_notion_write_properties(
@@ -46,7 +48,7 @@ class NotionWritePropertyTests(unittest.TestCase):
         self.assertEqual(payload["담당자"], {"people": [{"id": "u1"}]})
         self.assertEqual(payload["사용자 정의"], {"number": 3.0})
 
-        with patch.object(write, "notion_property_schema", return_value=properties):
+        with patch.object(notion_schema, 'notion_property_schema', return_value=properties):
             with self.assertRaises(HTTPException) as raised:
                 write.build_notion_write_properties("db", {}, require_title=True)
         self.assertEqual(raised.exception.status_code, 400)
@@ -67,7 +69,7 @@ class NotionWriteHttpTests(unittest.TestCase):
         with (
             patch.object(write, "select_notion_database_id", return_value="db"),
             patch.object(write, "build_notion_write_properties", return_value={"제목": {}}),
-            patch.object(write, "fetch_notion_database_title", return_value="업무 DB"),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="업무 DB"),
             patch.object(write, "normalize_notion_page", return_value=normalized),
             patch.object(write.requests, "post", return_value=success) as post,
             patch.object(write, "clear_notion_query_cache") as clear_cache,
@@ -100,7 +102,7 @@ class NotionWriteHttpTests(unittest.TestCase):
             patch.object(write, "ensure_configured_notion_database") as ensure,
             patch.object(write, "build_notion_write_properties", return_value={"상태": {}}),
             patch.object(write.requests, "patch", return_value=updated),
-            patch.object(write, "fetch_notion_database_title", return_value="업무 DB"),
+            patch.object(read_api, 'fetch_notion_database_title', return_value="업무 DB"),
             patch.object(write, "normalize_notion_page", return_value=normalized),
             patch.object(write, "clear_notion_query_cache") as clear_cache,
         ):

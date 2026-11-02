@@ -16,7 +16,7 @@ class ImplicitPeriodTests(unittest.TestCase):
             @classmethod
             def today(cls):
                 return cls(2026, 10, 23)
-        patcher = patch('backend.intent.unified_validation.date', FixedDate)
+        patcher = patch('backend.intent.validation_rules.date', FixedDate)
         patcher.start()
         self.addCleanup(patcher.stop)
 

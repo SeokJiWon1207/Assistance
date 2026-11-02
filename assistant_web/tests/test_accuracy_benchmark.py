@@ -1,3 +1,5 @@
+import backend.llm as chat_llm
+import backend.services.chat.prepare as chat_prepare
 import json
 import tempfile
 import unittest
@@ -222,8 +224,8 @@ class RunnerTests(unittest.TestCase):
                 {"type": "count", "value": 1}, {"type": "plan", "statuses": ["open"], "people": ["석지원"], "platform": "mts"}]}]}]
         user = {"uid": "benchmark-test", "mantisUsername": "석지원", "displayName": "석지원"}
         with (patch.dict("os.environ", {"UNIFIED_QUERY_PLANNER_ENABLED": "true"}),
-              patch.object(service, "get_private_model", return_value={"id": "test", "status": "active"}),
-              patch.object(service, "get_model_api_key", return_value="key"),
+              patch.object(chat_prepare, "get_private_model", return_value={"id": "test", "status": "active"}),
+              patch.object(chat_llm, "get_model_api_key", return_value="key"),
               patch("backend.intent.unified.post_model_chat", side_effect=model),
               patch.object(aggregate, "scan_mantis_documents", side_effect=scan)):
             records = benchmark.run_cases(cases, lambda request: service.chat_service.build_response(request, user=user), "test")

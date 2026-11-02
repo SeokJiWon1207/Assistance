@@ -7,7 +7,7 @@ from time import perf_counter
 import hashlib
 import json
 
-from backend.common import display_mantis_status_label
+from backend.mantis_status import display_mantis_status_label
 from backend.effort_fields import issue_delivery_date, issue_effort_fields, parse_effort_field_value
 from backend.execution import checkpoint
 from backend.intent.aggregation_spec import METRIC_DATES, check_shape

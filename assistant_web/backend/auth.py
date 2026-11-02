@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
-import sqlite3
+import sqlite3 as sqlite3
 import time
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -24,6 +24,9 @@ from fastapi.responses import JSONResponse
 
 from backend.config import RUNTIME_DIR
 from backend.db_migrations import run_sqlite_migrations
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import AUTH, AUTH_ROWS
 
 
 VALID_ROLES = {"member", "manager", "admin"}
@@ -184,8 +187,7 @@ def _row_to_user(row: sqlite3.Row) -> Dict[str, Any]:
 
 def get_user_by_uid(uid: str) -> Optional[Dict[str, Any]]:
     init_users_db()
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(users_db_path(), profile=AUTH_ROWS)) as connection, connection:
         row = connection.execute(
             "SELECT * FROM users WHERE firebase_uid = ?",
             (str(uid or "").strip(),),
@@ -195,8 +197,7 @@ def get_user_by_uid(uid: str) -> Optional[Dict[str, Any]]:
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     init_users_db()
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(users_db_path(), profile=AUTH_ROWS)) as connection, connection:
         row = connection.execute(
             "SELECT * FROM users WHERE email = ?",
             (_normalize_email(email),),
@@ -206,8 +207,7 @@ def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
 
 def list_users() -> List[Dict[str, Any]]:
     init_users_db()
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
-        connection.row_factory = sqlite3.Row
+    with closing(open_sqlite(users_db_path(), profile=AUTH_ROWS)) as connection, connection:
         rows = connection.execute(
             "SELECT * FROM users ORDER BY approved DESC, display_name, email"
         ).fetchall()
@@ -228,7 +228,7 @@ def upsert_invited_user(
     normalized_role = role if role in VALID_ROLES else "member"
     now = _now()
     init_users_db()
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         # 같은 이메일의 Firebase UID가 바뀐 경우에도 관리자의 새 초대로 명시적으로
         # 연결을 갱신한다. 이메일 UNIQUE 충돌을 피하기 위해 이전 행을 먼저 제거한다.
         connection.execute(
@@ -273,7 +273,7 @@ def upsert_invited_user(
 
 def begin_password_reset(uid: str) -> None:
     """공급자 변경 전에 접근을 차단하며 실패 시에도 관리자가 재시도할 때까지 유지한다."""
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
             "UPDATE users SET password_change_required = 1, password_reset_pending = 1, "
             "password_reset_version = password_reset_version + 1, password_changed_at = ?, updated_at = ? "
@@ -282,7 +282,7 @@ def begin_password_reset(uid: str) -> None:
 
 
 def finish_password_reset(uid: str) -> None:
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
             "UPDATE users SET password_reset_pending = 0, password_changed_at = ?, updated_at = ? "
             "WHERE firebase_uid = ?", (int(time.time()), _now(), uid),
@@ -291,7 +291,7 @@ def finish_password_reset(uid: str) -> None:
 
 def complete_password_change(uid: str) -> None:
     """기존 인증 시각의 세션은 Firebase 폐기 전파와 무관하게 차단한다."""
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
             "UPDATE users SET password_change_required = 0, password_changed_at = ?, updated_at = ? "
             "WHERE firebase_uid = ?",
@@ -301,7 +301,7 @@ def complete_password_change(uid: str) -> None:
 
 def remove_provisional_user(uid: str) -> None:
     """생성 요청이 실패한 신규 Firebase UID의 로컬 행만 보상 삭제한다."""
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute("DELETE FROM users WHERE firebase_uid = ?", (uid,))
 
 
@@ -324,7 +324,7 @@ def update_user_access(
         return None
     next_role = role if role in VALID_ROLES else current["role"]
     next_approved = current["approved"] if approved is None else bool(approved)
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
             """
             UPDATE users SET role = ?, approved = ?, display_name = ?,
@@ -364,7 +364,7 @@ def approve_login_claims(claims: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not user or not user["approved"] or user["email"] != email:
         return None
 
-    with closing(sqlite3.connect(users_db_path())) as connection, connection:
+    with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
             "UPDATE users SET last_login_at = ?, updated_at = ? WHERE firebase_uid = ?",
             (_now(), _now(), uid),

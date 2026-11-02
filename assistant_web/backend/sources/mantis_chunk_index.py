@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
-import sqlite3
+import sqlite3 as sqlite3
 import tempfile
 from threading import Lock, Thread
 from typing import Generator, Any
@@ -14,14 +14,16 @@ from typing import Generator, Any
 from backend.execution import checkpoint
 from backend.sources.mantis_chunks import embedding_text, search_tokens, split_issue
 
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import MANTIS_CHUNK_BUILD, MANTIS_CHUNK_READ
+
 VERSION = 2
 LOGGER = logging.getLogger(__name__)
 _build_lock = Lock()
 
 
 def _connect(path: Path):
-    db = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
-    db.row_factory = sqlite3.Row
+    db = open_sqlite(f"{path.resolve().as_uri()}?mode=ro", profile=MANTIS_CHUNK_READ)
     db.execute("BEGIN")
     return db
 
@@ -41,7 +43,7 @@ def build_index(source: Path, target: Path, identity: str) -> dict[str, Any]:
         fd, temporary = tempfile.mkstemp(prefix="mantis-chunks-", suffix=".sqlite3", dir=target.parent)
         os.close(fd)
         try:
-            with closing(_connect(source)) as raw_db, closing(sqlite3.connect(temporary)) as db, db:
+            with closing(_connect(source)) as raw_db, closing(open_sqlite(temporary, profile=MANTIS_CHUNK_BUILD)) as db, db:
                 source_meta = meta = _metadata(raw_db)
                 if meta.get("connection") != identity:
                     raise ValueError("Mantis 연결 식별자가 다릅니다.")

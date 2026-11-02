@@ -58,13 +58,13 @@ class UiAccuracyRegressions(unittest.TestCase):
         self.assertEqual(c["created_at"]["from"], (date.today() - timedelta(days=1)).isoformat())
 
     def test_notion_owner_before_role_does_not_become_document(self):
-        with patch("backend.notion.search.load_known_people", return_value=(["우동헌"], [])):
+        with patch("backend.intent.notion_constraints.load_known_people", return_value=(["우동헌"], [])):
             c = extract_notion_constraints("노션 DB03_작업에서 우동헌 담당 문서 모두 보여줘")
         self.assertEqual(c["owner"], "우동헌")
 
     def test_notion_followup_keeps_database_owner_and_native_status(self):
         texts = ["노션 DB03_작업에서 우동헌 담당 문서 모두 보여줘", "그중 진행 중인 문서만 보여줘"]
-        with patch("backend.notion.search.load_known_people", return_value=(["우동헌"], [])):
+        with patch("backend.intent.notion_constraints.load_known_people", return_value=(["우동헌"], [])):
             text, _ = build_contextual_retrieval_text([ChatMessage(role="user", content=q) for q in texts])
             native = extract_notion_constraints(text)
             self.assertEqual(native["database_label"], "DB03_작업")

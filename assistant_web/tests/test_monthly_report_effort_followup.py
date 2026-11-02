@@ -74,4 +74,3 @@ class MonthlyReportEffortFollowupTests(unittest.TestCase):
         self.assertEqual(args[3]['platform_key'], 'mts')
         self.assertEqual(args[4]['from'], '2026-09-01')
         self.assertEqual(args[4]['to'], '2026-09-30')
-

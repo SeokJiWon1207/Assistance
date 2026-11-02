@@ -11,7 +11,7 @@ backend.config 외의 backend 모듈은 참조하지 않는다(순환 방지).
 import json
 import os
 import re
-import sqlite3
+import sqlite3 as sqlite3
 import threading
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -19,6 +19,9 @@ from typing import Any, Dict, List
 
 from backend.config import AUDIT_DB_PATH
 from backend.db_migrations import run_sqlite_migrations
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import AUDIT
 
 
 CHAT_STREAM_CONTEXT = threading.local()
@@ -158,7 +161,7 @@ def prune_audit_logs(retention_days: int | None = None) -> Dict[str, int]:
             retention_days = 90
     safe_days = max(7, min(int(retention_days), 3650))
     cutoff = (datetime.now(timezone.utc) - timedelta(days=safe_days)).isoformat()
-    with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+    with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
         feedback = connection.execute(
             """
             DELETE FROM answer_feedback
@@ -198,7 +201,7 @@ def load_audit_sources(audit_id: str, user_uid: str = "", *, variant: str = "A")
         return []
     try:
         init_audit_db()
-        with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection, connection:
+        with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection, connection:
             row = connection.execute(
                 "SELECT payload FROM validation_logs WHERE id = ? AND user_uid = ?",
                 (audit_id, str(user_uid or "").strip()),
@@ -221,7 +224,7 @@ def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str, 
         return {}
     try:
         init_audit_db()
-        with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection:
+        with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection:
             row = connection.execute(
                 "SELECT payload FROM validation_logs WHERE id = ? AND user_uid = ? AND question = ?",
                 (audit_id, user_uid, expected_question),
@@ -238,7 +241,7 @@ def load_audit_answer(audit_id: str, user_uid: str, expected_question: str, *, v
         return None
     try:
         init_audit_db()
-        with closing(sqlite3.connect(AUDIT_DB_PATH)) as connection:
+        with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection:
             row = connection.execute(
                 "SELECT payload FROM validation_logs WHERE id = ? AND user_uid = ? AND question = ?",
                 (audit_id, user_uid, expected_question),

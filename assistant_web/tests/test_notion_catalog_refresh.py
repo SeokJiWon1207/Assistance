@@ -1,4 +1,5 @@
 """제목 조회를 위한 목록을 요청 밖에서 갱신하고 잠금·용량·실패 경계를 지킨다."""
+from backend.notion import crawl_transport
 import json
 import sqlite3
 import tempfile
@@ -19,7 +20,7 @@ class NotionCatalogRefreshTests(unittest.TestCase):
         self.index = BodyIndex(self.root / 'index.sqlite3', fingerprint='connection')
         self.index.upsert_catalog('db', [page('p', database='db')], complete=True)
         self.enterContext(patch('backend.config.RUNTIME_DIR', self.root))
-        self.enterContext(patch('backend.config.get_notion_settings', return_value={
+        self.enterContext(patch('backend.notion.discovery.resolve_notion_settings', return_value={
             'token': 'fixture-token', 'database_ids': ['db']}))
         self.enterContext(patch('backend.notion.read_scope.ensure_notion_read_scope', return_value=({'db': 'db'}, True)))
         self.enterContext(patch('backend.notion.body_index.open_body_index', return_value=self.index))
@@ -72,8 +73,8 @@ class NotionCatalogRefreshTests(unittest.TestCase):
         def request(endpoint, *_args, **_kwargs):
             calls.append(endpoint)
             return {'pages/p': parent, 'pages/child': child}[endpoint]
-        with (patch.object(maintenance, '_request', side_effect=request),
-              patch('backend.notion.body_index_sync._request', side_effect=request)):
+        with (patch.object(crawl_transport, 'request_json', side_effect=request),
+              patch('backend.notion.crawl_transport.request_json', side_effect=request)):
             result = self.refresh()
         self.assertEqual(result['status'], 'refreshed')
         self.assertEqual(calls, ['pages/child', 'pages/p'])
@@ -88,7 +89,7 @@ class NotionCatalogRefreshTests(unittest.TestCase):
         self.index.upsert_page('db', child, parent_pages={'p': parent})
         with closing(sqlite3.connect(self.index.path)) as db, db:
             db.execute("UPDATE pages SET updated_at='2020-01-01T00:00:00+00:00' WHERE page_id='child'")
-        with patch.object(maintenance, '_request', side_effect=_ReadFailure('http_429')):
+        with patch.object(crawl_transport, 'request_json', side_effect=_ReadFailure('http_429')):
             self.assertEqual(self.refresh()['status'], 'incomplete')
         with self.index._database() as db:
             self.assertEqual(db.execute("SELECT updated_at FROM pages WHERE page_id='child'").fetchone()[0],
