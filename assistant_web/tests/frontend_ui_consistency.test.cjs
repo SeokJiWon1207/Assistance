@@ -147,6 +147,17 @@ test('dialog close restores a usable fallback when rendering replaced its opener
   assert.equal(h.document.activeElement, fallback);
 });
 
+test('closing a drawer during navigation releases focus without refocusing the previous view', async () => {
+  const h = dialogHarness();
+  const api = await load('dialog_focus', { document:h.document });
+  api.openDialogFocus(h.dialog);
+  const navigationButton = h.element('new view');
+  navigationButton.focus();
+  api.closeDialogFocus(h.dialog, {restoreFocus:false});
+  assert.equal(h.document.activeElement,navigationButton);
+  assert.equal(h.handlers.size,0);
+});
+
 
 test('UI clocks stay Korean across ICU day-period differences and midnight/noon', async () => {
   const { formatUiDateTime } = await load('ui_format', { Intl: { DateTimeFormat: class {

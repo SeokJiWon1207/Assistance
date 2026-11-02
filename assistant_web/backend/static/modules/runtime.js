@@ -188,6 +188,7 @@ export const els = {
   dashboardBody: document.querySelector("#dashboardBody"),
   dashboardDetail: document.querySelector("#dashboardDetail"),
   dashboardDetailTitle: document.querySelector("#dashboardDetailTitle"),
+  dashboardDetailContext: document.querySelector("#dashboardDetailContext"),
   dashboardDetailClose: document.querySelector("#dashboardDetailClose"),
   dashboardDetailBody: document.querySelector("#dashboardDetailBody"),
 };

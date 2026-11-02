@@ -517,6 +517,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.workspace-issue-title { display:block; width:100%; padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; }
+.workspace-issue-title:hover { color:var(--blue); }
+.workspace-issue-title:focus-visible { outline:none; border-radius:4px; box-shadow:var(--focus-ring); }
+.workspace-issue-row { cursor:pointer; }
+.workspace-issue-row.is-selected { background:var(--blue-soft); box-shadow:inset 3px 0 var(--blue); }
+.workspace-issue-row:hover:not(.is-selected) { background:var(--surface-alt); }
+@media (min-width:1400px) {
+  .personal-panel.has-detail { padding-right:440px; --workspace-gutter:24px; }
+  .personal-panel.has-detail .workspace-overview { grid-template-columns:minmax(0,1fr); }
+  .personal-panel.has-detail .workspace-side { display:none; }
+}
+
 .workspace-item-meta {
   overflow: hidden;
   color: var(--muted);

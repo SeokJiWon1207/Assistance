@@ -40,7 +40,7 @@ export function openDialogFocus(dialog, { initialFocus, opener = document.active
   (initialFocus || focusableElements(dialog)[0] || dialog).focus();
 }
 
-export function closeDialogFocus(dialog) {
+export function closeDialogFocus(dialog, { restoreFocus = true } = {}) {
   const session = sessions.get(dialog);
   if (!session) return;
   dialog.removeEventListener("keydown", session.keydown);
@@ -49,5 +49,5 @@ export function closeDialogFocus(dialog) {
   if (!anotherOpen) document.body.classList.remove("modal-open");
   const openerAvailable = session.opener?.isConnected && !session.opener.disabled && session.opener.getClientRects().length > 0;
   const target = openerAvailable ? session.opener : session.fallback?.();
-  target?.focus();
+  if (restoreFocus) target?.focus();
 }

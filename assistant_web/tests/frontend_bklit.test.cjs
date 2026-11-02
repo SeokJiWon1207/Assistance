@@ -34,8 +34,8 @@ test('new cohort includes unknown status without double counting or inventing a 
   assert.deepEqual(rows.map(row=>row.label),['현재 종료','현재 미종료','상태 미상']);
 });
 
-async function bridgeHarness({fail=false, delayed=false}={}) {
-  const vm = require('node:vm'); const events=[]; let resolveLoad;
+async function bridgeHarness({fail=false, delayed=false, failuresBeforeSuccess=0, hostCount=1}={}) {
+  const vm = require('node:vm'); const events=[]; const imports=[]; let resolveLoad;
   const context=vm.createContext({console:{warn:()=>events.push('warn')}});
   const bundle=new vm.SyntheticModule(['mountChart'],function(){this.setExport('mountChart',(host,spec)=>{
     events.push(['mount',spec.kind]);return ()=>events.push('unmount');
@@ -43,12 +43,18 @@ async function bridgeHarness({fail=false, delayed=false}={}) {
   await bundle.link(()=>{}); await bundle.evaluate();
   const loaded=delayed?new Promise(resolve=>{resolveLoad=resolve;}):Promise.resolve(bundle);
   const bridge=new vm.SourceTextModule(fs.readFileSync(path.join(__dirname,'../backend/static/modules/bklit_charts.js'),'utf8'),{
-    context, importModuleDynamically:async()=>{if(fail)throw Error('offline');return loaded;},
+    context, importModuleDynamically:async(specifier)=>{
+      imports.push(specifier);
+      if(fail || imports.length<=failuresBeforeSuccess)throw Error('offline');
+      return loaded;
+    },
   });
   await bridge.link(()=>{});await bridge.evaluate();
-  const host={isConnected:true,dataset:{bklitSpec:JSON.stringify({kind:'bar'})}};
-  const container={querySelectorAll:()=>[host],contains:child=>child===host};
-  return {api:bridge.namespace,events,host,container,resolve:()=>resolveLoad(bundle)};
+  const fallbacks=Array.from({length:hostCount},()=>({open:true,setAttribute(name){if(name==='open')this.open=true;}}));
+  const hosts=fallbacks.map(fallback=>({isConnected:true,dataset:{bklitSpec:JSON.stringify({kind:'bar'})},
+    querySelector:selector=>selector==='[data-bklit-values]'?fallback:null}));
+  const container={querySelectorAll:()=>hosts,contains:child=>hosts.includes(child)};
+  return {api:bridge.namespace,events,imports,host:hosts[0],hosts,fallback:fallbacks[0],container,resolve:()=>resolveLoad(bundle)};
 }
 test('chart lifecycle releases existing roots and ignores stale async mounts',async()=>{
   const h=await bridgeHarness();await h.api.mountCharts(h.container);await h.api.mountCharts(h.container);
@@ -64,6 +70,42 @@ test('bundle failure preserves native fallback and malicious titles cannot escap
   const html=h.api.chartHost({kind:'bar',title:'"><img src=x onerror=alert(1)>'},'<button>기존 필터</button>');
   assert.ok(html.includes('<button>기존 필터</button>'));
   assert.ok(!html.includes('<img'));assert.ok(html.includes('&lt;img'));
+});
+
+test('first entry automatically recovers after one transient bundle request failure',async()=>{
+  const h=await bridgeHarness({failuresBeforeSuccess:1});
+  await h.api.mountCharts(h.container);
+  assert.deepEqual(h.events,[['mount','bar']]);
+  assert.equal(h.imports.length,2);
+  assert.equal(h.host.dataset.chartError,undefined);
+});
+
+test('persistent loading failure stops retrying and reopens previously collapsed values',async()=>{
+  const h=await bridgeHarness({fail:true});
+  h.host.dataset.ready='true';h.fallback.open=false;
+  await h.api.mountCharts(h.container);
+  assert.equal(h.imports.length,2);
+  assert.equal(h.host.dataset.ready,undefined);
+  assert.equal(h.fallback.open,true);
+  assert.deepEqual(h.events,['warn']);
+});
+
+test('one malformed chart does not prevent the remaining charts from mounting',async()=>{
+  const h=await bridgeHarness({hostCount:3});
+  h.hosts[1].dataset.bklitSpec='{';
+  await h.api.mountCharts(h.container);
+  assert.equal(h.events.filter(event=>Array.isArray(event)&&event[0]==='mount').length,2);
+  assert.equal(h.hosts[0].dataset.chartError,undefined);
+  assert.equal(h.hosts[1].dataset.chartError,'true');
+  assert.equal(h.hosts[2].dataset.chartError,undefined);
+});
+
+test('successful chart mounting clears a previous loading error notice',async()=>{
+  const h=await bridgeHarness();
+  h.host.dataset.chartError='true';
+  await h.api.mountCharts(h.container);
+  assert.equal(h.host.dataset.chartError,undefined);
+  assert.deepEqual(h.events,[['mount','bar']]);
 });
 
 test('metric charts preserve decimal effort, long labels and partial coverage', async()=>{

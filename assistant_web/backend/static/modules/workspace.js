@@ -669,16 +669,33 @@ function issueWorkspaceRow(issue) {
   const meta = [customerName(issue), status, issue.dueDate && ageDays ? `등록 ${ageDays}일` : ""].filter(Boolean)
     .map((item) => escapeHtml(item)).join(" · ");
   return `
-    <article class="workspace-item workspace-issue-row ${rowTone}">
+    <article class="workspace-item workspace-issue-row ${rowTone}" data-workspace-row-issue="${escapeHtml(String(issue.id || ""))}">
       <span class="workspace-item-id">#${escapeHtml(String(issue.id || ""))}</span>
       <div class="workspace-item-main">
-        <strong class="workspace-item-name">${escapeHtml(issue.title || "제목 없음")}</strong>
+        <button type="button" class="workspace-item-name workspace-issue-title" data-workspace-issue="${escapeHtml(String(issue.id || ""))}" aria-label="#${escapeHtml(String(issue.id || ""))} ${escapeHtml(issue.title || "제목 없음")} 상세 보기">${escapeHtml(issue.title || "제목 없음")}</button>
         <span class="workspace-item-meta">${meta}${riskLabel ? ` · <b class="workspace-meta-risk is-${escapeHtml(issue.riskLevel)}">${escapeHtml(riskLabel)}</b>` : ""}</span>
         ${issue.recommendedAction ? `<p class="workspace-item-recommendation"><span class="sr-only">권장 조치</span>→ ${escapeHtml(issue.recommendedAction)}</p>` : ""}
       </div>
       <span class="workspace-item-due ${due?.tone || ""}">${due ? `<b>${escapeHtml(due.main)}</b><small>${escapeHtml(due.sub)}</small>` : ""}</span>
       <button type="button" class="workspace-item-action" aria-label="#${escapeHtml(String(issue.id || ""))} 이슈를 AI에게 묻기" data-workspace-question="${encodeURIComponent(`#${issue.id} 이슈의 현재 상태와 다음 할 일을 요약해줘`)}">${icon("chat", 15)}AI 요약</button>
     </article>`;
+}
+
+// 상세의 이전/다음도 현재 보고 있는 목록의 정렬과 보고 종류를 따른다.
+function workspaceIssueContext() {
+  if (state.workspaceTab === "brief") {
+    return state.workspaceBriefKind === "team"
+      ? { items: state.teamWeeklyBrief?.priorities || [], label: "이번 주 우선 확인" }
+      : { items: state.myWorkspace?.weeklyBrief?.highlights || [], label: "이번 주 확인할 항목" };
+  }
+  const items = [...(state.myWorkspace?.mantis?.issues || [])];
+  if (state.workspaceSort === "oldest") items.sort((a, b) => Number(b.ageDays || 0) - Number(a.ageDays || 0));
+  else if (state.workspaceSort === "newest") items.sort((a, b) => Number(a.ageDays || 0) - Number(b.ageDays || 0));
+  else {
+    const group = (item) => item.overdue ? 0 : Number(item.ageDays || 0) >= 30 ? 1 : 2;
+    items.sort((a, b) => group(a) - group(b));
+  }
+  return { items, label: "내 담당 미종료 이슈" };
 }
 
 // 내 담당 목록은 기한 지남 → 30일 이상 → 그 외로 묶어 보여 준다. 묶음 안의 순서는 서버 정렬을 그대로 따른다.
@@ -1405,6 +1422,7 @@ export {
   workspaceMetric,
   workspaceEmpty,
   workspaceStatusLabel,
+  workspaceIssueContext,
   issueWorkspaceRow,
   renderPersonalOverview,
   renderWeeklyBrief,

@@ -71,6 +71,24 @@ async function harness(apiFetch, cache = core.conversationCache) {
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
 
+test('personal titles open detail and detail navigation follows the active report or sort order', async () => {
+  const h = await harness(async()=>({ok:true}));
+  const issues = [{id:1,title:'최근 업무',ageDays:2},{id:2,title:'지연 업무',ageDays:10,overdue:true},{id:3,title:'장기 업무',ageDays:50}];
+  const html = h.api.issueWorkspaceRow(issues[0]);
+  assert.match(html, /<button[^>]+data-workspace-issue="1"/);
+  assert.match(html, /data-workspace-question=/);
+  h.state.myWorkspace = {mantis:{issues},weeklyBrief:{highlights:[issues[0]]}};
+  h.state.workspaceSort = 'urgent';
+  assert.deepEqual(json(h.api.workspaceIssueContext().items.map(i=>i.id)),[2,3,1]);
+  h.state.workspaceSort = 'oldest';
+  assert.deepEqual(json(h.api.workspaceIssueContext().items.map(i=>i.id)),[3,2,1]);
+  h.state.workspaceTab = 'brief';
+  assert.deepEqual(json(h.api.workspaceIssueContext().items.map(i=>i.id)),[1]);
+  h.state.workspaceBriefKind = 'team';
+  h.state.teamWeeklyBrief = {priorities:[issues[2]]};
+  assert.deepEqual(json(h.api.workspaceIssueContext().items.map(i=>i.id)),[3]);
+});
+
 test('team brief converts the stored UTC generation instant to user local time', async () => {
   const previous = process.env.TZ;
   process.env.TZ = 'Asia/Seoul';

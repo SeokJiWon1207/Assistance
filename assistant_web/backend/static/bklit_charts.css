@@ -59,7 +59,17 @@
 .bklit-tooltip i { width: 7px; height: 7px; border-radius: 50%; }
 .bklit-tooltip b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
 .bklit-tooltip small { color: var(--muted); }
-.bklit-insights-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(260px,1fr); gap: 14px; margin: 16px 0; align-items: start; }
+.bklit-insights-grid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(280px,1fr); gap: 14px; margin: 16px 0; align-items: stretch; }
+.bklit-insights-grid > .dashboard-chart { display:flex; flex-direction:column; }
+.bklit-insights-grid > .dashboard-chart > .dashboard-chart-body { flex:1; }
+.bklit-insights-grid > .dashboard-chart:has(.bklit-dashboard-cohort) > .dashboard-chart-body { display:flex; }
+.bklit-insights-grid [data-bklit-kind="cohort"], .bklit-insights-grid [data-bklit-kind="cohort"] > .bklit-root { display:flex; flex-direction:column; flex:1; }
+.bklit-root .bklit-dashboard-cohort { flex:1; flex-direction:column; flex-wrap:nowrap; gap:20px; padding-top:10px; }
+.bklit-dashboard-cohort > .bklit-legend { align-self:stretch; gap:6px; margin:0; }
+.bklit-dashboard-cohort .bklit-legend-item button { width:100%; padding:10px 6px; }
+.bklit-dashboard-cohort .bklit-legend-item button > span:last-child { margin-left:auto; }
+.bklit-dashboard-cohort .bklit-legend-item { width:100%; }
+.bklit-dashboard-cohort > .bklit-note { flex-basis:auto; margin-top:auto; padding-top:14px; border-top:1px solid var(--line); }
 .bklit-sparkline { margin: 12px 0; }
 .bklit-sparkline-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; min-height: 20px; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
 .bklit-sparkline-label strong { color: var(--text-soft); white-space: nowrap; }
@@ -105,11 +115,44 @@
 .dashboard-grid:has(.bklit-host) { align-items:stretch; }
 /* 전체 팀원은 유지하면서 행 간격만 줄여 분포 구역을 짧게 한다. */
 .dashboard-members-chart .bklit-bar-frame { height: 300px !important; }
-/* 경과일 막대는 같은 행의 카드 높이를 채우고 수치·안내 공간은 따로 확보한다. */
-.dashboard-age-chart .dashboard-chart-body:has(.bklit-host) { grid-template-rows: minmax(220px, 1fr) auto; align-content: stretch; }
-.dashboard-age-chart .bklit-host { display: grid; grid-template-rows: minmax(220px, 1fr) auto; }
-.dashboard-age-chart .bklit-root { min-height: 0; height: 100%; }
-.dashboard-age-chart .bklit-bar-frame { height: 100% !important; min-height: 220px; }
+/* 미종료 분포: 고객사 순위 막대 / 경과일 도넛 / 팀원 상태 히트맵. */
+.bklit-root {
+  --distribution-age-recent: color-mix(in srgb, var(--chart-1) 48%, var(--surface));
+  --distribution-age-long: color-mix(in srgb, var(--chart-3) 48%, var(--surface));
+  --distribution-on-color: #172233;
+}
+.bklit-ranking-frame { width:100%; min-width:0; }
+.bklit-ranking-frame > div { height:100%; }
+.bklit-root .bklit-customer-select {
+  display:flex; align-items:flex-start; justify-content:space-between; gap:8px; width:100%; padding:2px 0 0;
+  border:0; border-radius:5px; background:transparent; color:var(--text); text-align:left; line-height:20px;
+}
+.bklit-customer-select[aria-pressed="true"] { background:color-mix(in srgb, var(--blue) 12%, transparent); }
+.bklit-customer-select strong { flex-shrink:0; font-size:13px; font-variant-numeric:tabular-nums; }
+.bklit-customer-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.bklit-distribution-legend { display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:10px; color:var(--text-soft); font-size:12px; }
+.bklit-distribution-legend span { display:flex; align-items:center; gap:6px; }
+.bklit-distribution-legend i, .bklit-age-options i { width:8px; height:8px; border-radius:3px; flex-shrink:0; }
+.bklit-age-circle { display:flex; justify-content:center; margin:4px 0 14px; }
+.bklit-age-center { display:grid; gap:6px; justify-items:center; color:var(--text); text-align:center; }
+.bklit-age-center strong { font-size:26px; line-height:1.1; letter-spacing:-1px; font-weight:700; font-variant-numeric:tabular-nums; }
+.bklit-age-center span { font-size:12px; color:var(--muted); }
+.bklit-age-options { display:grid; gap:4px; }
+.bklit-age-options button { display:flex; align-items:center; gap:8px; width:100%; min-height:38px; padding:8px 6px; border:0; border-radius:8px; background:transparent; color:var(--text-soft); text-align:left; }
+.bklit-age-options button:hover, .bklit-age-options button[aria-pressed="true"] { background:var(--blue-soft); }
+.bklit-age-options strong { margin-left:auto; font-weight:600; color:var(--text); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.bklit-age-options small { width:34px; text-align:right; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.bklit-age-slice { cursor:pointer; }
+.bklit-member-frame { width:100%; }
+.bklit-heat-label { font-size:12px; fill:var(--muted); }
+.bklit-heat-name, .bklit-heat-total { font-size:12px; fill:var(--text-soft); }
+.bklit-heat-total { font-weight:600; font-variant-numeric:tabular-nums; }
+.bklit-root .bklit-member-cell { display:block; width:100%; height:100%; padding:0; border:0; border-radius:5px; color:var(--text); font-size:12px; font-variant-numeric:tabular-nums; }
+.bklit-member-cell:hover { box-shadow:inset 0 0 0 1px var(--muted); }
+.dashboard-age-chart .dashboard-chart-body:has(.bklit-host) { align-content:start; }
+.bklit-host[data-bklit-kind="member-heatmap"] { container:bklit-members / inline-size; }
+@container bklit-members (max-width:230px) { .bklit-member-heatmap { display:none; } [data-bklit-values] { display:block; } }
+@media(pointer:coarse) { .bklit-age-options button { min-height:44px; } }
 .workspace-overview:has(.bklit-host) { grid-template-rows:min-content minmax(0,1fr); }
 .workspace-overview:has(.bklit-host):has(> .workspace-connection) { grid-template-rows:min-content min-content minmax(0,1fr); }
 .workspace-overview:has(.bklit-host) .workspace-side-card { flex-shrink:0; }
