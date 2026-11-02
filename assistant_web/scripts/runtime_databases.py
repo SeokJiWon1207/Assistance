@@ -5,12 +5,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sqlite3
+import sys
+import sqlite3 as sqlite3
 import subprocess
 import tempfile
 from contextlib import closing
 from pathlib import Path
 
+
+APP_DIR = Path(__file__).resolve().parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
+from backend.storage.sqlite import open_sqlite
+from backend.storage.profiles import BACKUP_READ, BACKUP_WRITE
 
 INITIALIZE = "from backend.auth import init_users_db; from backend.workspace import init_workspace_db; from backend.audit import init_audit_db; init_users_db(); init_workspace_db(); init_audit_db()"
 
@@ -21,8 +29,8 @@ def copy_database(source: Path, destination: Path) -> None:
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with closing(sqlite3.connect(f"file:{source}?mode=ro", uri=True)) as original:
-            with closing(sqlite3.connect(temporary)) as copied:
+        with closing(open_sqlite(f"file:{source}?mode=ro", profile=BACKUP_READ)) as original:
+            with closing(open_sqlite(temporary, profile=BACKUP_WRITE)) as copied:
                 original.backup(copied)
                 if copied.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise RuntimeError(f"DB 무결성 검사 실패: {source.name}")

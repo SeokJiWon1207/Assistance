@@ -10,7 +10,10 @@ Optional:
   EC2_USER=ubuntu
   APP_ROOT=/opt/content-ai-assistant
   SERVER_NAME=demo.example.com
-  INCLUDE_ENV=1
+  INCLUDE_ENV=1  # 기존 운영 환경을 보존하고 누락된 OpenAI 키만 반영
+  ENV_BOOTSTRAP_FILE=/secure/initial.env  # 운영 환경이 없는 최초 설치만
+  DEPLOY_PYTHON=python3.12
+  REUSE_REMOTE_SNAPSHOT=1  # 검증한 기존 운영 검색 DB를 재사용
   FIREBASE_CREDENTIALS=/secure/path/service-account.json
   RELEASE_KEEP=3
   MANTIS_INDEX_MODE=primary
@@ -23,6 +26,9 @@ APP_ROOT="${APP_ROOT:-/opt/content-ai-assistant}"
 SERVER_NAME="${SERVER_NAME:-$EC2_HOST}"
 RELEASE_KEEP="${RELEASE_KEEP:-3}"
 MANTIS_INDEX_MODE="${MANTIS_INDEX_MODE:-primary}"
+DEPLOY_PYTHON="${DEPLOY_PYTHON:-python3.12}"
+REUSE_REMOTE_SNAPSHOT="${REUSE_REMOTE_SNAPSHOT:-0}"
+ENV_BOOTSTRAP_FILE="${ENV_BOOTSTRAP_FILE:-}"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
@@ -36,6 +42,15 @@ if [[ ! "$RELEASE_KEEP" =~ ^[1-9][0-9]*$ ]] || (( RELEASE_KEEP < 3 )); then
 fi
 if [[ "$MANTIS_INDEX_MODE" != "off" && "$MANTIS_INDEX_MODE" != "shadow" && "$MANTIS_INDEX_MODE" != "primary" ]]; then
   echo "MANTIS_INDEX_MODE must be off, shadow, or primary: $MANTIS_INDEX_MODE" >&2
+  exit 1
+fi
+
+if [[ ! "$DEPLOY_PYTHON" =~ ^[A-Za-z0-9_./+-]+$ ]]; then
+  echo "DEPLOY_PYTHON must be an executable name or an absolute path without shell metacharacters." >&2
+  exit 1
+fi
+if [[ "$REUSE_REMOTE_SNAPSHOT" != "0" && "$REUSE_REMOTE_SNAPSHOT" != "1" ]]; then
+  echo "REUSE_REMOTE_SNAPSHOT must be 0 or 1." >&2
   exit 1
 fi
 
@@ -55,6 +70,7 @@ cleanup_failed_staging() {
   echo "Deployment failed; removing only the unactivated staging release $RELEASE_ID..." >&2
   ssh "${SSH_OPTS[@]}" "$REMOTE" \
     "APP_ROOT='$APP_ROOT' RELEASE_DIR='$REMOTE_RELEASE' SNAPSHOT_DIR='$REMOTE_SNAPSHOT' bash -s" <<'REMOTE_CLEANUP' || true
+# staged-release-cleanup
 set -u
 current_target="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
 if [[ "$current_target" != "$RELEASE_DIR" ]]; then
@@ -66,6 +82,17 @@ trap cleanup_failed_staging EXIT
 
 echo "Packaging application and release verification files..."
 bash "$ROOT_DIR/assistant_web/deploy/aws/package_release.sh" "$ROOT_DIR" "$PACKAGE_DIR"
+if [[ "${INCLUDE_ENV:-0}" != "1" ]]; then
+  echo "INCLUDE_ENV=1 is required to prepare the release environment." >&2
+  exit 1
+fi
+LOCAL_PYTHON="${LOCAL_PYTHON:-$ROOT_DIR/assistant_web/.venv/bin/python}"
+"$LOCAL_PYTHON" "$PACKAGE_DIR/assistant_web/scripts/release_environment.py" overlay \
+  --source "$ROOT_DIR/assistant_web/.env" --output "$PACKAGE_DIR/env-overlay"
+if [[ -n "$ENV_BOOTSTRAP_FILE" && ! -f "$ENV_BOOTSTRAP_FILE" ]]; then
+  echo "ENV_BOOTSTRAP_FILE does not exist." >&2
+  exit 1
+fi
 
 echo "Preparing immutable release: $RELEASE_ID"
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
@@ -121,7 +148,7 @@ rsync -az --delete \
 
 rsync -az \
   -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-  "$PACKAGE_DIR/scripts/make_vector_db.py" \
+  "$PACKAGE_DIR/scripts/" \
   "$REMOTE:$REMOTE_RELEASE/scripts/"
 
 rsync -az \
@@ -133,24 +160,63 @@ rsync -az \
   "$PACKAGE_DIR/.github/" \
   "$REMOTE:$REMOTE_RELEASE/.github/"
 
-echo "Uploading versioned search snapshot..."
+echo "Preparing release environment without replacing production secrets..."
+rsync -az -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+  "$PACKAGE_DIR/env-overlay" "$REMOTE:$REMOTE_RELEASE/assistant_web/.env-overlay"
+bootstrap_mode=0
+if [[ -n "$ENV_BOOTSTRAP_FILE" ]]; then
+  bootstrap_mode=1
+  # 최초 설치에 명시한 파일만 전체 전송한다. 일반 재배포는 이 경로를 사용하지 않는다.
+  rsync -az --chmod=F600 -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
+    "$ENV_BOOTSTRAP_FILE" "$REMOTE:$REMOTE_RELEASE/assistant_web/.env-bootstrap"
+fi
+ssh "${SSH_OPTS[@]}" "$REMOTE" \
+  "APP_ROOT='$APP_ROOT' RELEASE_DIR='$REMOTE_RELEASE' DEPLOY_PYTHON='$DEPLOY_PYTHON' BOOTSTRAP_MODE='$bootstrap_mode' bash -s" <<'REMOTE_ENVIRONMENT'
+# release-env-stage
+set -euo pipefail
+app="$RELEASE_DIR/assistant_web"
+DEPLOY_PYTHON="$(bash "$app/deploy/aws/select_python.sh" "$RELEASE_DIR/.python-version")"
+base="$APP_ROOT/current/assistant_web/.env"
+if [[ ! -f "$base" && -f "$APP_ROOT/assistant_web/.env" ]]; then
+  base="$APP_ROOT/assistant_web/.env"
+fi
+arguments=(build --base "$base" --overlay "$app/.env-overlay" --output "$app/.env")
+if [[ "$BOOTSTRAP_MODE" == "1" ]]; then
+  arguments+=(--bootstrap "$app/.env-bootstrap")
+fi
+"$DEPLOY_PYTHON" "$app/scripts/release_environment.py" "${arguments[@]}"
+rm -f -- "$app/.env-overlay" "$app/.env-bootstrap"
+REMOTE_ENVIRONMENT
+
+SNAPSHOT_PATH="$REMOTE_SNAPSHOT"
+if [[ "$REUSE_REMOTE_SNAPSHOT" == "1" ]]; then
+  echo "Reusing existing production search snapshot..."
+  SNAPSHOT_PATH="$(ssh "${SSH_OPTS[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' bash -s" <<'REMOTE_SNAPSHOT_REUSE'
+# snapshot-reuse-stage
+set -euo pipefail
+root="$(realpath "$APP_ROOT/snapshots")"
+snapshot="$(realpath "$APP_ROOT/current/data")"
+if [[ "$snapshot" != "$root/"* || ! -f "$snapshot/mantis_chroma_db/chroma.sqlite3" ]]; then
+  echo "Existing snapshot is outside the managed directory or incomplete." >&2
+  exit 1
+fi
+printf '%s' "$snapshot"
+REMOTE_SNAPSHOT_REUSE
+)"
+else
+  echo "Uploading versioned search snapshot..."
 rsync -az --delete \
   -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
   "$ROOT_DIR/data/mantis_chroma_db/" \
   "$REMOTE:$REMOTE_SNAPSHOT/mantis_chroma_db/"
-ssh "${SSH_OPTS[@]}" "$REMOTE" \
-  "ln -s '$REMOTE_SNAPSHOT' '$REMOTE_RELEASE/data'"
-
-if [[ "${INCLUDE_ENV:-0}" == "1" ]]; then
-  echo "Uploading release-scoped assistant_web/.env..."
-  rsync -az -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=accept-new" \
-    "$ROOT_DIR/assistant_web/.env" \
-    "$REMOTE:$REMOTE_RELEASE/assistant_web/.env"
-  ssh "${SSH_OPTS[@]}" "$REMOTE" "chmod 600 '$REMOTE_RELEASE/assistant_web/.env'"
-else
-  echo "INCLUDE_ENV=1 is required for a new immutable production release." >&2
-  exit 1
 fi
+ssh "${SSH_OPTS[@]}" "$REMOTE" \
+  "SNAPSHOT_PATH='$SNAPSHOT_PATH' RELEASE_DIR='$REMOTE_RELEASE' bash -s" <<'REMOTE_SNAPSHOT_LINK'
+# snapshot-link-stage
+set -euo pipefail
+ln -s "$SNAPSHOT_PATH" "$RELEASE_DIR/data"
+REMOTE_SNAPSHOT_LINK
+
 
 if [[ -n "${FIREBASE_CREDENTIALS:-}" ]]; then
   if [[ ! -f "$FIREBASE_CREDENTIALS" ]]; then
@@ -170,15 +236,15 @@ if [[ -n "${FIREBASE_CREDENTIALS:-}" ]]; then
       rm -f '$REMOTE_RELEASE/firebase-service-account.upload.json'"
 fi
 
-echo "Validating uploaded snapshot before activation..."
+echo "Validating search snapshot before activation..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
-  "SNAPSHOT_DIR='$REMOTE_SNAPSHOT' python3 -c \"import json, os, sqlite3; from pathlib import Path; root=Path(os.environ['SNAPSHOT_DIR'])/'mantis_chroma_db'; db=root/'chroma.sqlite3'; con=sqlite3.connect(db); integrity=con.execute('PRAGMA integrity_check').fetchone()[0]; count=con.execute(\\\"SELECT COUNT(*) FROM embedding_metadata WHERE key='chroma:document'\\\").fetchone()[0]; con.close(); index_db=root/'mantis_index.sqlite3'; icon=sqlite3.connect(index_db); index_integrity=icon.execute('PRAGMA quick_check').fetchone()[0]; index_count=icon.execute('SELECT COUNT(*) FROM issues').fetchone()[0]; icon.close(); metadata=json.loads((root/'freshness.json').read_text()); assert integrity=='ok' and index_integrity=='ok' and count>0 and index_count==count and metadata.get('documentCount')==count, (integrity,index_integrity,count,index_count,metadata); print(f'Snapshot validated: {count} documents + structured index')\""
+  "SNAPSHOT_DIR='$SNAPSHOT_PATH' python3 -c \"import json, os, sqlite3; from pathlib import Path; root=Path(os.environ['SNAPSHOT_DIR'])/'mantis_chroma_db'; db=root/'chroma.sqlite3'; con=sqlite3.connect(db.resolve().as_uri()+'?mode=ro',uri=True); integrity=con.execute('PRAGMA integrity_check').fetchone()[0]; count=con.execute(\\\"SELECT COUNT(*) FROM embedding_metadata WHERE key='chroma:document'\\\").fetchone()[0]; con.close(); index_db=root/'mantis_index.sqlite3'; icon=sqlite3.connect(index_db.resolve().as_uri()+'?mode=ro',uri=True); index_integrity=icon.execute('PRAGMA quick_check').fetchone()[0]; index_count=icon.execute('SELECT COUNT(*) FROM issues').fetchone()[0]; icon.close(); metadata=json.loads((root/'freshness.json').read_text()); assert integrity=='ok' and index_integrity=='ok' and count>0 and index_count==count and metadata.get('documentCount')==count, (integrity,index_integrity,count,index_count,metadata); print(f'Snapshot validated: {count} documents + structured index')\""
 
 echo "Installing and atomically activating release $RELEASE_ID..."
 ssh "${SSH_OPTS[@]}" "$REMOTE" \
   "APP_ROOT='$APP_ROOT' APP_USER='$EC2_USER' SERVER_NAME='$SERVER_NAME' \
    RELEASE_DIR='$REMOTE_RELEASE' RELEASE_ID='$RELEASE_ID' RELEASE_KEEP='$RELEASE_KEEP' \
-   MANTIS_INDEX_MODE='$MANTIS_INDEX_MODE' \
+   MANTIS_INDEX_MODE='$MANTIS_INDEX_MODE' DEPLOY_PYTHON='$DEPLOY_PYTHON' \
    LETSENCRYPT_EMAIL='${LETSENCRYPT_EMAIL:-}' \
    bash '$REMOTE_RELEASE/assistant_web/deploy/aws/setup_server.sh'"
 
