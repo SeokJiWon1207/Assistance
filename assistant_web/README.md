@@ -135,6 +135,8 @@ AUTH_COOKIE_SECURE=true
 앱 가입 여부와 관계없이 명단 전체를 표시하며, 담당자 이름을 정확히 비교합니다.
 타 팀·공용 계정·담당자 미지정 이슈는 제외하고, 작업주체 필드로는 제한하지 않습니다.
 전체 지표·고객사 분석·업무 부하·주간 브리핑에 같은 명단을 적용합니다.
+`금주 이슈현황`의 `잔여현황`은 노션 기준에 맞춰 `shared_accounts`의 팀 공용 계정
+(`cs이슈`·`csissue`)도 포함합니다. 접수·완료현황과 다른 지표는 기존 팀원 명단을 유지합니다.
 채팅의 일반 Mantis 이슈 목록·집계에도 같은 명단을 기본 적용합니다. “전체 목록”, “모두 보여줘”도 팀 범위 안의 전체입니다.
 “우리 팀”, “컨텐츠서비스팀”, “CS팀”을 명시하면 해당 명단으로 조회합니다.
 “그중 담당자별로”, “그중 하영훈 담당만” 같은 후속 질문에도 팀 범위를 유지하며,
@@ -182,6 +184,16 @@ cd assistant_web
 
 커밋 전에는 저장소 루트에서 `assistant_web/scripts/check.sh`로 테스트·커버리지 기준·컴파일·셸 구문·
 ruff·mypy·의존성 감사를 CI와 같은 순서로 한 번에 확인합니다.
+
+고객사 JSON 목록은 import할 때 읽지 않습니다. 서버는 FastAPI lifespan에서, 관련 CLI와
+격리 테스트 runner는 실행 준비 단계에서 `backend.settings.catalogs.initialize_customer_catalogs()`를
+호출합니다. 별도 Python 스크립트에서 검색·고객사 표시 함수를 직접 사용할 때도 이 함수를 먼저
+호출한 뒤 `get_customer_aliases()` 등으로 목록을 읽습니다. 중복 초기화는 같은 사전을 유지하며,
+잘못된 필수 고객사 설정은 요청을 받기 전에 시작 실패로 처리합니다.
+
+Notion의 환경 설정만 확인할 때는 `backend.settings.notion.get_configured_notion_settings()`를,
+연결된 DB의 자동 탐색까지 필요할 때는 `backend.notion.discovery.resolve_notion_settings()`를
+사용합니다. 기존 `config.get_notion_settings()`는 후자와 같은 함수로 유지됩니다.
 
 실제 전체 저장본으로 20개 질문의 건수·목록·후속 조건을 비교하는 검증은 다음과 같습니다.
 감사 기록은 임시 DB에 저장되며 종료 후 자동 제거됩니다. 저장본은 같은 세대로 고정해 비교합니다.
@@ -283,20 +295,27 @@ Assistance/
 
 ## Model Config
 
-모델은 `config/models.json`에서 관리합니다. 첫 번째 활성 모델인 회사 `qwen3.6-35b-a3b`를 기본으로 사용하고, 회사 모델의 HTTP 오류·연결 실패·타임아웃 시 로컬 Ollama `qwen3.5:9b`로 자동 전환합니다.
+모델은 `config/models.json`에서 관리합니다. 서버 환경 또는 `.env`에 `OPENAI_API_KEY`를 등록하면 `preferred: true`인 활성 OpenAI `gpt-6-luna`가 기본으로 선택됩니다. 키를 등록하지 않은 환경에서는 기존 Gemini·회사 모델·Ollama 순서를 사용합니다. 키를 교체한 경우 로컬 재시작 명령으로 서버를 다시 시작합니다.
+
+Luna의 질문 해석·답변 생성에 연결 오류, 시간 초과, 빈 응답 또는 API 오류가 발생하면 `fallbackModelIds`에 지정한 `gemini-3.1-flash-lite`로 전환합니다. Gemini에는 서버의 `GEMINI_API_KEY`를 사용합니다. 비활성·만료·키 미등록 후보는 제외하며, 두 모델 모두 사용할 수 없으면 기존의 오류 또는 확인된 조회 근거 안내를 반환합니다. 모델이 바뀌어도 검색 조건과 권한 검증을 적용하고, 사용자가 취소한 요청은 대체 모델로 재실행하지 않습니다.
 
 ```json
 {
-  "id": "company-qwen3.6-35b-a3b",
-  "label": "회사 Qwen 3.6 35B",
-  "model": "qwen3.6-35b-a3b",
-  "provider": "openai-compatible",
-  "endpointEnv": "COMPANY_MODEL_46_ENDPOINT",
-  "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
-  "think": false,
+  "id": "gpt-6-luna",
+  "label": "OpenAI GPT-6 Luna",
+  "model": "gpt-6-luna",
+  "provider": "openai",
+  "endpoint": "https://api.openai.com/v1/chat/completions",
+  "apiKeyEnv": "OPENAI_API_KEY",
+  "reasoningEffort": "none",
+  "maxOutputTokens": 2048,
+  "preferred": true,
+  "fallbackModelIds": ["gemini-3.1-flash-lite"],
   "enabled": true
 }
 ```
+
+OpenAI 요청은 Chat Completions 형식을 사용합니다. 기존 호출부의 `max_tokens`를 `max_completion_tokens`로 변환하고 출력 상한을 적용하며, Qwen·Ollama 전용 옵션과 `seed`는 전송하지 않습니다. `reasoningEffort: "none"`에서는 온도·JSON 응답 형식을 유지하고, 추론을 켠 경우 공식 호환 조건에 따라 샘플링 옵션을 제외합니다. 실제 키와 모델 원문 응답은 Git에 추가하지 않습니다.
 
 새 모델을 바로 기본값으로 바꾸기 전에는 해당 모델을 `models.json`에 추가한 뒤
 `AB_COMPARISON_MODEL_ID`에 후보 모델 ID를 설정할 수 있습니다. A/B 비교가 켜진 일반 분석 답변에서는
