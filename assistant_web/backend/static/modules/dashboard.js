@@ -319,6 +319,7 @@ function renderFilterbar(filteredCount = 0) {
   }
   if (dashboardState.customer) {
     chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(customerName(dashboardState.customer))} 필터 해제">고객사: ${escapeHtml(customerName(dashboardState.customer))}${icon("close", 14)}</button>`);
+    chips.push(`<button class="dashboard-filter-jump dashboard-customer-detail-link" type="button" data-customer-detail="${escapeHtml(dashboardState.customer)}">${escapeHtml(customerName(dashboardState.customer))} 상세 보기${icon("chevron-right", 14)}</button>`);
   }
   const age = AGE_BUCKETS.find((bucket) => bucket.key === dashboardState.age);
   if (age) {
@@ -790,6 +791,17 @@ function handleDashboardAction(target) {
   }
   const jump = target.closest("[data-dashboard-jump]");
   if (jump) return showPriorityResults();
+  const customerDetail = target.closest("[data-customer-detail]");
+  if (customerDetail) {
+    return import("./customer_detail.js?v=20261103-1").then(({ openCustomerDetail }) => openCustomerDetail(
+      customerDetail.dataset.customerDetail,
+      {
+        period: dashboardState.period,
+        onAsk: askFromDashboard,
+        onClose: () => els.dashboardFilterbar?.querySelector("[data-customer-detail]")?.focus(),
+      },
+    ));
+  }
   const customer = target.closest("[data-dashboard-customer]");
   if (customer) {
     const name = customer.dataset.dashboardCustomer;

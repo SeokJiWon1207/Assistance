@@ -234,6 +234,23 @@ class ApiIntegrationTests(unittest.TestCase):
             live=False,
         )
 
+    @patch.object(workspace_api, "build_customer_detail")
+    @patch.object(workspace_api, "current_request_user")
+    def test_customer_detail_endpoint_maps_missing_and_invalid_customer(self, current_user, build_detail):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        build_detail.return_value = {"customer": {"id": "신한"}}
+
+        response = self.client.get("/api/workspace/customer", params={"name": "신한", "days": 90})
+
+        self.assertEqual(response.status_code, 200)
+        build_detail.assert_called_once_with("신한", days=90, refresh=False, live=False)
+        build_detail.side_effect = LookupError("없음")
+        self.assertEqual(self.client.get("/api/workspace/customer?name=x").status_code, 404)
+        build_detail.side_effect = ValueError("기간")
+        self.assertEqual(self.client.get("/api/workspace/customer?name=x&days=5").status_code, 422)
+        current_user.return_value = None
+        self.assertEqual(self.client.get("/api/workspace/customer?name=x").status_code, 401)
+
     @patch.object(workspace_api, "build_my_workspace")
     @patch.object(workspace_api, "current_request_user")
     def test_personal_workspace_refresh_bypasses_fast_snapshot(self, current_user, build_workspace):
