@@ -1124,7 +1124,11 @@
         "handler": "석지원",
         "created_at": "2025-01-01",
         "updated_at": "",
-        "description": "[Mantis 이슈 정보]\n- 이슈 ID: #42\n- 프로젝트(고객사): 117Hantu_Project\n- 매체구분: HTS\n- 담당자: 석지원\n- 고객사전달일: 1735657200\n- 등록일: 2025-01-01\n\n[제목]\n조건검색 문의\n\n[고객사 본문 요청 내용]\n본문"
+        "description": "[Mantis 이슈 정보]\n- 이슈 ID: #42\n- 프로젝트(고객사): 117Hantu_Project\n- 매체구분: HTS\n- 담당자: 석지원\n- 고객사전달일: 1735657200\n- 등록일: 2025-01-01\n\n[제목]\n조건검색 문의\n\n[고객사 본문 요청 내용]\n본문",
+        "_sort_values": {
+          "created_at": "2025-01-01",
+          "updated_at": ""
+        }
       },
       "return_type": "dict"
     },
@@ -1152,7 +1156,11 @@
         "handler": "담당자 미지정",
         "created_at": "",
         "updated_at": "",
-        "description": "이슈 ID: #12"
+        "description": "이슈 ID: #12",
+        "_sort_values": {
+          "created_at": "",
+          "updated_at": ""
+        }
       },
       "return_type": "dict"
     },

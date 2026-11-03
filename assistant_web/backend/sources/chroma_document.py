@@ -47,7 +47,7 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
     issue_id = extract_issue_id_from_text(text)
     if not issue_id:
         return None
-    created_at = extract_chroma_date(text)
+    created_at = extract_chroma_field(text, '등록일') or extract_chroma_date(text)
     return {
         "id": issue_id,
         "project": extract_project_from_chroma_text(text),
@@ -66,7 +66,8 @@ def normalize_chroma_issue_document(text: str) -> Optional[Dict[str, Any]]:
                         if (value := extract_chroma_field(text, name))},
         "reporter": extract_chroma_field(text, "요청자") or "미상",
         "handler": extract_chroma_field(text, "담당자") or "담당자 미지정",
-        "created_at": created_at,
-        "updated_at": "",
+        "created_at": created_at[:10],
+        "updated_at": extract_chroma_field(text, '최종수정일')[:10],
+        "_sort_values": {'created_at': created_at, 'updated_at': extract_chroma_field(text, '최종수정일')},
         "description": text[:800],
     }

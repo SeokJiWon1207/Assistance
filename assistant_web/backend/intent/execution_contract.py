@@ -11,6 +11,17 @@ def validate_execution_contract(question, plan):
         require(c.get('unified_plan_validated'), '미검증 계획')
         require(c.get('filter_clauses') == plan.get('filter_clauses'), '실행 조건과 계획 불일치')
         interpretation = plan.get('interpretation') or {}
+        from backend.intent.followup_changes import validate_clear_evidence, validate_all_scope_evidence
+        proof = plan.get('condition_grounding') or {}
+        validate_clear_evidence(question, interpretation.get('clear_fields') or [],
+                                interpretation.get('clear_evidence') or {}, proof.get('previous_clauses') or [],
+                                comparison_end=interpretation.get('comparison_end', False))
+        require(all(clause in c.get('filter_clauses', []) for clause in proof.get('preserved_clauses', [])),
+                '상속할 기존 조건이 실행에서 누락됐습니다')
+        if (interpretation.get('followup') and c.get('mantis_team_scope') == 'all'
+                and proof.get('previous_scope') != 'all' and not (c.get('people') or {}).get('names')
+                and not c.get('issue_ids')):
+            validate_all_scope_evidence(question, interpretation.get('scope_evidence') or question)
         check_effort_task(question, plan.get('report_kind'), interpretation.get('followup'))
         check_notice_task(question, plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))

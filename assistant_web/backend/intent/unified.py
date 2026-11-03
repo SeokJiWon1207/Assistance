@@ -42,7 +42,8 @@ customer는 사전 키 또는 질문의 정확한 프로젝트명, platform은 h
 장기 미종료의 'N일 넘게/이상'은 오늘-N일 이전 등록 조건이다. 반드시 created_at lte YYYY-MM-DD 필터로 표현하고 evidence에 'N일 넘게/이상'을 보존한다. 예: 오늘 2026-10-26, 30일 넘게 미종료 → created_at lte 2026-09-26. 90일은 2026-07-28. 오래된 순 정렬만 넣고 날짜 조건을 누락하지 않는다. 단순 미종료 목록과 같다며 기간을 버리지 않는다.
 주간·월간·고객사 프로필·처리시간 보고서도 명시한 조회 기간을 created_at에 반드시 포함한다. '내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서'는 report_kind=weekly, scope=self이고 이번 주 등록 기간을 포함한다. 신규·미종료·장기 적체는 주간 보고서의 출력 항목이며 개별 상태나 경과일 필터가 아니다.
 Mantis 건수·목록·그룹 집계에서 '이번 달 미종료 이슈'처럼 조회 기간을 말하면 '등록'을 생략해도 created_at 필터를 반드시 만든다. 해당 기간에 등록되고 현재 지정 상태인 이슈를 뜻한다. 기간 근거는 '이번 달'처럼 실제 표현을 발췌한다. '지난달 것으로/이번 주로 바꿔줘' 후속은 등록 기간만 교체하고 고객사·매체·담당 범위·상태를 보존한다. '오늘 기준 현재 미종료 현황', 등록 기간 무관·해제, 제목/본문의 날짜 문자열은 이 기본 등록 기간이 아니다. 개발/QC 완료일·전달일·수정일·마감일을 명시하면 등록일로 대체하지 말고 지원 여부를 확인한다. 설명·문서의 시간 표현이나 과거 시점의 미종료 잔량도 등록 기간으로 바꾸지 않는다.
-status: {"mode":"unspecified|all|open|include|exclude|inherit|unclear","values":[],"evidence":"현재 질문의 상태 근거 그대로"}.
+status: {"mode":"unspecified|all|open|include|exclude|inherit|unclear","values":[],"evidence":"현재 질문의 상태 근거 그대로","change":"replace|add|remove"}.
+change는 기존 상태 조건에 대한 연산이다. 특정 상태만 선택하면 include+replace, 기존 범위에 상태도 포함하면 include+add, 기존 범위에서 특정 상태를 빼면 exclude+remove다. add/remove는 후속에만 쓴다. 독립 질문의 제외는 exclude+replace다. 후속의 exclude는 항상 change=remove이며 change=replace는 금지한다. 상태 범위 전체를 바꿀 때는 include+replace에 원하는 최종 상태 집합을 지정하거나 open/all을 쓴다. inherit/open/all/unspecified는 change=replace다. 후속에서 change를 생략한 exclude는 기존 범위에서 remove하며 종료·해결 등 다른 상태를 되살리지 않는다. 기존 범위의 모든 상태를 빼면 결과는 0건이며 다른 상태를 자동으로 추가하지 않는다.
 unspecified=상태 요청 없음. all=상태무관/전체 상태/상태 전체/종료도 포함/상태 제한 해제의 명시적 요청. open=아직 끝나지 않아 수행·확인할 일이 남은 업무(남았어/남아 있는/마무리 못 한/미종료). '남아 있는 이슈 모두 몇 개'는 반드시 open이며 모두를 all 근거로 쓰면 안 된다.
 include/exclude의 values는 new,feedback,acknowledged,confirmed,assigned,developed,resolved,closed 중 실제 상태 목록.
 신규=new, 정보부족=feedback, 검토=acknowledged, 확인=confirmed, 할당=assigned, 개발완료=developed, 해결=resolved, 종료/완료=closed.
@@ -50,9 +51,10 @@ include/exclude의 values는 new,feedback,acknowledged,confirmed,assigned,develo
 open은 resolved와 closed를 제외하고 new/feedback/acknowledged/confirmed/assigned/developed를 포함한다. open/all/unspecified/inherit에서는 values=[]로 둔다.
 '종료만 제외, 해결은 포함'은 exclude [closed]이다. Mantis status를 filters에 중복 생성하지 않는다. 기간·시간·공수가 남은 것은 상태가 아니고, 인용된 제목도 상태 조건이 아니다.
 explain의 '프로그램 종료 원인/처리 완료 여부/노트의 전달일'은 검색 상태/등록일 조건이 아니다. 특정 이슈를 찾아 기록을 설명한다. 개별 상태를 필터로 명시한 경우만 적용한다.
-clear_fields: 후속에서 명시적으로 해제한 검색 필드 배열. 담당자 해제는 owner, 매체 해제는 platform, 고객사 해제는 customer, 키워드 해제는 terms/title/keyword. 상태 해제는 status.mode=all. 질문에 없으면 해제하지 않는다. report_kind,group_by,sort,scope,operation은 검색 필드가 아니므로 clear_fields에 절대로 넣지 않는다.
+clear_fields: 후속에서 명시적으로 해제한 검색 필드 배열. 담당자 해제는 owner, 매체 해제는 platform, 고객사 해제는 customer, 키워드 해제는 terms/title/keyword. 상태 해제는 status.mode=all. clear_evidence에는 해제할 필드마다 해당 조건을 해제하라는 현재 질문의 실제 인용문을 지정한다. 예: clear_fields=["platform"], clear_evidence={"platform":"매체 조건을 해제"}. 고객사나 담당자 '만' 지정은 그 필드만 교체하는 뜻이며 다른 필드를 해제하지 않는다. 질문에 없으면 해제하지 않는다. report_kind,group_by,sort,scope,operation은 검색 필드가 아니므로 clear_fields에 절대로 넣지 않는다.
+고객사/기간/매체의 제한 해제는 팀 범위를 해제하지 않는다. 팀에서 전사로 확대하려면 전사 또는 팀 범위 해제의 실제 요청을 scope_evidence에 인용한다. '전체 목록'은 전사 범위의 근거가 아니며 이 경우 scope=inherit다.
 유사 비교를 끝내고 기준 이슈 하나의 현재 상태만 묻는 후속은 followup=true, operation=get, report_kind 생략, terms=[]이다. 기준 issue_id는 상속한다. 비교 주제는 terms, 비교 후보에만 적용했던 고객사/매체 등은 해당 필드를 clear_fields로 해제하여 기준 이슈와 혼동하지 않는다. 현재 질문에 새로 명시한 조건은 검증 가능한 filters로 보존한다. 현재 상태 조회를 상태 필터 변경으로 해석하지 않는다.
-미종료 조회 후 '해결 상태도 함께 포함'은 미종료+resolved이며 closed는 계속 제외한다. status.mode=exclude, values=["closed"]로 표현한다. 전체 상태로 확대하지 않는다.
+미종료 조회 후 '해결 상태도 함께 포함'은 status.mode=include, values=["resolved"], change=add다. 미종료+resolved가 되며 closed는 계속 제외한다. '개발완료는 빼고'는 mode=exclude, values=["developed"], change=remove다. '할당된 이슈만'은 mode=include, values=["assigned"], change=replace다. 상태를 filters에 중복하지 않는다.
 terms: 실제 내용 검색어 최대6개. count의 건수/남았어/몇개, 담당자/고객사/상태 같은 필터값은 검색어가 아니다. 특정 이슈 번호가 있으면 일반적으로 terms=[]. 유사 사례 비교에서는 CPU·메모리 누수 같은 비교 주제는 terms에 지정할 수 있다. 주제를 keyword contains 필터로 강제하지 마라. 본문/노트에 정확한 문자열을 포함하라고 명시한 경우에만 keyword contains를 쓴다. 고객사·매체·담당자·기간·상태·명시적 제목 및 제외 조건은 계속 filters로 보존한다.
 group_by: null|customer|platform|status|owner|month. limit: null 또는 목록 표시 개수(1~200). count는 항상 null.
 복합 그룹·집계 분석은 operation=aggregate, 최상위 group_by=null, limit=null로 두고 aggregation을 추가한다. 상위 N개는 aggregation.top_n에만 적는다:
@@ -130,6 +132,8 @@ def plan_question(question, model, api_key, user, previous):
                                   '이전 조건을 유지해도 건수 조회 뒤 항목 나열 요청은 operation=search로 전환한다. '
                                   '보고서의 분량·말투·배치만 변경하면 report 작업과 report_kind를 유지한다. '
                                   '회의 안건은 기존 사후 분석의 표현 형식이다. '
+                                  '현재 질문에 없는 필드는 모두 상속한다. 고객사/담당자만 지정하는 것은 '
+                                  '그 필드의 값 교체이며 다른 필드의 해제가 아니다. clear_fields는 실제 해제 요청에만 쓴다. '
                                   '비교 종료는 operation 변경이며 clear_fields에는 allowed_clear_fields만 쓴다.',
                     'filter_contract': {
                         'similar_base': '유사 비교의 명시 기준 번호는 issue_id equals/in이다. '
@@ -184,6 +188,15 @@ def plan_question(question, model, api_key, user, previous):
                             '전체 표시는 limit=200입니다. 수량만 다시 묻는 경우만 count와 limit=null입니다. '
                             '조건이 그대로면 followup=true, scope/status=inherit, filters=[], clear_fields=[]로 '
                             '이전 조건을 보존하세요. 목록 전환을 단순 보고서 형식 변경으로 취급하지 마세요'
+                        )
+                    if reason.startswith('해제 조건의 원문 근거가 없습니다:'):
+                        repair_hint = (
+                            '. 검증에서 해제 근거가 없다고 지적한 필드는 clear_fields에서 제거하고 '
+                            'clear_evidence에서도 제거하세요. 기존 확정 값을 그대로 상속하세요. '
+                            '새 고객사나 담당자를 "만" 지정해도 그 필드만 변경하며 다른 필드는 유지합니다. '
+                            '고객사·기간·매체 제한만 해제했다면 scope=inherit로 고치세요. '
+                            '전사 또는 팀 범위 해제를 요청하지 않았다면 scope=all은 금지입니다. '
+                            '근거 인용문을 새로 꾸며내서 같은 해제를 반복하지 마세요'
                         )
                     candidate_payload['messages'].append({'role': 'user', 'content':
                         '계획 검증에 실패했습니다: ' + reason[:200] + repair_hint +

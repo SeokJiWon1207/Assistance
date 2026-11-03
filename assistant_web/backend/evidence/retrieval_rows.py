@@ -2,6 +2,7 @@
 import re
 from typing import Any, Dict, List, Optional
 from backend.sources.chroma_document import extract_chroma_date, extract_chroma_field, extract_project_from_chroma_text, extract_title_from_chroma_text
+from backend.query.ordering import issue_order_key
 
 def _ordered_issue_stages(retrieval_result: Dict[str, Any]) -> List[Dict[str, Any]]:
     """저장본을 먼저 적용하고 실시간 확인은 실행 순서대로 덮어쓴다."""
@@ -53,6 +54,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "handler": issue.get("handler", "담당자 미지정"),
                 "created_at": issue.get("created_at", ""),
                 "updated_at": issue.get("updated_at", ""),
+                "_sort_values": issue.get('_sort_values') or {},
                 "media_type": issue.get("media_type", "기타/미상"),
                 "preview": issue.get("description", "")[:260],
                 "detail": issue,
@@ -81,6 +83,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                     "handler": latest_issue.get("handler", "담당자 미지정"),
                     "created_at": latest_issue.get("created_at", ""),
                     "updated_at": latest_issue.get("updated_at", ""),
+                    "_sort_values": latest_issue.get('_sort_values') or {},
                     "media_type": latest_issue.get("media_type", "기타/미상"),
                     "preview": latest_issue.get("description", "")[:260],
                     "detail": latest_issue,
@@ -105,6 +108,8 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
                 "severity": extract_chroma_field(content, "이슈 유형"),
                 "handler": extract_chroma_field(content, "담당자") or "담당자 미지정",
                 "created_at": extract_chroma_date(content),
+                "_sort_values": {'created_at': extract_chroma_field(content, '등록일'),
+                                 'updated_at': extract_chroma_field(content, '최종수정일')},
                 "media_type": extract_chroma_field(content, "매체구분") or "기타/미상",
                 "preview": re.sub(r"\s+", " ", content)[:260],
                 "detail": {"content": content, "reporter": extract_chroma_field(content, "요청자") or "미상",
@@ -126,8 +131,7 @@ def collect_retrieved_issues(retrieval_result: Dict[str, Any], limit: Optional[i
     ordering = (retrieval_result.get('constraints') or {}).get('sort') or {}
     if ordering:
         field = ordering.get('field')
-        key = 'id' if field == 'issue_id' else str(field)
-        return sorted(rows.values(), key=lambda issue: (issue.get(key) or '', issue['id']),
+        return sorted(rows.values(), key=lambda issue: issue_order_key(issue, field),
                       reverse=ordering.get('direction') != 'asc')[:limit]
     return sorted(rows.values(), key=lambda issue: issue["id"], reverse=True)[:limit]
 

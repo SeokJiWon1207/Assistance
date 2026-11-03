@@ -81,6 +81,14 @@ def constraints_from_clauses(clauses, status, scope, user, previous, *, self_fie
         c['statuses'] = list(status['values'])
     elif mode == 'exclude':
         c['excluded_statuses'] = list(status['values'])
+    change = status.get('change', 'remove' if previous and mode == 'exclude' else 'replace')
+    if change == 'remove':
+        c['statuses'] = list(previous.get('statuses') or [])
+        c['excluded_statuses'] = sorted(set(previous.get('excluded_statuses') or []) | set(status['values']))
+    elif change == 'add':
+        c['statuses'] = sorted(effective_statuses(previous.get('statuses') or [],
+                                               previous.get('excluded_statuses') or []) | set(status['values']))
+        c['excluded_statuses'] = []
     for op, values in [('in', c['statuses']), ('not_in', c['excluded_statuses'])]:
         if values:
             c['filter_clauses'].append({'field': 'status', 'operator': op, 'value': values})
@@ -210,6 +218,9 @@ def validate_plan(question, parsed, user, previous):
         clear = []
         parsed['clear_fields'] = clear
     require(not clear or followup, '해제할 이전 조건이 없습니다')
+    from backend.intent.followup_changes import validate_clear_evidence
+    comparison_end = bool(previous.get('report_kind') == 'similar' and operation == 'get'
+                          and explicit_switch and len(document_ids) == 1)
     raw = parsed['filters']
     require(isinstance(raw, list) and len(raw) <= 20, '필터 개수 오류')
     # '관련 문서'의 일반 주제를 본문 전용 keyword로 좁히지 않는다.
@@ -238,7 +249,24 @@ def validate_plan(question, parsed, user, previous):
         incoming.append(checked)
         grounded_raw.append(item)
     raw = grounded_raw
-    if followup and report=='similar' and 'customer' in clear and re.search(r'좁|한정',question):
+    # 검증된 새 값으로 같은 필드를 교체하면 별도 해제가 필요 없다. 모델이
+    # 중복 선언한 해제만 제거하며, 새 값은 위의 원문 근거 검사를 통과해야 한다.
+    clear = [field for field in clear if field not in {clause['field'] for clause in incoming}]
+    clear_evidence = {}
+    ignored_changes = []
+    requested_clear = list(clear)
+    for field in clear:
+        try:
+            clear_evidence.update(validate_clear_evidence(question, [field], parsed.get('clear_evidence') or {},
+                base.get('filter_clauses') or [], comparison_end=comparison_end))
+        except ValueError as exc:
+            ignored_changes.append({'field': field, 'reason': str(exc)})
+    # 현재 발화에서 검증한 변경이 있으면 그 변경만 적용한다. 모델이 덧붙인
+    # 근거 없는 해제로 다른 기존 조건을 잃지 않으며, 적용/보존 이유를 감사에 남긴다.
+    if ignored_changes and not (incoming or clear_evidence or status['mode'] in {'open', 'include', 'exclude', 'all'}):
+        require(False, ignored_changes[0]['reason'])
+    clear = list(clear_evidence)
+    if followup and report=='similar' and 'customer' in requested_clear and re.search(r'좁|한정',question):
         named_customer=any(re.search(r'(?<![A-Za-z0-9])'+re.escape(alias)+r'(?![A-Za-z0-9])',question,re.I)
                            for key,aliases in get_customer_aliases().items() for alias in [key,*aliases])
         explicit_removal=re.search(r'(?:고객사|증권사).{0,12}(?:해제|풀|빼|제거|제외|없)',question)
@@ -269,6 +297,17 @@ def validate_plan(question, parsed, user, previous):
     effective_scope = scope if source in {'mantis', 'both'} or scope == 'self' else 'all'
     scoped_user = {**user, 'mantisUsername': user.get('displayName')} if source == 'notion' else user
     c = constraints_from_clauses(clauses, status, effective_scope, scoped_user, base, self_field=self_field)
+    from backend.intent.followup_changes import validate_all_scope_evidence
+    scope_evidence = ''
+    if (followup and c['mantis_team_scope'] == 'all' and base.get('mantis_team_scope') != 'all'
+            and not c['people']['names'] and not c['issue_ids']):
+        try:
+            scope_evidence = validate_all_scope_evidence(question, question)
+        except ValueError as exc:
+            ignored_changes.append({'field': 'team', 'reason': str(exc)})
+            scope = 'inherit'
+            c = constraints_from_clauses([clause for clause in clauses if clause['field'] != 'status'],
+                status, scope, scoped_user, base, self_field=self_field)
     if (previous.get('report_kind')=='similar' and followup and operation=='get'
             and explicit_switch and re.search(r'기준.{0,12}(?:하나|한\s*건|상태만)',question)):
         require(c.get('issue_ids')==base.get('issue_ids'), '비교 종료 후에도 기준 이슈 번호를 유지해야 합니다')
@@ -360,6 +399,11 @@ def validate_plan(question, parsed, user, previous):
     c['unified_plan_validated'] = True
     from backend.intent.condition_grounding import build_condition_grounding
     condition_grounding = build_condition_grounding(question, c, incoming, status, effective_scope, scoped_user, previous if followup else {})
+    condition_grounding['previous_clauses'] = deepcopy(base.get('filter_clauses') or [])
+    condition_grounding['previous_scope'] = base.get('mantis_team_scope')
+    condition_grounding['preserved_clauses'] = deepcopy([clause for clause in clauses
+        if clause in (base.get('filter_clauses') or []) and clause['field'] not in replaced
+        and not (scope == 'self' and clause['field'] in PERSON_FIELDS)])
     return {'version': 3, 'planner': 'unified_llm', 'source': source, 'operation': operation,
             'grounding_text': question, 'condition_grounding': condition_grounding, 'planned': True, 'confidence': 1.0, 'reason': '전체 질문의 단일 검증 계획',
             'filters': {'customer': c.get('customer_key'), 'platform': c.get('platform_key'), 'people': c['people'],
@@ -370,4 +414,6 @@ def validate_plan(question, parsed, user, previous):
             **({'effort': deepcopy(effort_options)} if effort_options else {}),
             'similar_literal_filters': [f for f in c['filter_clauses'] if f['field'] == 'keyword'] if report == 'similar' else [],
             'interpretation': {'status': deepcopy(status), 'followup': followup, 'scope': scope,
-                               'evidence': deepcopy(raw), 'clear_fields': clear}}
+                               'evidence': deepcopy(raw), 'clear_fields': clear,
+                               'clear_evidence': clear_evidence, 'comparison_end': comparison_end,
+                               'scope_evidence': scope_evidence, 'ignored_changes': ignored_changes}}

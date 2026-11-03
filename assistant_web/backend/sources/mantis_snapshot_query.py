@@ -21,6 +21,7 @@ from backend.sources.mantis_index import (
 
 from backend.storage.sqlite import open_sqlite
 from backend.storage.profiles import CHROMA, MANTIS_INDEX_READ
+from backend.query.ordering import issue_order_key
 
 
 LOGGER = logging.getLogger("backend.tools.mantis_snapshot")
@@ -52,12 +53,17 @@ def _scan_documents(
     example_limit: int,
     scanned_count: int | None = None,
     group_key: Optional[Callable[[Dict[str, Any]], str]] = None,
+    ordering: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     scanned_ids: set[int] = set()
     matched_ids: set[int] = set()
     group_counts: Dict[str, int] = {}
     matched_groups: Dict[int, str] = {}
-    examples: list[Dict[str, Any]] = []
+    examples = []
+    ordering = ordering or {'field': 'issue_id', 'direction': 'desc'}
+    field = ordering.get('field')
+    reverse = ordering.get('direction') != 'asc'
+    ordered_matches = []
 
     for content in documents:
         issue = normalize(str(content or ""))
@@ -70,26 +76,23 @@ def _scan_documents(
         if not matches(str(content or "")):
             continue
         matched_ids.add(issue_id)
+        sort_key = issue_order_key(issue, field)
+        ordered_matches.append((sort_key, issue_id))
         if group_key:
             label = str(group_key(issue) or "").strip() or "미지정"
             group_counts[label] = group_counts.get(label, 0) + 1
             matched_groups[issue_id] = label
-        if len(examples) < example_limit:
-            examples.append(issue)
-        elif issue_id > min(int(item.get("id") or 0) for item in examples):
-            oldest_index = min(
-                range(len(examples)),
-                key=lambda index: int(examples[index].get("id") or 0),
-            )
-            examples[oldest_index] = issue
+        examples.append((sort_key, issue))
+        examples.sort(key=lambda item: item[0], reverse=reverse)
+        del examples[example_limit:]
 
-    examples.sort(key=lambda issue: int(issue.get("id") or 0), reverse=True)
     return {
         "available": True,
         "scanned_count": len(scanned_ids) if scanned_count is None else scanned_count,
         "matched_count": len(matched_ids),
         "matched_ids": matched_ids,
-        "issues": examples,
+        "ordered_matched_ids": [issue_id for _, issue_id in sorted(ordered_matches, reverse=reverse)],
+        "issues": [issue for _, issue in examples],
         "group_counts": group_counts,
         "matched_groups": matched_groups,
         "reason": "",
@@ -104,6 +107,7 @@ def _scan_chroma_documents(
     example_limit: int,
     scan_limit: Optional[int],
     group_key: Optional[Callable[[Dict[str, Any]], str]],
+    ordering: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if not database_path.exists():
         return _empty_result("Mantis 로컬 인덱스가 없습니다.")
@@ -137,6 +141,7 @@ def _scan_chroma_documents(
                     example_limit=example_limit,
                     scanned_count=len(selected),
                     group_key=group_key,
+                    ordering=ordering,
                 )
             return _scan_documents(
                 (str(content or "") for (content,) in cursor),
@@ -144,6 +149,7 @@ def _scan_chroma_documents(
                 normalize,
                 example_limit=example_limit,
                 group_key=group_key,
+                ordering=ordering,
             )
     except sqlite3.Error as exc:
         return _empty_result(f"Mantis 로컬 인덱스 조회 실패: {exc}")
@@ -175,6 +181,7 @@ def _scan_structured_index(
             example_limit=example_limit,
             scanned_count=min(total_count, scan_limit) if scan_limit else total_count,
             group_key=group_key,
+            ordering=(constraints or {}).get('sort'),
         )
     except (OSError, sqlite3.Error, MantisIndexError) as exc:
         return _empty_result(f"Mantis 구조화 인덱스 조회 실패: {exc}")
@@ -223,6 +230,7 @@ def scan_mantis_documents(
                     (render_document(raw) for raw in selected),
                     (lambda _text: True) if use_raw_constraints and constraints is not None else matches, normalize,
                     example_limit=example_limit, group_key=group_key, scanned_count=scanned_count,
+                    ordering=(constraints or {}).get('sort'),
                 )
                 result.update(stored.meta)
                 # 명시한 최신 N건 창은 그 범위 안에서만 완료이다.
@@ -253,6 +261,7 @@ def scan_mantis_documents(
             example_limit=example_limit,
             scan_limit=scan_limit,
             group_key=group_key,
+            ordering=(constraints or {}).get('sort'),
         )
         if mode == "off":
             return legacy_result
@@ -277,6 +286,7 @@ def scan_mantis_documents(
             example_limit=example_limit,
             scan_limit=scan_limit,
             group_key=group_key,
+            ordering=(constraints or {}).get('sort'),
         )
 
     assert legacy_result is not None

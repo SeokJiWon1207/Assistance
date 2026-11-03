@@ -63,6 +63,13 @@ def check_status(question, status, followup, source, operation=None, report_kind
     require(isinstance(evidence, str) and (mode == 'inherit' or not evidence or evidence_is_grounded(evidence, question)), '상태 근거 불일치')
     require(mode != 'unclear', '조회할 상태를 확정하지 못했습니다')
     require(mode != 'inherit' or followup, '이전 상태가 없습니다')
+    change = status.get('change', 'remove' if followup and mode == 'exclude' else 'replace')
+    require(change in {'replace', 'add', 'remove'}, '지원하지 않는 상태 변경')
+    require(change == 'replace' or followup, '상태 추가/제외에는 이전 조건이 필요합니다')
+    require(change != 'add' or mode == 'include', '상태 추가는 include로 지정해야 합니다')
+    require(change != 'remove' or mode == 'exclude', '상태 제외는 exclude로 지정해야 합니다')
+    require(not followup or mode != 'exclude' or change == 'remove',
+            '후속 상태 제외는 change=remove로 기존 범위에서 제거해야 합니다. 상태 전체 교체는 include+replace에 원하는 최종 상태 집합을 명시하세요')
     if source not in {'mantis', 'both'}:
         require(mode in {'unspecified', 'inherit'}, 'Mantis 상태를 다른 원천에 적용할 수 없습니다')
         return
@@ -161,6 +168,17 @@ def normalize_status_clauses(parsed, previous=None, question=''):
             parsed['status'] = {'mode': 'inherit', 'values': [], 'evidence': ''}
         parsed['filters'] = [f for f in raw if f not in items]
         return parsed
+    if status.get('mode') == 'inherit' and status.get('values') == [] and previous:
+        from backend.intent.entities import extract_status_constraints
+        evidence = converted.get('evidence')
+        explicit = extract_status_constraints(unquoted(evidence or ''))
+        # 상속 선언은 새 상태와 모순되는 명시 조건이 아니다. 현재 발화가 실제로
+        # 지칭한 상태값만 최상위 상태 계획으로 옮긴다. 단순 '보여줘'는 근거가 아니다.
+        if (evidence_is_grounded(evidence, unquoted(question)) and explicit
+                and set(values) <= effective_statuses(explicit, [])):
+            parsed['status'] = converted
+            parsed['filters'] = [f for f in raw if f not in items]
+            return parsed
     require(status.get('mode') == 'unspecified' or
             (status.get('mode') == converted['mode'] and set(status.get('values', [])) == set(values)), '서로 다른 상태 계획 충돌')
     parsed['status'] = converted

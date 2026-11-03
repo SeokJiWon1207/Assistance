@@ -399,6 +399,7 @@ def execute_mantis_snapshot_search(
             "found_count": snapshot["matched_count"],
             "displayed_count": len(snapshot["issues"]),
             "matched_issue_ids": sorted(snapshot["matched_ids"]),
+            "ordered_matched_ids": snapshot.get("ordered_matched_ids") or [],
             "matched_customer_groups": snapshot.get("matched_groups") or {},
             "applied_filters": constraints,
             "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",
@@ -483,7 +484,10 @@ def revalidate_mantis_snapshot_stage(
         refill_limit = 12
     refill_attempt_count = 0
     refill_dependency_error = False
-    refill_candidates = sorted(matched_issue_ids - checked_issue_ids, reverse=True)
+    remaining_ids = matched_issue_ids - checked_issue_ids
+    ordered_ids = (stage.get('meta') or {}).get('ordered_matched_ids') or []
+    refill_candidates = [issue_id for issue_id in ordered_ids if issue_id in remaining_ids]
+    refill_candidates.extend(sorted(remaining_ids - set(refill_candidates), reverse=True))
     for issue_id in refill_candidates:
         if len(refreshed) >= target_count:
             break
@@ -561,8 +565,8 @@ def _sort_search_matches(rows, constraints):
     ordering = (constraints or {}).get('sort') or {}
     field = ordering.get('field')
     if field in {'created_at', 'updated_at', 'issue_id'}:
-        key = 'id' if field == 'issue_id' else field
-        rows.sort(key=lambda row: (row.get(key) or (0 if key == 'id' else ''), row.get('id', 0)),
+        from backend.query.ordering import issue_order_key
+        rows.sort(key=lambda row: issue_order_key(row, field),
                   reverse=ordering.get('direction') != 'asc')
     else:
         rows.sort(key=lambda row: (row.get('_assistant_match_score', 0), row.get('id', 0)), reverse=True)

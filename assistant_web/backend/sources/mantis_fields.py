@@ -122,6 +122,7 @@ def normalize_issue(issue: Dict[str, Any], *, search_terms: Optional[List[str]] 
         "handler": (issue.get("handler") or {}).get("real_name", "담당자 미지정"),
         "created_at": str(issue.get("created_at", ""))[:10],
         "updated_at": str(issue.get("updated_at", ""))[:10],
+        "_sort_values": {key: str(issue.get(key) or '') for key in ('created_at', 'updated_at')},
         "description": str(issue.get("description", ""))[:2400],
         "additional_information": str(issue.get("additional_information") or "")[:2400],
         "notes": notes,

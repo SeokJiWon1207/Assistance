@@ -670,7 +670,8 @@ def render_document(raw: dict[str, Any]) -> str:
         "상태 표시명": issue['status_label'], "우선순위 표시명": issue['priority_label'],
         "이슈 유형 표시명": issue['severity_label'],
         "담당자": issue['handler'], "요청자": issue['reporter'],
-        "등록일": issue['created_at'], "최종수정일": issue['updated_at'],
+        "등록일": raw.get('created_at') or issue['created_at'],
+        "최종수정일": raw.get('updated_at') or issue['updated_at'],
     }
     lines = ["[Mantis 이슈 정보]", *(f"- {name}: {value}" for name, value in fields.items())]
     for label, values in [("일정/전달일", issue['date_fields']), ("공수", issue['effort_fields'])]:
