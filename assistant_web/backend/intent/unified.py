@@ -27,6 +27,7 @@ operation: count(몇 개/몇 건/건수/수를 세어줘), search(목록), get(�
 인용된 제목의 '공수'는 공수 합산 요청이 아니다. '모두/전부 몇 개'는 수량이며 전체 상태가 아니다. 숫자는 모델이 계산하지 않는다.
 scope: self(나/내/나한테/내가 담당한 개인 이슈), team(우리 팀), all(전사/팀 범위 해제), target(명시한 인물/번호), default(대상 없음), inherit(후속 범위 유지). self 이름은 서버에서 인증 사용자로 연결하므로 owner 필터를 만들지 않는다. Mantis 조회 기본은 team이며 명시한 담당자/번호는 target이다. 설명 질문은 팀을 명시하지 않으면 scope=all로 관련 원문을 조회한다.
 followup: true/false. 이전 확정 계획을 좁히거나 변경/상태 선택/같은 기준 재집계하면 true, 독립 질문이면 false. 이전 계획이 없는데 생략된 조건을 복원해야 하면 clarify. 후속 질문은 바뀐 필터만 출력한다. 나머지 이전 조건은 서버가 보존한다. 범위/상태가 바뀌지 않으면 scope/status 모두 inherit. 이전 질문이 건수 조회였고 '담당자만 변경/연도만 바꿔줘'이면 count를 유지한다.
+이전 질문과 현재 질문을 함께 비교하여 작업(operation)과 검색 조건을 따로 판단한다. 조건을 상속하는 것이 이전 작업을 유지한다는 뜻은 아니다. 건수 답변 후 개별 항목을 나열하거나 목록을 보여 달라면 followup=true, operation=search다. '목록 다 보여줘', '그 이슈들 빠짐없이 나열해줘', '그 16건을 하나씩 보여줄래?'처럼 표현이 달라도 같은 뜻이면 이전 조건을 유지한 목록 조회다. 전체 표시 요청은 limit=200, group_by=null이며 조건 변경이 없으면 scope/status=inherit, filters=[], clear_fields=[], terms=[]로 둔다. '전부'나 '다'를 전체 상태로 바꾸거나 이전 건수를 표시 제한으로 사용하지 않는다. 다시 수량만 물으면 count, limit=null이다.
 문서의 분량·말투·형식만 바꾸는 후속은 기존 report_kind를 유지한다. 사후 분석의 '회의 안건'은 postmortem이며 notice로 바꾸지 않는다. 고객 메일·메신저로 명시 전환한 경우에만 notice로 바꾼다. 형식·말투는 검색 필터나 clear_fields가 아니다.
 사내 이슈나 이전 조회 결과를 근거로 하는 고객 안내 메일·메신저 답변·점검 공지·회의 공유문 작성은 operation=report, report_kind=notice다. 일반적인 메일 작성법·예문이나 사용자가 제공한 문장 수정은 general이다. 간결한/정중한/상세한 말투에 관계없이 실제 이슈 안내는 notice를 유지한다. 내부 식별자를 제외하라는 안내문을 explain/get으로 바꾸지 않는다.
 사후 분석 또는 회고를 문서·요약·5줄로 작성해 달라는 요청은 explain이 아니라 report/postmortem이다. 원문 근거 확인과 출력 형식을 함께 보존한다.
@@ -125,7 +126,9 @@ def plan_question(question, model, api_key, user, previous):
                    {'question': question, 'previous_confirmed_plan': previous_context,
                     'previous_task': {k: previous.get(k) for k in ('operation','report_kind')} if previous else None,
                     'allowed_clear_fields': sorted(SUPPORTED_FIELDS | {'terms','team'}),
-                    'task_rules': '형식만 변경하면 previous_task의 operation/report_kind를 그대로 사용한다. '
+                    'task_rules': '이전 질문과 현재 질문을 비교하여 현재 작업과 바뀐 검색 조건을 따로 판단한다. '
+                                  '이전 조건을 유지해도 건수 조회 뒤 항목 나열 요청은 operation=search로 전환한다. '
+                                  '보고서의 분량·말투·배치만 변경하면 report 작업과 report_kind를 유지한다. '
                                   '회의 안건은 기존 사후 분석의 표현 형식이다. '
                                   '비교 종료는 operation 변경이며 clear_fields에는 allowed_clear_fields만 쓴다.',
                     'filter_contract': {
@@ -173,6 +176,14 @@ def plan_question(question, model, api_key, user, previous):
                             '. aggregation.top_n은 1~20의 정수이며 null·0·문자열은 허용하지 않습니다. '
                             '독립 질문에서 상위 개수 미지정 시 aggregation.top_n=10, '
                             '후속에서는 이전 top_n을 유지하세요. 명시한 개수가 지원 범위를 넘으면 clarify하세요'
+                        )
+                    if reason == '전체 집계에 표시 개수를 적용할 수 없습니다':
+                        repair_hint = (
+                            '. 이전 질문과 현재 질문의 요청 작업을 다시 비교하세요. '
+                            '건수 답변 뒤 목록이나 개별 항목을 보여 달라는 요청이면 operation=search이며 '
+                            '전체 표시는 limit=200입니다. 수량만 다시 묻는 경우만 count와 limit=null입니다. '
+                            '조건이 그대로면 followup=true, scope/status=inherit, filters=[], clear_fields=[]로 '
+                            '이전 조건을 보존하세요. 목록 전환을 단순 보고서 형식 변경으로 취급하지 마세요'
                         )
                     candidate_payload['messages'].append({'role': 'user', 'content':
                         '계획 검증에 실패했습니다: ' + reason[:200] + repair_hint +
