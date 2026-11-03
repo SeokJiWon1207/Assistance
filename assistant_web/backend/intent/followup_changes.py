@@ -32,6 +32,20 @@ def validate_all_scope_evidence(question, quote):
     return quote
 
 
+def requested_scope(question):
+    """후속 질문이 명시한 조회 범위. 서로 다른 범위 표현이 섞이면 판정하지 않는다."""
+    from backend.domain.personal_scope import has_personal_mantis_scope_phrase
+    from backend.domain.team import has_mantis_team_scope
+    text = unquoted(question)
+    try:
+        widened = bool(validate_all_scope_evidence(text, text))
+    except ValueError:
+        widened = False
+    found = {scope for scope, hit in (('all', widened), ('self', has_personal_mantis_scope_phrase(text)),
+                                      ('team', not widened and has_mantis_team_scope(text))) if hit}
+    return found.pop() if len(found) == 1 else None
+
+
 def validate_clear_evidence(question, fields, evidence, previous_clauses, *, comparison_end=False):
     require(isinstance(evidence, dict), '해제 조건 근거는 필드별 인용문이어야 합니다')
     result = {}

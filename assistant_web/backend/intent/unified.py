@@ -196,6 +196,7 @@ def plan_question(question, model, api_key, user, previous):
                             '새 고객사나 담당자를 "만" 지정해도 그 필드만 변경하며 다른 필드는 유지합니다. '
                             '고객사·기간·매체 제한만 해제했다면 scope=inherit로 고치세요. '
                             '전사 또는 팀 범위 해제를 요청하지 않았다면 scope=all은 금지입니다. '
+                            '팀 범위로 되돌리는 요청은 해제가 아니므로 clear_fields에서 team을 빼고 scope=team으로 지정하세요. '
                             '근거 인용문을 새로 꾸며내서 같은 해제를 반복하지 마세요'
                         )
                     candidate_payload['messages'].append({'role': 'user', 'content':

@@ -132,6 +132,7 @@ def validate_plan(question, parsed, user, previous):
     base = deepcopy(previous.get('resolved_constraints') or {}) if followup else {}
     require(not followup or bool(base), '이어서 조회할 확정 검색 기록이 없습니다')
     require(scope != 'inherit' or followup, '상속할 범위가 없습니다')
+    inherited_scope = scope == 'inherit'
     from backend.intent.aggregation_spec import validate_aggregation, period_clause
     previous_aggregation = previous.get('aggregation') if followup else None
     aggregation = None
@@ -308,6 +309,19 @@ def validate_plan(question, parsed, user, previous):
             scope = 'inherit'
             c = constraints_from_clauses([clause for clause in clauses if clause['field'] != 'status'],
                 status, scope, scoped_user, base, self_field=self_field)
+    if followup and inherited_scope and source in {'mantis', 'both'} and operation in {'search', 'count', 'aggregate'}:
+        # 모델이 '내 담당만', '다시 우리 팀만' 같은 범위 변경을 inherit로 빠뜨리면
+        # 이전 범위가 조용히 유지된다. 원문이 다른 범위를 명시하면 재해석을 요청한다.
+        from backend.intent.followup_changes import requested_scope
+        wanted = requested_scope(question)
+        previous_scope = base.get('mantis_team_scope')
+        own_name = str(user.get('mantisUsername') or user.get('displayName') or '').strip()
+        if previous_scope == 'target' and own_name and (base.get('people') or {}).get('names') == [own_name]:
+            previous_scope = 'self'
+        labels = {'self': '본인 담당', 'team': '팀', 'all': '전사'}
+        require(not wanted or wanted == previous_scope,
+                f"질문이 조회 범위를 {labels.get(wanted, '')}(으)로 바꾸라고 요청했는데 scope=inherit로 이전 범위를 유지했습니다. "
+                f"scope 값을 {wanted}(으)로 지정하고 나머지 조건은 그대로 상속하세요")
     if (previous.get('report_kind')=='similar' and followup and operation=='get'
             and explicit_switch and re.search(r'기준.{0,12}(?:하나|한\s*건|상태만)',question)):
         require(c.get('issue_ids')==base.get('issue_ids'), '비교 종료 후에도 기준 이슈 번호를 유지해야 합니다')
