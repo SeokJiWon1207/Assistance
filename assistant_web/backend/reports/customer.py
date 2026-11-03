@@ -121,12 +121,13 @@ def _failure(
     }
 
 
-def build_customer_profile_report(text: str) -> Optional[Dict[str, Any]]:
+def build_customer_profile_report(text: str, *, constraints: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """'고객사 프로필' 요청이면 추이·적체·담당자·처리시간을 함께 반환한다."""
-    if not CUSTOMER_PROFILE_PATTERN.search(str(text or "")):
+    # 통합 계획에서 확정한 보고서 종류·고객사는 자연어 문구로 다시 판정하지 않는다.
+    if constraints is None and not CUSTOMER_PROFILE_PATTERN.search(str(text or "")):
         return None
-
-    constraints = extract_query_constraints(text)
+    if constraints is None:
+        constraints = extract_query_constraints(text)
     if not (constraints.get("customer_aliases") or constraints.get("customer_exact")):
         return _failure(
             text,

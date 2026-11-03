@@ -38,14 +38,23 @@ def _symptom_checks(symptom: str) -> tuple[List[str], List[str]]:
     return scope, checks
 
 
-def build_incident_triage_report(text: str, *, search_similar: bool = True) -> Optional[Dict[str, Any]]:
+def build_incident_triage_report(
+    text: str,
+    *,
+    search_similar: bool = True,
+    constraints: Optional[Dict[str, Any]] = None,
+    topic_terms: Optional[List[str]] = None,
+) -> Optional[Dict[str, Any]]:
     """증상·영향·초동 확인·인계 항목을 실제 유사 이슈와 함께 정리한다."""
-    if not TRIAGE_REQUEST_PATTERN.search(str(text or "")):
+    # 통합 계획에서 확정한 보고서 종류·고객사·매체는 자연어 문구로 다시 판정하지 않는다.
+    if constraints is None and not TRIAGE_REQUEST_PATTERN.search(str(text or "")):
         return None
-
-    constraints = extract_query_constraints(text)
+    if constraints is None:
+        constraints = extract_query_constraints(text)
     symptom_match = re.search(r"증상\s*[:：]\s*([^\n]+)", text)
-    symptom = extract_quoted_value(text) or (symptom_match.group(1).strip() if symptom_match else "입력한 장애 증상")
+    planned_symptom = " ".join(str(term) for term in (topic_terms or []) if str(term).strip())
+    symptom = (extract_quoted_value(text) or (symptom_match.group(1).strip() if symptom_match else "")
+               or planned_symptom or "입력한 장애 증상")
     urgency_match = re.search(r"(긴급|높음|일반)\s*우선순위|우선순위\s*[:：]?\s*(긴급|높음|일반)", text)
     urgency = next((value for value in urgency_match.groups() if value), "일반") if urgency_match else "일반"
     platform = str(constraints.get("platform_key") or "").upper()

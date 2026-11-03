@@ -94,11 +94,13 @@ def _failure(
 
 
 @with_store_scope
-def build_monthly_customer_report(text: str) -> Optional[Dict[str, Any]]:
+def build_monthly_customer_report(text: str, *, constraints: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """월간 고객사 요청을 전월 비교와 운영 지표를 포함한 보고서로 만든다."""
-    if not MONTHLY_CUSTOMER_PATTERN.search(str(text or "")):
+    # 통합 계획에서 확정한 보고서 종류·고객사·월은 자연어 문구로 다시 판정하지 않는다.
+    if constraints is None and not MONTHLY_CUSTOMER_PATTERN.search(str(text or "")):
         return None
-    constraints = extract_query_constraints(text)
+    if constraints is None:
+        constraints = extract_query_constraints(text)
     if not (constraints.get("customer_aliases") or constraints.get("customer_exact")):
         return _failure(
             text,

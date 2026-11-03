@@ -81,3 +81,54 @@ class TemplateExecutionTests(TestCase):
         with confirmed_constraints_scope(q,c):
             query=extract_effort_query(q)
         self.assertEqual(query['date_range'],{'from':'2026-09-01','to':'2026-09-30'})
+
+    def test_validated_customer_reports_do_not_require_legacy_request_phrases(self):
+        from backend.reports import customer, monthly_customer
+        from backend.sources.mantis_collection import IssueBatch
+        raw=[{'id':101,'project':{'name':'132SHGM(신한굿모닝증권)'},'summary':'차트 오류','status':{'name':'assigned'},
+              'handler':{'name':'석지원'},'created_at':'2026-10-02T09:00:00+09:00',
+              'updated_at':'2026-10-03T09:00:00+09:00','custom_fields':[],'notes':[]}]
+        c={'customer_key':'신한','customer_aliases':['신한투자증권'],'people':{'names':[]},'unified_plan_validated':True,
+           'created_at':{'from':'2026-10-01','to':'2026-10-31','precision':'month'}}
+        for kind,q,mode in [('profile','신한으로 바꿔서 다시 만들어줘','deterministic_customer_profile'),
+                            ('monthly','그럼 신한은 어때?','deterministic_monthly_customer_report')]:
+            with self.subTest(kind=kind):
+                ctx=ChatPipelineContext(q,'test','key',[],q,{'mantis':True},[],c,5,
+                    intent_plan={'planner':'unified_llm','source':'mantis','operation':'report','report_kind':kind})
+                matched: list = []
+                matches=lambda issue,constraints,seen=matched: seen.append(constraints.get('customer_key')) or True
+                with patch.object(customer,'stream_complete_store') as opened, \
+                     patch.object(customer,'extract_query_constraints',side_effect=AssertionError('질문 재해석')), \
+                     patch.object(monthly_customer,'extract_query_constraints',side_effect=AssertionError('질문 재해석')), \
+                     patch.object(customer,'issue_matches_constraints',side_effect=matches), \
+                     patch.object(monthly_customer,'issue_matches_constraints',side_effect=matches), \
+                     patch.object(monthly_customer,'load_report_issues',return_value=IssueBatch(raw,{'search_complete':True})):
+                    opened.return_value.__enter__.return_value=IssueBatch(raw,{'search_complete':True})
+                    r=execute_plan(ChatRequest(modelId='test',messages=[{'role':'user','content':q}]),ctx,{})
+                self.assertEqual(r['raw']['mode'],mode)
+                self.assertEqual(set(matched),{'신한'})
+                self.assertEqual([s['issue_id'] for s in r['sources']],[101])
+
+    def test_validated_triage_uses_plan_scope_and_terms_without_template_phrases(self):
+        from backend.reports import incident_triage
+        q='신한 HTS 차트가 안 떠. 어떻게 대응해야 해?'
+        c={'customer_key':'신한','platform_key':'hts','platform_aliases':['HTS'],'people':{'names':[]},
+           'unified_plan_validated':True}
+        ctx=ChatPipelineContext(q,'test','key',[],q,{'mantis':True,'vectorDb':True},[],c,5,
+            intent_plan={'planner':'unified_llm','source':'mantis','operation':'report','report_kind':'triage','terms':['차트']})
+        with patch.object(incident_triage,'extract_query_constraints',side_effect=AssertionError('질문 재해석')), \
+             patch.object(incident_triage,'execute_chroma_search',return_value={'status':'ok','documents':[]}) as search:
+            r=execute_plan(ChatRequest(modelId='test',messages=[{'role':'user','content':q}]),ctx,{})
+        self.assertEqual(r['raw']['mode'],'deterministic_incident_triage')
+        self.assertIn('장애 초동 대응안 — 신한 · HTS',r['content'])
+        self.assertIn('증상: **차트**',r['content'])
+        self.assertEqual(search.call_args.args[0],'차트')
+        self.assertEqual(search.call_args.args[2]['platform_key'],'hts')
+
+    def test_legacy_report_builders_still_require_their_request_phrases(self):
+        from backend.reports.customer import build_customer_profile_report
+        from backend.reports.incident_triage import build_incident_triage_report
+        from backend.reports.monthly_customer import build_monthly_customer_report
+        self.assertIsNone(build_customer_profile_report('신한 이슈 5개 보여줘'))
+        self.assertIsNone(build_monthly_customer_report('신한 이슈 5개 보여줘'))
+        self.assertIsNone(build_incident_triage_report('신한 HTS 차트가 안 떠', search_similar=False))

@@ -115,10 +115,11 @@ def execute_plan(request, context, user):
             return {'modelId': request.modelId, **result} if result else clarification(request, '유사 비교의 기준 이슈를 확인해 주세요.')
         if kind == 'triage':
             result = build_incident_triage_report(context.latest_user_text,
-                        search_similar=bool(context.enabled_tools.get('vectorDb')))
+                        search_similar=bool(context.enabled_tools.get('vectorDb')),
+                        constraints=context.query_constraints, topic_terms=plan.get('terms'))
             return {'modelId': request.modelId, **result} if result else clarification(request, '장애 증상을 확인해 주세요.')
         if kind in builders:
-            result = builders[kind](context.latest_user_text)
+            result = builders[kind](context.latest_user_text, constraints=context.query_constraints)
             return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
         if plan.get('report_kind') in {'priority', 'aging', 'due', 'comparison', 'completed', 'waiting', 'customers'}:
             from backend.reports.work_queries import build_work_query_report
