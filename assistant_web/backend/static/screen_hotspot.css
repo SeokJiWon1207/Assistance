@@ -1,0 +1,92 @@
+/* 팀 대시보드 › 화면번호 탭. 칸 색은 건수 구간마다 파랑이 한 단계씩 짙어진다. */
+.screen-filter { display: inline-flex; align-items: center; gap: 6px; color: var(--text-soft); font-size: 13px; white-space: nowrap; }
+.screen-filter select {
+  min-height: 36px;
+  max-width: 180px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.screen-filter select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.screen-spike {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--line));
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.screen-spike p { flex: 1 1 320px; margin: 0; color: var(--text); font-size: 14px; }
+.screen-spike-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-badge);
+  background: color-mix(in srgb, var(--warning) 16%, var(--surface));
+  color: var(--warning-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.screen-hotspot-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 16px; align-items: start; }
+
+.screen-heat-table { width: 100%; min-width: 600px; border-collapse: separate; border-spacing: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.screen-heat-table thead th { padding: 4px 0; color: var(--muted); font-weight: 500; text-align: center; white-space: nowrap; }
+.screen-heat-table thead th:first-child { text-align: left; }
+.screen-heat-table thead th.is-partial { color: var(--text-soft); }
+.screen-heat-table tbody th { padding: 0; text-align: left; }
+.screen-row-button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.screen-row-button:hover { background: var(--surface-alt); }
+.screen-row-button[aria-pressed="true"] { background: var(--blue-soft); color: var(--blue); }
+.screen-row-button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.screen-heat { height: 32px; border-radius: 6px; font-weight: 600; text-align: center; }
+.screen-heat.is-l0 { background: var(--surface-alt); color: var(--muted); }
+.screen-heat.is-l1 { background: color-mix(in srgb, var(--blue) 12%, var(--surface)); color: var(--text); }
+.screen-heat.is-l2 { background: color-mix(in srgb, var(--blue) 26%, var(--surface)); color: var(--text); }
+.screen-heat.is-l3 { background: color-mix(in srgb, var(--blue) 48%, var(--surface)); color: var(--text); }
+.screen-heat.is-l4 { background: var(--blue); color: #ffffff; }
+.screen-heat.is-l5 { background: color-mix(in srgb, var(--blue) 70%, #000000); color: #ffffff; }
+.screen-total { padding: 0 6px; color: var(--text); font-weight: 700; text-align: right; }
+.screen-heat-table tr.is-selected .screen-total { color: var(--blue); }
+
+.screen-detail { border-color: color-mix(in srgb, var(--blue) 30%, var(--line)); }
+.screen-detail-heading { display: grid; gap: 2px; }
+.screen-detail-heading span { color: var(--muted); font-size: 12px; }
+.screen-detail-heading h3 { margin: 0; color: var(--text); font-size: 20px; }
+.screen-detail-heading p { margin: 0; color: var(--text-soft); font-size: 13px; }
+
+.screen-issue-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.screen-issue-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; font-size: 13px; }
+.screen-issue-title { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.screen-issue-list small { grid-column: 2; color: var(--muted); font-size: 12px; }
+.screen-playbooks { grid-template-columns: minmax(0, 1fr); }
+
+.screen-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.screen-detail-actions > * { flex: 1 1 140px; }
+.screen-detail-actions .secondary-button { width: auto; margin-top: 0; padding: 0 12px; }
+
+@media (max-width: 1100px) {
+  .screen-hotspot-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .screen-filter select { max-width: 140px; }
+}

@@ -26,8 +26,8 @@
 .dashboard-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
 /* 탭 화면은 운영 현황 전용 기간·필터·본문을 감추고 자기 도구 줄을 쓴다. */
-.dashboard-panel[data-subview="effort"] > :is(.dashboard-filterbar, .dashboard-body) { display: none; }
-.dashboard-panel[data-subview="effort"] :is(.dashboard-toolbar, .dashboard-heading p) { display: none; }
+.dashboard-panel:is([data-subview="effort"], [data-subview="screens"]) > :is(.dashboard-filterbar, .dashboard-body) { display: none; }
+.dashboard-panel:is([data-subview="effort"], [data-subview="screens"]) :is(.dashboard-toolbar, .dashboard-heading p) { display: none; }
 
 .dashboard-tab-view {
   grid-row: 3 / -1;

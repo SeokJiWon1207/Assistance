@@ -266,6 +266,22 @@ class ApiIntegrationTests(unittest.TestCase):
         current_user.return_value = None
         self.assertEqual(self.client.get("/api/workspace/effort-board").status_code, 401)
 
+    @patch.object(workspace_api, "build_screen_hotspot")
+    @patch.object(workspace_api, "current_request_user")
+    def test_screen_hotspot_endpoint_passes_filters_and_rejects_invalid_input(self, current_user, build_hotspot):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        build_hotspot.return_value = {"rows": []}
+
+        response = self.client.get("/api/workspace/screen-hotspot", params={"media": "HTS", "customer": "신한"})
+
+        self.assertEqual(response.status_code, 200)
+        build_hotspot.assert_called_once_with(media="HTS", customer="신한", refresh=False, live=False)
+        self.assertEqual(self.client.get("/api/workspace/screen-hotspot", params={"customer": "x" * 121}).status_code, 422)
+        build_hotspot.side_effect = ValueError("매체")
+        self.assertEqual(self.client.get("/api/workspace/screen-hotspot?media=WEB").status_code, 422)
+        current_user.return_value = None
+        self.assertEqual(self.client.get("/api/workspace/screen-hotspot").status_code, 401)
+
     @patch.object(workspace_api, "build_my_workspace")
     @patch.object(workspace_api, "current_request_user")
     def test_personal_workspace_refresh_bypasses_fast_snapshot(self, current_user, build_workspace):

@@ -29,6 +29,7 @@ from backend.reports.team_brief import get_weekly_team_brief, mark_weekly_team_b
 from backend.reports.dashboard import DASHBOARD_PERIOD_OPTIONS, build_operations_dashboard
 from backend.reports.customer_detail import build_customer_detail
 from backend.reports.effort_board import build_effort_board
+from backend.reports.screen_hotspot import build_screen_hotspot
 
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
@@ -113,6 +114,19 @@ def effort_board(request: Request, days: int = 30, refresh: bool = False, live: 
     _user(request)
     try:
         return build_effort_board(days=days, refresh=refresh, live=live)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/screen-hotspot")
+def screen_hotspot(
+    request: Request, media: str = "", customer: str = "", refresh: bool = False, live: bool = False,
+) -> Dict[str, Any]:
+    _user(request)
+    if len(customer) > 120:
+        raise HTTPException(status_code=422, detail="고객사 이름이 올바르지 않습니다.")
+    try:
+        return build_screen_hotspot(media=media, customer=customer, refresh=refresh, live=live)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

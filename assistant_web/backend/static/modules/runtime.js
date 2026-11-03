@@ -245,6 +245,7 @@ export const WORKSPACE_ENDPOINTS = Object.freeze({
   playbooks: "/api/playbooks",
   customer: "/api/workspace/customer",
   effortBoard: "/api/workspace/effort-board",
+  screenHotspot: "/api/workspace/screen-hotspot",
 });
 
 export const ADMIN_ENDPOINTS = Object.freeze({
