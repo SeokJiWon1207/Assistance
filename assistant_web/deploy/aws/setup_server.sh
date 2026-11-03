@@ -348,7 +348,8 @@ atomic_switch_current "$RELEASE_DIR"
 sudo systemctl restart content-ai-assistant
 
 ready=0
-for _attempt in $(seq 1 30); do
+readiness_deadline=$((SECONDS + 120))
+while (( SECONDS < readiness_deadline )); do
   if curl --max-time 2 -fsS "http://127.0.0.1:$APP_PORT/health" >/dev/null && \
      curl --max-time 5 -fsS "http://127.0.0.1:$APP_PORT/ready" >/dev/null; then
     ready=1

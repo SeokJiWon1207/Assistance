@@ -60,6 +60,9 @@ FIREBASE_CREDENTIALS=~/.config/ai-assistant/firebase-service-account.json \
 업로드·검증하고, 의존성 설치·보안 preflight·인증서·nginx 검사까지 통과한 뒤
 `current` 심볼릭 링크를 원자적으로 전환합니다. 활성화나 readiness가 실패하면 이전
 `current`, systemd, nginx 설정을 자동 복구합니다.
+새 릴리스와 수동 롤백의 기동 검사는 최대 120초 동안 `/health`와 `/ready`가 모두
+성공하는지 확인합니다. 전체 저장본 사전 로딩이 30초를 넘겨도 검증 완료를 기다리며,
+한도 안에 준비되지 않으면 기존 복구 절차를 실행합니다.
 
 공유 DB 사전 검사는 임시 복제본에서 실행합니다. 실제 활성화 직전에는 점검 화면을
 켠 뒤 서비스를 중지하고 DB 전체를 백업합니다. 기존 in-place 설치의 DB는 새 상태

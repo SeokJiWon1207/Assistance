@@ -11,6 +11,49 @@ DEPLOY_DIR = Path(__file__).resolve().parents[1] / "deploy" / "aws"
 
 
 class DeploymentScriptTests(unittest.TestCase):
+    def readiness_result(self, filename, *, ready_after=35, ready_fails=False):
+        script = (DEPLOY_DIR / filename).read_text(encoding="utf-8")
+        start = script.index("ready=0\n")
+        failure = script.index('if [[ "$ready" != "1" ]]', start)
+        end = script.index("\nfi", failure) + len("\nfi")
+        # 실제 활성화 검사 블록을 실행하되 네트워크와 대기 시간만 대체한다.
+        harness = """set -euo pipefail
+APP_PORT=8787
+previous=fixture
+polls=0
+ready_calls=0
+curl() {
+  case "${@: -1}" in
+    */health) polls=$((polls + 1)); ((polls >= TEST_READY_AFTER));;
+    */ready) ready_calls=$((ready_calls + 1)); [[ "$TEST_READY_FAILS" == "0" ]];;
+    *) return 99;;
+  esac
+}
+sleep() { SECONDS=$((SECONDS + 1)); }
+trap 'printf "polls=%s ready_calls=%s\\n" "$polls" "$ready_calls" >&2' EXIT
+"""
+        return subprocess.run(["bash", "-c", harness + script[start:end] + '\nprintf "ready=%s\\n" "$ready"'],
+            env={**os.environ, "TEST_READY_AFTER": str(ready_after), "TEST_READY_FAILS": str(int(ready_fails))},
+            capture_output=True, text=True, timeout=5)
+
+    def test_delayed_startup_can_become_ready_after_thirty_seconds(self):
+        for filename in ("setup_server.sh", "rollback_release.sh"):
+            with self.subTest(script=filename):
+                result = self.readiness_result(filename)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("ready=1", result.stdout)
+                self.assertIn("polls=35 ready_calls=1", result.stderr)
+
+    def test_health_without_readiness_still_fails_with_a_bounded_wait(self):
+        for filename in ("setup_server.sh", "rollback_release.sh"):
+            with self.subTest(script=filename):
+                result = self.readiness_result(filename, ready_after=1, ready_fails=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("ready=1", result.stdout)
+                polls = int(result.stderr.split("polls=")[-1].split()[0])
+                self.assertGreater(polls, 0)
+                self.assertLess(polls, 200)
+
     def test_deploy_uploads_to_immutable_release_and_versioned_snapshot(self):
         script = (DEPLOY_DIR / "deploy_to_ec2.sh").read_text(encoding="utf-8")
 
