@@ -132,3 +132,25 @@ class MonthlyCustomerReportTests(unittest.TestCase):
         report = monthly_customer.build_monthly_customer_report("2026년 7월 신한 월간 고객사 리포트")
         self.assertIn("연결 실패", report["content"])
         self.assertEqual(report["retrieval"]["stages"][0]["error_kind"], "dependency")
+
+    def test_registered_issues_are_listed_and_linked_even_without_backlog_or_effort(self):
+        def row(i, created, status, effort=None):
+            return {"id": i, "project": "132SHGM", "summary": f"이슈 {i}", "status": status, "handler": "석지원",
+                    "created_at": created, "updated_at": created, "media_type": "MTS", "screen_number": "7600",
+                    "effort_fields": {"3PC공수": f"석지원({effort})"} if effort else {},
+                    "date_fields": {"고객사전달일": created} if effort else {}}
+
+        # 종료된 1건만 있는 달도 등록 건수의 근거 원문이 연결되어야 한다.
+        monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [row(31, "2026-07-03", "closed")]
+        report = monthly_customer.build_monthly_customer_report("2026년 7월 신한투자증권 월간 고객사 리포트")
+        self.assertIn("7월 주요 등록 이슈\n- #31 이슈 31 — 종료된 이슈 · 석지원 · 7월 3일", report["content"])
+        self.assertEqual(report["sources"], [{"issue_id": 31}])
+
+        # 본문 표시 순서(등록 최근순 → 전달 공수 → 장기 미종료)로 중복 없이 연결한다.
+        monthly_customer.fetch_mantis_recent_issues = lambda **kwargs: [
+            row(i, f"2026-07-{i:02d}", "closed") for i in range(1, 8)
+        ] + [row(40, "2026-07-10", "closed", effort=2.0), row(50, "2026-03-01", "assigned")]
+        report = monthly_customer.build_monthly_customer_report("2026년 7월 신한투자증권 월간 고객사 리포트")
+        self.assertEqual([source["issue_id"] for source in report["sources"]], [40, 7, 6, 5, 4, 50])
+        self.assertEqual([issue["id"] for issue in report["retrieval"]["stages"][0]["issues_list"]],
+                         [40, 7, 6, 5, 4, 50])

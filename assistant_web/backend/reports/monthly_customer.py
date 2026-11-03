@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.display import customer_name, korean_day_range, status_name
+from backend.display import customer_name, korean_day, korean_day_range, status_name
 from backend.mantis_status import mantis_status_bucket
 from backend.sources.mantis_collection import collection_metadata
 from backend.reports.effort import parse_effort_field_value
@@ -214,6 +214,18 @@ def build_monthly_customer_report(text: str, *, constraints: Optional[Dict[str, 
     lines.append("- 플랫폼: " + (" · ".join(f"{name} {count}건" for name, count in platform_counts.most_common()) or "데이터 없음"))
     lines.append("- 빈발 화면: " + (" · ".join(f"{name} {count}건" for name, count in screen_counts.most_common(5)) or "데이터 없음"))
 
+    # 등록 건수의 근거가 되는 해당 월 이슈를 본문과 출처에 함께 연결한다.
+    recent = sorted(current, key=lambda issue: (str(issue.get("created_at") or ""), int(issue.get("id") or 0)),
+                    reverse=True)[:MONTHLY_CUSTOMER_TOP_N]
+    lines.extend(["", f"{start.month}월 주요 등록 이슈"])
+    if recent:
+        lines.extend(
+            f"- #{issue['id']} {issue['summary']} — {status_name(issue['status'])} · {issue['handler']} · {korean_day(issue['created_at'])}"
+            for issue in recent
+        )
+    else:
+        lines.append("- 해당 월에 등록된 이슈가 없습니다.")
+
     ranked = sorted(
         delivered_with_effort,
         key=lambda issue: (issue["effort_total"], int(issue.get("id") or 0)),
@@ -243,10 +255,12 @@ def build_monthly_customer_report(text: str, *, constraints: Optional[Dict[str, 
         "※ 평균 처리기간은 정확한 해결·종료 시각 대신 등록일→최종수정일을 사용한 근사값입니다.",
     ])
 
-    source_rows = ranked[:MONTHLY_CUSTOMER_TOP_N]
-    known_ids = {issue.get("id") for issue in source_rows}
-    source_rows.extend(issue for issue in aging[:MONTHLY_CUSTOMER_TOP_N] if issue.get("id") not in known_ids)
-    sources = build_sources_from_issue_rows(source_rows[:10])
+    # 본문에 표시한 순서대로 각 이슈를 한 번씩 출처로 연결한다.
+    source_rows: List[Dict[str, Any]] = []
+    for issue in [*recent, *ranked[:MONTHLY_CUSTOMER_TOP_N], *aging[:MONTHLY_CUSTOMER_TOP_N]]:
+        if issue.get("id") not in {row.get("id") for row in source_rows}:
+            source_rows.append(issue)
+    sources = build_sources_from_issue_rows(source_rows)
     return {
         "content": "\n".join(lines),
         "sources": sources,
@@ -257,7 +271,7 @@ def build_monthly_customer_report(text: str, *, constraints: Optional[Dict[str, 
             "stages": [{
                 "source": "mantis_monthly_customer",
                 "status": "ok",
-                "issues_list": source_rows[:10],
+                "issues_list": source_rows,
                 "meta": {
                     **data_meta,
                     "current_count": len(current),
