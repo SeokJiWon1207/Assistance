@@ -295,6 +295,77 @@ class MantisCompleteStoreTests(unittest.TestCase):
             self.assertEqual([row['id'] for row in rows], [10, 9, 1])
             self.assertTrue(meta['search_complete'])
 
+    def test_dashboard_refresh_waits_for_changed_issues_before_counting(self):
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError
+        from backend.reports.dashboard import build_operations_dashboard
+        from backend.sources import mantis_client
+        entered, release = Event(), Event()
+        old = {'id': 1, 'handler': {'real_name': '석지원'}, 'status': {'name': 'assigned'}}
+        self.sync([old])
+
+        def fetch(*args, **kwargs):
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return [{'id': 2, **{k: v for k, v in old.items() if k != 'id'}}, old]
+
+        with (patch.object(workspace_data, 'store_path', return_value=self.path),
+              patch.object(workspace_data, 'connection_key', return_value='connection-a'),
+              patch.object(mantis_client, 'fetch_mantis_issues', side_effect=fetch),
+              ThreadPoolExecutor(max_workers=1) as pool):
+            future = pool.submit(build_operations_dashboard, {'role': 'member'}, refresh=True)
+            try:
+                self.assertTrue(entered.wait(3))
+                with self.assertRaises(TimeoutError):
+                    future.result(timeout=0.1)
+            finally:
+                release.set()
+                if mantis_store._refresh_thread:
+                    mantis_store._refresh_thread.join(3)
+            result = future.result(3)
+        self.assertEqual(result['weeklyIssues']['remaining']['total'], 2)
+        self.assertFalse(result['meta']['refreshPending'])
+        self.assertFalse(result['meta']['refreshFailed'])
+
+    def test_waiting_refresh_returns_pending_complete_rows_when_collection_is_slow(self):
+        from backend.sources import mantis_client
+        entered, release = Event(), Event()
+        self.sync([{'id': 1}])
+
+        def fetch(*args, **kwargs):
+            entered.set()
+            self.assertTrue(release.wait(3))
+            return [{'id': 2}, {'id': 1}]
+
+        with (patch.object(workspace_data, 'store_path', return_value=self.path),
+              patch.object(workspace_data, 'connection_key', return_value='connection-a'),
+              patch.object(mantis_client, 'fetch_mantis_issues', side_effect=fetch)):
+            try:
+                rows, meta = workspace_data.load_complete_workspace(force_refresh=True, refresh_wait_seconds=0.01)
+                self.assertTrue(entered.is_set())
+                self.assertEqual([row['id'] for row in rows], [1])
+                self.assertTrue(meta['refreshPending'])
+                self.assertTrue(meta['search_complete'])
+                self.assertFalse(meta['refreshFailed'])
+                self.assertEqual(meta['refreshAfter'], meta['fetchedAt'])
+            finally:
+                release.set()
+                if mantis_store._refresh_thread:
+                    mantis_store._refresh_thread.join(3)
+
+    def test_failed_waiting_refresh_preserves_rows_and_reports_failure(self):
+        from backend.sources import mantis_client
+        self.sync([{'id': 1}])
+        before = mantis_store.read_store_metadata()['fetchedAt']
+        with (patch.object(workspace_data, 'store_path', return_value=self.path),
+              patch.object(workspace_data, 'connection_key', return_value='connection-a'),
+              patch.object(mantis_client, 'fetch_mantis_issues', side_effect=RuntimeError('offline')),
+              self.assertLogs(mantis_store.LOGGER, level='WARNING')):
+            rows, meta = workspace_data.load_complete_workspace(force_refresh=True, refresh_wait_seconds=1)
+        self.assertEqual([row['id'] for row in rows], [1])
+        self.assertEqual(meta['fetchedAt'], before)
+        self.assertTrue(meta['refreshFailed'])
+        self.assertFalse(meta['refreshPending'])
+
     def test_expired_cache_is_rejected_but_refresh_keeps_valid_complete_rows(self):
         from backend.workspace import _my_mantis_issues
         self.sync([{'id': 1, 'handler': {'real_name': '사용자'}}])

@@ -40,13 +40,12 @@ const dashboardState = {
   decisionExpanded: false,
   selectedIssueId: "",
   initialized: false,
-  lastLiveAt: 0,
 };
-const dashboardLiveTtlMs = 60_000;
 let dashboardLoadPromise = null;
 let dashboardFreshPromise = null;
 let dashboardLoadIsRefresh = false;
 let dashboardSyncTimer = null;
+let dashboardRefreshAfter = null;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -510,12 +509,17 @@ async function loadDashboard(force = false, revalidate = false, background = fal
       const payload = await responseJson(response);
       if (!response.ok) throw new Error(payload.detail || "운영 데이터를 불러오지 못했습니다.");
       dashboardState.data = payload;
-      dashboardState.lastLiveAt = Date.parse(payload.meta?.fetchedAt || "") || 0;
+      if (force) dashboardRefreshAfter = payload.meta?.refreshAfter ?? null;
+      const pending = Boolean(payload.meta?.refreshPending);
+      const failed = payload.meta?.refreshFailed || (!pending && dashboardRefreshAfter !== null
+        && dashboardRefreshAfter === payload.meta?.fetchedAt);
+      if (failed) dashboardState.error = payload.meta?.sourceReason || "최신 데이터를 갱신하지 못했습니다.";
+      if (!pending) dashboardRefreshAfter = null;
       if (dashboardSyncTimer) clearTimeout(dashboardSyncTimer);
-      dashboardSyncTimer = payload.meta?.refreshPending ? setTimeout(() => {
+      dashboardSyncTimer = pending ? setTimeout(() => {
         dashboardSyncTimer = null;
         if (state.currentUser?.uid) void loadDashboard(false, true, true);
-      }, 10000) : null;
+      }, 2000) : null;
     } catch (error) {
       dashboardState.error = error.message || "운영 데이터를 불러오지 못했습니다.";
     }
@@ -533,20 +537,7 @@ async function loadDashboard(force = false, revalidate = false, background = fal
 
 async function ensureDashboardFresh() {
   if (dashboardFreshPromise) return dashboardFreshPromise;
-  const meta = dashboardState.data?.meta;
-  const sourceCanBeReused = ["live", "snapshot"].includes(meta?.source);
-  const expiresAt = Date.parse(meta?.cacheUntil || "") || dashboardState.lastLiveAt + dashboardLiveTtlMs;
-  const liveDataIsRecent = sourceCanBeReused && dashboardState.lastLiveAt > 0
-    && Date.now() >= dashboardState.lastLiveAt && Date.now() < expiresAt && !meta?.refreshPending;
-  if (!dashboardLoadPromise && liveDataIsRecent) {
-    renderDashboard();
-    return dashboardState.data;
-  }
-  dashboardFreshPromise = Promise.resolve().then(async () => {
-    if (dashboardLoadPromise) await dashboardLoadPromise;
-    else await loadDashboard(false, true);
-    return dashboardState.data;
-  });
+  dashboardFreshPromise = Promise.resolve().then(() => loadDashboard(true));
   renderDashboard();
   try {
     return await dashboardFreshPromise;
@@ -854,7 +845,7 @@ function initDashboard() {
     if (period === dashboardState.period) return;
     dashboardState.period = period;
     syncPeriodButtons();
-    loadDashboard(false, true);
+    loadDashboard(true);
   });
   syncPeriodButtons();
   els.dashboardRefreshBtn.addEventListener("click", () => loadDashboard(true));

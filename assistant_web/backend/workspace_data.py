@@ -178,13 +178,21 @@ def complete_store_expired() -> bool:
     return bool(meta is not None and not meta["search_complete"])
 
 
-def load_complete_workspace(*, force_refresh: bool = False, predicate: Callable | None = None):
+def load_complete_workspace(
+    *, force_refresh: bool = False, predicate: Callable | None = None, refresh_wait_seconds: float = 0,
+):
     global _complete_workspace_key
     path = store_path()
     if not path.exists():
         return None
+    refresh_thread = None
+    refresh_after = None
     if force_refresh:
-        start_store_refresh()
+        before = read_store_metadata(allow_stale=True)
+        refresh_after = before.get('fetchedAt') if before else ''
+        refresh_thread = start_store_refresh()
+        if refresh_wait_seconds > 0:
+            refresh_thread.join(timeout=refresh_wait_seconds)
         # 전체 수집은 원자적으로 교체된다. 유효한 전체 저장본을 유지하면서
         # 갱신 상태를 알리고, 제한된 최근 페이지로 전체 집계를 대체하지 않는다.
     try:
@@ -201,8 +209,11 @@ def load_complete_workspace(*, force_refresh: bool = False, predicate: Callable 
     age = time.time() - datetime.fromisoformat(saved_meta["fetchedAt"]).timestamp()
     if not 0 <= age < MAX_AGE_SECONDS:
         return None
-    meta = {**saved_meta, "refreshPending": refresh_in_progress(), "search_complete": True,
-            "incomplete_reasons": [], "reason": ""}
+    pending = refresh_in_progress() or bool(refresh_thread and refresh_thread.is_alive())
+    failed = bool(force_refresh and not pending and refresh_after == saved_meta['fetchedAt'])
+    meta = {**saved_meta, "refreshPending": pending, "refreshAfter": refresh_after, "refreshFailed": failed,
+            "search_complete": True, "incomplete_reasons": [],
+            "reason": "최신 데이터를 갱신하지 못했습니다." if failed else ""}
     # 집계는 읽기 전용 원본 참조만 전달하고, 개인 업무는 담당자 조건 이후에만 복사한다.
     meta["cacheUntil"] = datetime.fromtimestamp(
         min(time.time() + WORKSPACE_LIVE_TTL_SECONDS, datetime.fromisoformat(meta["fetchedAt"]).timestamp() + MAX_AGE_SECONDS),

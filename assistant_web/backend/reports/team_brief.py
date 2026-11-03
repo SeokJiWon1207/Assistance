@@ -183,8 +183,10 @@ def _inside(issue: Dict[str, Any], start: date, end: date) -> bool:
     return start <= created <= end
 
 
-def _load_issues(*, prefer_snapshot: bool = False, force_refresh: bool = False) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    complete = load_complete_workspace(force_refresh=force_refresh)
+def _load_issues(
+    *, prefer_snapshot: bool = False, force_refresh: bool = False, refresh_wait_seconds: float = 0,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    complete = load_complete_workspace(force_refresh=force_refresh, refresh_wait_seconds=refresh_wait_seconds)
     if complete is not None:
         return complete
     if prefer_snapshot:

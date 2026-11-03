@@ -271,7 +271,9 @@ def build_operations_dashboard(
         raise ValueError("조회 기간은 7일, 14일, 30일, 90일 중 하나여야 합니다.")
     base = today or datetime.now(ZoneInfo("Asia/Seoul")).date()
     current_start, current_end, previous_start, previous_end = _period_bounds(base, days)
-    issues, source = _load_issues(prefer_snapshot=not (refresh or live), force_refresh=refresh)
+    issues, source = _load_issues(
+        prefer_snapshot=not (refresh or live), force_refresh=refresh, refresh_wait_seconds=8 if refresh else 0,
+    )
     complete = source.get("search_complete") is True
     remaining_issues = filter_team_issues(issues, include_shared=True)
     issues = filter_team_issues(issues)
@@ -324,6 +326,8 @@ def build_operations_dashboard(
             "cacheUntil": source.get("cacheUntil"),
             "search_complete": source.get("search_complete", False),
             "refreshPending": source.get("refreshPending", False),
+            "refreshAfter": source.get("refreshAfter"),
+            "refreshFailed": source.get("refreshFailed", False),
             "periodDays": days,
             "periodFrom": current_start.isoformat(),
             "periodTo": current_end.isoformat(),

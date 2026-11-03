@@ -29,6 +29,8 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   els.appShell = { dataset: { view: 'chat' } };
   const htmlWrites = [];
   const badges = [];
+  const timers = new Map();
+  let nextTimer = 0;
   Object.defineProperty(els.dashboardBody, 'innerHTML', {
     get: () => htmlWrites.at(-1) || '',
     set: (html) => htmlWrites.push(html),
@@ -39,6 +41,8 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
     adminToolsVisible: adminCenter && role === 'admin',
   };
   const context = vm.createContext({
+    setTimeout: (callback, delay) => { timers.set(++nextTimer, { callback, delay }); return nextTimer; },
+    clearTimeout: (id) => timers.delete(id),
     localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
     document: { body: { classList: { remove() {} } }, addEventListener() {} },
     CSS: { escape: (value) => String(value) },
@@ -89,7 +93,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
   const loaderCalls = [];
   module.namespace.setMainViewLoader('admin', () => loaderCalls.push('admin'));
   module.namespace.initDashboard();
-  return { loaderCalls, badges, reveals, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
+  return { timers, loaderCalls, badges, reveals, api: module.namespace, els, state, storage, calls, htmlWrites, accountMenuCloses, focus: () => focused };
 }
 
 const dashboard = (source, open) => ({
@@ -281,7 +285,7 @@ test('member can open and load the team dashboard', async () => {
   assert.equal(h.els.viewDashboardBtn.hidden, false);
   assert.equal(h.els.dashboardPanel.hidden, false);
   assert.equal(h.els.personalPanel.hidden, true);
-  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true']);
 });
 
 test('manual dashboard refresh bypasses the server fast path', async () => {
@@ -313,7 +317,7 @@ test('dashboard joins one live lookup and hides lists until completion', async (
     await new Promise((resolve) => { releaseLive = resolve; });
     return { ok: true, payload: payloads.shift() };
   });
-  const prefetch = h.api.loadDashboard();
+  const prefetch = h.api.loadDashboard(true);
   const loading = h.api.ensureDashboardFresh();
   const joined = h.api.ensureDashboardFresh();
   await new Promise(setImmediate);
@@ -329,8 +333,7 @@ test('dashboard joins one live lookup and hides lists until completion', async (
   assert.ok(h.htmlWrites.every((html) => !html.includes('snapshot 업무 요약')));
   assert.equal(h.els.dashboardPeriod.disabled, false);
   assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
-  await h.api.ensureDashboardFresh();
-  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true']);
 });
 
 test('dashboard manual refresh keeps the last successful view until completion', async () => {
@@ -360,18 +363,18 @@ test('dashboard reveals server fallback only after the single lookup completes',
   assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
   assert.equal(h.els.dashboardBody.attributes['aria-busy'], 'false');
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);
-  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true']);
 });
 
 test('dashboard joins failed prefetch without retrying or leaving a spinner', async () => {
   let finish;
   const h = await harness('member', undefined, async () => new Promise((resolve) => { finish = resolve; }));
-  const prefetch = h.api.loadDashboard();
+  const prefetch = h.api.loadDashboard(true);
   const loading = h.api.ensureDashboardFresh();
   await new Promise(setImmediate);
   finish({ ok: false, payload: { detail: '조회 실패' } });
   await Promise.all([prefetch, loading]);
-  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true']);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true']);
   assert.match(h.els.dashboardBody.innerHTML, /조회 실패/);
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /dashboard-spinner|dashboard-grid/);
   assert.equal(h.els.dashboardRefreshBtn.disabled, false);
@@ -418,17 +421,87 @@ test('dashboard does not renew freshness when receiving an old server cache', as
 });
 
 
-test('a fresh snapshot reuses its validated aggregation window across tab visits', async () => {
+test('dashboard reentry refreshes the source even within the aggregation cache window', async () => {
   const payload = dashboard('snapshot', 2);
   payload.meta.fetchedAt = new Date(Date.now() - 600000).toISOString();
   payload.meta.cacheUntil = new Date(Date.now() + 50000).toISOString();
   const h = await harness('member', undefined, async () => ({ok:true, payload}));
   await h.api.loadDashboard();
   await h.api.ensureDashboardFresh();
-  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&live=true', '/dashboard?days=30&refresh=true']);
   payload.meta.cacheUntil = new Date(Date.now() - 1).toISOString();
   await h.api.ensureDashboardFresh();
-  assert.equal(h.calls.length, 2);
+  assert.equal(h.calls.length, 3);
+});
+
+test('dashboard period changes collect current source data', async () => {
+  const h = await harness('member', undefined, async () => ({ok:true, payload:dashboard('snapshot', 50)}));
+  h.els.dashboardPeriod.handlers.click({target:clickTarget('[data-dashboard-period]', {dashboardPeriod:'14'})});
+  await new Promise(setImmediate);
+  assert.deepEqual(h.calls, ['/dashboard?days=14&refresh=true']);
+});
+
+test('pending refresh polls without starting another collection and shows the new totals', async () => {
+  const oldTime = '2026-11-02T07:58:44+00:00';
+  const pending = dashboard('snapshot', 49);
+  pending.meta = {...pending.meta, fetchedAt:oldTime, refreshAfter:oldTime, refreshPending:true};
+  const complete = dashboard('snapshot', 50);
+  complete.decisionSummary.headline = '새 이슈를 포함한 최신 집계';
+  let requests = 0;
+  const h = await harness('member', undefined, async () => ({ok:true, payload:++requests === 1 ? pending : complete}));
+  await h.api.ensureDashboardFresh();
+  assert.equal(h.els.dashboardSource.badge.state, 'refreshing');
+  assert.equal(h.timers.size, 1);
+  const [id, timer] = [...h.timers][0]; h.timers.delete(id); timer.callback();
+  await new Promise(setImmediate);
+  assert.deepEqual(h.calls, ['/dashboard?days=30&refresh=true', '/dashboard?days=30&live=true']);
+  assert.match(h.els.dashboardBody.innerHTML, /새 이슈를 포함한 최신 집계/);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /갱신하지 못/);
+  assert.equal(h.timers.size, 0);
+});
+
+test('late collection failure retains the previous totals and exposes retry', async () => {
+  const oldTime = '2026-11-02T07:58:44+00:00';
+  let requests = 0;
+  const h = await harness('member', undefined, async () => {
+    const payload = dashboard('snapshot', 49);
+    payload.meta = {...payload.meta, fetchedAt:oldTime, refreshAfter:requests ? null : oldTime, refreshPending:++requests === 1};
+    return {ok:true, payload};
+  });
+  await h.api.ensureDashboardFresh();
+  const [id, timer] = [...h.timers][0]; h.timers.delete(id); timer.callback();
+  await new Promise(setImmediate);
+  assert.match(h.els.dashboardBody.innerHTML, /최신 데이터를 갱신하지 못했습니다/);
+  assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
+  assert.match(h.els.dashboardBody.innerHTML, /data-dashboard-retry/);
+  assert.equal(h.timers.size, 0);
+});
+
+test('collection failure during the initial wait is visible even with a successful API response', async () => {
+  const payload = dashboard('snapshot', 49);
+  payload.meta.refreshFailed = true;
+  payload.meta.sourceReason = '최신 데이터를 갱신하지 못했습니다.';
+  const h = await harness('member', undefined, async () => ({ok:true, payload}));
+  await h.api.ensureDashboardFresh();
+  assert.match(h.els.dashboardBody.innerHTML, /최신 데이터를 갱신하지 못했습니다/);
+  assert.match(h.els.dashboardBody.innerHTML, /snapshot 업무 요약/);
+});
+
+test('already replaced data awaiting lock release is not mistaken for a failed refresh', async () => {
+  const oldTime = '2026-11-02T07:58:44+00:00';
+  const newTime = '2026-11-02T08:08:56+00:00';
+  let requests = 0;
+  const h = await harness('member', undefined, async () => {
+    const payload = dashboard('snapshot', 50);
+    payload.meta = {...payload.meta, fetchedAt:newTime, refreshAfter:requests ? null : oldTime, refreshPending:++requests === 1};
+    return {ok:true, payload};
+  });
+  await h.api.ensureDashboardFresh();
+  const [id, timer] = [...h.timers][0]; h.timers.delete(id); timer.callback();
+  await new Promise(setImmediate);
+  assert.doesNotMatch(h.els.dashboardBody.innerHTML, /갱신하지 못/);
+  assert.equal(h.els.dashboardSource.badge.state, 'snapshot');
+  assert.equal(h.timers.size, 0);
 });
 
 test('priority queue follows the metrics and filters stay above the scrolling body', async () => {
