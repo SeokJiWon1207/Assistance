@@ -1,4 +1,7 @@
-"""회사 모델과 고정된 실제 저장본으로 질의 해석·조회·답변을 대조한다."""
+"""설정된 모델과 고정된 실제 저장본으로 질의 해석·조회·답변을 대조한다.
+
+`FOLLOWUP_QA_MODEL`로 모델 ID를 고른다. 기본값은 회사 모델이다.
+"""
 import itertools
 import json
 import os
@@ -211,19 +214,20 @@ def main():
         from backend.services.chat_service import chat_service
         import requests
 
-        model = {**llm.get_private_model('company-qwen3.6-35b-a3b'), 'fallbackModelIds': []}
+        model_id = os.getenv('FOLLOWUP_QA_MODEL', 'company-qwen3.6-35b-a3b')
+        model = {**llm.get_private_model(model_id), 'fallbackModelIds': []}
         if not llm.get_model_api_key(model):
-            raise RuntimeError('회사 모델 API 키가 없습니다.')
+            raise RuntimeError(f'{model_id} 모델 API 키가 없습니다.')
         original_request = requests.sessions.Session.request
 
-        def company_only(session, method, url, **kwargs):
+        def model_only(session, method, url, **kwargs):
             if str(url).rstrip('/') != str(model['endpoint']).rstrip('/'):
-                raise RuntimeError('검증에서 회사 모델 이외의 네트워크 요청은 차단합니다.')
+                raise RuntimeError('검증에서 선택한 모델 이외의 네트워크 요청은 차단합니다.')
             return original_request(session, method, url, **kwargs)
 
         batch = IssueBatch(rows, {'search_complete': True, 'snapshot_complete': True,
                                  'status': 'snapshot', 'fetchedAt': meta['fetchedAt']})
-        stack.enter_context(patch.object(requests.sessions.Session, 'request', company_only))
+        stack.enter_context(patch.object(requests.sessions.Session, 'request', model_only))
         stack.enter_context(patch.object(prepare, 'get_private_model', return_value=model))
         stack.enter_context(patch.object(mantis_store, 'stream_complete_store', side_effect=lambda **kw: nullcontext(batch)))
         stack.enter_context(patch.object(mantis, 'stream_complete_store', side_effect=lambda **kw: nullcontext(batch)))
