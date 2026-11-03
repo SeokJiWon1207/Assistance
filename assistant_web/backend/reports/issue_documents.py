@@ -11,6 +11,7 @@ from backend.sources.mantis_fields import normalize_issue, build_sources_from_is
 from backend.sources.mantis_matching import issue_matches_constraints
 from backend.reports.document_presentation import document_options, present_document
 from backend.reports.document_context import latest_customer_record
+from backend.reports.document_narrative import draft_issue_document, render_claims
 
 
 def _progress(notes, date_fields=None):
@@ -31,7 +32,7 @@ def _progress(notes, date_fields=None):
     return lines
 
 
-def build_issue_document_report(text: str, constraints: dict, kind: str) -> dict | None:
+def build_issue_document_report(text: str, constraints: dict, kind: str, *, model=None, api_key=None) -> dict | None:
     ids=constraints.get('issue_ids') or []
     if len(ids)!=1 or kind not in {'handoff','postmortem','notice'}:
         return None
@@ -66,6 +67,14 @@ def build_issue_document_report(text: str, constraints: dict, kind: str) -> dict
         fix+=' [필드 조치 및 개선]'
     caveat=_latest_resolution_caveat(evidence_issue,with_reference=True)
     customer_record=latest_customer_record(evidence_issue)
+    options = document_options(text, kind)
+    # 원문 문단에 연결되고 독립 검토를 통과한 서술만 결정형 추출값을 대체한다.
+    slots, narrative = draft_issue_document(raw, kind, options, model, api_key)
+    cite = kind != 'notice'
+    if slots.get('cause'):
+        cause, cause_is_technical = '\n'.join(render_claims(slots['cause'], cite=cite)), True
+    if slots.get('actions'):
+        fix = '\n'.join(render_claims(slots['actions'], cite=cite))
     positives=[]
     if cause_is_technical and fix:
         positives.append('원인과 수정 항목이 함께 기록되어 다음 담당자가 수정 범위를 추적할 수 있습니다.')
@@ -80,9 +89,13 @@ def build_issue_document_report(text: str, constraints: dict, kind: str) -> dict
     if kind=='notice':
         # 외부 전달 초안에는 내부 번호·담당자·경로·기술 원인 추정을 넣지 않는다.
         symptom=re.sub(r'\[[^]]*\]|#?0*'+str(ids[0])+r'(?!\d)', '', str(issue.get('summary') or '')).strip()
+        if slots.get('customer_summary'):
+            symptom=' '.join(render_claims(slots['customer_summary'], cite=False))
+        impact=(render_claims(slots['impact'], cite=False) if slots.get('impact')
+                else ['문의에 기록된 현상을 기준으로 안내드리며, 영향 범위와 규모는 추가 확인이 필요합니다.'])
         lines=['고객 안내문 초안','', '안녕하세요. 문의하신 사항의 확인 내용을 안내드립니다.','',
                '### 현재 확인된 사실',encode_issue_field(symptom),'',
-               '### 고객 영향','문의에 기록된 현상을 기준으로 안내드리며, 영향 범위와 규모는 추가 확인이 필요합니다.','',
+               '### 고객 영향',*impact,'',
                '### 진행 상황',*progress,'',
                '### 다음 안내','다음 안내 시점은 현재 기록에서 확정되지 않았습니다.']
     else:
@@ -94,11 +107,11 @@ def build_issue_document_report(text: str, constraints: dict, kind: str) -> dict
             lines+=['최신 고객 기록: '+customer_record]
         if kind=='handoff':
             lines+=['', '### 확인한 내용',cause,'', '### 시도한 조치',fix,'', '### 진행 단계',*progress,
-                    '','### 막힌 점',('최신 기록에 후속 확인이 남아 있습니다: '+caveat) if caveat else '최신 고객 기록에 따른 후속 확인 범위를 담당자와 점검해야 합니다.' if customer_record else '별도의 막힘·대기 사유는 이 초안에서 확정하지 않았습니다. 최신 담당자 확인이 필요합니다.',
-                    '', '### 다음 행동',('제안: 최신 고객 요청의 재현 조건·추가 로그와 기존 수정 후 결과를 대조하고, 후속 확인 담당자와 회신 범위를 정하세요. 근거: 위 최신 확인 사항.') if caveat else '제안: 최신 고객 의견을 기준으로 후속 개발 여부와 결정 담당자를 확인하세요. 근거: 위 최신 고객 기록.' if customer_record else '제안: 완료 근거가 없는 단계의 최신 기록과 다음 담당자의 확인 범위를 점검하세요.',
+                    '','### 막힌 점',*(render_claims(slots['open_items'], cite=True) if slots.get('open_items') else [('최신 기록에 후속 확인이 남아 있습니다: '+caveat) if caveat else '최신 고객 기록에 따른 후속 확인 범위를 담당자와 점검해야 합니다.' if customer_record else '별도의 막힘·대기 사유는 이 초안에서 확정하지 않았습니다. 최신 담당자 확인이 필요합니다.']),
+                    '', '### 다음 행동',*(render_claims(slots['next_steps'], cite=True, prefix='제안: ') if slots.get('next_steps') else [('제안: 최신 고객 요청의 재현 조건·추가 로그와 기존 수정 후 결과를 대조하고, 후속 확인 담당자와 회신 범위를 정하세요. 근거: 위 최신 확인 사항.') if caveat else '제안: 최신 고객 의견을 기준으로 후속 개발 여부와 결정 담당자를 확인하세요. 근거: 위 최신 고객 기록.' if customer_record else '제안: 완료 근거가 없는 단계의 최신 기록과 다음 담당자의 확인 범위를 점검하세요.']),
                     '', '### 주의사항','내부 QC·고객사 전달·운영 반영·고객 검증은 각각의 근거로 구분해 보고하세요.']
         else:
-            lines+=['','### 발생 영향',title,'구체적인 영향 규모는 이 기록만으로 확정하지 않습니다.',
+            lines+=['','### 발생 영향',title,*(render_claims(slots['impact'], cite=True) if slots.get('impact') else ['구체적인 영향 규모는 이 기록만으로 확정하지 않습니다.']),
                     '', '### 직접 원인',cause,'', '### 근본 원인','직접 원인을 조직·절차상의 근본 원인으로 확대해 확정하지 않습니다.',
                     '', '### 대응 과정',fix,'', '### 진행 단계',*progress,
                     '', '### 잘된 점',*(positives or ['잘된 점을 구체적으로 평가할 완료·작업 근거가 부족합니다.']),
@@ -110,13 +123,12 @@ def build_issue_document_report(text: str, constraints: dict, kind: str) -> dict
             lines.append(f'- {str(row["created_at"])[:10]} · 노트 {row["note_id"]}: {encode_issue_field(compact_text(cleaned,180))}')
         if not notes:
             lines.append('원문 노트 없음. 현재 속성만 확인할 수 있습니다.')
-    options = document_options(text, kind)
     lines = present_document(lines, options, kind=kind, issue_id=ids[0], title=title,
                              status=status_name(issue.get('status')), cause=cause, action=fix,
                              progress=progress, note_ids=[row['note_id'] for row in notes if row['note_id']])
     sources=build_sources_from_issue_rows([issue])
     return {'content':'\n'.join(lines),'sources':sources,'sourcesForFollowUps':sources,
             'raw':{'mode':'deterministic_issue_document'},
-            'retrieval':{'query':text,'constraints':constraints,'stages':[{
+            'retrieval':{'query':text,'constraints':constraints,'document_narrative':narrative,'stages':[{
                 'source':'mantis_issue_document','status':'ok','issues_list':[issue],
                 'meta':{'issue_ids':ids,'document_kind':kind,'document_options':options,'search_complete':True}}]}}

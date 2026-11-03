@@ -98,7 +98,8 @@ def execute_plan(request, context, user):
             return {'modelId': request.modelId, **result} if result else clarification(request, '보고서 대상을 확인해 주세요.')
         if kind in {'handoff', 'postmortem', 'notice'}:
             from backend.reports.issue_documents import build_issue_document_report
-            result = build_issue_document_report(context.latest_user_text, context.query_constraints, kind)
+            result = build_issue_document_report(context.latest_user_text, context.query_constraints, kind,
+                                                 model=context.model, api_key=context.api_key)
             return {'modelId': request.modelId, **result} if result else clarification(request, '문서를 작성할 단일 이슈 번호와 조건을 확인해 주세요.')
         if kind == 'effort_sla':
             from backend.reports.effort_sla import build_effort_sla_report
