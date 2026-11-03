@@ -1,5 +1,5 @@
 /* 팀 대시보드 › 고객사 상세. 대시보드 머리·필터·본문을 가리고 같은 1240px 칸을 쓴다. */
-.dashboard-panel[data-subview="customer"] > :is(.dashboard-header, .dashboard-filterbar, .dashboard-body) { display: none; }
+.dashboard-panel[data-subview="customer"] > :is(.dashboard-header, .dashboard-tabs, .dashboard-filterbar, .dashboard-body, .dashboard-tab-view) { display: none; }
 
 .dashboard-customer-detail-link {
   margin-left: 0;

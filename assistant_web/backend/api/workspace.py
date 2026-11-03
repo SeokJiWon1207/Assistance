@@ -28,6 +28,7 @@ from backend.workspace import (
 from backend.reports.team_brief import get_weekly_team_brief, mark_weekly_team_brief_read
 from backend.reports.dashboard import DASHBOARD_PERIOD_OPTIONS, build_operations_dashboard
 from backend.reports.customer_detail import build_customer_detail
+from backend.reports.effort_board import build_effort_board
 
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
@@ -103,6 +104,15 @@ def customer_detail(
         return build_customer_detail(name, days=days, refresh=refresh, live=live)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/effort-board")
+def effort_board(request: Request, days: int = 30, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
+    _user(request)
+    try:
+        return build_effort_board(days=days, refresh=refresh, live=live)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

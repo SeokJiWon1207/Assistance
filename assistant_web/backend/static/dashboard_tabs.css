@@ -1,0 +1,46 @@
+/* 팀 대시보드 보기 탭. 운영 현황 외의 탭(.dashboard-tab-view)은 필터 줄·본문 자리를 대신 쓴다. */
+.dashboard-tabs {
+  grid-row: 2;
+  display: flex;
+  gap: 24px;
+  margin: 0 var(--dashboard-gutter);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+.dashboard-tabs button {
+  min-height: 40px;
+  margin-bottom: -1px;
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dashboard-tabs button:hover { color: var(--text); }
+.dashboard-tabs button[aria-selected="true"] { border-bottom-color: var(--text); color: var(--text); font-weight: 700; }
+.dashboard-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* 탭 화면은 운영 현황 전용 기간·필터·본문을 감추고 자기 도구 줄을 쓴다. */
+.dashboard-panel[data-subview="effort"] > :is(.dashboard-filterbar, .dashboard-body) { display: none; }
+.dashboard-panel[data-subview="effort"] :is(.dashboard-toolbar, .dashboard-heading p) { display: none; }
+
+.dashboard-tab-view {
+  grid-row: 3 / -1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.dashboard-tab-view[hidden] { display: none; }
+.dashboard-tab-inner { display: grid; gap: 16px; padding: 16px var(--dashboard-gutter) 56px; }
+.dashboard-tab-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.dashboard-tab-toolbar > p { margin: 0; color: var(--muted); font-size: 13px; }
+
+@media (max-width: 680px) {
+  .dashboard-tabs { margin: 0 16px; }
+  .dashboard-tab-inner { padding: 12px 16px 40px; }
+}

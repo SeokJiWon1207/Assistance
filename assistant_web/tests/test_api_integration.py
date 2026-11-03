@@ -251,6 +251,21 @@ class ApiIntegrationTests(unittest.TestCase):
         current_user.return_value = None
         self.assertEqual(self.client.get("/api/workspace/customer?name=x").status_code, 401)
 
+    @patch.object(workspace_api, "build_effort_board")
+    @patch.object(workspace_api, "current_request_user")
+    def test_effort_board_endpoint_requires_login_and_valid_period(self, current_user, build_board):
+        current_user.return_value = {"uid": "uid-1", "role": "member"}
+        build_board.return_value = {"meta": {"periodDays": 14}}
+
+        response = self.client.get("/api/workspace/effort-board?days=14&refresh=true")
+
+        self.assertEqual(response.status_code, 200)
+        build_board.assert_called_once_with(days=14, refresh=True, live=False)
+        build_board.side_effect = ValueError("기간")
+        self.assertEqual(self.client.get("/api/workspace/effort-board?days=5").status_code, 422)
+        current_user.return_value = None
+        self.assertEqual(self.client.get("/api/workspace/effort-board").status_code, 401)
+
     @patch.object(workspace_api, "build_my_workspace")
     @patch.object(workspace_api, "current_request_user")
     def test_personal_workspace_refresh_bypasses_fast_snapshot(self, current_user, build_workspace):

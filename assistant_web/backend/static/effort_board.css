@@ -1,0 +1,27 @@
+/* 팀 대시보드 › 공수·처리시간 탭. 표·순위 막대·지표 칸은 고객사 상세와 같은 모양을 쓴다. */
+.effort-board-metrics { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.effort-board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+
+.effort-columns { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; align-items: end; }
+.effort-column { display: grid; justify-items: center; gap: 4px; min-width: 0; }
+.effort-column b { color: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.effort-column small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.effort-column-track { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; border-bottom: 1px solid var(--line); }
+.effort-column-track i { width: min(40px, 70%); min-height: 2px; border-radius: 4px 4px 0 0; background: var(--blue); }
+.effort-column-track i.is-late { background: var(--danger); }
+.effort-column-track i.is-partial { background: color-mix(in srgb, var(--blue) 40%, var(--surface)); }
+
+.effort-ranked-list li { grid-template-columns: 112px minmax(0, 1fr) auto; }
+.effort-ranked-name { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.effort-ranked-list .customer-ranked-value small { color: var(--muted); font-size: 12px; }
+
+.customer-issue-table .is-soon { color: var(--warning-strong); font-weight: 600; }
+
+@media (max-width: 1100px) {
+  .effort-board-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .effort-board-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 680px) {
+  .effort-board-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

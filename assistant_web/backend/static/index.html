@@ -16,7 +16,9 @@
     <link rel="stylesheet" href="/static/design_system.css?v=20261030-5" />
     <link rel="stylesheet" href="/static/bklit_charts.css?v=20261030-1" />
     <link rel="stylesheet" href="/static/answer_disclosure.css?v=20261030-1" />
-    <link rel="stylesheet" href="/static/customer_detail.css?v=20261103-1" />
+    <link rel="stylesheet" href="/static/customer_detail.css?v=20261103-2" />
+    <link rel="stylesheet" href="/static/dashboard_tabs.css?v=20261103-1" />
+    <link rel="stylesheet" href="/static/effort_board.css?v=20261103-2" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -318,8 +320,13 @@
               <button id="dashboardRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
             </div>
           </header>
+          <div id="dashboardTabs" class="dashboard-tabs" role="tablist" aria-label="팀 대시보드 보기">
+            <button type="button" id="dashboardTab-overview" role="tab" aria-selected="true" aria-controls="dashboardBody" data-dashboard-tab="overview">운영 현황</button>
+            <button type="button" id="dashboardTab-effort" role="tab" aria-selected="false" aria-controls="effortBoardView" tabindex="-1" data-dashboard-tab="effort">공수 · 처리시간</button>
+          </div>
           <div id="dashboardFilterbar" class="dashboard-filterbar" role="region" aria-label="적용 필터" hidden></div>
           <div id="dashboardBody" class="dashboard-body" aria-live="polite"></div>
+          <div id="effortBoardView" class="dashboard-tab-view effort-board" role="tabpanel" aria-labelledby="dashboardTab-effort" hidden></div>
           <div id="customerDetailView" class="customer-detail" aria-labelledby="customerDetailTitle" hidden></div>
         </section>
 

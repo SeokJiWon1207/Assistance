@@ -52,8 +52,8 @@
   --dashboard-gutter: max(32px, calc(50% - 620px));
   position: relative;
   display: grid;
-  /* 헤더 · 적용 필터 줄 · 스크롤 본문. 필터 줄이 숨겨져도 본문이 남은 높이를 쓰도록 행을 고정한다. */
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* 헤더 · 보기 탭 · 적용 필터 줄 · 스크롤 본문. 필터 줄이 숨겨져도 본문이 남은 높이를 쓰도록 행을 고정한다. */
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -123,7 +123,7 @@
 .dashboard-period:disabled button { cursor: wait; opacity: 0.55; }
 
 .dashboard-body {
-  grid-row: 3;
+  grid-row: 4;
   display: grid;
   /* 높이가 고정된 스크롤 grid에서는 overflow: hidden 섹션의 최소 높이가 0이 되어,
      위 내용이 화면을 넘치면 아래 섹션이 테두리만 남기고 눌린다. 행을 내용 높이에 맞춘다. */
@@ -166,7 +166,7 @@ button.workspace-metric.is-active { background: color-mix(in srgb, var(--blue-so
 .dashboard-delta.is-down { color: var(--success); }
 
 .dashboard-filterbar {
-  grid-row: 2;
+  grid-row: 3;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
