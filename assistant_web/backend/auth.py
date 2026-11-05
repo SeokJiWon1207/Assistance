@@ -27,6 +27,7 @@ from backend.db_migrations import run_sqlite_migrations
 
 from backend.storage.sqlite import open_sqlite
 from backend.storage.profiles import AUTH, AUTH_ROWS
+from backend.user_data_lock import user_data_operation
 
 
 VALID_ROLES = {"member", "manager", "admin"}
@@ -364,10 +365,17 @@ def approve_login_claims(claims: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not user or not user["approved"] or user["email"] != email:
         return None
 
+    return user
+
+
+def record_successful_login(uid: str) -> Optional[Dict[str, Any]]:
+    """승인·비밀번호 상태 검증을 통과해 세션을 발급할 때만 기록한다."""
+    stamp = _now()
     with closing(open_sqlite(users_db_path(), profile=AUTH)) as connection, connection:
         connection.execute(
-            "UPDATE users SET last_login_at = ?, updated_at = ? WHERE firebase_uid = ?",
-            (_now(), _now(), uid),
+            "UPDATE users SET last_login_at = ?, updated_at = ? "
+            "WHERE firebase_uid = ? AND approved = 1 AND password_reset_pending = 0",
+            (stamp, stamp, uid),
         )
     return get_user_by_uid(uid)
 
@@ -487,6 +495,35 @@ async def authentication_middleware(request: Request, call_next):
         response.delete_cookie(session_cookie_name(), path="/", secure=auth_cookie_secure())
         return response
 
+    uid = str(claims.get("uid") or claims.get("sub") or "")
+    operation = user_data_operation(uid, users_db_path())
+    try:
+        operation.__enter__()
+    except BlockingIOError:
+        return JSONResponse({"detail": "계정 삭제를 처리 중입니다. 잠시 후 다시 시도해 주세요."}, status_code=409)
+    try:
+        response = await _authenticated_response(request, call_next, claims)
+    except BaseException:
+        operation.__exit__(None, None, None)
+        raise
+    if not hasattr(response, 'body_iterator'):
+        operation.__exit__(None, None, None)
+        return response
+    body = response.body_iterator
+
+    async def protected_body():
+        try:
+            async for chunk in body:
+                yield chunk
+        finally:
+            operation.__exit__(None, None, None)
+
+    response.body_iterator = protected_body()
+    return response
+
+
+async def _authenticated_response(request: Request, call_next, claims: Dict[str, Any]):
+    path = request.url.path
     user = get_user_by_uid(str(claims.get("uid") or claims.get("sub") or ""))
     claims_email = _normalize_email(claims.get("email", ""))
     if not user or not user["approved"] or (claims_email and claims_email != user["email"]):

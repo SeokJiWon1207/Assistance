@@ -21,6 +21,17 @@ let notifyChange = () => {};
 let drawerTrigger = null;
 let drawerOriginal = null;
 let drawerVersion = 0;
+const deletingUsers = new Set();
+
+function renderLastLogin(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '<span class="admin-muted">로그인 기록 없음</span>';
+  const label = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).format(date);
+  return `<time datetime="${escapeHtml(date.toISOString())}" title="한국 시간 (KST)">${escapeHtml(label)}</time>`;
+}
 
 function usersSectionAvailable() {
   return Boolean(state.authEnabled && state.currentUser?.role === "admin");
@@ -89,6 +100,7 @@ function renderUserRows() {
         <span class="admin-user-login">${user.approved
           ? '<span class="admin-pill is-pass">승인됨</span>'
           : `<button type="button" class="admin-secondary is-accent" data-admin-user-approve="${uid}">승인</button><button type="button" class="admin-secondary" data-admin-user-edit="${uid}">확인</button>`}</span>
+        <span class="admin-user-last-login">${renderLastLogin(user.lastLoginAt)}</span>
       </div>`;
   }).join("");
 }
@@ -114,7 +126,7 @@ function renderUsersSection(container) {
       </label>
     </div>
     <section class="admin-card admin-table" aria-label="사용자 목록">
-      <div class="admin-row admin-user-row admin-th" aria-hidden="true"><span>이름</span><span>권한</span><span>Mantis 담당자명</span><span>팀</span><span>로그인</span></div>
+      <div class="admin-row admin-user-row admin-th" aria-hidden="true"><span>이름</span><span>권한</span><span>Mantis 담당자명</span><span>팀</span><span>로그인 허용</span><span>마지막 로그인 · 한국 시간</span></div>
       <div id="adminUsersRows">${renderUserRows()}</div>
     </section>`;
 }
@@ -197,16 +209,44 @@ function openEditDrawer(uid, trigger) {
       <fieldset class="admin-field"><legend>권한</legend>${roleRadios(drawerOriginal.role, self)}<small data-admin-role-help></small></fieldset>
       <label class="admin-field">Mantis 담당자명<input name="mantisUsername" type="text" maxlength="100" value="${escapeHtml(drawerOriginal.mantisUsername)}" placeholder="Mantis에 표시되는 이름" /></label>
       <label class="admin-field">팀<input name="team" type="text" maxlength="100" value="${escapeHtml(drawerOriginal.team)}" /></label>
+      <div class="admin-field"><strong>마지막 로그인 · 한국 시간</strong>${renderLastLogin(user.lastLoginAt)}</div>
       <label class="admin-switch-row"><span><strong>로그인 허용</strong><small data-admin-approved-help></small></span>
         <input name="approved" type="checkbox" role="switch" class="admin-switch"${drawerOriginal.approved ? " checked" : ""}${self ? " disabled" : ""} /></label>
       ${!self && user.approved ? `<div class="admin-field"><strong>비밀번호 초기화</strong>
         <p class="admin-muted">${user.passwordResetPending ? "초기화가 완료되지 않아 로그인이 차단되어 있습니다. 다시 초기화해 주세요." : user.passwordChangeRequired ? "다음 로그인 시 비밀번호를 변경해야 합니다." : "비밀번호를 잊은 사용자에게 새 임시 비밀번호를 지정할 수 있습니다."}</p>
         <button type="button" class="admin-secondary" data-admin-password-reset="${escapeHtml(user.uid)}">임시 비밀번호로 초기화</button></div>` : ""}
+      ${!self ? `<div class="admin-field admin-user-delete"><strong>사용자 삭제</strong>
+        <p class="admin-muted">계정과 사용자 소유 DB 데이터를 영구 삭제합니다.</p>
+        <button type="button" class="admin-secondary is-danger" data-admin-user-delete="${escapeHtml(user.uid)}">사용자 및 DB 데이터 삭제</button></div>` : ""}
       <p class="admin-form-error" role="alert" hidden></p>
     </div>
     <footer class="admin-drawer-foot"><span class="admin-muted" data-admin-dirty role="status"></span>
       <span><button type="button" class="admin-secondary" data-admin-drawer-close>취소</button><button type="submit" class="admin-primary" disabled>저장</button></span></footer>`, trigger);
   syncEditDrawer();
+}
+
+function openDeleteDrawer(uid, trigger) {
+  const user = state.adminUsers.find((item) => String(item.uid) === String(uid));
+  if (!user || isCurrentUser(user)) return;
+  if (deletingUsers.has(String(uid))) {
+    showToast("사용자 삭제를 처리 중입니다. 잠시만 기다려 주세요.", "warning");
+    return;
+  }
+  drawerOriginal = null;
+  openDrawer("사용자 및 DB 데이터 삭제", user.email, `
+    <input type="hidden" name="mode" value="delete" />
+    <input type="hidden" name="uid" value="${escapeHtml(user.uid)}" />
+    <div class="admin-drawer-body">
+      <p class="admin-callout">${escapeHtml(user.displayName || user.email)} 님의 계정과 데이터를 영구 삭제합니다. 삭제 후에는 복구할 수 없습니다.</p>
+      <div class="admin-field"><strong>함께 삭제되는 데이터</strong>
+        <p class="admin-muted">대화·메시지·휴지통, 알림과 읽음 기록, 작성한 플레이북, 답변 기록과 피드백</p>
+        <small>공용 Mantis·Notion DB, 팀 브리핑과 다른 사용자의 데이터는 유지됩니다.</small></div>
+      <label class="admin-field"><span>확인을 위해 ${escapeHtml(user.email)} 입력</span>
+        <input name="confirmationEmail" type="email" required maxlength="320" autocomplete="off" spellcheck="false" /></label>
+      <p class="admin-form-error" role="alert" hidden></p>
+    </div>
+    <footer class="admin-drawer-foot is-end"><button type="button" class="admin-secondary" data-admin-drawer-close>취소</button>
+      <button type="submit" class="admin-primary is-destructive">영구 삭제</button></footer>`, trigger);
 }
 
 function openPasswordResetDrawer(uid, trigger) {
@@ -307,6 +347,34 @@ async function submitDrawer(event) {
   showFormError("");
   submit.disabled = true;
   try {
+    if (mode === "delete") {
+      const uid = form.elements.uid.value;
+      const user = state.adminUsers.find((item) => String(item.uid) === uid);
+      if (!user || isCurrentUser(user)) throw new Error("삭제할 사용자를 다시 확인해 주세요.");
+      const email = form.elements.confirmationEmail.value.trim().toLowerCase();
+      if (email !== user.email.toLowerCase()) throw new Error("삭제할 사용자의 이메일을 정확히 입력해 주세요.");
+      if (deletingUsers.has(uid)) return;
+      deletingUsers.add(uid);
+      try {
+        const response = await apiFetch(`/api/auth/users/${encodeURIComponent(uid)}`, {
+          method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          // 일부 삭제 단계에서 접근이 차단되었을 수 있어 서버의 상태를 다시 읽는다.
+          await loadAdminUsers();
+          notifyChange();
+          throw new Error(data.detail || "삭제하지 못했습니다. 다시 시도해 주세요.");
+        }
+        state.adminUsers = state.adminUsers.filter((item) => String(item.uid) !== uid);
+        if (drawerVersion === requestVersion && !els.adminDrawer.hidden) closeDrawer();
+        notifyChange();
+        showToast(`${user.displayName || user.email} 님의 계정과 DB 데이터를 삭제했어요.`, "success");
+      } finally {
+        deletingUsers.delete(uid);
+      }
+      return;
+    }
     if (mode === "reset") {
       if (!form.elements.temporaryPassword.checkValidity()) throw new Error("임시 비밀번호는 8~128자로 입력해 주세요.");
       const uid = form.elements.uid.value;
@@ -360,7 +428,7 @@ async function submitDrawer(event) {
     notifyChange();
     showInviteResult(email);
   } catch (error) {
-    if (mode === "reset" && (drawerVersion !== requestVersion || els.adminDrawer.hidden)) {
+    if (["reset", "delete"].includes(mode) && (drawerVersion !== requestVersion || els.adminDrawer.hidden)) {
       showToast(error.message, "warning");
     } else showFormError(error.message);
     submit.disabled = false;
@@ -420,6 +488,8 @@ function initAdminUsers({ onChange } = {}) {
   els.adminDrawerForm.addEventListener("input", syncEditDrawer);
   els.adminDrawerForm.addEventListener("change", syncEditDrawer);
   els.adminDrawerForm.addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-admin-user-delete]");
+    if (remove) return openDeleteDrawer(remove.dataset.adminUserDelete, remove);
     const reset = event.target.closest("[data-admin-password-reset]");
     if (reset) return openPasswordResetDrawer(reset.dataset.adminPasswordReset, reset);
     if (event.target.closest("[data-admin-drawer-close]")) return closeDrawer();

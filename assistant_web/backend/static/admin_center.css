@@ -639,8 +639,11 @@ button.admin-metric:hover { background: var(--surface-alt); }
 .admin-log-row { grid-template-columns: 96px 150px minmax(0, 1fr) 64px 84px; }
 .admin-template-row { grid-template-columns: minmax(0, 1fr) 60px 56px; padding: 0 20px; }
 .admin-feedback-row { grid-template-columns: 84px minmax(0, 1fr) 90px; padding: 10px 20px; }
-.admin-user-row { grid-template-columns: minmax(0, 1.5fr) 88px minmax(0, 1fr) minmax(0, 1fr) 150px; }
+.admin-user-row { grid-template-columns: minmax(0, 1.5fr) 64px minmax(0, 0.8fr) minmax(0, 0.7fr) 110px 172px; }
 .admin-user-row.is-pending { background: color-mix(in srgb, var(--warning) 7%, transparent); }
+.admin-user-last-login { font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.admin-user-delete { border-top: 1px solid var(--line); padding-top: 20px; }
+.admin-primary.is-destructive { background: var(--danger); color: var(--on-danger); }
 
 .admin-case-toggle {
   display: flex;
@@ -1101,7 +1104,10 @@ button.admin-metric:hover { background: var(--surface-alt); }
   }
 
   .admin-log-row { grid-template-columns: 84px minmax(0, 1fr) 84px; }
-  .admin-user-row { grid-template-columns: minmax(0, 1fr) 64px auto; }
+  .admin-user-row { grid-template-columns: minmax(0, 1fr) 64px 110px; }
+  .admin-user-last-login { grid-column: 1 / -1; }
+  .admin-user-row.admin-th > :last-child { display: none; }
+  .admin-user-last-login::before { content: "마지막 로그인 · "; color: var(--muted); }
   .admin-case-detail { margin-left: 16px; }
   .admin-case-detail > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }

@@ -19,6 +19,8 @@ from backend.auth_passwords import (
     discard_temporary_password_user,
     reset_existing_password,
 )
+from backend.services.user_deletion import delete_user_and_data
+from backend.user_data_lock import user_data_operation
 
 from backend.auth import (
     VALID_ROLES,
@@ -38,6 +40,8 @@ from backend.auth import (
     upsert_invited_user,
     create_firebase_session,
     session_predates_password_change,
+    record_successful_login,
+    users_db_path,
 )
 
 
@@ -80,6 +84,10 @@ class UserInviteRequest(BaseModel):
 
 class AdminPasswordResetRequest(BaseModel):
     temporaryPassword: SecretStr
+
+
+class UserDeleteRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
 
 
 class PasswordChangeRequest(BaseModel):
@@ -158,16 +166,12 @@ def create_session(
             detail="Firebase 로그인 토큰을 서버 세션으로 전환하지 못했습니다.",
         ) from exc
 
-    user = approve_login_claims(claims)
-    if not user:
-        raise HTTPException(
-            status_code=403,
-            detail="관리자가 초대한 계정이 아닙니다. 관리자에게 사용 승인을 요청해 주세요.",
-        )
-    if user.get("passwordResetPending"):
-        raise HTTPException(status_code=403, detail="비밀번호 초기화가 완료되지 않았습니다. 관리자에게 문의해 주세요.")
-    if session_predates_password_change(user, claims):
-        raise HTTPException(status_code=401, detail="변경한 비밀번호로 다시 로그인해 주세요.")
+    uid = str(claims.get('uid') or claims.get('sub') or '')
+    try:
+        with user_data_operation(uid, users_db_path()):
+            user = _approve_session_user(claims)
+    except BlockingIOError as exc:
+        raise HTTPException(status_code=409, detail='계정 삭제를 처리 중입니다. 잠시 후 다시 시도해 주세요.') from exc
     response.set_cookie(
         session_cookie_name(),
         session_cookie,
@@ -179,6 +183,23 @@ def create_session(
     )
     _set_csrf_cookie(response, secrets.token_urlsafe(32))
     return {"authenticated": True, "user": user}
+
+
+def _approve_session_user(claims: Dict[str, Any]) -> Dict[str, Any]:
+    user = approve_login_claims(claims)
+    if not user:
+        raise HTTPException(
+            status_code=403,
+            detail="관리자가 초대한 계정이 아닙니다. 관리자에게 사용 승인을 요청해 주세요.",
+        )
+    if user.get("passwordResetPending"):
+        raise HTTPException(status_code=403, detail="비밀번호 초기화가 완료되지 않았습니다. 관리자에게 문의해 주세요.")
+    if session_predates_password_change(user, claims):
+        raise HTTPException(status_code=401, detail="변경한 비밀번호로 다시 로그인해 주세요.")
+    user = record_successful_login(user['uid'])
+    if not user or not user['approved'] or user.get('passwordResetPending'):
+        raise HTTPException(status_code=403, detail="계정 상태가 변경되었습니다. 다시 로그인해 주세요.")
+    return user
 
 
 @router.get("/me")
@@ -335,3 +356,16 @@ def patch_user(uid: str, payload: UserAccessUpdateRequest, request: Request) -> 
         except Exception as exc:
             raise HTTPException(status_code=502, detail="권한은 해제했지만 Firebase 세션 폐기에 실패했습니다.") from exc
     return {"user": user}
+
+
+@router.delete("/users/{uid}")
+def delete_user(uid: str, payload: UserDeleteRequest, request: Request,
+                x_csrf_token: str = Header(default="")) -> Dict[str, Any]:
+    _require_csrf(request, x_csrf_token)
+    admin = current_request_user(request)
+    if not admin or admin['role'] != 'admin':
+        raise HTTPException(status_code=403, detail='관리자 권한이 필요합니다.')
+    if uid == admin['uid']:
+        raise HTTPException(status_code=400, detail='현재 로그인한 관리자 본인 계정은 삭제할 수 없습니다.')
+    delete_user_and_data(uid, payload.email)
+    return {'deleted': True, 'uid': uid}
