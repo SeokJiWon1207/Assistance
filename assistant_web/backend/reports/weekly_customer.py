@@ -128,6 +128,10 @@ def build_weekly_report(text: str, *, constraints: Optional[Dict[str, Any]] = No
         key: value for key, value in constraints.items()
         if key not in {"created_at", "filter_clauses", "statuses", "excluded_statuses"}
     }
+    if constraints.get('unified_plan_validated'):
+        # 기간별 지표는 각각 날짜를 적용하되 명시한 다른 필터는 보존한다.
+        scope_constraints = {key: value for key, value in constraints.items() if key != 'created_at'}
+        scope_constraints['filter_clauses'] = [c for c in constraints.get('filter_clauses', []) if c['field'] != 'created_at']
     scoped = [
         normalize_issue(issue)
         for issue in raw_issues

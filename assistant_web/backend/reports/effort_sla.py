@@ -4,9 +4,10 @@ from backend.reports.effort import build_effort_report, build_effort_report_from
 from backend.reports.sla import build_sla_report
 
 
-def build_effort_sla_report(text: str, plan: dict | None = None) -> dict | None:
+def build_effort_sla_report(text: str, plan: dict | None = None, *, group_by: str | None = None) -> dict | None:
     effort = build_effort_report_from_unified_plan(text, plan) if plan else build_effort_report(text)
-    sla = build_sla_report(text, mode="duration") if plan else build_sla_report(text)
+    sla = (build_sla_report(text, mode="duration", constraints=plan['resolved_constraints'], group_by=group_by)
+           if plan else build_sla_report(text))
     if not effort or not sla or effort.get('needsPerson'):
         return None
     sources = {s['issue_id']: s for s in [*effort.get('sources', []), *sla.get('sources', [])]}

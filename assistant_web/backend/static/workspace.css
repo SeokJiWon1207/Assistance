@@ -519,7 +519,7 @@
 
 .workspace-issue-title { display:block; width:100%; padding:0; border:0; background:none; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; }
 .workspace-issue-title:hover { color:var(--blue); }
-.workspace-issue-title:focus-visible { outline:none; border-radius:4px; box-shadow:var(--focus-ring); }
+.workspace-issue-title:focus-visible { outline:none; border-radius:6px; box-shadow:var(--focus-ring); }
 .workspace-issue-row { cursor:pointer; }
 .workspace-issue-row.is-selected { background:var(--blue-soft); box-shadow:inset 3px 0 var(--blue); }
 .workspace-issue-row:hover:not(.is-selected) { background:var(--surface-alt); }
@@ -955,7 +955,8 @@
   justify-content: space-between;
   gap: 14px;
 }
-.playbook-card h3 { margin: 7px 0 0; color: var(--text); font-size: var(--font-headline); }
+.playbook-card > header small { white-space: nowrap; }
+.playbook-card h3 { margin: 7px 0 0; overflow-wrap: anywhere; color: var(--text); font-size: var(--font-headline); }
 .playbook-card header small,
 .playbook-card footer span { color: var(--muted); font-size: 12px; }
 .playbook-card section { margin-top: 15px; }

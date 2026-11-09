@@ -11,6 +11,9 @@ from pathlib import Path as Path
 from typing import Any, Dict, List, Optional as Optional
 
 from backend.chart_data import daily_registrations
+
+# 내 업무 첫 화면의 신규 등록 추이 기간(오늘 포함).
+ACTIVITY_DAYS = 30
 from backend.display import customer_name as customer_name
 from backend.sources.chroma_document import extract_chroma_field, normalize_chroma_issue_document
 from backend.utils.text import normalize_for_match
@@ -88,6 +91,21 @@ def delete_conversations(user_uid: str, ids: list[str], *, all_conversations: bo
     init_workspace_db()
     return conversation_history.delete_conversations(workspace_db_path(), user_uid, ids,
                                                      all_conversations=all_conversations)
+
+
+def list_conversation_trash(user_uid: str) -> dict:
+    init_workspace_db()
+    return conversation_history.list_trash(workspace_db_path(), user_uid)
+
+
+def restore_conversation(user_uid: str, conversation_id: str):
+    init_workspace_db()
+    return conversation_history.restore_conversation(workspace_db_path(), user_uid, conversation_id)
+
+
+def purge_conversation_trash(user_uid: str, ids: list[str], *, all_conversations: bool = False) -> list[str]:
+    init_workspace_db()
+    return conversation_history.purge_trash(workspace_db_path(), user_uid, ids, all_conversations=all_conversations)
 
 
 def _is_notion_closed(status: str) -> bool:
@@ -324,6 +342,8 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
     )
     open_issues = [item for item in issues if _is_open(item["status"])]
     week_start = today - timedelta(days=6)
+    activity_start = today - timedelta(days=ACTIVITY_DAYS - 1)
+    previous_week = (week_start - timedelta(days=7), week_start - timedelta(days=1))
     new_this_week = [item for item in issues if week_start <= (_parse_date(item["createdAt"]) or date.min) <= today]
     updated_this_week = [item for item in issues if week_start <= (_parse_date(item["updatedAt"]) or date.min) <= today]
     overdue = [item for item in open_issues if item["overdue"]]
@@ -375,6 +395,19 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
                 str(item["id"]): item
                 for item in (overdue[:3] + aging[:3] + updated_this_week[:3])
             }.values())[:6],
+        },
+        # 내 업무 첫 화면의 추이 차트와 '직전 7일 대비' 비교. 등록일만 쓰고, 종료일이 없으므로
+        # 수정일로 종료·처리 건수를 추정하지 않는다. 종료된 담당 이슈도 등록 건수에 포함한다.
+        "activity": {
+            "periodFrom": activity_start.isoformat(),
+            "periodTo": today.isoformat(),
+            "dateBasis": "등록일",
+            "points": daily_registrations(all_issues, activity_start, today),
+            "recentNew": len(new_this_week),
+            "previousNew": sum(
+                previous_week[0] <= (_parse_date(item["createdAt"]) or date.min) <= previous_week[1]
+                for item in issues
+            ),
         },
     }
 

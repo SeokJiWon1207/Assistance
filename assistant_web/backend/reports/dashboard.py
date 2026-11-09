@@ -257,6 +257,50 @@ def _period_decision_summary(
     return decision
 
 
+DASHBOARD_MEDIA = ("HTS", "MTS")
+DASHBOARD_CUSTOMER_INTAKE_LIMIT = 6
+
+
+def _media_intake(issues: List[Dict[str, Any]], current: tuple[date, date], previous: tuple[date, date]) -> Dict[str, Any]:
+    """매체(HTS·MTS)별 이번·직전 기간 일별 신규. 매체가 비어 있는 이슈는 어느 탭에도 넣지 않는다."""
+    result: Dict[str, Any] = {}
+    for media in DASHBOARD_MEDIA:
+        rows = [issue for issue in issues if str(issue.get("media_type") or "").strip().upper() == media]
+        result[media] = {
+            "points": daily_registrations(rows, *current),
+            "previousPoints": daily_registrations(rows, *previous),
+            "total": sum(_inside(issue, *current) for issue in rows),
+            "previousTotal": sum(_inside(issue, *previous) for issue in rows),
+        }
+    return result
+
+
+def _customer_intake(recent: List[Dict[str, Any]], previous: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """고객사 선택 목록 이름별 이번 기간 신규 상위. 상세를 열 프로젝트는 그 고객사에서 이슈가 가장 많은 것."""
+    from backend.team_templates import customer_option_for_project
+
+    names: Dict[str, Optional[str]] = {}
+
+    def option(issue: Dict[str, Any]) -> Optional[str]:
+        project = str(issue.get("project") or "").strip()
+        if project not in names:
+            names[project] = customer_option_for_project(project) if project else None
+        return names[project]
+
+    counts: Counter[str] = Counter()
+    projects: Dict[str, Counter[str]] = defaultdict(Counter)
+    for issue in recent:
+        name = option(issue)
+        if name:
+            counts[name] += 1
+            projects[name][str(issue.get("project") or "").strip()] += 1
+    before = Counter(name for issue in previous if (name := option(issue)))
+    return [
+        {"name": name, "count": count, "previous": before.get(name, 0), "project": projects[name].most_common(1)[0][0]}
+        for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:DASHBOARD_CUSTOMER_INTAKE_LIMIT]
+    ]
+
+
 def build_operations_dashboard(
     user: Dict[str, Any],
     *,
@@ -349,6 +393,11 @@ def build_operations_dashboard(
             scoped_issues, base, complete=complete, remaining_issues=remaining_issues,
         ),
         "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
+        # '이번 기간 vs 직전 기간' 비교 차트용. 같은 길이의 직전 기간을 같은 등록일 기준으로 센다.
+        "previousIntakeTrend": daily_registrations(scoped_issues, previous_start, previous_end),
+        # 신규 등록 카드의 매체 탭과 '고객사별 신규' 카드.
+        "intakeByMedia": _media_intake(scoped_issues, (current_start, current_end), (previous_start, previous_end)),
+        "customerIntake": _customer_intake(scoped_recent, scoped_previous),
         "decisionSummary": decision,
         "todos": _todo_rows(scoped_open, priorities, base),
         "priorities": priorities[:DASHBOARD_PRIORITY_LIMIT],

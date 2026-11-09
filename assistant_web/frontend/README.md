@@ -30,3 +30,6 @@ Bklit의 자식 컴포넌트 이름 기반 판별 때문에 esbuild의 `keepName
 - 마감 달력: 현재 담당 미종료 이슈의 실제 완료예정일, 오늘부터 28일. 미등록·기간 밖 건수를 분리하고 원문 팝업으로 연결합니다.
 - 수치·필터 보기는 기본 HTML을 유지합니다. 번들 로딩·렌더 실패 시 원래 수치를 볼 수 있습니다.
 - 화면 갱신 전 React 루트를 해제하고 비동기 로딩의 이전 세대는 마운트하지 않습니다.
+- 내 업무 신규 등록 추이: 담당 이슈(종료 포함)의 등록일 기준 최근 30일 누적, 계단형 영역. vendor에 AreaChart가 없어
+  `src/area-chart.tsx`의 `AreaFill`(bklit `Area`와 같은 `dataKey`·`fill`·`fillOpacity`·`gradientToOpacity`)을 LineChart 안에 둡니다.
+  종료일 기록이 없으므로 '직전 7일 대비'는 신규 등록 건수에만 표시합니다.

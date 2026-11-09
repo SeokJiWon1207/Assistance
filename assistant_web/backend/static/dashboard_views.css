@@ -1,0 +1,349 @@
+/* 팀 대시보드: 저장된 보기 · 필터 결과 내보내기 · 내가 처리할 일 */
+/* 대시보드 패널은 행 위치가 고정된 grid다. 보기 줄을 탭 아래 3행에 두고 필터 줄·본문을 한 칸씩 내린다.
+   보기 줄이 숨겨지면 3행은 높이 0이 된다. 탭 화면(3 / -1)과 고객사 상세(1 / -1)는 그대로 덮는다. */
+.dashboard-panel {
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+
+.dashboard-panel > .dashboard-filterbar {
+  grid-row: 4;
+}
+
+.dashboard-panel > .dashboard-body {
+  grid-row: 5;
+}
+
+.dashboard-views-bar {
+  grid-row: 3;
+  display: grid;
+  gap: 10px;
+  margin: 0 var(--dashboard-gutter);
+  padding-top: 12px;
+}
+
+.dashboard-views-row .secondary-button {
+  width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.dashboard-views-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-views-export svg {
+  flex-shrink: 0;
+}
+
+.dashboard-views-bar[hidden],
+.dashboard-panel[data-subview]:not([data-subview="issues"]) > .dashboard-views-bar {
+  display: none;
+}
+
+.dashboard-views-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--control-radius);
+  background: var(--blue-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.dashboard-views-notice > svg {
+  flex-shrink: 0;
+  color: var(--blue);
+}
+
+.dashboard-views-notice span {
+  flex: 1;
+}
+
+.dashboard-views-notice-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.dashboard-views-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-views-menu-wrap {
+  position: relative;
+}
+
+.dashboard-views-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dashboard-views-trigger.has-view > svg:first-child {
+  color: var(--warning);
+  fill: currentColor;
+}
+
+.dashboard-views-trigger em {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.dashboard-views-trigger svg,
+.dashboard-views-menu svg,
+.dashboard-views-export svg,
+.dashboard-mywork svg,
+.dashboard-views-notice svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-views-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  width: min(340px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: 0 2px 4px rgba(25, 31, 40, 0.04), 0 16px 40px rgba(25, 31, 40, 0.16);
+}
+
+body.theme-dark .dashboard-views-menu {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.dashboard-views-menu[hidden] {
+  display: none;
+}
+
+.dashboard-views-menu-label {
+  margin: 0;
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-views-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-views-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dashboard-views-item {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-views-item > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.dashboard-views-item.is-active {
+  background: var(--surface-alt);
+}
+
+.dashboard-views-item.is-active > svg {
+  color: var(--warning);
+  fill: currentColor;
+}
+
+.dashboard-views-item:hover {
+  background: var(--surface-alt);
+}
+
+.dashboard-views-item span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-views-item strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-views-item small,
+.dashboard-views-form small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-views-delete {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dashboard-views-delete:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}
+
+.dashboard-views-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dashboard-views-form {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px 8px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.dashboard-views-form label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dashboard-views-form-row {
+  display: flex;
+  gap: 6px;
+}
+
+.dashboard-views-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.dashboard-views-form input:focus {
+  border-color: var(--blue);
+  background: var(--surface);
+  box-shadow: var(--focus-ring);
+}
+
+.dashboard-views-error {
+  margin: 0;
+  padding: 0 8px 4px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.dashboard-views-error[hidden] {
+  display: none;
+}
+
+.dashboard-views-export small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dashboard-mywork {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-left: auto;
+  padding: 0 10px 0 14px;
+  border: 1px solid color-mix(in srgb, var(--blue) 40%, var(--line));
+  border-radius: var(--control-radius);
+  background: var(--blue-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dashboard-mywork strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dashboard-mywork small {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.dashboard-mywork > svg {
+  color: var(--text-soft);
+}
+
+@media (max-width: 560px) {
+  .dashboard-mywork {
+    width: 100%;
+    margin-left: 0;
+  }
+}

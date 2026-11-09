@@ -1,0 +1,762 @@
+/* 팀 대시보드 운영 현황 상단: Monarch처럼 2열 카드 격자.
+   1행 미종료 구성(진행 막대) · 신규 등록 비교 차트, 2행 최근 등록 미종료 목록 · 신규 이슈의 현재 상태 도넛 */
+.ops-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.workspace-section.ops-card {
+  display: grid;
+  grid-template-rows: none;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px 20px 18px;
+}
+
+.workspace-section.ops-card > .ops-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 0;
+  border: 0;
+}
+
+.ops-card-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-section);
+  font-weight: 700;
+}
+
+.ops-card-head h3 strong {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-card-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 미종료 전체 보기(필터 해제) */
+.ops-total {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+}
+
+.ops-total span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ops-total strong {
+  color: var(--blue);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-total small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ops-total.is-active {
+  border-color: var(--blue);
+  box-shadow: var(--focus-ring);
+}
+
+/* 예산 카드형 진행 막대: 이름·설명 → 막대 → 건수·비중 */
+.ops-progress-list {
+  display: grid;
+  gap: 4px;
+}
+
+.ops-progress {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-progress:hover {
+  background: var(--surface-alt);
+}
+
+.ops-progress.is-active {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.ops-progress:focus-visible,
+.ops-total:focus-visible,
+.ops-recent-row:focus-visible,
+.ops-card-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ops-progress-head,
+.ops-progress-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ops-progress-head strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ops-progress-head span,
+.ops-progress-foot small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ops-progress-foot b {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-progress-track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-alt);
+}
+
+.ops-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--chart-1);
+}
+
+.ops-progress.is-danger .ops-progress-track i { background: var(--danger); }
+.ops-progress.is-warning .ops-progress-track i { background: var(--warning); }
+.ops-progress.is-danger .ops-progress-foot b { color: var(--danger); }
+.ops-progress.is-warning .ops-progress-foot b { color: var(--warning-strong); }
+
+/* 비교 차트 범례 */
+.ops-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.ops-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ops-legend i {
+  width: 12px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--chart-1);
+}
+
+.ops-legend i.is-previous {
+  background: var(--chart-2);
+}
+
+.ops-legend b {
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-card .dashboard-new-change {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 거래 목록형 최근 등록 미종료 */
+.ops-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ops-card-link svg,
+.ops-recent-row > svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ops-recent-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 -8px;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-recent-list li + li {
+  border-top: 1px solid var(--surface-alt);
+}
+
+.ops-recent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto 16px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-recent-row:hover,
+.ops-recent-row.is-selected {
+  background: var(--surface-alt);
+}
+
+.ops-recent-row > svg {
+  color: var(--muted);
+}
+
+.ops-recent-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ops-recent-id {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-recent-main strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-recent-chip {
+  max-width: 140px;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-recent-meta {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 84px;
+}
+
+.ops-recent-meta span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.ops-recent-meta small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* 옮겨 온 상태 도넛 카드도 같은 높이로 늘어난다. */
+.ops-overview-grid > .ops-cohort {
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-overview-grid > .ops-cohort > .dashboard-chart-body {
+  display: flex;
+  flex: 1;
+}
+
+.ops-overview-grid [data-bklit-kind="cohort"],
+.ops-overview-grid [data-bklit-kind="cohort"] > .bklit-root {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* 신규 등록 추이(기간 선택 차트)는 이제 혼자 한 줄을 쓴다. */
+.bklit-insights-grid.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 1100px) {
+  .ops-overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .ops-recent-row {
+    grid-template-columns: minmax(0, 1fr) 16px;
+  }
+
+  .ops-recent-chip,
+  .ops-recent-meta {
+    display: none;
+  }
+}
+
+/* 기존 섹션 머리 규칙(.workspace-section > header …)이 설명·라벨 크기를 덮지 않도록 카드 안에서 다시 고정한다. */
+.workspace-section.ops-card > .ops-card-head p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.workspace-section.ops-card > .ops-card-head h3 strong {
+  font-weight: 700;
+}
+
+.workspace-section.ops-card > .ops-card-head .ops-total span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.workspace-section.ops-card > .ops-card-head .dashboard-delta {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 상태 도넛: 범례를 도넛 옆에 두어 옆 카드(최근 등록 목록)와 높이를 맞춘다. 범례 글자는 내 업무 도넛과 같다. */
+.ops-cohort .bklit-cohort {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px 28px;
+}
+
+.ops-cohort .bklit-cohort > .bklit-legend {
+  flex: 1 1 200px;
+}
+
+.ops-cohort .bklit-cohort > .bklit-note {
+  flex-basis: 100%;
+}
+
+.ops-cohort .bklit-legend-item .text-legend-foreground {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.ops-cohort .bklit-legend-item .flex.tabular-nums > span:first-child {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ops-cohort .bklit-legend-item .flex.tabular-nums > span + span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 팀 현황 / 이슈·분포 탭: 같은 본문을 둘로 나눠 보여 준다(패널의 data-subview로 전환). */
+.ops-pane {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.dashboard-panel:not([data-subview="issues"]) .ops-pane[data-ops-pane="issues"],
+.dashboard-panel[data-subview="issues"] .ops-pane[data-ops-pane="summary"] {
+  display: none;
+}
+
+/* 팀원 현황: 아바타 · 이름 · 미종료 건수 · 지연/장기 구성 막대 · 칩 */
+.team-members-card .ops-card-head h3 strong {
+  color: var(--blue);
+}
+
+.team-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.team-avatar-stack .team-avatar + .team-avatar {
+  margin-left: -8px;
+}
+
+.team-avatar {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--avatar-color, var(--chart-1)) 16%, var(--surface));
+  color: var(--avatar-color, var(--chart-1));
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.team-avatar.is-small {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--surface);
+  font-size: 12px;
+}
+
+.team-avatar.is-more {
+  background: var(--surface-alt);
+  color: var(--text-soft);
+}
+
+.team-avatar.is-tone-1 { --avatar-color: var(--chart-1); }
+.team-avatar.is-tone-2 { --avatar-color: var(--chart-2); }
+.team-avatar.is-tone-3 { --avatar-color: var(--warning-strong); }
+.team-avatar.is-tone-4 { --avatar-color: var(--chart-4); }
+.team-avatar.is-tone-5 { --avatar-color: var(--chart-5); }
+.team-avatar.is-tone-6 { --avatar-color: var(--chart-6); }
+
+.team-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.team-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.team-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.team-legend em {
+  margin-left: auto;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.team-legend i.is-overdue,
+.team-member-bar i.is-overdue { background: var(--danger); }
+.team-legend i.is-aging,
+.team-member-bar i.is-aging { background: var(--warning); }
+.team-legend i.is-rest,
+.team-member-bar i.is-rest { background: var(--chart-1); }
+
+.team-member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-member {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.team-member:hover {
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+  box-shadow: 0 6px 18px rgba(25, 31, 40, 0.08);
+}
+
+.team-member:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.team-member-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.team-member-name {
+  display: grid;
+  min-width: 0;
+}
+
+.team-member-name strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-member-name small,
+.team-member-count small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.team-member-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.team-member-count b {
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.team-member-bar {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-alt);
+}
+
+.team-member-bar i {
+  display: block;
+  height: 100%;
+}
+
+.team-member-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.team-chip {
+  padding: 1px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.team-chip.is-danger { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); color: var(--danger); }
+.team-chip.is-warning { background: color-mix(in srgb, var(--warning) 14%, var(--surface)); color: var(--warning-strong); }
+.team-chip.is-risk { background: color-mix(in srgb, var(--purple) 12%, var(--surface)); color: var(--purple); }
+.team-chip.is-calm { background: color-mix(in srgb, var(--success) 10%, var(--surface)); color: var(--success); }
+
+/* 저장된 보기·내보내기와 적용 필터는 목록을 걸러 보는 도구라 이슈·분포 탭에서만 보인다.
+   팀 현황에서 지표를 누르면 이슈·분포 탭으로 넘어가 걸린 결과를 보여 준다. */
+.dashboard-panel:not([data-subview]) > :is(.dashboard-views-bar, .dashboard-filterbar) {
+  display: none;
+}
+
+.dashboard-panel:not([data-subview]) > .dashboard-body {
+  padding-top: 16px;
+}
+
+/* 팀 현황 2행: 미종료 구성 · 신규 등록(매체 탭) · 고객사별 신규. 넓은 화면은 3열, 좁아지면 2열·1열. */
+.ops-overview-grid.is-three {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.ops-intake-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ops-intake-tabs {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
+}
+
+.ops-intake-tabs button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ops-intake-tabs button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(25, 31, 40, 0.12);
+}
+
+.ops-intake-tabs button:focus-visible,
+.ops-customer-row:focus-visible,
+.ops-card-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.ops-card-link {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ops-customer-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 var(--content-padding, 20px) 16px;
+  list-style: none;
+}
+
+.ops-customer-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 96px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-customer-row:hover {
+  background: var(--surface-alt);
+}
+
+.ops-customer-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-customer-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-alt);
+}
+
+.ops-customer-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--chart-1, var(--blue));
+}
+
+.ops-customer-value {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-customer-value b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.ops-customer-value small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ops-customer-value small.is-up {
+  color: #c21f2f;
+}
+
+.ops-customer-value small.is-down {
+  color: var(--success);
+}
+
+body.theme-dark .ops-customer-value small.is-up { color: #ff8a94; }

@@ -1,0 +1,398 @@
+/* 내 업무 첫 화면(업무 탭): 지표 카드 · 신규 등록 추이 · 경과/상태 도넛 · 담당 이슈 목록.
+   이전에는 목록이 남은 높이를 채우고 안에서 스크롤했지만, 차트 카드가 생겨 본문 전체가 한 페이지로 스크롤된다. */
+.workspace-overview.is-insights {
+  grid-template-rows: auto;
+  align-items: start;
+  height: auto;
+}
+
+.workspace-overview.is-insights > .workspace-main {
+  grid-column: 1;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* 오른쪽 요약 열은 본문과 함께 스크롤한다(자체 스크롤을 두면 카드가 잘려 보인다). */
+.workspace-overview.is-insights > .workspace-side {
+  grid-row: 1;
+  overflow: visible;
+}
+
+.workspace-main > .workspace-section .workspace-issue-list {
+  overflow: visible;
+}
+
+/* 지표 카드: 한 줄 띠 안에 이름 → 숫자(+증감) → 설명 */
+.workspace-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.workspace-kpi {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 20px;
+  border-left: 1px solid var(--surface-alt);
+}
+
+.workspace-kpi:first-child {
+  border-left: 0;
+}
+
+.workspace-kpi-label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.workspace-kpi-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-kpi-value strong {
+  color: var(--text);
+  font-size: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-kpi.is-blue .workspace-kpi-value strong { color: var(--blue); }
+.workspace-kpi.is-danger .workspace-kpi-value strong { color: var(--danger); }
+.workspace-kpi.is-warning .workspace-kpi-value strong { color: var(--warning-strong); }
+
+.workspace-kpi small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace-kpi-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-kpi-delta svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 신규가 늘었다는 건 좋고 나쁨이 아니라 들어온 일의 양이다. 색은 방향만 구분한다. */
+.workspace-kpi-delta.is-up {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.workspace-kpi-delta.is-down {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
+}
+
+/* 차트 카드: 제목·설명은 왼쪽, 범례·합계는 오른쪽 */
+.workspace-chart-card {
+  display: grid;
+  /* 옆 카드 때문에 키가 커져도 제목·내용(빈 상태 문구 포함)은 위에서부터 둔다. */
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.workspace-chart-card > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.workspace-chart-card h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-section);
+  font-weight: 700;
+}
+
+.workspace-chart-card header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace-chart-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.workspace-chart-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--chart-1);
+}
+
+.workspace-chart-legend strong {
+  margin-left: 4px;
+  color: var(--text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-chart-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workspace-chart-row.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* 담당 업무가 없으면 브리핑·활동을 본문으로 올리고 빈 분포·달력은 만들지 않는다. */
+.workspace-section.workspace-empty-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.workspace-empty-mark {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  color: var(--success);
+}
+
+.workspace-empty-overview.is-warning .workspace-empty-mark {
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: var(--warning-strong);
+}
+
+.workspace-empty-copy {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.workspace-empty-copy h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.workspace-empty-copy p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.workspace-empty-overview > .secondary-button {
+  flex: 0 0 auto;
+  width: auto;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
+.workspace-empty-followup {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  align-items: start;
+  gap: 20px;
+}
+
+.workspace-empty-followup .workspace-side-card {
+  min-width: 0;
+}
+
+.workspace-empty-followup .workspace-primary-action {
+  justify-self: start;
+  padding-inline: 18px;
+}
+
+@media (max-width: 560px) {
+  .workspace-empty-copy {
+    flex-basis: 180px;
+  }
+
+  .workspace-empty-overview > .secondary-button {
+    width: 100%;
+  }
+}
+
+.workspace-chart-values {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.workspace-chart-values li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* 두 도넛 카드가 같은 모양이 되도록 경과일 도넛도 도넛 왼쪽 · 범례 오른쪽, 같은 지름(190px)으로 맞춘다. */
+.workspace-chart-card .bklit-age-donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.workspace-chart-card .bklit-age-circle {
+  margin: 0;
+}
+
+/* 경과일 도넛은 240px 기준으로 그려진다. 크기만 줄이면 그림이 넘치므로 전체를 비율대로 줄여 190px로 맞춘다.
+   zoom은 배치 크기도 함께 줄여 범례가 옆에 들어갈 자리를 만든다. */
+.workspace-chart-card .bklit-age-circle {
+  zoom: calc(190 / 240);
+}
+
+/* 가운데 글자는 줄이지 않는다(다른 도넛 가운데 글자와 같은 크기). */
+.workspace-chart-card .bklit-age-center {
+  zoom: calc(240 / 190);
+}
+
+.workspace-chart-card .bklit-age-options {
+  flex: 1;
+  min-width: 160px;
+}
+
+@media (max-width: 1100px) {
+  .workspace-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-kpi:nth-child(3) {
+    border-left: 0;
+  }
+
+  .workspace-kpi:nth-child(n + 3) {
+    border-top: 1px solid var(--surface-alt);
+  }
+
+  .workspace-chart-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 두 도넛 카드의 가운데 글자·범례를 같은 크기로 맞춘다.
+   bklit 기본값은 PieCenter 라벨이 칸 폭에 따라 10px대로 줄고(clamp), 범례 이름이 14px/500이라 경과일 도넛(12px)과 어긋난다. */
+.workspace-chart-card .bklit-metric-pie .text-chart-label {
+  font-size: 12px;
+}
+
+.workspace-chart-card .bklit-legend-item .text-legend-foreground,
+.workspace-chart-card .bklit-age-options span {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* bklit LegendValue: <span class="flex … tabular-nums"><span>건수</span><span class="text-xs …">비율</span></span> */
+.workspace-chart-card .bklit-age-options strong,
+.workspace-chart-card .bklit-legend-item .flex.tabular-nums > span:first-child {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workspace-chart-card .bklit-age-options small,
+.workspace-chart-card .bklit-legend-item .flex.tabular-nums > span + span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 주간 보고(내 보고) 머리: 제목 묶음 왼쪽, 주요 동작 버튼 오른쪽 */
+.workspace-brief-hero.has-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+}
+
+.workspace-brief-hero.has-action > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workspace-brief-hero.has-action > .workspace-primary-action {
+  padding: 0 18px;
+}
+
+/* 이번 주 · 지난주 두 계열 범례 */
+.workspace-chart-legend.is-pair {
+  gap: 16px;
+}
+
+.workspace-chart-legend.is-pair > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 두 계열 비교는 팀 현황 범례처럼 짧은 선으로 표시하고 지난주는 차트의 점선과 같은 색을 쓴다. */
+.workspace-chart-legend.is-pair i {
+  width: 12px;
+  height: 3px;
+}
+
+.workspace-chart-legend i.is-previous {
+  background: var(--chart-2);
+}
+
+@media (max-width: 560px) {
+  .workspace-brief-hero.has-action > .workspace-primary-action {
+    width: 100%;
+  }
+}
+
+/* 좋고 나쁨이 분명한 증감(처리 건수·처리일): 좋은 쪽 초록, 주의 빨강 */
+.workspace-kpi-delta.is-good {
+  background: color-mix(in srgb, var(--success) 12%, var(--surface));
+  color: var(--success);
+}
+
+.workspace-kpi-delta.is-bad {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}

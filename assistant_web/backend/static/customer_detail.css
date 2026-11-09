@@ -182,7 +182,7 @@
 .customer-issue-link {
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background: none;
   color: var(--blue);
   font: inherit;
@@ -217,4 +217,63 @@
   .customer-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .customer-detail-toolbar { justify-content: flex-start; }
   .customer-detail-actions > * { flex: 1 1 140px; }
+}
+
+/* 상세 화면도 지표 → 확인할 목록 → 분석 순서와 중립 카드 기준을 따른다. */
+#customerDetailView .customer-detail-header { align-items: center; }
+#customerDetailView .customer-detail-heading { gap: 8px; }
+#customerDetailView .customer-detail-title { gap: 10px; }
+#customerDetailView .customer-detail-title h2 { word-break: keep-all; overflow-wrap: anywhere; }
+#customerDetailView .customer-detail-toolbar { min-width: 0; }
+#customerDetailView .customer-detail-actions { gap: 8px; }
+#customerDetailView .customer-detail-health { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 24px; padding: 16px 20px; border-color: var(--line); }
+#customerDetailView .customer-detail-health h3 { font-size: 13px; line-height: 1.6; }
+#customerDetailView .customer-detail-health ul { display: flex; flex-wrap: wrap; gap: 4px 24px; padding-left: 16px; font-size: 13px; }
+#customerDetailView .customer-detail-health .customer-detail-note { grid-column: 2; }
+#customerDetailView .workspace-section > header { flex-wrap: wrap; align-items: flex-start; padding: 20px 20px 12px; border: 0; }
+#customerDetailView .customer-detail-section-body { padding: 0 20px 20px; gap: 16px; }
+#customerDetailView .customer-detail-count { color: var(--muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+#customerDetailView .customer-sort { flex-wrap: wrap; }
+#customerDetailView .customer-sort-button { color: var(--text-soft); }
+#customerDetailView .customer-sort-button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); background: var(--blue-soft); color: var(--blue); }
+.customer-open-table { min-width: 600px; }
+.customer-open-table th { padding: 8px 12px; }
+.customer-open-table td { padding: 14px 12px; border-bottom-color: var(--line); }
+.customer-open-table .customer-open-main { width: 60%; }
+.customer-open-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.customer-open-title { color: var(--text); text-align: left; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.customer-open-title:hover { color: var(--blue); }
+#customerDetailView .customer-more-button { justify-self: center; }
+.customer-open-empty { display: grid; justify-items: center; gap: 8px; padding: 32px 16px; text-align: center; }
+.customer-open-empty strong { color: var(--text); font-size: 15px; font-weight: 600; }
+.customer-open-empty p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+#customerDetailView .customer-detail-empty { padding: 16px 0; line-height: 1.6; }
+#customerDetailView .customer-monthly-bars .is-zero { min-height: 0; }
+#customerDetailView .customer-playbook { padding: 16px; border-radius: 8px; background: var(--surface); }
+#customerDetailView .customer-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+
+@container dashboard-panel (max-width: 760px) {
+  #customerDetailView .customer-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  #customerDetailView .customer-detail-health { grid-template-columns: minmax(0, 1fr); }
+  #customerDetailView .customer-detail-health .customer-detail-note { grid-column: auto; }
+  .customer-open-table { min-width: 0; }
+  .customer-open-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .customer-open-table tbody { display: grid; }
+  .customer-open-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+  .customer-open-table td { min-width: 0; padding: 0; border: 0; white-space: normal; }
+  .customer-open-table .customer-open-main { grid-column: 1 / -1; width: auto; margin-bottom: 4px; }
+  .customer-open-table td[data-label] { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; }
+  .customer-open-table td[data-label]::before { content: attr(data-label); color: var(--muted); font-weight: 400; }
+  .customer-open-table td:last-child { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  #customerDetailView .customer-detail-toolbar { width: 100%; justify-content: flex-start; }
+  #customerDetailView .workspace-refresh-button { flex: 0 0 36px; width: 36px; min-width: 36px; padding: 0; }
+  #customerDetailView .workspace-section > header { padding: 16px 16px 12px; }
+  #customerDetailView .customer-detail-section-body { padding: 0 16px 16px; }
+  #customerDetailView .customer-detail-health { padding: 16px; }
+  #customerDetailView .customer-playbook-list { grid-template-columns: minmax(0, 1fr); }
+  #customerDetailView .customer-monthly-chart { gap: 4px; }
+  #customerDetailView .customer-monthly-bars { height: 120px; }
 }

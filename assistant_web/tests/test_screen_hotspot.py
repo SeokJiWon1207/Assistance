@@ -73,7 +73,16 @@ class ScreenHotspotTests(unittest.TestCase):
         self.assertEqual([(row["screen"], row["total"]) for row in mts["rows"]], [("7012", 1)])
         eugene = self._build(customer="유진")
         self.assertEqual([(row["screen"], row["total"]) for row in eugene["rows"]], [("7012", 1)])
-        self.assertEqual({option["customer"] for option in eugene["options"]["customers"]}, {"신한", "유진"})
+        # 고객사 선택 목록은 설정된 이름만, 설정 순서대로 보인다.
+        from backend.settings.catalogs import get_customer_picker
+        self.assertEqual([option["customer"] for option in eugene["options"]["customers"]], list(get_customer_picker()))
+        self.assertEqual(eugene["options"]["customers"][0], {"customer": "교보증권", "name": "교보증권"})
+        # 목록 이름으로 고르면 그 고객사의 프로젝트가 모두 걸린다.
+        picked = self._build(customer="유진투자증권")
+        self.assertEqual([(row["screen"], row["total"]) for row in picked["rows"]], [("7012", 1)])
+        self.assertEqual(picked["meta"]["customerName"], "유진투자증권")
+        shinhan = self._build(customer="신한투자증권")
+        self.assertEqual(shinhan["rows"][0]["total"], 8)
         with self.assertRaises(ValueError):
             self._build(media="WEB")
 

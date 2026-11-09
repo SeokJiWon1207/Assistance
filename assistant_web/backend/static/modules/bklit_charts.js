@@ -2,7 +2,7 @@
 const mounted = new Map();
 const generations = new WeakMap();
 let bundlePromise;
-const loadBundle = () => import('../vendor/bklit/charts.js?v=20261030-1');
+const loadBundle = () => import('../vendor/bklit/charts.js?v=20261110-2');
 const escapeAttribute = value => String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 function showChartFallback(host) {
@@ -11,7 +11,7 @@ function showChartFallback(host) {
   host.querySelector('[data-bklit-values]')?.setAttribute('open', '');
 }
 
-export function chartHost(spec, fallback = '<p class="bklit-empty">차트를 준비하고 있습니다.</p>') {
+export function chartHost(spec, fallback = '<p class="bklit-empty">차트를 준비하고 있어요.</p>') {
   const keepValues = spec.kind === 'bar' || spec.showValues;
   const content = keepValues ? `<details data-bklit-values open><summary>${spec.action ? "수치·필터 보기" : "수치 보기"}</summary>${fallback}</details>` : fallback;
   return `<div class="bklit-host" role="group" aria-label="${escapeAttribute(spec.title)}" ${keepValues ? 'data-keep-values' : ''} data-bklit-kind="${escapeAttribute(spec.kind)}" data-bklit-spec="${escapeAttribute(JSON.stringify(spec))}"><div class="bklit-root" data-bklit-mount></div><div data-bklit-fallback>${content}</div></div>`;
@@ -42,13 +42,13 @@ export async function mountCharts(container) {
         delete host.dataset.chartError;
       } catch (error) {
         showChartFallback(host);
-        console.warn('차트를 표시하지 못해 기본 수치를 표시합니다.', error);
+        console.warn('차트를 표시하지 못해 기본 수치를 표시해요.', error);
       }
     }
   } catch (error) {
     // 수치와 필터 버튼이 들어 있는 기존 HTML 대체 화면을 계속 제공한다.
     if ((generations.get(container) || 0) !== generation) return;
     for (const host of hosts) showChartFallback(host);
-    console.warn('차트 모듈을 불러오지 못해 기본 수치를 표시합니다.', error);
+    console.warn('차트 모듈을 불러오지 못해 기본 수치를 표시해요.', error);
   }
 }

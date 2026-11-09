@@ -10,6 +10,8 @@ from zoneinfo import ZoneInfo
 from backend.display import customer_name
 from backend.domain.team import TEAM_SCOPE_LABEL, filter_team_issues
 from backend.playbooks import list_playbooks
+from backend.settings.catalogs import get_customer_picker
+from backend.team_templates import customer_option_for_project
 from backend.reports.customer_detail import _related_playbooks
 from backend.reports.team_brief import TEAM_BRIEF_SPIKE_MIN, TEAM_BRIEF_SPIKE_RATIO, _load_issues, _parse_issue_date
 from backend.workspace import _is_open, _now
@@ -104,6 +106,8 @@ def build_screen_hotspot(
 
     in_window: List[tuple[Dict[str, Any], int]] = []
     customer_options: Counter[str] = Counter()
+    picker = list(get_customer_picker())
+    option_by_project: Dict[str, Optional[str]] = {}
     for issue in team_issues:
         week = _week_index(_parse_issue_date(issue.get("created_at")), starts, base)
         if week is None:
@@ -114,7 +118,11 @@ def build_screen_hotspot(
         if project and project not in UNKNOWN_VALUES:
             customer_options[project] += 1
         if customer and project != customer:
-            continue
+            # 선택 목록 이름(예: 미래에셋증권)은 그 고객사에 속한 모든 프로젝트를 고른다.
+            if project not in option_by_project:
+                option_by_project[project] = customer_option_for_project(project) if project else None
+            if option_by_project[project] != customer:
+                continue
         in_window.append((issue, week))
 
     weekly: Dict[str, List[int]] = defaultdict(lambda: [0] * SCREEN_HOTSPOT_WEEKS)
@@ -152,7 +160,7 @@ def build_screen_hotspot(
             "scopeLabel": TEAM_SCOPE_LABEL,
             "media": media,
             "customer": customer,
-            "customerName": customer_name(customer) if customer else "",
+            "customerName": (customer if customer in picker else customer_name(customer)) if customer else "",
         },
         "weeks": [
             {"start": start.isoformat(), "label": f"{start.month}/{start.day}", "partial": index == len(starts) - 1}
@@ -167,7 +175,8 @@ def build_screen_hotspot(
         },
         "options": {
             "media": list(SCREEN_MEDIA_OPTIONS),
-            "customers": [
+            # 고객사 선택 목록은 설정(picker_names)을 그대로 보여 준다. 설정이 없으면 이슈가 많은 프로젝트 순이다.
+            "customers": [{"customer": name, "name": name} for name in picker] or [
                 {"customer": name, "name": customer_name(name)}
                 for name, _ in customer_options.most_common(SCREEN_HOTSPOT_CUSTOMER_OPTIONS)
             ],

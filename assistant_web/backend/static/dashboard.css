@@ -424,7 +424,7 @@ button.dashboard-column,
 }
 
 
-.dashboard-issue-button { display: block; max-width: 100%; padding: 0; border-radius: 4px; }
+.dashboard-issue-button { display: block; max-width: 100%; padding: 0; border-radius: 6px; }
 .dashboard-issue-button:hover .dashboard-issue-title { color: var(--blue); }
 
 .dashboard-clickable:hover { background: color-mix(in srgb, var(--blue) 4%, var(--surface)); }
@@ -461,7 +461,7 @@ button.dashboard-column,
 .dashboard-priority-main.is-attention { box-shadow:inset 3px 0 color-mix(in srgb, var(--warning) 65%, var(--surface)); }
 .dashboard-issue-eyebrow { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px; font-size:12px; line-height:18px; }
 .dashboard-issue-id { color:var(--muted); font-variant-numeric:tabular-nums; }
-.dashboard-issue-status { padding:0 6px; border-radius:4px; background:var(--surface-alt); color:var(--text-soft); }
+.dashboard-issue-status { padding:0 6px; border-radius:6px; background:var(--surface-alt); color:var(--text-soft); }
 .dashboard-priority-table .dashboard-issue-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--text); font-size:14px; font-weight:600; line-height:1.55; overflow-wrap:anywhere; }
 .dashboard-priority-table .dashboard-issue-reason { margin-top:6px; overflow:hidden; color:var(--muted); font-size:12px; line-height:1.5; text-overflow:ellipsis; white-space:nowrap; }
 .dashboard-priority-customer { overflow-wrap:anywhere; }
@@ -540,7 +540,7 @@ button.dashboard-column,
 .dashboard-detail-meta span { display:flex; align-items:center; flex-wrap:wrap; gap:6px; color:var(--muted); font-size:12px; }
 .dashboard-detail-meta strong { color:var(--text-soft); font-size:14px; font-weight:500; overflow-wrap:anywhere; }
 .dashboard-detail-meta .is-overdue strong { color:var(--danger); }
-.dashboard-detail-meta em { padding:0 5px; border-radius:4px; background:color-mix(in srgb,var(--danger) 8%,var(--surface)); color:var(--danger); font-size:12px; font-style:normal; }
+.dashboard-detail-meta em { padding:0 5px; border-radius:6px; background:color-mix(in srgb,var(--danger) 8%,var(--surface)); color:var(--danger); font-size:12px; font-style:normal; }
 .dashboard-detail-reason { --detail-risk:var(--muted); padding:16px; border:1px solid var(--line); border-left:3px solid var(--detail-risk); border-radius:var(--control-radius); background:var(--surface); }
 .dashboard-detail-reason.is-high { --detail-risk:var(--danger); }
 .dashboard-detail-reason.is-attention { --detail-risk:var(--warning); }
@@ -677,16 +677,20 @@ button.dashboard-column,
     flex: 1 0 100%;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: "source source" "period refresh";
+    grid-template-areas: "search search" "source source" "period refresh";
     gap: 8px;
   }
+  /* 검색은 한 줄을 통째로 쓰니 좁은 화면에서 감추는 '검색' 글자를 다시 보인다. */
+  .dashboard-toolbar .search-pill { grid-area: search; }
+  .dashboard-toolbar .search-pill span { display: inline; }
+  /* 고객사·공수·화면번호 탭의 도구 칸은 한 줄을 통째로 쓰고 안에서 줄바꿈한다. */
+  .dashboard-toolbar .dashboard-tab-tools { grid-column: 1 / -1; justify-content: flex-start; }
   .dashboard-toolbar .data-badge-slot { grid-area: source; justify-self: start; }
   .dashboard-toolbar .data-badge-pop { right: auto; left: 0; }
   .dashboard-toolbar .dashboard-period { grid-area: period; justify-self: start; }
   .dashboard-toolbar .workspace-refresh-button { grid-area: refresh; }
   .dashboard-header .workspace-refresh-button { display: inline-flex; width: 36px; padding: 0; justify-content: center; }
   .dashboard-header .workspace-refresh-button > span { display: none; }
-  .dashboard-panel { --dashboard-gutter: 12px; }
   .dashboard-filterbar-hint { font-size: 12px; }
   .dashboard-filter-jump { margin-left: 0; }
   .dashboard-body { gap: 13px; padding-bottom: 26px; }
@@ -709,7 +713,7 @@ button.dashboard-column,
 .dashboard-weekly-card > .dashboard-weekly-card-head { display: block; padding: 20px 20px 0; }
 .dashboard-weekly-card-head h4 { margin: 0; font-size: 14px; font-weight: 600; }
 .dashboard-weekly-card-head p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-.dashboard-weekly-card-head .dashboard-weekly-total { font-size: 26px; letter-spacing: -1px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.dashboard-weekly-card-head .dashboard-weekly-total { font-size: 26px; letter-spacing: -1px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .dashboard-weekly-card .bklit-legend { flex-wrap: wrap; }
 .dashboard-weekly-card .bklit-cohort { min-height: 220px; }
 .dashboard-weekly-card .bklit-cohort .bklit-legend { flex-basis: 100%; }

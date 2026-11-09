@@ -154,13 +154,15 @@ def build_customer_profile_report(text: str, *, constraints: Optional[Dict[str, 
         if issue_matches_constraints(issue, constraints)
     ]
     if not issues:
-        return _failure(
+        result = _failure(
             text,
             constraints,
             "지정한 고객사·기간·플랫폼·상태 조건에 맞는 이슈가 없습니다.",
             status="ok",
             error_kind="no_results",
         )
+        result['retrieval']['stages'][0]['meta'] = {**data_meta, 'matched_count': 0}
+        return result
 
     today = date.today()
     customer = _customer_label(constraints, issues)

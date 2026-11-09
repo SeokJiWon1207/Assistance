@@ -1,0 +1,67 @@
+/* 이슈 옆 패널과 원문 창. Snow 공통 변수는 snow_theme.css에서 함께 받는다. */
+.dashboard-detail { background: var(--bg); box-shadow: -12px 0 32px rgba(20, 24, 30, .1); }
+.dashboard-detail > header { padding: 20px; }
+.dashboard-detail-content { gap: 16px; padding: 16px; }
+.dashboard-detail-hero,
+.dashboard-detail-info,
+.dashboard-detail-reason,
+.dashboard-detail-next { padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.dashboard-detail-summary { font-size: 17px; line-height: 1.6; }
+.dashboard-detail-meta { gap: 16px; }
+.dashboard-detail-meta strong { color: var(--text); font-size: 13px; }
+.dashboard-detail-section-title { margin-bottom: 12px; }
+.dashboard-detail-next .dashboard-detail-section-title { color: var(--text); }
+.dashboard-detail-next p { font-size: 13px; }
+.dashboard-detail-reason { border-left-width: 1px; }
+.dashboard-detail-footer { gap: 8px; padding: 14px 16px max(16px, env(safe-area-inset-bottom)); }
+.dashboard-detail .modal-close { border-radius: 8px; }
+.dashboard-detail .modal-close:hover { transform: none; }
+
+/* 원문은 다른 상세 위에서도 읽을 수 있도록 독립된 가장 앞의 창으로 연다. */
+#chromaModal { z-index: 110; padding: 24px; background: rgba(15, 20, 28, .46); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+#chromaModal .modal { width: min(960px, 100%); max-height: calc(100dvh - 48px); grid-template-rows: auto minmax(0, 1fr) auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+#chromaModal .modal-header { padding: 20px 24px; }
+#chromaModal .modal-header > div { min-width: 0; }
+#chromaModal .modal-header p { line-height: 1.5; font-weight: 500; }
+#chromaModal .modal-header h3 { margin-top: 6px; font-size: 20px; line-height: 1.5; overflow-wrap: anywhere; }
+#chromaModal .modal-close { border-radius: 8px; }
+#chromaModal .modal-close:hover { transform: none; }
+#chromaModal .modal-content { min-height: 0; gap: 16px; padding: 20px 24px 24px; background: var(--bg); overscroll-behavior: contain; }
+#chromaModal .detail-section { flex-shrink: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+#chromaModal .detail-section-title { color: var(--text); font-size: 13px; font-weight: 600; letter-spacing: 0; }
+#chromaModal .detail-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 0; border: 0; }
+#chromaModal .detail-item { min-width: 0; gap: 6px; }
+#chromaModal .detail-key { font-weight: 400; }
+#chromaModal .detail-value { font-size: 13px; font-weight: 500; line-height: 1.5; }
+#chromaModal .detail-badge { padding: 2px 8px; border-radius: 6px; font-weight: 500; }
+#chromaModal .detail-badge--positive { background: color-mix(in srgb, var(--success) 12%, var(--surface)); color: var(--success); }
+#chromaModal .detail-badge--warning { color: var(--warning-strong); }
+#chromaModal .detail-prose { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 14px; line-height: 1.7; }
+#chromaModal .detail-plain { margin: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+#chromaModal .detail-disclosure { display: block; padding: 16px 20px; }
+#chromaModal summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; color: var(--text-soft); font-size: 13px; font-weight: 500; cursor: pointer; list-style: none; }
+#chromaModal summary::-webkit-details-marker { display: none; }
+#chromaModal summary::after { content: ""; flex: 0 0 6px; height: 6px; margin-right: 3px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); }
+#chromaModal details[open] > summary::after { transform: rotate(225deg); }
+#chromaModal summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 4px; border-radius: 4px; }
+#chromaModal details[open] > .detail-grid { margin-top: 16px; }
+#chromaModal details[open] > .detail-prose { margin-top: 16px; }
+#chromaModal .detail-extra-fields { padding-top: 12px; border-top: 1px solid var(--line); }
+#chromaModal .source-modal-actions { flex-wrap: wrap; gap: 8px; padding: 16px 24px; background: var(--surface); }
+#chromaModal .source-modal-actions[hidden] { display: none; }
+#chromaModal .source-modal-actions button { margin: 0; min-height: 36px; }
+
+@media (max-width: 680px) {
+  #chromaModal { padding: 12px; }
+  #chromaModal .modal { max-height: calc(100dvh - 24px); }
+  #chromaModal .modal-header { padding: 16px; }
+  #chromaModal .modal-header h3 { font-size: 17px; }
+  #chromaModal .modal-content { padding: 16px; gap: 12px; }
+  #chromaModal .detail-section { padding: 16px; }
+  #chromaModal .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+  #chromaModal .source-modal-actions { padding: 12px 16px; }
+  #chromaModal .source-modal-actions button { flex: 1 1 130px; }
+  #chromaModal .source-modal-actions a { flex-basis: 100%; line-height: 1.5; }
+  .dashboard-detail > header { padding: 16px; }
+  .dashboard-detail-content { padding: 12px; gap: 12px; }
+}

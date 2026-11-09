@@ -1,6 +1,18 @@
 {
   "checked_at": "2026-10-21",
   "inventory": {"live_mantis_projects": 78, "stored_issue_projects": 72},
+  "picker_names": [
+    "교보증권", "다올투자증권", "메리츠증권", "미래에셋증권", "삼성증권", "신한투자증권", "우리투자증권",
+    "유안타증권", "유진투자증권", "케이프투자증권", "하나증권", "한국투자증권", "한화투자증권", "현대차증권",
+    "DB금융투자", "IBK투자증권", "iM증권", "KB증권", "LS증권", "NH투자증권", "SK증권", "코스콤"
+  ],
+  "customer_logos": {
+    "교보": "kyobo.png", "다올": "daol.png", "메리츠": "meritz.png", "미래에셋": "mirae.png", "대우": "mirae.png",
+    "신한": "shinhan.png", "우리투자": "woori.png", "유안타": "yuanta.png", "유진": "eugene.png", "케이프": "cape.png",
+    "하나": "hana.png", "한투": "hantu.png", "한화": "hanwha.png", "현대차": "hyundai-motor.png", "db": "db.png",
+    "IBK": "ibk.png", "하이투자": "im.png", "kb": "kb.png", "이베스트": "ls.png", "NH": "nh.png", "SK증권": "sk.png",
+    "코스콤": "koscom.png", "우리선물": "nh-futures.png", "삼성선물": "samsung-futures.png"
+  },
   "project_display_names": {
     "106KoscomOil": {"name": "코스콤", "note": "기존 코스콤 파생 프로젝트의 표시 전용 이름. 조회 별칭은 유지한다."},
     "122KoscomCME": {"name": "코스콤", "note": "기존 코스콤 파생 프로젝트의 표시 전용 이름. 조회 별칭은 유지한다."},

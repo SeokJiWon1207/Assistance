@@ -84,8 +84,8 @@
 .effort-answer-sparkline .bklit-sparkline { margin: 0; }
 .bklit-range { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .bklit-range label { display: grid; gap: 4px; color: var(--muted); min-width: 0; }
-.bklit-range input { width: 132px; max-width:100%; min-width:0; padding:6px 7px; height:34px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--surface); }
-.bklit-range button { height: 34px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-soft); background: var(--surface); }
+.bklit-range input { width: 132px; max-width:100%; min-width:0; padding:6px 7px; height:36px; font-size:13px; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--surface); }
+.bklit-range button { height: 36px; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-soft); background: var(--surface); }
 .bklit-range button:hover:not(:disabled) { background: var(--surface-alt); }
 .bklit-selection { font-size:13px; color:var(--text-soft); margin:14px 0 4px; }
 .bklit-selection strong { color:var(--text); font-variant-numeric:tabular-nums; }
@@ -125,7 +125,7 @@
 .bklit-ranking-frame > div { height:100%; }
 .bklit-root .bklit-customer-select {
   display:flex; align-items:flex-start; justify-content:space-between; gap:8px; width:100%; padding:2px 0 0;
-  border:0; border-radius:5px; background:transparent; color:var(--text); text-align:left; line-height:20px;
+  border:0; border-radius:6px; background:transparent; color:var(--text); text-align:left; line-height:20px;
 }
 .bklit-customer-select[aria-pressed="true"] { background:color-mix(in srgb, var(--blue) 12%, transparent); }
 .bklit-customer-select strong { flex-shrink:0; font-size:13px; font-variant-numeric:tabular-nums; }
@@ -147,7 +147,7 @@
 .bklit-heat-label { font-size:12px; fill:var(--muted); }
 .bklit-heat-name, .bklit-heat-total { font-size:12px; fill:var(--text-soft); }
 .bklit-heat-total { font-weight:600; font-variant-numeric:tabular-nums; }
-.bklit-root .bklit-member-cell { display:block; width:100%; height:100%; padding:0; border:0; border-radius:5px; color:var(--text); font-size:12px; font-variant-numeric:tabular-nums; }
+.bklit-root .bklit-member-cell { display:block; width:100%; height:100%; padding:0; border:0; border-radius:6px; color:var(--text); font-size:12px; font-variant-numeric:tabular-nums; }
 .bklit-member-cell:hover { box-shadow:inset 0 0 0 1px var(--muted); }
 .dashboard-age-chart .dashboard-chart-body:has(.bklit-host) { align-content:start; }
 .bklit-host[data-bklit-kind="member-heatmap"] { container:bklit-members / inline-size; }

@@ -50,6 +50,8 @@
     item.element.scrollIntoView({ block: "nearest" });
   }
 
+  const MENU_MIN_WIDTH = 180;
+
   function positionMenu(instance) {
     const rect = instance.trigger.getBoundingClientRect();
     const gap = 6;
@@ -60,8 +62,12 @@
     const openAbove = spaceBelow < Math.min(desiredHeight, 160) && spaceAbove > spaceBelow;
     const availableHeight = Math.max(96, (openAbove ? spaceAbove : spaceBelow) - 8);
 
-    instance.menu.style.left = `${Math.round(rect.left)}px`;
-    instance.menu.style.width = `${Math.round(rect.width)}px`;
+    // 버튼이 좁아도("전체") 항목 이름이 한 줄에 들어가게 최소 폭을 두고, 화면 오른쪽을 넘으면 왼쪽으로 당긴다.
+    const viewportWidth = document.documentElement.clientWidth;
+    const width = Math.min(Math.max(rect.width, MENU_MIN_WIDTH), viewportWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, viewportWidth - width - 8));
+    instance.menu.style.left = `${Math.round(left)}px`;
+    instance.menu.style.width = `${Math.round(width)}px`;
     instance.menu.style.maxHeight = `${Math.min(280, availableHeight)}px`;
     if (openAbove) {
       instance.menu.style.top = "auto";

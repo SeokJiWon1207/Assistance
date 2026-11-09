@@ -29,6 +29,15 @@ test('one directory formats all configured projects and preserves unmapped ident
   assert.equal(api.customerName({project:'159eBest',customer_name:'예전 이름'}), 'LS증권');
 });
 
+test('customer autocomplete uses only the configured picker names in their order', async () => {
+  const api = await format();
+  const picker = JSON.parse(fs.readFileSync(path.join(__dirname, '../config/customer_directory.json'))).picker_names;
+  api.setCustomerNames({exact: {db: 'DB증권'}, projects: {}, picker});
+  assert.deepEqual(Array.from(api.customerSearchNames()), picker);
+  assert.equal(picker.length, 22);
+  assert.ok(!api.customerSearchNames().includes('글로벌워치'));
+});
+
 test('saved answers normalize labels while quoted source, inline code and URLs stay literal', async () => {
   const api = await format();
   const content = '고객사별 건수\n- 147MiraeAsset(미래에셋증권) — 4건\n| 159eBest | 2 |\n> ```text\n> 147MiraeAsset 원문\n> ```\n```log\n159eBest literal\n```\n`147MiraeAsset` https://host/159eBest\n끝';
@@ -46,7 +55,7 @@ test('Mantis and saved Chroma detail normalize only the customer metadata field'
   const context = vm.createContext({document:{createElement:tagName => ({tagName,textContent:'',className:'',children:[],appendChild(child){this.children.push(child);}})}});
   const source = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/chat_source_detail.js'), 'utf8'), {context});
   await source.link(specifier => {
-    const values = specifier.includes('ui_format') ? naming : specifier.includes('dialog_focus') ? {openDialogFocus(){},closeDialogFocus(){}} : specifier.includes('runtime') ? {els:{},apiFetch(){throw Error('unexpected request');}} : {formatNotionDetail(){}};
+    const values = specifier.includes('ui_format') ? naming : specifier.includes('dialog_focus') ? {openDialogFocus(){},closeDialogFocus(){}} : specifier.includes('runtime') ? {state:{},els:{},apiFetch(){throw Error('unexpected request');}} : specifier.includes('recent_items') ? {recordIssueView(){}} : {formatNotionDetail(){}};
     return new vm.SyntheticModule(Object.keys(values), function(){for(const [key,value] of Object.entries(values))this.setExport(key,value);}, {context});
   });
   await source.evaluate();
@@ -71,7 +80,7 @@ test('copy uses the displayed customer names without changing stored evidence or
   const button={dataset:{messageIndex:'0',messageAction:'copy'},innerHTML:'복사'};
   const state={messages:[{role:'assistant',content:original}],busy:false};
   vm.runInNewContext(`(() => { ${source.slice(start,end)}\n }\n }\n })()`,{
-    event:{target:{closest:()=>button}},state,customerAnswerText:naming.customerAnswerText,
+    event:{target:{closest:()=>button}},state,customerAnswerText:naming.customerAnswerText,stripDetailsMarkup:(text)=>text,
     navigator:{clipboard:{writeText:async text=>{copied=text;}}},
     MESSAGE_ACTION_ICONS:{check:'확인'},setTimeout(){},showToast(){},
   });

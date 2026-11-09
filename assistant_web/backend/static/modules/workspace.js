@@ -3,9 +3,11 @@ import { state, els, conversationsStorageKeyBase, activeConversationStorageKeyBa
 import { renderMessages, escapeHtml, autoResizeInput } from "./chat.js?v=20260911-6";
 import { cancelMessageEdit } from "./events.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { formatUiDateTime, customerName, customerLabelText, customerSearchNames, customerSearchText } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, formatAxisDate, formatPeriodText, customerName, customerLabelText, customerSearchNames, customerSearchText, customerMark } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
+import { workspaceKpis, workspaceCharts, weeklyKpis, weeklyTrendCard, teamBriefKpis } from "./workspace_insights.js?v=20261105-1";
+import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml } from "./workspace_home.js?v=20261106-1";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -100,7 +102,7 @@ function saveLocalConversations() {
     localStorage.setItem(activeConversationStorageKey(), state.activeConversationId || "");
   } catch {
     void durable.then((saved) => {
-      if (!saved) showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했습니다. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
+      if (!saved) showToast("저장 공간이 부족해 최신 대화를 기기에 보관하지 못했어요. 창을 닫기 전에 서버 저장을 확인해 주세요.", "warning");
     });
   }
   return durable;
@@ -155,7 +157,7 @@ function syncConversation(conversation) {
         }
         await saveLocalConversations();
         renderConversationList();
-        showToast("다른 창이나 기기에서 삭제한 대화를 목록에서 제거했습니다.");
+        showToast("다른 창이나 기기에서 삭제한 대화를 목록에서 제거했어요.");
         return;
       }
       if (response.status === 409) {
@@ -168,12 +170,12 @@ function syncConversation(conversation) {
           state.activeConversationId = conversation.id;
         }
         scheduleConversationSync(conversation);
-        showToast("다른 기기의 변경과 겹쳐 현재 기기에서 읽은 기록을 복구본으로 보존했습니다. 이전 기록은 원래 대화에 남아 있습니다.", "warning");
+        showToast("다른 기기의 변경과 겹쳐 현재 기기에서 읽은 기록을 복구본으로 보존했어요. 이전 기록은 원래 대화에 남아 있어요.", "warning");
         return;
       }
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail || "대화 기록을 서버에 저장하지 못했습니다. 기존 기록은 보존됩니다.");
+        throw new Error(payload.detail || "대화 기록을 서버에 저장하지 못했어요. 기존 기록은 보존돼요.");
       }
       const saved = (await response.json()).conversation;
       conversation.serverUpdatedAt = saved.updatedAt;
@@ -195,7 +197,7 @@ function scheduleConversationSync(conversation) {
   conversationSyncTimers.set(conversation.id, setTimeout(() => {
     conversationSyncTimers.delete(conversation.id);
     syncConversation(conversation).catch(() => {
-      showToast("서버 저장에 실패했습니다. 대화는 이 기기에 보관되며 다시 연결하면 저장을 재시도합니다.", "warning");
+      showToast("서버 저장에 실패했어요. 대화는 이 기기에 보관되며 다시 연결하면 저장을 재시도해요.", "warning");
     });
   }, 350));
 }
@@ -211,6 +213,37 @@ function deleteConversationFromServer(conversation) {
     if (!response.ok) throw new Error("대화 삭제 실패");
     conversation.serverUpdatedAt = "";
   });
+}
+
+// 서버 보관함에서 대화를 되돌린다. 보관 기록이 없으면(삭제 요청이 서버에 닿지 않음) null을 돌려준다.
+function restoreConversationOnServer(conversation) {
+  const uid = state.currentUser?.uid;
+  if (!uid || !conversation?.id) return Promise.resolve(null);
+  return queueConversation(conversation.id, async () => {
+    if (state.currentUser?.uid !== uid) return null;
+    const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}/restore`, { method: "POST" });
+    if (state.currentUser?.uid !== uid || response.status === 404) return null;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "대화를 복원하지 못했어요.");
+    const saved = data.conversation;
+    conversation.serverUpdatedAt = saved.updatedAt;
+    conversation.messageCount = saved.messageCount;
+    syncedMessageState.set(conversation.id, {
+      offset: Number(saved.messageOffset || 0), messages: storageSafeMessages(saved.messages || []), version: saved.updatedAt,
+    });
+    return saved;
+  });
+}
+
+// 이 기기 목록에 없는 대화(최근 삭제한 대화 창)를 복원해 목록에 다시 넣는다.
+async function restoreConversationFromTrash(id) {
+  const saved = await restoreConversationOnServer({ id });
+  if (!saved) throw new Error("보관 중인 대화를 찾지 못했어요. 보관 기간이 지났을 수 있어요.");
+  conversationMutation += 1;
+  state.conversations = globalThis.AssistantFrontendCore.mergeConversations(state.conversations, [saved]);
+  await saveLocalConversations();
+  renderConversationList();
+  return saved;
 }
 
 async function bulkDeleteConversations({ ids = [], all = false } = {}) {
@@ -237,7 +270,7 @@ async function bulkDeleteConversations({ ids = [], all = false } = {}) {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: all ? [] : ids, all }),
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail || "대화를 삭제하지 못했습니다. 다시 시도해 주세요.");
+    if (!response.ok) throw new Error(data.detail || "대화를 삭제하지 못했어요. 다시 시도해 주세요.");
     if (state.currentUser?.uid !== uid) return null;
     targets.forEach((item) => syncedMessageState.delete(item.id));
     if (!state.conversations.length) state.conversations.push(createConversation());
@@ -287,7 +320,7 @@ async function mergeServerConversations(limit, loadingUid) {
   if (state.conversationDeleting) return false;
   const generation = conversationMutation;
   const response = await apiFetch(`/api/workspace/conversations?limit=${limit}`);
-  if (!response.ok) throw new Error("대화 목록을 불러오지 못했습니다.");
+  if (!response.ok) throw new Error("대화 목록을 불러오지 못했어요.");
   const data = await response.json();
   const serverItems = data.conversations || [];
   if (state.currentUser?.uid !== loadingUid || conversationMutation !== generation) return false;
@@ -478,7 +511,7 @@ function renderConversationSearch(query) {
   if (!results.length) {
     const empty = document.createElement("p");
     empty.className = "conversation-empty";
-    empty.textContent = "일치하는 대화가 없습니다. 제목과 질문·답변 내용에서 찾았습니다.";
+    empty.textContent = "일치하는 대화가 없어요. 제목과 질문·답변 내용에서 찾았어요.";
     els.conversationList.appendChild(empty);
   }
   if (conversationListView.serverHasMore) {
@@ -533,7 +566,7 @@ async function loadMoreConversations() {
     await mergeServerConversations(MAX_CONVERSATION_LIMIT, uid);
     conversationListView.expanded = true;
   } catch {
-    showToast("이전 대화를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "warning");
+    showToast("이전 대화를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", "warning");
   } finally {
     conversationListView.loadingMore = false;
     if (state.currentUser?.uid === uid) renderConversationList();
@@ -574,9 +607,9 @@ async function loadEarlierMessages() {
   if (!conversation || !(conversation.messageOffset > 0)) return;
   try {
     const response = await apiFetch(`/api/workspace/conversations/${encodeURIComponent(conversation.id)}?before=${conversation.messageOffset}&limit=60`);
-    if (!response.ok) throw new Error("이전 대화 기록을 불러오지 못했습니다.");
+    if (!response.ok) throw new Error("이전 대화 기록을 불러오지 못했어요.");
     const page = (await response.json()).conversation;
-    if (page.updatedAt !== conversation.serverUpdatedAt) throw new Error("다른 기기에서 대화가 바뀌었습니다. 현재 기록을 저장한 뒤 다시 불러와 주세요.");
+    if (page.updatedAt !== conversation.serverUpdatedAt) throw new Error("다른 기기에서 대화가 바뀌었어요. 현재 기록을 저장한 뒤 다시 불러와 주세요.");
     if (state.activeConversationId !== conversation.id) return;
     const oldHeight = els.messages?.scrollHeight || 0;
     conversation.messages = [...page.messages, ...storageSafeMessages(state.messages)];
@@ -629,10 +662,9 @@ function workspaceStatusLabel(value) {
   return labels[normalized] || status || "상태 미상";
 }
 
+// 업무 목록 오른쪽 칸처럼 좁은 자리의 날짜는 공용 축 표기("11/6")를 쓴다.
 function formatWorkspaceDate(value) {
-  const raw = String(value || "");
-  const match = raw.match(/^\d{4}-(\d{2})-(\d{2})/);
-  return match ? `${Number(match[1])}.${Number(match[2])}` : raw;
+  return formatAxisDate(value);
 }
 
 // 완료 예정일까지 남은(지난) 날을 오른쪽 칸 한 줄로 보여 준다. 예정일이 없으면 등록 경과일을 쓴다.
@@ -688,9 +720,10 @@ function workspaceIssueContext() {
       ? { items: state.teamWeeklyBrief?.priorities || [], label: "이번 주 우선 확인" }
       : { items: state.myWorkspace?.weeklyBrief?.highlights || [], label: "이번 주 확인할 항목" };
   }
-  const items = [...(state.myWorkspace?.mantis?.issues || [])];
+  let items = filterByDue([...(state.myWorkspace?.mantis?.issues || [])], state.workspaceDueFilter);
   if (state.workspaceSort === "oldest") items.sort((a, b) => Number(b.ageDays || 0) - Number(a.ageDays || 0));
   else if (state.workspaceSort === "newest") items.sort((a, b) => Number(a.ageDays || 0) - Number(b.ageDays || 0));
+  else if (state.workspaceSort === "due") items = sortByDue(items);
   else {
     const group = (item) => item.overdue ? 0 : Number(item.ageDays || 0) >= 30 ? 1 : 2;
     items.sort((a, b) => group(a) - group(b));
@@ -698,11 +731,11 @@ function workspaceIssueContext() {
   return { items, label: "내 담당 미종료 이슈" };
 }
 
-// 내 담당 목록은 기한 지남 → 30일 이상 → 그 외로 묶어 보여 준다. 묶음 안의 순서는 서버 정렬을 그대로 따른다.
+// 내 담당 목록은 기한 지남 → 장기 미종료(30일 이상) → 그 외로 묶어 보여 준다. 묶음 안의 순서는 서버 정렬을 그대로 따른다.
 function groupedIssueRows(issues) {
   const groups = [
     ["is-overdue", "기한 지남", issues.filter((issue) => issue.overdue)],
-    ["is-aging", "30일 이상", issues.filter((issue) => !issue.overdue && Number(issue.ageDays || 0) >= 30)],
+    ["is-aging", "장기 미종료", issues.filter((issue) => !issue.overdue && Number(issue.ageDays || 0) >= 30)],
     ["", "그 외", issues.filter((issue) => !issue.overdue && Number(issue.ageDays || 0) < 30)],
   ].filter(([, , items]) => items.length);
   // 묶음이 하나뿐이면 제목 없이 목록만 둔다.
@@ -717,65 +750,111 @@ function renderPersonalOverview(data) {
     return workspaceFailure(data.mantis.reason || "잠시 후 다시 조회해 주세요.");
   }
   const summary = data.summary || {};
-  const allIssues = [...(data.mantis?.issues || [])];
+  const everyIssue = [...(data.mantis?.issues || [])];
+  // 목표일 칩으로 거른 뒤 정렬한다. 칩의 건수는 거르기 전 전체 기준이다.
+  let allIssues = filterByDue(everyIssue, state.workspaceDueFilter);
   if (state.workspaceSort === "oldest") allIssues.sort((a, b) => Number(b.ageDays || 0) - Number(a.ageDays || 0));
   if (state.workspaceSort === "newest") allIssues.sort((a, b) => Number(a.ageDays || 0) - Number(b.ageDays || 0));
+  if (state.workspaceSort === "due") allIssues = sortByDue(allIssues);
+  const filtered = Boolean(state.workspaceDueFilter && state.workspaceDueFilter !== "all");
   const issues = state.workspaceIssuesExpanded ? allIssues : allIssues.slice(0, 8);
   const totalOpen = Number(summary.open || 0);
   const isConnected = Boolean(data.user?.mantisUsername);
   const complete = data.mantis?.search_complete === true;
-  const count = (value) => `${Number(value || 0)}건${complete ? "" : " 이상"}`;
+  if (!everyIssue.length && totalOpen === 0) return renderEmptyPersonalOverview(data, { complete, isConnected });
   // 출처·범위·조회 시각은 머리의 '데이터 기준' 배지가 보여 준다. 본문에는 확인이 필요할 때만 한 줄을 둔다.
   const notice = !isConnected
-    ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>Mantis 담당자명이 연결되지 않았습니다.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span></div>`
+    ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>Mantis 담당자명이 연결되지 않았어요.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span></div>`
     : !complete
       ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>`
       : "";
-  return `<div class="workspace-overview">
-    <section class="workspace-summary-grid is-three">
-      ${workspaceMetric("미종료", count(summary.open), summary.open ? "is-blue" : "", complete ? "내 담당 업무" : "확인한 범위 기준")}
-      ${workspaceMetric("일정 지연", count(summary.overdue), summary.overdue ? "is-danger" : "", !complete ? "확인한 범위 기준" : summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중")}
-      ${workspaceMetric("30일 이상", count(summary.aging), summary.aging ? "is-warning" : "", !complete ? "확인한 범위 기준" : summary.aging ? "우선 확인이 필요한 장기 업무" : "장기 업무 없음")}
-    </section>
+  // 지표 → 안내 → 신규 등록 추이 → 경과·상태 도넛 → 담당 이슈 목록. 오른쪽 열은 이번 주 요약을 유지한다.
+  return `<div class="workspace-overview is-insights"><div class="workspace-main">
+    ${workspaceKpis(data, complete)}
     ${notice}
+    ${workspaceCharts(data, complete, { statusLabel: workspaceStatusLabel, customerLabel: (issue) => customerName(issue), customerMark })}
     <section class="workspace-section workspace-section-single">
       <header class="workspace-issue-header">
         <div><h3>내 담당 미종료 이슈</h3><p>완료 예정일과 등록 경과일을 확인하고 다음 조치를 준비하세요.</p></div>
-        <div class="workspace-list-controls"><em class="workspace-visible-count"><strong>${issues.length}</strong>${!complete ? `건 표시 · ${allIssues.length}건 이상 확인` : issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
-        <select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select></div>
+        <div class="workspace-list-controls"><em class="workspace-visible-count"><strong>${issues.length}</strong>${filtered ? `건 표시 · 전체 ${everyIssue.length}건 중` : !complete ? `건 표시 · ${allIssues.length}건 이상 확인` : issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
+        <select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="due" ${state.workspaceSort === "due" ? "selected" : ""}>목표일 임박순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select></div>
       </header>
-      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? state.workspaceSort && state.workspaceSort !== "urgent" ? issues.map(issueWorkspaceRow).join("") : groupedIssueRows(issues) : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.", complete)}</div>
+      ${everyIssue.length ? dueFilterChips(everyIssue, state.workspaceDueFilter) : ""}
+      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? state.workspaceSort && state.workspaceSort !== "urgent" ? issues.map(issueWorkspaceRow).join("") : groupedIssueRows(issues) : filtered ? workspaceEmpty("이 조건에 맞는 미종료 이슈가 없어요.", complete) : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.", complete)}</div>
     </section>
     ${allIssues.length > 8 ? `<button type="button" class="workspace-show-more" data-workspace-more aria-expanded="${Boolean(state.workspaceIssuesExpanded)}">${state.workspaceIssuesExpanded ? "간략히 보기" : `확인한 업무 ${allIssues.length}건 모두 보기`}</button>` : ""}
+    </div>
     ${renderOverviewSide(data)}
   </div>`;
 }
 
-// 넓은 화면의 업무 탭 오른쪽 칸: 다른 탭(주간 보고·알림)을 열지 않아도 이번 주 흐름을 볼 수 있게 요약만 둔다.
-function renderOverviewSide(data) {
+function renderEmptyPersonalOverview(data, { complete, isConnected }) {
+  const confirmedEmpty = complete && isConnected && Number(data.summary?.open) === 0;
+  const title = !isConnected ? "Mantis 담당자 연결이 필요해요."
+    : confirmedEmpty ? "진행 중인 담당 업무가 없어요." : "업무를 모두 확인하지 못했어요.";
+  const description = !isConnected ? "관리자에게 담당자명 등록을 요청해 주세요. 연결 후 담당 업무를 확인할 수 있어요."
+    : confirmedEmpty ? "최근 활동을 확인하거나 이번 주 보고서를 준비해 보세요."
+      : "확인한 범위에는 미종료 이슈가 없어요. 전체 업무는 다시 조회해 주세요.";
+  return `<div class="workspace-overview is-insights is-empty"><div class="workspace-main">
+    <section class="workspace-section workspace-empty-overview${confirmedEmpty ? "" : " is-warning"}" aria-label="담당 업무 조회 결과">
+      <span class="workspace-empty-mark" aria-hidden="true">${icon(confirmedEmpty ? "check" : "info", 22)}</span>
+      <div class="workspace-empty-copy"><h3>${title}</h3><p>${description}</p></div>
+      ${isConnected ? `<button type="button" class="secondary-button" ${confirmedEmpty ? 'data-workspace-go="brief"' : 'data-workspace-retry'}>${confirmedEmpty ? "주간 보고 보기" : "다시 조회"}${icon("chevron-right", 14)}</button>` : ""}
+    </section>
+    <div class="workspace-empty-followup">${isConnected ? overviewBriefCard(data) : ""}${overviewActivityCard(data)}</div>
+    ${isConnected ? workspaceCharts(data, complete) : ""}
+  </div></div>`;
+}
+
+// 오른쪽 레일 맨 위 '알림': 기한 지남·장기 미종료 같은 경고만, 읽지 않은 것부터 네 개. 배정·노트는 아래 '최근 활동'이 보여 준다.
+function sideNotices(data) {
+  const items = [...(data.notifications || [])].filter((item) => !["assigned", "note"].includes(item.type))
+    .sort((a, b) => Number(a.read) - Number(b.read)).slice(0, 4);
+  const iconName = { note: "note", assigned: "user-plus", overdue: "clock", aging: "clock" };
+  return `<section class="workspace-side-card workspace-side-notice" aria-labelledby="workspaceSideNoticeTitle">
+    <header><h3 id="workspaceSideNoticeTitle">알림</h3>${Number(data.summary?.unreadNotifications) ? `<span class="workspace-side-badge">${Number(data.summary.unreadNotifications)}</span>` : ""}</header>
+    ${items.length ? `<ul class="ops-side-list">${items.map((item) => `
+      <li><button type="button" class="ops-side-item" data-workspace-go="notifications">
+        <span class="ops-side-icon" aria-hidden="true">${icon(iconName[item.type] || "info", 14)}</span>
+        <span class="ops-side-text"><span>${escapeHtml(item.title)}</span><small>${escapeHtml(notificationDate(item))}${item.read ? "" : " · 새 알림"}</small></span>
+      </button></li>`).join("")}</ul>` : `<p class="workspace-side-empty">기한이 지났거나 오래된 업무 알림이 없어요.</p>`}
+  </section>`;
+}
+
+// 빈 업무 본문과 오른쪽 패널에서 같은 브리핑·활동 카드를 재사용한다.
+function overviewBriefCard(data) {
   const brief = data.weeklyBrief || {};
-  const notifications = (data.notifications || []).slice(0, 3);
   const partial = data.mantis?.search_complete !== true;
   const stat = (value, label) => `<div><strong>${escapeHtml(`${value ?? 0}${partial ? "건 이상" : ""}`)}</strong><span>${label}</span></div>`;
   return `
-    <aside class="workspace-side" aria-label="이번 주 요약">
-      <section class="workspace-side-card">
+      <section class="workspace-side-card workspace-brief-card">
         <header><h3>이번 주 브리핑</h3>${teamBriefUnread() ? '<span class="workspace-side-badge">새 팀 브리핑</span>' : ""}</header>
         <div class="workspace-side-stats${partial ? " is-partial" : ""}">${stat(brief.newIssues, "신규")}${stat(brief.updatedIssues, "변경")}${stat(brief.overdueIssues, "지연")}</div>
         ${chartHost({kind: "sparkline", title: "최근 7일 신규 추이", complete: !partial, points: brief.intakeTrend || []}, `<p>최근 7일 신규 ${Number(brief.newIssues || 0)}건${partial ? " 이상" : ""}</p>`)}
         <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>
         <button type="button" class="workspace-side-link" data-workspace-go="brief">주간 보고 열기 ›</button>
-      </section>
+      </section>`;
+}
+
+function overviewActivityCard(data) {
+  return activityFeedHtml(data.notifications || [], {
+    emptyText: notificationEmptyText(data),
+    scopeMessage: data.notificationScope?.status === "unavailable" ? data.notificationScope.message || "배정·노트 변경 수집이 보류됐어요." : "",
+  });
+}
+
+// 넓은 화면의 업무 탭 오른쪽 칸: 다른 탭을 열지 않아도 이번 주 흐름을 볼 수 있게 요약만 둔다.
+function renderOverviewSide(data) {
+  const brief = data.weeklyBrief || {};
+  const partial = data.mantis?.search_complete !== true;
+  return `
+    <aside class="workspace-side" aria-label="알림과 이번 주 요약">
+      ${sideNotices(data)}
+      ${overviewBriefCard(data)}
       <section class="workspace-side-card"><header><h3>앞으로 28일 마감 일정</h3></header>
-        ${chartHost({kind: "calendar", title: "완료예정일 달력", complete: !partial, today: brief.periodTo || "", issues: (data.mantis?.issues || []).map(({id, title, dueDate}) => ({id, title, dueDate}))}, '<p>마감 일정은 업무 목록의 완료예정일에서 확인할 수 있습니다.</p>')}
+        ${chartHost({kind: "calendar", title: "완료예정일 달력", complete: !partial, today: brief.periodTo || "", issues: (data.mantis?.issues || []).map(({id, title, dueDate}) => ({id, title, dueDate}))}, '<p>마감 일정은 업무 목록의 완료예정일에서 확인할 수 있어요.</p>')}
       </section>
-      <section class="workspace-side-card">
-        <header><h3>최근 알림</h3><button type="button" class="workspace-side-link" data-workspace-go="notifications">모두 보기</button></header>
-        ${notifications.length ? `<ul class="workspace-side-notices">${notifications.map((item) => `
-          <li class="${item.read ? "is-read" : ""}"><span aria-hidden="true"></span><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(notificationDate(item))}</small></div></li>`).join("")}</ul>`
-          : `<p class="workspace-side-empty">${escapeHtml(notificationEmptyText(data))}</p>`}
-        ${data.notificationScope?.status === "unavailable" ? `<p class="workspace-side-empty">${escapeHtml(data.notificationScope.message || "배정·노트 변경 수집이 보류되었습니다.")}</p>` : ""}
-      </section>
+      ${overviewActivityCard(data)}
     </aside>`;
 }
 
@@ -784,23 +863,22 @@ function renderWeeklyBrief(data) {
   const highlights = brief.highlights || [];
   const complete = data.mantis?.search_complete === true;
   const count = (value) => `${Number(value || 0)}건${complete ? "" : " 이상"}`;
+  // 머리(제목 + 주요 동작) → 지표 카드 → 이번 주 vs 지난주 추이 → 확인할 항목. 업무 탭과 같은 카드 모양을 쓴다.
   return `
-    <section class="workspace-brief-hero">
-      <span>이번 주 업무 브리핑</span>
-      <h3>${escapeHtml(data.user?.displayName || "사용자")}님의 업무 요약</h3>
-      <p>${escapeHtml(brief.period || "")}</p>
+    <section class="workspace-brief-hero has-action">
+      <div>
+        <span>이번 주 업무 브리핑</span>
+        <h3>${escapeHtml(data.user?.displayName || "사용자")}님의 업무 요약</h3>
+        <p>${escapeHtml(formatPeriodText(brief.period))}</p>
+      </div>
+      <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>
     </section>
-    <section class="workspace-summary-grid">
-      ${workspaceMetric("신규 이슈", count(brief.newIssues))}
-      ${workspaceMetric("변경 이슈", count(brief.updatedIssues), "is-blue")}
-      ${workspaceMetric("현재 미종료", count(brief.openIssues))}
-      ${workspaceMetric("일정 지연", count(brief.overdueIssues), brief.overdueIssues ? "is-danger" : "")}
-    </section>
+    ${weeklyKpis(data, complete)}
+    ${weeklyTrendCard(data, complete)}
     <section class="workspace-section workspace-section-single">
-      <header><div><h3>이번 주 확인할 항목</h3>${complete ? "" : "<p>일부 조회 결과입니다. 건수는 확인 범위의 최소값입니다.</p>"}</div></header>
-      <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "이번 주 우선 확인할 이슈가 없습니다." : "확인한 범위에는 우선 확인할 이슈가 없습니다.")}</div>
-    </section>
-    <button type="button" class="workspace-primary-action" data-workspace-question="${encodeURIComponent("내 담당 Mantis 이슈를 기준으로 이번 주 업무보고서를 작성해줘")}">AI로 주간 보고서 작성</button>`;
+      <header><div><h3>이번 주 확인할 항목</h3>${complete ? "" : "<p>일부 조회 결과예요. 건수는 확인 범위의 최소값이에요.</p>"}</div><em>${count(highlights.length)}</em></header>
+      <div class="workspace-list">${highlights.length ? highlights.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "이번 주 우선 확인할 이슈가 없어요." : "확인한 범위에는 우선 확인할 이슈가 없어요.")}</div>
+    </section>`;
 }
 
 function briefSpikeRows(items, emptyMessage, customer = false) {
@@ -814,14 +892,11 @@ function briefSpikeRows(items, emptyMessage, customer = false) {
 
 function renderTeamWeeklyBrief() {
   const brief = state.teamWeeklyBrief;
-  if (!brief) return `<div class="workspace-loading">팀 브리핑을 불러오는 중입니다.</div>`;
+  if (!brief) return `<div class="workspace-loading">팀 브리핑을 불러오는 중이에요.</div>`;
   const summary = brief.summary || {};
   const priorities = brief.priorities || [];
   const complete = brief.source?.search_complete === true;
   const count = (value) => `${Number(value || 0)}건${complete ? "" : " 이상"}`;
-  const delta = !complete ? "비교 미확정" : summary.changeRate == null
-    ? "비교 기준 없음"
-    : `${summary.changeRate > 0 ? "+" : ""}${summary.changeRate}%`;
   const canRefresh = ["manager", "admin"].includes(state.currentUser?.role);
   const decision = brief.decisionSummary || {};
   const riskLabel = { high: "높은 위험", attention: "주의 필요", stable: "안정", unknown: "판단 보류" }[decision.riskLevel] || "판단 대기";
@@ -836,34 +911,29 @@ function renderTeamWeeklyBrief() {
     <section class="workspace-brief-hero">
       <span>주간 팀 브리핑</span>
       <h3>${escapeHtml(brief.title || "이번 주 팀 브리핑")}</h3>
-      <p>지난주 ${escapeHtml(brief.summaryPeriod || "")} · 생성 ${escapeHtml(formatUiDateTime(brief.generatedAt) || "시각 미확인")}</p>
+      <p>지난주 ${escapeHtml(formatPeriodText(brief.summaryPeriod))} · 생성 ${escapeHtml(formatUiDateTime(brief.generatedAt) || "시각 미확인")}</p>
     </section>
-    <section class="workspace-summary-grid">
-      ${workspaceMetric("지난주 신규", count(summary.newIssues))}
-      ${workspaceMetric("전주 대비", delta, summary.changeRate > 0 ? "is-warning" : "is-blue")}
-      ${workspaceMetric("미종료 이월", count(summary.carriedOpen))}
-      ${workspaceMetric("30일 이상", count(summary.aging), summary.aging ? "is-warning" : "")}
-    </section>
+    ${teamBriefKpis(summary, complete)}
     ${decision.headline ? `<section class="workspace-decision is-${escapeHtml(decision.riskLevel || "stable")}">
       <header><span>이번 주 판단</span><em>${escapeHtml(riskLabel)}</em></header>
       <h3>${escapeHtml(decision.headline)}</h3>
       ${decisionSignals ? `<ul>${decisionSignals}</ul>` : ""}
       ${decisionActions ? `<div class="workspace-decision-actions">${decisionActions}</div>` : ""}
     </section>` : ""}
-    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">${brief.source?.status === "live" ? "최신 데이터로 생성" : "저장본으로 생성"} · 일정 지연 ${count(summary.overdue)} · 담당자 미지정 ${count(summary.unassigned)}${complete ? "" : " · 일부 데이터만 확인한 결과입니다."}</p>
+    <p class="workspace-connection ${brief.source?.status === "live" ? "" : "is-warning"}">${brief.source?.status === "live" ? "최신 데이터로 생성" : "저장본으로 생성"}${complete ? "" : " · 일부 데이터만 확인한 결과예요."}</p>
     <div class="workspace-columns">
       <section class="workspace-section">
         <header><div><h3>급증 고객사</h3></div></header>
-        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.customerSpikes || [], "급증한 고객사가 없습니다.", true) : workspaceEmpty("일부 조회 · 고객사 급증 여부는 비교 미확정입니다.", false)}</div>
+        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.customerSpikes || [], "급증한 고객사가 없어요.", true) : workspaceEmpty("일부 조회 · 고객사 급증 여부는 비교 미확정이에요.", false)}</div>
       </section>
       <section class="workspace-section">
         <header><div><h3>급증 화면번호</h3></div></header>
-        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.screenSpikes || [], "급증한 화면번호가 없습니다.") : workspaceEmpty("일부 조회 · 화면번호 급증 여부는 비교 미확정입니다.", false)}</div>
+        <div class="workspace-insight-list">${complete ? briefSpikeRows(brief.screenSpikes || [], "급증한 화면번호가 없어요.") : workspaceEmpty("일부 조회 · 화면번호 급증 여부는 비교 미확정이에요.", false)}</div>
       </section>
     </div>
     <section class="workspace-section workspace-section-single">
       <header><div><h3>이번 주 우선 확인</h3></div><em>${priorities.length}건 표시</em></header>
-      <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "우선 확인할 이슈가 없습니다." : "일부만 확인했습니다. 우선 확인할 이슈의 유무는 미확정입니다.", complete)}</div>
+      <div class="workspace-list">${priorities.length ? priorities.map(issueWorkspaceRow).join("") : workspaceEmpty(complete ? "우선 확인할 이슈가 없어요." : "일부만 확인했어요. 우선 확인할 이슈의 유무는 미확정이에요.", complete)}</div>
     </section>
     ${canRefresh ? '<button type="button" class="workspace-primary-action" data-refresh-team-brief>최신 데이터로 다시 만들기</button>' : ""}`;
 }
@@ -885,7 +955,7 @@ function renderWeeklyReport(data) {
     </div>`;
   if (kind === "mine") return `${switcher}${renderWeeklyBrief(data)}`;
   if (state.teamBriefError && !state.teamWeeklyBrief) {
-    return `${switcher}<div class="workspace-error" role="alert"><strong>팀 브리핑을 불러오지 못했습니다.</strong><p>${escapeHtml(state.teamBriefError)}</p><button type="button" class="workspace-item-action" data-brief-kind="team">다시 시도</button></div>`;
+    return `${switcher}<div class="workspace-error" role="alert"><strong>팀 브리핑을 불러오지 못했어요.</strong><p>${escapeHtml(state.teamBriefError)}</p><button type="button" class="workspace-item-action" data-brief-kind="team">다시 시도</button></div>`;
   }
   return `${switcher}${renderTeamWeeklyBrief()}`;
 }
@@ -955,10 +1025,10 @@ function notificationRow(item) {
 
 function notificationEmptyText(data, unreadOnly = false) {
   if (data.notificationScope?.status === "unavailable") {
-    return unreadOnly ? "확인한 알림 중 안 읽은 항목이 없습니다. 새 알림 수집은 보류 중입니다."
-      : "새 업무 알림을 아직 확인하지 못했어요. 수집이 보류된 상태입니다.";
+    return unreadOnly ? "확인한 알림 중 안 읽은 항목이 없어요. 새 알림 수집은 보류 중이에요."
+      : "새 업무 알림을 아직 확인하지 못했어요. 수집이 보류된 상태예요.";
   }
-  return unreadOnly ? "읽지 않은 알림이 없습니다." : "새 업무 알림이 없습니다.";
+  return unreadOnly ? "읽지 않은 알림이 없어요." : "새 업무 알림이 없어요.";
 }
 
 function renderNotifications(data) {
@@ -968,7 +1038,7 @@ function renderNotifications(data) {
   const group = (label, items) => (items.length ? `<p class="workspace-group-label">${label} · ${items.length}</p>${items.map(notificationRow).join("")}` : "");
   return `
     <section class="workspace-section workspace-section-single">
-      <header><div><h3>업무 알림</h3><p>${escapeHtml(data.notificationScope?.message || "확인한 업무에서 발생한 알림입니다.")}</p></div><button type="button" class="secondary-button" data-notifications-read-all ${unread.length ? "" : "disabled"}>표시된 알림 모두 읽음</button></header>
+      <header><div><h3>업무 알림</h3><p>${escapeHtml(data.notificationScope?.message || "확인한 업무에서 발생한 알림이에요.")}</p></div><button type="button" class="secondary-button" data-notifications-read-all ${unread.length ? "" : "disabled"}>표시된 알림 모두 읽음</button></header>
       <div class="workspace-filter-pills" role="group" aria-label="알림 표시"><button type="button" data-notification-filter="all" aria-pressed="${state.notificationFilter !== "unread"}">${data.notificationScope?.status === "unavailable" ? "확인한 알림" : "전체"} ${notifications.length}</button><button type="button" data-notification-filter="unread" aria-pressed="${state.notificationFilter === "unread"}">안 읽음 ${unread.length}</button></div>
       <div class="workspace-list">${notifications.length ? `${group("안 읽음", unread)}${state.notificationFilter === "unread" ? unread.length ? "" : workspaceEmpty(notificationEmptyText(data, true)) : group("읽은 알림", read)}` : workspaceEmpty(notificationEmptyText(data), data.notificationScope?.status !== "unavailable")}</div>
     </section>`;
@@ -985,7 +1055,11 @@ async function markNotificationsRead(ids = null) {
   if (workspace?.summary) workspace.summary.unreadNotifications = workspace.notifications.filter((item) => !item.read).length;
   if (state.myWorkspace === workspace) renderWorkspace();
   const failed = results.filter((result) => result.status === "rejected").length;
-  if (failed) throw new Error(`${failed}개 알림의 읽음 상태를 저장하지 못했습니다. 다시 시도해 주세요.`);
+  if (failed) throw new Error(`${failed}개 알림의 읽음 상태를 저장하지 못했어요. 다시 시도해 주세요.`);
+}
+
+function customerSearchOptions() {
+  return customerSearchNames().map((name) => `<option value="${escapeHtml(name)}"></option>`).join("");
 }
 
 function renderFavoriteConversations() {
@@ -997,7 +1071,7 @@ function renderFavoriteConversations() {
   return `
     <section class="workspace-favorites" aria-labelledby="workspaceFavoritesHeading">
       <header class="workspace-favorites-heading"><div><h3 id="workspaceFavoritesHeading">즐겨찾는 대화</h3><p>자주 사용하는 질문과 답변을 다시 확인하세요.</p></div><span class="workspace-favorites-count">${favorites.length}개</span></header>
-      <div class="playbook-toolbar workspace-favorites-toolbar"><form data-favorite-search autocomplete="off"><input name="favorite-query" type="search" autocomplete="off" list="favoriteCustomerNames" value="${escapeHtml(state.favoriteQuery || "")}" aria-label="즐겨찾기 검색" placeholder="고객사명, 대화 제목 또는 질문 검색"/><datalist id="favoriteCustomerNames">${customerSearchNames().map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist><button type="submit" class="secondary-button">검색</button></form></div>
+      <div class="playbook-toolbar workspace-favorites-toolbar"><form data-favorite-search autocomplete="off"><input name="favorite-query" type="search" autocomplete="off" list="favoriteCustomerNames" value="${escapeHtml(state.favoriteQuery || "")}" aria-label="즐겨찾기 검색" placeholder="고객사명, 대화 제목 또는 질문 검색"/><datalist id="favoriteCustomerNames">${customerSearchOptions()}</datalist><button type="submit" class="secondary-button">검색</button></form></div>
       <div class="workspace-section workspace-favorite-list" aria-label="즐겨찾는 대화 목록">
       ${favorites.length ? favorites.map((conversation) => {
         // 업무 목록과 같은 행 안에서 제목, 첫 질문, 저장 정보를 함께 보여 준다.
@@ -1015,7 +1089,7 @@ function renderFavoriteConversations() {
             <button type="button" class="workspace-item-action" data-open-favorite="${escapeHtml(conversation.id)}">대화 열기</button>
           </div>
         </article>`;
-      }).join("") : `<div class="workspace-empty workspace-favorite-empty"><span aria-hidden="true">${icon("star", 20)}</span><p>${query ? "검색 조건에 맞는 즐겨찾기가 없습니다." : "사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요."}</p></div>`}
+      }).join("") : `<div class="workspace-empty workspace-favorite-empty"><span aria-hidden="true">${icon("star", 20)}</span><p>${query ? "검색 조건에 맞는 즐겨찾기가 없어요." : "사이드바의 별표를 눌러 자주 보는 대화를 저장해 보세요."}</p></div>`}
       </div>
     </section>`;
 }
@@ -1032,7 +1106,7 @@ function playbookEditorForm() {
       <header><div><h3>${editor.id ? "플레이북 편집" : "새 플레이북 작성"}</h3></div></header>
       <label><span>제목 <span class="required-mark">*</span></span><input name="title" maxlength="200" required value="${escapeHtml(editor.title || "")}" /></label>
       <label><span>증상 <span class="required-mark">*</span></span><textarea name="symptom" maxlength="4000" required>${escapeHtml(editor.symptom || "")}</textarea></label>
-      <label>원인<textarea name="cause" maxlength="4000" placeholder="확인된 원인이 없으면 비워둘 수 있습니다.">${escapeHtml(editor.cause || "")}</textarea></label>
+      <label>원인<textarea name="cause" maxlength="4000" placeholder="확인된 원인이 없으면 비워둘 수 있어요.">${escapeHtml(editor.cause || "")}</textarea></label>
       <label><span>해결 방법 <span class="required-mark">*</span></span><textarea name="resolution" maxlength="8000" required>${escapeHtml(editor.resolution || "")}</textarea></label>
       <label>검증 방법<textarea name="verification" maxlength="4000" placeholder="조치 후 확인해야 할 내용을 적어주세요.">${escapeHtml(editor.verification || "")}</textarea></label>
       <div class="playbook-editor-row">
@@ -1077,7 +1151,7 @@ function playbookCard(playbook) {
 }
 
 function renderPlaybooks() {
-  if (state.playbooksLoading && !state.playbooks) return '<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span>플레이북을 불러오는 중입니다.</div>';
+  if (state.playbooksLoading && !state.playbooks) return '<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span>플레이북을 불러오는 중이에요.</div>';
   const error = state.playbooksError ? `<div class="workspace-refresh-status is-error" role="alert"><strong>${escapeHtml(state.playbooksError)}</strong><button type="button" class="secondary-button" data-playbooks-retry>다시 시도</button></div>` : "";
   if (error && !state.playbooks) return error;
   const playbooks = state.playbooks || [];
@@ -1089,16 +1163,17 @@ function renderPlaybooks() {
   return `
     ${error}
     <section class="playbook-toolbar">
-      <form data-playbook-search-form>
-        <input name="q" maxlength="200" value="${escapeHtml(filter.q || "")}" placeholder="증상, 고객사, 화면번호, 이슈 번호 검색" aria-label="플레이북 검색" />
+      <form data-playbook-search-form autocomplete="off">
+        <input name="playbook-query" type="search" autocomplete="off" list="playbookCustomerNames" maxlength="200" value="${escapeHtml(filter.q || "")}" placeholder="증상, 고객사, 화면번호, 이슈 번호 검색" aria-label="플레이북 검색" />
+        <datalist id="playbookCustomerNames">${customerSearchOptions()}</datalist>
         ${canCurate ? `<select name="status" aria-label="플레이북 상태"><option value="">모든 상태</option><option value="draft" ${filter.status === "draft" ? "selected" : ""}>검수 대기</option><option value="published" ${filter.status === "published" ? "selected" : ""}>공개</option><option value="archived" ${filter.status === "archived" ? "selected" : ""}>보관</option></select>` : ""}
         <button type="submit" class="secondary-button">검색</button>
       </form>
       ${canCurate ? '<button type="button" class="workspace-primary-action" data-new-playbook>새 플레이북</button>' : ""}
     </section>
-    <p class="workspace-connection">${canCurate ? "검수 대기·공개·보관 플레이북을 모두 관리합니다." : "팀에서 검수해 공개한 해결 플레이북만 표시합니다."} · ${playbooks.length}건</p>
+    <p class="workspace-connection">${canCurate ? "검수 대기·공개·보관 플레이북을 모두 관리해요." : "팀에서 검수해 공개한 해결 플레이북만 표시해요."} · ${playbooks.length}건</p>
     <div class="playbook-layout has-detail${editorForm ? " has-editor" : ""}">
-      <div class="playbook-list" aria-label="플레이북 목록">${playbooks.length ? playbooks.map((item) => `<button type="button" class="playbook-list-item" data-select-playbook="${escapeHtml(item.id)}" aria-pressed="${selected?.id === item.id}"><span class="playbook-status is-${escapeHtml(item.status)}">${escapeHtml(playbookStatusLabel(item.status))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml((item.tags || []).join(" · "))}</small><time>${escapeHtml(String(item.updatedAt || "").slice(0, 10))}</time></button>`).join("") : workspaceEmpty(filter.q ? "검색 조건에 맞는 플레이북이 없습니다." : "아직 공개된 해결 플레이북이 없습니다.")}</div>
+      <div class="playbook-list" aria-label="플레이북 목록">${playbooks.length ? playbooks.map((item) => `<button type="button" class="playbook-list-item" data-select-playbook="${escapeHtml(item.id)}" aria-pressed="${selected?.id === item.id}"><span class="playbook-status is-${escapeHtml(item.status)}">${escapeHtml(playbookStatusLabel(item.status))}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml((item.tags || []).join(" · "))}</small><time>${escapeHtml(String(item.updatedAt || "").slice(0, 10))}</time></button>`).join("") : workspaceEmpty(filter.q ? "검색 조건에 맞는 플레이북이 없어요." : "아직 공개된 해결 플레이북이 없어요.")}</div>
       <div class="playbook-detail">${editorForm || (selected ? playbookCard(selected) : "")}</div>
     </div>`;
 }
@@ -1116,7 +1191,7 @@ async function loadPlaybooks(force = false) {
     if (["manager", "admin"].includes(state.currentUser?.role)) parameters.set("includeDrafts", "true");
     const response = await apiFetch(`${WORKSPACE_ENDPOINTS.playbooks}?${parameters}`);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail || "플레이북을 불러오지 못했습니다.");
+    if (!response.ok) throw new Error(data.detail || "플레이북을 불러오지 못했어요.");
     state.playbooks = data.playbooks || [];
     state.playbooksCanCurate = Boolean(data.canCurate);
   } catch (error) {
@@ -1135,7 +1210,7 @@ async function savePlaybookCandidate(candidate) {
     body: JSON.stringify({ ...candidate, status: "draft" }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "플레이북 후보를 저장하지 못했습니다.");
+  if (!response.ok) throw new Error(data.detail || "플레이북 후보를 저장하지 못했어요.");
   state.playbooks = null;
   return data.playbook;
 }
@@ -1161,7 +1236,7 @@ async function savePlaybookEditor(form, publish = false) {
     },
   );
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "플레이북을 저장하지 못했습니다.");
+  if (!response.ok) throw new Error(data.detail || "플레이북을 저장하지 못했어요.");
   state.playbookEditor = null;
   state.selectedPlaybookId = data.playbook?.id;
   await loadPlaybooks(true);
@@ -1175,7 +1250,7 @@ async function changePlaybookStatus(playbookId, status) {
     body: JSON.stringify({ status }),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "플레이북 상태를 변경하지 못했습니다.");
+  if (!response.ok) throw new Error(data.detail || "플레이북 상태를 변경하지 못했어요.");
   await loadPlaybooks(true);
   return data.playbook;
 }
@@ -1238,7 +1313,7 @@ function updateWorkspaceDataBadge(loading) {
       state: "snapshot", label: "갱신 실패", time: formatBadgeTime(mantis.fetchedAt),
       detailTime: mantis.fetchedAt ? `${formatUiDateTime(mantis.fetchedAt)} 마지막 조회` : "마지막 조회 시각 미확인",
       sources: [{ name: "Mantis", tone: "error", text: workspaceLoadingError }],
-      note: "마지막으로 확인한 데이터를 표시합니다. 이후 변경은 반영되지 않았어요.",
+      note: "마지막으로 확인한 데이터를 표시해요. 이후 변경은 반영되지 않았어요.",
       onRetry: () => loadMyWorkspace(true).catch(() => {}),
     });
     return;
@@ -1282,13 +1357,13 @@ function renderWorkspace() {
     if (selected && button.id) els.workspaceContent.setAttribute("aria-labelledby", button.id);
   });
   if (loading && !state.myWorkspace) {
-    els.workspaceContent.innerHTML = `<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage || "업무 정보를 불러오는 중입니다.")}</strong></div>`;
+    els.workspaceContent.innerHTML = `<div class="workspace-loading" role="status"><span class="workspace-spinner" aria-hidden="true"></span><strong>${escapeHtml(workspaceLoadingMessage || "업무 정보를 불러오는 중이에요.")}</strong></div>`;
     return;
   }
   if (!state.myWorkspace) {
     els.workspaceContent.innerHTML = workspaceLoadingError
       ? workspaceFailure(workspaceLoadingError)
-      : '<div class="workspace-loading" role="status">업무 정보를 불러오는 중입니다.</div>';
+      : '<div class="workspace-loading" role="status">업무 정보를 불러오는 중이에요.</div>';
     return;
   }
   const renderers = {
@@ -1299,7 +1374,7 @@ function renderWorkspace() {
     favorites: renderFavoriteConversations,
   };
   const loadingStatus = workspaceLoadingError
-      ? `<div class="workspace-refresh-status is-error" role="status"><strong>${escapeHtml(workspaceLoadingError)}</strong><span>마지막으로 확인한 데이터를 표시합니다.</span><button type="button" class="secondary-button" data-workspace-retry>다시 시도</button></div>`
+      ? `<div class="workspace-refresh-status is-error" role="status"><strong>${escapeHtml(workspaceLoadingError)}</strong><span>마지막으로 확인한 데이터를 표시해요.</span><button type="button" class="secondary-button" data-workspace-retry>다시 시도</button></div>`
       : "";
   els.workspaceContent.innerHTML = `${loadingStatus}${(renderers[state.workspaceTab] || renderers.overview)()}`;
   mountCharts(els.workspaceContent);
@@ -1318,14 +1393,14 @@ async function loadMyWorkspace(force = false, revalidate = false, background = f
   workspaceLoadIsRefresh = force;
   workspaceLoading = !background;
   workspaceLoadingError = "";
-  workspaceLoadingMessage = force ? "Mantis 최신 데이터를 확인하고 있습니다." : "업무 정보를 불러오는 중입니다.";
+  workspaceLoadingMessage = force ? "Mantis 최신 데이터를 확인하고 있어요." : "업무 정보를 불러오는 중이에요.";
   updateWorkspaceLoadingControl();
   renderWorkspace();
   workspaceLoadPromise = (async () => {
     const endpoint = force ? `${WORKSPACE_ENDPOINTS.personal}?refresh=true` : `${WORKSPACE_ENDPOINTS.personal}?live=true`;
     const response = await apiFetch(endpoint);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했습니다.");
+    if (!response.ok) throw new Error(data.detail || "개인 업무를 불러오지 못했어요.");
     state.myWorkspace = data;
     workspaceLastLiveAt = Date.parse(data.mantis?.fetchedAt || "") || 0;
     if (workspaceSyncTimer) clearTimeout(workspaceSyncTimer);
@@ -1339,7 +1414,7 @@ async function loadMyWorkspace(force = false, revalidate = false, background = f
   try {
     return await workspaceLoadPromise;
   } catch (error) {
-    workspaceLoadingError = error.message || "최신 업무 데이터를 확인하지 못했습니다.";
+    workspaceLoadingError = error.message || "최신 업무 데이터를 확인하지 못했어요.";
     throw error;
   } finally {
     workspaceLoadPromise = null;
@@ -1386,14 +1461,14 @@ async function loadTeamWeeklyBrief(refresh = false) {
     refresh ? { method: "POST" } : undefined,
   );
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "팀 브리핑을 불러오지 못했습니다.");
+  if (!response.ok) throw new Error(data.detail || "팀 브리핑을 불러오지 못했어요.");
   state.teamWeeklyBrief = data;
 }
 
 async function markTeamWeeklyBriefRead() {
   if (!state.teamWeeklyBrief || state.teamWeeklyBrief.viewed) return;
   const response = await apiFetch(WORKSPACE_ENDPOINTS.teamBriefRead, { method: "POST" });
-  if (!response.ok) throw new Error("팀 브리핑 확인 상태를 저장하지 못했습니다.");
+  if (!response.ok) throw new Error("팀 브리핑 확인 상태를 저장하지 못했어요.");
   state.teamWeeklyBrief.viewed = true;
 }
 
@@ -1407,6 +1482,8 @@ export {
   persistConversations,
   syncConversation,
   deleteConversationFromServer,
+  restoreConversationOnServer,
+  restoreConversationFromTrash,
   bulkDeleteConversations,
   scheduleConversationSync,
   loadConversations,

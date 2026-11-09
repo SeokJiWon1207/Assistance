@@ -26,15 +26,13 @@ async function harness() {
       const mod = new vm.SyntheticModule(Object.keys(mock),function(){for(const k in mock)this.setExport(k,mock[k]);},{context});
       await mod.link(()=>{});return mod;
     }
-    let source = fs.readFileSync(path.join(dir,name),'utf8');
-    if(name === 'dashboard.js') source = 'import {chartHost} from "./bklit_charts.js";\n'+
-      source.slice(source.indexOf('function renderIntakeCard('),source.indexOf('\nfunction renderMetrics('))+
-      '\nconst formatNumber=n=>String(n??0); export {renderIntakeCard};';
+    const source = fs.readFileSync(path.join(dir,name),'utf8');
     const mod = new vm.SourceTextModule(source,{context});cache.set(name,mod);
     await mod.link(load);return mod;
   }
   const charts = await load('charts.js');await charts.evaluate();
-  const dashboard = await load('dashboard.js');await dashboard.evaluate();
+  // 운영 현황의 신규 등록 카드는 dashboard_overview.js가 그린다.
+  const dashboard = await load('dashboard_overview.js');await dashboard.evaluate();
   return {charts:charts.namespace,dashboard:dashboard.namespace};
 }
 function specs(html) {
@@ -46,8 +44,9 @@ const sample = {person:'석지원',periodLabel:'2026년 10월',periodFrom:'2026-
 
 test('compact dashboard KPI preserves incomplete totals without duplicating the trend chart',async()=>{
   const {dashboard} = await harness();
-  const html=dashboard.renderIntakeCard({newIssues:2,closedNow:1,newOpen:1},false);
+  const html=dashboard.intakeCompareCard({summary:{newIssues:2,closedNow:1,newOpen:1},complete:false,points:[{date:'2026-11-05',count:2}],previousPoints:[{date:'2026-10-06',count:1}]});
   assert.equal(specs(html).length,0);
+  assert.match(html,/직전 기간과 비교하지 않아요/);
   assert.match(html,/비교 미확정/);assert.match(html,/건 이상/);
   assert.match(html,/종료 1/);assert.match(html,/미종료 1/);
 });
@@ -115,7 +114,7 @@ test('effort card retains original answer in a collapsed disclosure without copy
 test('chat collapses only completed new effort answers and passes partial coverage to the card',async()=>{
   const source=fs.readFileSync(path.join(dir,'chat.js'),'utf8');
   const original=element('div');const calls=[];
-  const context=vm.createContext({renderEffortChart:(_chart,options)=>{calls.push(options);return element('div');},renderVerificationPanel:()=>element('div'),presentAssistantAnswer(){}});
+  const context=vm.createContext({renderEffortChart:(_chart,options)=>{calls.push(options);return element('div');},renderVerificationPanel:()=>element('div'),presentAssistantAnswer(){},prepareSummaryAnswer(){},groupAnswerEvidence(){}});
   const module=new vm.SourceTextModule(source.slice(source.indexOf('function appendAssistantExtras('),source.indexOf('\nfunction conditionId('))+'\nexport {appendAssistantExtras};',{context});
   await module.link(()=>{});await module.evaluate();
   const container={appendChild(){},querySelector:()=>original};

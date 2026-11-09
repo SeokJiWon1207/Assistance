@@ -1,4 +1,5 @@
 import { MetricPie, MonthlyTrend } from './report-charts';
+import { AreaTrend, CompareArea } from './area-chart';
 import { CustomerRanking, AgeDonut, MemberHeatmap } from './distribution-charts';
 import { formatChartValue } from '../../backend/static/modules/chart_models.js';
 import { curveLinear } from 'd3-shape';
@@ -25,18 +26,19 @@ import { PieSlice } from '../vendor/bklit/charts/pie-slice';
 import { PieCenter } from '../vendor/bklit/charts/pie-center';
 import { HeatmapChart, HeatmapCells, HeatmapTooltip } from '../vendor/bklit/charts/heatmap';
 import { dueCalendar, selectTrend, cohortSlices } from '../../backend/static/modules/chart_models.js';
+import { dayLabel, periodRange } from './dates';
 
 type Row = Record<string, unknown>;
 type Point = { date: string; count: number };
 type Series = { key: string; label: string; color: string };
 export type Spec = {
-  kind: 'bar' | 'sparkline' | 'trend' | 'cohort' | 'calendar' | 'pie' | 'monthly' | 'customer-ranking' | 'age-donut' | 'member-heatmap'; title: string; complete: boolean;
+  kind: 'bar' | 'sparkline' | 'trend' | 'area' | 'compare-area' | 'cohort' | 'calendar' | 'pie' | 'monthly' | 'customer-ranking' | 'age-donut' | 'member-heatmap'; title: string; complete: boolean;
   unknown?: number; otherCount?: number; otherCustomers?: number;
   rows?: Row[]; series?: Series[]; orientation?: 'horizontal' | 'vertical';
   grouped?: boolean; showValues?: boolean; centerLabel?: string; emptyMessage?: string;
   action?: string; selected?: string; points?: Point[]; summary?: Record<string, number>;
   decimals?: number; unit?: string; animated?: boolean;
-  sparklineVariant?: 'line' | 'bar'; compact?: boolean; dateBasis?: string; showTotal?: boolean;
+  sparklineVariant?: 'line' | 'bar'; compact?: boolean; periodLabel?: string; lineStyle?: 'snow'; dateBasis?: string; showTotal?: boolean; cumulative?: boolean; previousPoints?: Point[];
   trend?: {periods: string[]; series: Array<{label:string; counts: Array<number|null>; efforts: Array<number|null>}>; effortDateBasis?: string; untypedCount?: number};
   issues?: Array<{ id: string | number; dueDate: string; title: string }>; today?: string;
 };
@@ -80,7 +82,7 @@ function Bars({ spec }: { spec: Spec }) {
   const rows = spec.rows || []; const series = spec.series || [];
   const [hover, setHover] = useState<number | null>(null);
   const reduced = useReducedMotion();
-  if (!rows.length) return <p className="bklit-empty">확인한 범위에 표시할 이슈가 없습니다.</p>;
+  if (!rows.length) return <p className="bklit-empty">확인한 범위에 표시할 이슈가 없어요.</p>;
   const horizontal = spec.orientation !== 'vertical';
   const legend = series.map(s => ({ label:s.label, color:s.color, value:rows.reduce((sum,row)=>sum+Number(row[s.key] || 0),0) }));
   return <ChartLegendHoverProvider hoveredIndex={hover} onHoverChange={setHover}>
@@ -124,7 +126,7 @@ function Trend({ spec }: { spec: Spec }) {
   const rows = useMemo(()=>points.map(p=>({...p,date:toDate(p.date)})),[points]);
   const [range, setRange] = useState<ChartBrushSelection | null>(null);
   const reduced = useReducedMotion();
-  if (!points.length) return <p className="bklit-empty">등록 추이를 확인하지 못했습니다.</p>;
+  if (!points.length) return <p className="bklit-empty">등록 추이를 확인하지 못했어요.</p>;
   const selected = selectTrend(points, range ? toDay(range.start) : '', range ? toDay(range.end) : '');
   const select = (selection: ChartBrushSelection | null) => {
     if (!selection) {setRange(null);return;}
@@ -153,8 +155,8 @@ function Trend({ spec }: { spec: Spec }) {
         <ChartBrush selection={range} onSelectionChange={select}/>
       </LineChart>
     </div>
-    <p className="bklit-note">아래 막대를 드래그해 추이를 확대할 수 있어요. 전체 미종료 지표·목록의 조회 기준은 유지됩니다.</p>
-    <details className="bklit-data"><summary>선택 구간 일별 수치</summary><table><thead><tr><th>등록일</th><th>신규</th></tr></thead><tbody>{points.filter(p=>p.date>=selected.from&&p.date<=selected.to).map(p=><tr key={p.date}><td>{p.date}</td><td>{count(p.count,spec.complete)}</td></tr>)}</tbody></table></details>
+    <p className="bklit-note">아래 막대를 드래그해 추이를 확대할 수 있어요. 전체 미종료 지표·목록의 조회 기준은 유지돼요.</p>
+    <details className="bklit-data"><summary>선택 구간 일별 수치</summary><table><thead><tr><th>등록일</th><th>신규</th></tr></thead><tbody>{points.filter(p=>p.date>=selected.from&&p.date<=selected.to).map(p=><tr key={p.date}><td>{dateLabel(toDate(p.date))}</td><td>{count(p.count,spec.complete)}</td></tr>)}</tbody></table></details>
   </div>;
 }
 
@@ -163,22 +165,22 @@ function Cohort({ spec }: { spec: Spec }) {
   const total = data.reduce((sum,row)=>sum+row.value,0);
   const [hover,setHover]=useState<number|null>(null);
   const reduced=useReducedMotion();
-  if(!total) return <p className="bklit-empty">{spec.complete?'이 기간에 등록된 이슈가 없습니다.':'확인한 범위에 신규 이슈가 없습니다. 전체 결과는 미확정입니다.'}</p>;
+  if(!total) return <p className="bklit-empty">{spec.complete?'이 기간에 등록된 이슈가 없어요.':'확인한 범위에 신규 이슈가 없어요. 전체 결과는 미확정이에요.'}</p>;
   // 불완전한 표본에 전체 비율처럼 보이는 도넛을 그리지 않는다.
   return <div className="bklit-cohort bklit-dashboard-cohort">
     {spec.complete ? <PieChart data={data} size={260} innerRadius={88} padAngle={0.025} cornerRadius={3} hoveredIndex={hover} onHoverChange={setHover}>
       {data.map((row,index)=><PieSlice key={row.label} index={index} animate={!reduced} hoverEffect={reduced?'none':'translate'} showGlow={false}/>)}
       <PieCenter defaultLabel="기간 내 신규" suffix="건"/>
-    </PieChart> : <p className="bklit-note">일부 조회 결과여서 비율은 표시하지 않습니다.</p>}
+    </PieChart> : <p className="bklit-note">일부 조회 결과여서 비율은 표시하지 않아요.</p>}
     <Legend items={data.map(row=>({...row,maxValue:total}))} hoveredIndex={hover} onHoverChange={setHover} className="bklit-legend is-vertical"><KeyboardLegendItem complete={spec.complete} percentages/></Legend>
-    <p className="bklit-note">선택 기간에 등록된 이슈의 현재 상태입니다. 해당 기간의 처리 완료 건수가 아닙니다.</p>
+    <p className="bklit-note">선택 기간에 등록된 이슈의 현재 상태예요. 해당 기간의 처리 완료 건수가 아니에요.</p>
   </div>;
 }
 
 function Calendar({ spec }: { spec: Spec }) {
   const calendar = useMemo(()=>dueCalendar(spec.issues || [],spec.today),[spec.issues,spec.today]);
   const reduced=useReducedMotion();
-  if(!calendar.days.length)return <p className="bklit-empty">마감 일정을 확인하지 못했습니다.</p>;
+  if(!calendar.days.length)return <p className="bklit-empty">마감 일정을 확인하지 못했어요.</p>;
   const first=toDate(calendar.days[0].date); const lead=first.getDay();
   const byDate=new Map(calendar.days.map(day=>[day.date,day]));
   const columns=Array.from({length:Math.ceil((lead+28)/7)},(_,week)=>({bin:week,bins:Array.from({length:7},(_,day)=>{
@@ -187,17 +189,17 @@ function Calendar({ spec }: { spec: Spec }) {
   })}));
   const populated=calendar.days.filter(day=>day.count>0);
   return <div className="bklit-calendar">
-    <p className="bklit-note">{calendar.days[0].date}–{calendar.days.at(-1)!.date} · 현재 미종료 이슈의 완료예정일</p>
+    <p className="bklit-note">{periodRange(calendar.days[0].date, calendar.days.at(-1)!.date)} · 현재 미종료 이슈의 완료예정일</p>
     <div className="bklit-calendar-grid"><div className="bklit-weekdays">{'일월화수목금토'.split('').map(day=><span key={day}>{day}</span>)}</div>
       <HeatmapChart data={columns} xDomain={[first,toDate(calendar.days.at(-1)!.date)]} weekStartDay={0} binSize={27} gap={5} animate={!reduced} margin={{top:0,left:0,right:0,bottom:0}}
         levelColors={['var(--surface-alt)','var(--bklit-calendar-low)','var(--bklit-calendar-medium)','var(--blue)','var(--blue)']}>
-        <HeatmapCells cornerRadius={4} hideGhostCells={false}/><HeatmapTooltip className="bklit-hover-panel bklit-calendar-tooltip" formatLabel={(n,date)=>n < 0 ? "조회 기간 밖" : `${toDay(date)} · 완료예정 ${count(n,spec.complete)}`}/>
+        <HeatmapCells cornerRadius={4} hideGhostCells={false}/><HeatmapTooltip className="bklit-hover-panel bklit-calendar-tooltip" formatLabel={(n,date)=>n < 0 ? "조회 기간 밖" : `${dayLabel(toDay(date))} · 완료예정 ${count(n,spec.complete)}`}/>
       </HeatmapChart>
     </div>
-    <p className="bklit-note">색이 진할수록 예정 업무가 많습니다. 기한 미등록 {count(calendar.missing,spec.complete)} · 기간 밖 {count(calendar.outside,spec.complete)}</p>
+    <p className="bklit-note">색이 진할수록 예정 업무가 많아요. 기한 미등록 {count(calendar.missing,spec.complete)} · 기간 밖 {count(calendar.outside,spec.complete)}</p>
     {populated.length ? <details className="bklit-data"><summary>날짜별 업무 보기 · {count(populated.reduce((sum,p)=>sum+p.count,0),spec.complete)}</summary>
       {populated.map(day=><div className="bklit-due-day" key={day.date}><strong>{day.date} · {count(day.count,spec.complete)}</strong>{(spec.issues||[]).filter(issue=>day.ids.includes(issue.id)).map(issue=><button key={issue.id} type="button" data-workspace-issue={issue.id}>#{issue.id} {issue.title}</button>)}</div>)}
-    </details> : <p className="bklit-empty">확인한 범위에 앞으로 28일 안에 마감하는 업무가 없습니다.</p>}
+    </details> : <p className="bklit-empty">확인한 범위에 앞으로 28일 안에 마감하는 업무가 없어요.</p>}
   </div>;
 }
 
@@ -209,7 +211,7 @@ class Boundary extends Component<{host: HTMLElement; children: ReactNode},{faile
 }
 function Chart({spec,host}:{spec:Spec;host:HTMLElement}) {
   useEffect(()=>{delete host.dataset.chartError;host.dataset.ready='true';host.querySelector('[data-bklit-values]')?.removeAttribute('open');return ()=>{delete host.dataset.ready;};},[host]);
-  return <MotionConfig reducedMotion="user">{spec.kind==='customer-ranking'?<CustomerRanking spec={spec}/>:spec.kind==='age-donut'?<AgeDonut spec={spec}/>:spec.kind==='member-heatmap'?<MemberHeatmap spec={spec}/>:spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
+  return <MotionConfig reducedMotion="user">{spec.kind==='customer-ranking'?<CustomerRanking spec={spec}/>:spec.kind==='age-donut'?<AgeDonut spec={spec}/>:spec.kind==='member-heatmap'?<MemberHeatmap spec={spec}/>:spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='area'?<AreaTrend spec={spec}/>:spec.kind==='compare-area'?<CompareArea spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
 }
 export function mountChart(host: HTMLElement, spec: Spec) {
   const root=createRoot(host.querySelector('[data-bklit-mount]')!);

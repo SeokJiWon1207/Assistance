@@ -220,3 +220,34 @@ class DashboardWholePopulationTests(unittest.TestCase):
         result = self._build({'role': 'member', 'displayName': '석지원'})
         self.assertEqual([row['id'] for row in result['openIssues']], [101, 999])
         self.assertEqual(len(result['openIssues']), result['summary']['open'])
+
+
+    def test_media_tabs_and_customer_intake_use_picker_names_and_same_periods(self):
+        base = {**self.issues[0], 'status': 'assigned', 'date_fields': {}, 'handler': '석지원'}
+        self.issues = [
+            {**base, 'id': 1, 'project': '147MiraeAsset(미래에셋증권)', 'media_type': 'MTS', 'created_at': '2026-08-20'},
+            {**base, 'id': 2, 'project': '147MiraeAsset(미래에셋증권)', 'media_type': 'hts', 'created_at': '2026-08-21'},
+            {**base, 'id': 3, 'project': '112KBStar(KB증권)', 'media_type': 'MTS', 'created_at': '2026-08-22'},
+            {**base, 'id': 4, 'project': '112KBStar(KB증권)', 'media_type': '', 'created_at': '2026-07-10'},
+            {**base, 'id': 5, 'project': '900DRFN(공용)', 'media_type': 'MTS', 'created_at': '2026-08-23'},
+        ]
+        result = self._build({'role': 'manager', 'displayName': '팀장'})
+        media = result['intakeByMedia']
+        self.assertEqual((media['MTS']['total'], media['HTS']['total']), (3, 1))
+        self.assertEqual(sum(point['count'] for point in media['MTS']['points']), 3)
+        self.assertEqual(len(media['MTS']['previousPoints']), len(result['previousIntakeTrend']))
+        # 선택 목록 밖(내부 공용 프로젝트)은 고객사별 신규에서 빠지고, 직전 기간 건수를 함께 보낸다.
+        self.assertEqual(result['customerIntake'], [
+            {'name': '미래에셋증권', 'count': 2, 'previous': 0, 'project': '147MiraeAsset(미래에셋증권)'},
+            {'name': 'KB증권', 'count': 1, 'previous': 1, 'project': '112KBStar(KB증권)'},
+        ])
+
+    def test_previous_intake_trend_covers_the_same_length_just_before_the_period(self):
+        result = self._build({'role': 'member'})
+        current, previous = result['intakeTrend'], result['previousIntakeTrend']
+        self.assertEqual(len(previous), len(current))
+        # 30일 기간(7/29~8/27) 바로 앞의 30일(6/29~7/28)을 같은 등록일 기준으로 센다.
+        self.assertEqual((previous[0]['date'], previous[-1]['date']), ('2026-06-29', '2026-07-28'))
+        self.assertEqual(sum(point['count'] for point in previous), result['summary']['previousNewIssues'])
+        self.assertEqual(next(point for point in previous if point['count'])['date'], '2026-07-20')
+        self.assertEqual(sum(point['count'] for point in current), result['summary']['newIssues'])

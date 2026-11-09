@@ -140,6 +140,8 @@ def build_monthly_customer_report(text: str, *, constraints: Optional[Dict[str, 
         key: value for key, value in constraints.items()
         if key not in {"created_at", "filter_clauses"}
     }
+    if constraints.get('unified_plan_validated'):
+        scope_constraints['filter_clauses'] = [c for c in constraints.get('filter_clauses', []) if c['field'] != 'created_at']
     scoped = [
         normalize_issue(issue)
         for issue in raw_issues

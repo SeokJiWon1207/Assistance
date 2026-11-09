@@ -22,13 +22,17 @@ from backend.workspace import (
     delete_conversations,
     conversation_listing,
     get_conversation,
+    list_conversation_trash,
     mark_notification_read,
+    purge_conversation_trash,
+    restore_conversation,
     save_conversation,
 )
 from backend.reports.team_brief import get_weekly_team_brief, mark_weekly_team_brief_read
 from backend.reports.dashboard import DASHBOARD_PERIOD_OPTIONS, build_operations_dashboard
 from backend.reports.customer_detail import build_customer_detail
 from backend.reports.effort_board import build_effort_board
+from backend.reports.customer_overview import build_customer_overview
 from backend.reports.screen_hotspot import build_screen_hotspot
 
 
@@ -131,6 +135,12 @@ def screen_hotspot(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/customer-overview")
+def customer_overview(request: Request, refresh: bool = False, live: bool = False) -> Dict[str, Any]:
+    _user(request)
+    return build_customer_overview(refresh=refresh, live=live)
+
+
 @router.get("/conversations")
 def my_conversations(request: Request, limit: int = 40) -> Dict[str, Any]:
     return conversation_listing(_user(request)["uid"], limit)
@@ -168,6 +178,30 @@ def put_conversation(
 def remove_conversations(payload: ConversationBulkDeleteRequest, request: Request) -> Dict[str, Any]:
     deleted = delete_conversations(_user(request)["uid"], payload.ids, all_conversations=payload.all)
     return {"deletedIds": deleted, "deletedCount": len(deleted)}
+
+
+# 삭제한 대화 보관함. /conversations/{conversation_id}보다 먼저 선언해야 'trash'가 대화 ID로 잡히지 않는다.
+@router.get("/conversations/trash")
+def conversation_trash(request: Request) -> Dict[str, Any]:
+    return list_conversation_trash(_user(request)["uid"])
+
+
+@router.post("/conversations/trash/purge")
+def purge_conversations(payload: ConversationBulkDeleteRequest, request: Request) -> Dict[str, Any]:
+    purged = purge_conversation_trash(_user(request)["uid"], payload.ids, all_conversations=payload.all)
+    return {"purgedIds": purged, "purgedCount": len(purged)}
+
+
+@router.post("/conversations/{conversation_id}/restore")
+def restore_deleted_conversation(conversation_id: str, request: Request) -> Dict[str, Any]:
+    user = _user(request)
+    try:
+        conversation = restore_conversation(user["uid"], _valid_id(conversation_id, "대화 ID"))
+    except ConversationQuotaError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="보관 중인 대화를 찾지 못했습니다. 보관 기간이 지났을 수 있습니다.")
+    return {"conversation": conversation}
 
 
 @router.get("/conversations/{conversation_id}")

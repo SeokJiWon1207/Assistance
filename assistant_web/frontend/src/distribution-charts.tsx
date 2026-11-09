@@ -40,7 +40,7 @@ function CustomerLabels({ spec }: { spec: Spec }) {
 export function CustomerRanking({ spec }: { spec: Spec }) {
   const rows = spec.rows || [], series = spec.series || [];
   const reduced = useReducedMotion();
-  if (!rows.length) return <p className="bklit-empty">확인한 범위에 표시할 고객사가 없습니다.</p>;
+  if (!rows.length) return <p className="bklit-empty">확인한 범위에 표시할 고객사가 없어요.</p>;
   return <div className="bklit-customer-ranking">
     <div className="bklit-ranking-frame" style={{ height: rows.length * 66 + 26 }}>
       <BarChart data={rows} xDataKey="id" orientation="horizontal" stacked aspectRatio="auto" barGap={0.62}
@@ -74,14 +74,14 @@ export function AgeDonut({ spec }: { spec: Spec }) {
         </g>)}
         <PieCenter>{({ value, label, isHovered }) => <div className="bklit-age-center"><strong>{isHovered ? `${value}건` : `${(aging / sum * 100).toFixed(1)}%`}</strong><span>{isHovered ? label : `30일 이상 · ${aging}건`}</span></div>}</PieCenter>
       </PieChart>
-    </div> : <p className="bklit-note">{!spec.complete ? '일부 조회 결과여서 비율은 표시하지 않습니다.' : '등록일을 확인한 미종료 이슈가 없어 비율을 표시하지 않습니다.'}</p>}
+    </div> : <p className="bklit-note">{!spec.complete ? '일부 조회 결과여서 비율은 표시하지 않아요.' : '등록일을 확인한 미종료 이슈가 없어 비율을 표시하지 않아요.'}</p>}
     <div className="bklit-age-options">{data.map((row, i) => <button key={String(rows[i].id)} type="button"
       aria-pressed={spec.selected === String(rows[i].id)} {...(spec.action ? { [spec.action]: String(rows[i].id) } : {})}
       onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
       <i style={{ background: row.color }} /><span>{row.label}</span><strong>{count(row.value, spec.complete)}</strong>
       {spec.complete && sum > 0 && <small>{Math.round(row.value / sum * 100)}%</small>}
     </button>)}</div>
-    {Boolean(spec.unknown) && <p className="bklit-note">비율은 등록일 확인 {count(sum, spec.complete)} 기준입니다.</p>}
+    {Boolean(spec.unknown) && <p className="bklit-note">비율은 등록일 확인 {count(sum, spec.complete)} 기준이에요.</p>}
   </div>;
 }
 
@@ -120,9 +120,9 @@ function MemberCells({ spec, onSelect }: { spec: Spec; onSelect: (text: string) 
 
 export function MemberHeatmap({ spec }: { spec: Spec }) {
   const rows = spec.rows || [], series = spec.series || [];
-  const [detail, setDetail] = useState('셀을 선택하면 상태별 건수를 확인할 수 있습니다.');
+  const [detail, setDetail] = useState('셀을 선택하면 상태별 건수를 확인할 수 있어요.');
   const data = series.map((s, c) => ({ bin: c, bins: rows.map((row, r) => ({ bin: r, count: Number(row[s.key] || 0), date: new Date(2000, 0, 1) })) }));
-  if (!rows.length) return <p className="bklit-empty">확인한 팀원이 없습니다.</p>;
+  if (!rows.length) return <p className="bklit-empty">확인한 팀원이 없어요.</p>;
   return <div className="bklit-member-heatmap">
     <div className="bklit-member-frame" style={{ height: rows.length * 33 + 32 }}>
       <HeatmapChart data={data} layout="fill" binSize={33} margin={{ top: 32, left: 68, right: 43, bottom: 0 }} animate={false}>
@@ -130,6 +130,6 @@ export function MemberHeatmap({ spec }: { spec: Spec }) {
       </HeatmapChart>
     </div>
     <p className="bklit-note" aria-live="polite">{detail}</p>
-    <p className="bklit-note">* 장기: 지연 제외 · 색이 진할수록 건수가 많습니다.{!spec.complete && ' 수치는 확인한 범위의 하한입니다.'}</p>
+    <p className="bklit-note">* 장기: 지연 제외 · 색이 진할수록 건수가 많아요.{!spec.complete && ' 수치는 확인한 범위의 하한이에요.'}</p>
   </div>;
 }

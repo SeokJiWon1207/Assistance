@@ -27,7 +27,7 @@ test('weekly cards show independent Sat–Fri dates, grouped bars, donut and acc
   const html = await render(sample());
   const charts = specs(html);
   assert.equal(charts.length, 3);
-  assert.match(html, /10\/24\(토\).*10\/30\(금\)/);
+  assert.match(html, /10월 24일–30일/);
   assert.match(html, /고객사요청일/);
   assert.match(html, /고객사전달일/);
   assert.match(html, /정기점검/);

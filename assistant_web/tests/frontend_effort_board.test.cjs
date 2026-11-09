@@ -35,6 +35,8 @@ async function harness(fetcher) {
     focus() { this.focused += 1; },
   });
   const view = element();
+  const subtitle = element();
+  const tools = element();
   const panel = element();
   const tabs = element();
   const tabButtons = [element({ dashboardTab: 'overview' }), element({ dashboardTab: 'effort' })];
@@ -42,7 +44,8 @@ async function harness(fetcher) {
     URLSearchParams, Event: class { constructor(type) { this.type = type; } },
     CSS: { escape: (value) => String(value) },
     document: {
-      querySelector: (selector) => ({ '#effortBoardView': view, '#dashboardPanel': panel, '#dashboardTabs': tabs })[selector] || null,
+      querySelector: (selector) => ({ '#effortBoardView': view, '#dashboardPanel': panel, '#dashboardTabs': tabs,
+        '[data-tab-subtitle="effort"]': subtitle, '[data-tab-tools="effort"]': tools })[selector] || null,
       querySelectorAll: (selector) => (selector === '[data-dashboard-tab]' ? tabButtons : []),
     },
   });
@@ -51,6 +54,7 @@ async function harness(fetcher) {
       apiFetch: async (url) => { calls.push(url); return fetcher(url, calls.length); } },
     './api.js': { responseJson: async (response) => response.payload },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
+    './ui_format.js': { formatPeriodRange: (from, to) => `${from}–${to}`, customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
     './data_badge.js': { dataBadgeState: () => 'fresh', formatBadgeTime: () => '', mantisBadgeDetails: () => ({ source: {}, note: '' }),
       renderDataBadge() {} },
     './workspace.js': { workspaceStatusLabel: (value) => ({ confirmed: '확인된 이슈', assigned: '할당된 이슈' }[value] || value) },
@@ -76,7 +80,7 @@ async function harness(fetcher) {
   tabsModule.namespace.initDashboardTabs();
   const target = (selector, dataset = {}) => ({ closest: (query) => (query === selector ? { dataset } : null) });
   const api = { ...module.namespace, selectTab: tabsModule.namespace.selectDashboardTab };
-  return { api, view, panel, tabs, tabButtons, calls, target };
+  return { api, view, subtitle, tools, panel, tabs, tabButtons, calls, target };
 }
 
 test('effort tab loads once, renders escaped sections and switches the panel subview', async () => {
@@ -91,7 +95,8 @@ test('effort tab loads once, renders escaped sections and switches the panel sub
   assert.equal(h.tabButtons[0].tabIndex, -1);
   const html = h.view.innerHTML;
   assert.match(html, /직전 2\.6일보다 0\.9일 늘었어요/);
-  assert.match(html, /7일 안에 4건이 더 넘어요/);
+  assert.match(html, /장기 미종료/);
+  assert.match(html, /30일 이상 · 7일 안에 4건 더/);
   assert.match(html, /장기 &lt;이슈&gt;/);
   assert.match(html, /data-effort-customer="108SK\(SK증권\)"/);
   assert.match(html, /나머지 10건/);
@@ -106,13 +111,14 @@ test('period changes refetch and stale responses never win', async () => {
   const pending = [];
   const h = await harness((url) => new Promise((resolve) => pending.push({ url, resolve })));
   h.api.selectTab('effort');
-  const second = h.view.handlers.click({ target: h.target('[data-effort-period]', { effortPeriod: '90' }) });
+  const second = h.tools.handlers.click({ target: h.target('[data-effort-period]', { effortPeriod: '90' }) });
   assert.deepEqual(pending.map((item) => item.url), ['/effort?days=30', '/effort?days=90']);
   pending[1].resolve({ ok: true, payload: boardPayload({ meta: { ...boardPayload().meta, periodDays: 90 }, summary: { ...boardPayload().summary, closedCount: 900 } }) });
   await second;
   pending[0].resolve({ ok: true, payload: boardPayload() });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.match(h.view.innerHTML, />900</);
+  assert.match(h.view.innerHTML, />900건</);
+  assert.match(h.tools.innerHTML, /data-effort-period="90" aria-pressed="true"/);
 });
 
 test('tab keys move selection and partial data is marked as lower bounds', async () => {
@@ -134,4 +140,62 @@ test('load errors keep a retry button', async () => {
   await h.api.loadEffortBoard();
   assert.match(h.view.innerHTML, /조회 기간은/);
   assert.match(h.view.innerHTML, /data-effort-refresh/);
+});
+
+test('KPI cards mark more closed issues as good and a longer median as a warning', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload() }));
+  h.api.selectTab('effort');
+  await h.api.loadEffortBoard();
+  const html = h.view.innerHTML;
+  assert.match(html, /class="workspace-kpis effort-board-metrics"/);
+  // 해결 86건(직전 79건) → 7건 늘어 좋은 쪽, 처리일 중앙값 3.5일(직전 2.6일) → 0.9일 늘어 주의.
+  assert.match(html, /workspace-kpi-delta is-good"[^>]*>[^<]*<svg data-icon="arrow-up"><\/svg>7건/);
+  assert.match(html, /workspace-kpi-delta is-bad"[^>]*>[^<]*<svg data-icon="arrow-up"><\/svg>0\.9일/);
+  assert.match(html, /직전 기간보다 7건 늘었어요/);
+  // 카드 머리는 운영 현황 카드와 같은 모양이고, 처리일 계산 기준은 머리 설명으로 올렸다.
+  assert.match(html, /<header class="ops-card-head"><div><h3>처리일 분포<\/h3><p>등록일부터 마지막 수정일까지를 처리일로 세요\.<\/p><\/div>/);
+  assert.match(html, /effort-board-disclaimer/);
+});
+
+test('partial data never shows comparison badges', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload({ meta: { ...boardPayload().meta, search_complete: false } }) }));
+  h.api.selectTab('effort');
+  await h.api.loadEffortBoard();
+  assert.doesNotMatch(h.view.innerHTML, /workspace-kpi-delta/);
+});
+
+test('aging issues start with five rows and expand or collapse without refetching', async () => {
+  const agingIssues = Array.from({ length: 8 }, (_, index) => ({ ...boardPayload().agingIssues[0], id: 100 + index }));
+  const h = await harness(() => ({ ok: true, payload: boardPayload({ agingIssues, agingIssuesTotal: 12 }) }));
+  await h.api.loadEffortBoard();
+  assert.equal((h.view.innerHTML.match(/data-effort-source=/g) || []).length, 5);
+  assert.match(h.view.innerHTML, /data-effort-expand[^>]*aria-expanded="false"/);
+  await h.view.handlers.click({ target: h.target('[data-effort-expand]') });
+  assert.equal((h.view.innerHTML.match(/data-effort-source=/g) || []).length, 8);
+  assert.match(h.view.innerHTML, /data-effort-expand[^>]*aria-expanded="true"/);
+  assert.match(h.view.innerHTML, /나머지 4건/);
+  await h.view.handlers.click({ target: h.target('[data-effort-expand]') });
+  assert.equal((h.view.innerHTML.match(/data-effort-source=/g) || []).length, 5);
+  assert.equal(h.calls.length, 1);
+});
+
+test('weekly handling time distinguishes missing data from valid same-day handling', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload({ weekly: [{ label: '11/2', medianDays: null, closedCount: 0 }] }) }));
+  await h.api.loadEffortBoard();
+  assert.match(h.view.innerHTML, /최근 8주에 처리일을 계산할 해결·종료 이슈가 없어요/);
+  assert.doesNotMatch(h.view.innerHTML, /role="img" aria-label="주별 처리일 중앙값:/);
+  const zero = await harness(() => ({ ok: true, payload: boardPayload({ weekly: [{ label: '11/2', medianDays: 0, closedCount: 1 }] }) }));
+  await zero.api.loadEffortBoard();
+  assert.match(zero.view.innerHTML, /role="img" aria-label="주별 처리일 중앙값: 11\/2 주 0일"/);
+});
+
+test('partial empty aging and effort results retain uncertainty', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload({
+    meta: { ...boardPayload().meta, search_complete: false }, agingIssues: [], agingIssuesTotal: 0,
+    effort: { total: 0, issueCount: 0, types: [] }, weekly: [], distribution: [],
+  }) }));
+  await h.api.loadEffortBoard();
+  assert.match(h.view.innerHTML, /확인한 범위에는 장기 미종료이거나 곧 넘을 이슈가 없어요/);
+  assert.match(h.view.innerHTML, /확인한 범위에는 공수 기록이 없어요/);
+  assert.match(h.view.innerHTML, /전체 결과는 미확정/);
 });

@@ -2,13 +2,11 @@
 .dashboard-tabs {
   grid-row: 2;
   display: flex;
-  gap: 24px;
   margin: 0 var(--dashboard-gutter);
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
 }
 .dashboard-tabs button {
-  min-height: 40px;
   margin-bottom: -1px;
   padding: 0 0 2px;
   border: 0;
@@ -16,8 +14,6 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-  font: inherit;
-  font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -25,9 +21,20 @@
 .dashboard-tabs button[aria-selected="true"] { border-bottom-color: var(--text); color: var(--text); font-weight: 700; }
 .dashboard-tabs button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-/* 탭 화면은 운영 현황 전용 기간·필터·본문을 감추고 자기 도구 줄을 쓴다. */
-.dashboard-panel:is([data-subview="effort"], [data-subview="screens"]) > :is(.dashboard-filterbar, .dashboard-body) { display: none; }
-.dashboard-panel:is([data-subview="effort"], [data-subview="screens"]) :is(.dashboard-toolbar, .dashboard-heading p) { display: none; }
+/* 탭 화면은 운영 현황 전용 설명·저장본·기간·새로고침과 필터·본문을 감추고,
+   같은 머리글 자리에 자기 설명과 도구(data-tab-*)를 보여 준다. 검색과 패널 단추는 모든 탭이 함께 쓴다. */
+.dashboard-panel:is([data-subview="customers"], [data-subview="effort"], [data-subview="screens"]) > :is(.dashboard-filterbar, .dashboard-body) { display: none; }
+.dashboard-panel:is([data-subview="customers"], [data-subview="effort"], [data-subview="screens"]) :is(#dashboardSubtitle, #dashboardSource, #dashboardPeriod, #dashboardRefreshBtn) { display: none; }
+.dashboard-tab-subtitle,
+.dashboard-tab-tools { display: none; }
+.dashboard-tab-tools { flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 10px; }
+.dashboard-tab-tools .workspace-refresh-button { width: auto; margin-top: 0; }
+.dashboard-panel[data-subview="customers"] [data-tab-subtitle="customers"],
+.dashboard-panel[data-subview="effort"] [data-tab-subtitle="effort"],
+.dashboard-panel[data-subview="screens"] [data-tab-subtitle="screens"] { display: block; }
+.dashboard-panel[data-subview="customers"] [data-tab-tools="customers"],
+.dashboard-panel[data-subview="effort"] [data-tab-tools="effort"],
+.dashboard-panel[data-subview="screens"] [data-tab-tools="screens"] { display: flex; }
 
 .dashboard-tab-view {
   grid-row: 3 / -1;
@@ -37,10 +44,7 @@
 }
 .dashboard-tab-view[hidden] { display: none; }
 .dashboard-tab-inner { display: grid; gap: 16px; padding: 16px var(--dashboard-gutter) 56px; }
-.dashboard-tab-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
-.dashboard-tab-toolbar > p { margin: 0; color: var(--muted); font-size: 13px; }
 
 @media (max-width: 680px) {
-  .dashboard-tabs { margin: 0 16px; }
-  .dashboard-tab-inner { padding: 12px 16px 40px; }
+  .dashboard-tab-inner { padding: 12px var(--dashboard-gutter) 40px; }
 }

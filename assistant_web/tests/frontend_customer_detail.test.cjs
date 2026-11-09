@@ -43,7 +43,7 @@ async function harness(fetcher) {
       apiFetch: async (url) => { calls.push(url); return fetcher(url, calls.length); } },
     './api.js': { responseJson: async (response) => response.payload },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
-    './ui_format.js': { customerLabelText: (value) => value },
+    './ui_format.js': { formatPeriodRange: (from, to) => `${from}–${to}`, customerLabelText: (value) => value, customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
     './data_badge.js': { dataBadgeState: () => 'fresh', formatBadgeTime: () => '', mantisBadgeDetails: () => ({ source: {}, note: '' }),
       renderDataBadge() {} },
     './workspace.js': { workspaceStatusLabel: (value) => ({ confirmed: '확인된 이슈', assigned: '할당된 이슈' }[value] || value) },
@@ -124,4 +124,44 @@ test('ask buttons hand a customer question to the chat', async () => {
   h.click('[data-customer-ask]', { customerAsk: 'analysis' });
   h.click('[data-customer-ask]', { customerAsk: 'report' });
   assert.deepEqual(questions, ['SK증권 최근 30일 이슈 현황과 주요 원인을 분석해줘', 'SK증권 11월 월간 고객사 리포트 작성해줘']);
+});
+
+test('customer issue preview expands without refetching and retains due-date sorting', async () => {
+  const openIssues = Array.from({ length: 12 }, (_, index) => ({ ...detailPayload().openIssues[0],
+    id: index + 1, dueDate: `2026-11-${String(20 - index).padStart(2, '0')}` }));
+  const h = await harness(() => ({ ok: true, payload: detailPayload({ openIssues, openIssuesTotal: 14, playbooks: [] }) }));
+  await h.api.openCustomerDetail('SK증권');
+  assert.equal((h.view.innerHTML.match(/data-customer-source=/g) || []).length, 5);
+  h.click('[data-customer-sort]', { customerSort: 'due' });
+  assert.ok(h.view.innerHTML.indexOf('#12') < h.view.innerHTML.indexOf('#11'));
+  h.click('[data-customer-expand]');
+  assert.equal((h.view.innerHTML.match(/data-customer-source=/g) || []).length, 12);
+  assert.match(h.view.innerHTML, /data-customer-sort="due" aria-pressed="true"/);
+  h.click('[data-customer-expand]');
+  assert.equal((h.view.innerHTML.match(/data-customer-source=/g) || []).length, 5);
+  assert.equal(h.calls.length, 1);
+});
+
+test('partial empty customer detail does not claim no issues or a confirmed health level', async () => {
+  const h = await harness(() => ({ ok: true, payload: detailPayload({
+    meta: { ...detailPayload().meta, search_complete: false }, openIssues: [], openIssuesTotal: 0,
+    monthly: [], screens: [], media: [],
+  }) }));
+  await h.api.openCustomerDetail('SK증권');
+  assert.match(h.view.innerHTML, /확인한 범위에는 미종료 이슈가 없어요/);
+  assert.match(h.view.innerHTML, /전체 결과는 미확정/);
+  assert.match(h.view.innerHTML, /건강도를 확정하지 않았어요/);
+  assert.doesNotMatch(h.view.innerHTML, /위험 · 악화 중/);
+});
+
+test('customer monthly history stays visible after open issues reach zero but empty history has no chart', async () => {
+  const h = await harness(() => ({ ok: true, payload: detailPayload({ openIssues: [], openIssuesTotal: 0 }) }));
+  await h.api.openCustomerDetail('SK증권');
+  assert.match(h.view.innerHTML, /customer-monthly-chart/);
+  const empty = await harness(() => ({ ok: true, payload: detailPayload({
+    openIssues: [], openIssuesTotal: 0, monthly: [{ label: '11월', newCount: 0, closedCount: 0 }],
+  }) }));
+  await empty.api.openCustomerDetail('SK증권');
+  assert.doesNotMatch(empty.view.innerHTML, /customer-monthly-chart/);
+  assert.match(empty.view.innerHTML, /최근 6개월에 신규·완료 이슈가 없어요/);
 });

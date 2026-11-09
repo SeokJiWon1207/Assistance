@@ -2,11 +2,12 @@
 import { els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
+import { customerMark } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { focusKey, restoreFocus } from "./view_focus.js?v=20261103-1";
 import { showChatView } from "./dashboard.js?v=20260911-6";
-import { applyDashboardTab, registerDashboardTab } from "./dashboard_tabs.js?v=20261103-1";
+import { applyDashboardTab, registerDashboardTab, tabHeaderSlots } from "./dashboard_tabs.js?v=20261110-1";
 
 // 칸 색은 건수 구간마다 한 단계씩 짙어진다. 마지막 값 이상은 가장 짙은 단계.
 const HEAT_STEPS = [0, 1, 2, 4, 6];
@@ -63,12 +64,21 @@ function scopeText() {
   return [meta.customerName, meta.media].filter(Boolean).join(" ");
 }
 
-function renderToolbar() {
+function toolbarSubtitle() {
+  const summary = hotspotState.data?.summary;
+  return summary
+    ? `최근 8주 등록 기준 · 화면번호가 있는 이슈 ${countLabel(Math.max(0, summary.issueCount - summary.unknownScreenCount))}${summary.unknownScreenCount ? ` (화면번호 없음 ${countLabel(summary.unknownScreenCount)} 제외)` : ""}`
+    : "화면번호별 이슈를 조회하고 있어요.";
+}
+
+function renderTools() {
+  return `
+    <span class="data-badge-slot" data-screen-badge></span>
+    <button type="button" class="secondary-button workspace-refresh-button" data-screen-refresh aria-label="새로고침">${icon("refresh", 16)}<span>새로고침</span></button>`;
+}
+
+function renderFilters() {
   const data = hotspotState.data;
-  const summary = data?.summary;
-  const subtitle = summary
-    ? `최근 8주 등록 기준 · 화면번호가 있는 이슈 ${formatNumber(summary.issueCount - summary.unknownScreenCount)}건${summary.unknownScreenCount ? ` (화면번호 없음 ${formatNumber(summary.unknownScreenCount)}건 제외)` : ""}`
-    : "화면번호별 이슈를 조회하고 있습니다.";
   const mediaOptions = (data?.options?.media || ["HTS", "MTS"])
     .map((value) => `<option value="${escapeHtml(value)}"${hotspotState.media === value ? " selected" : ""}>${escapeHtml(value)}</option>`).join("");
   const customers = data?.options?.customers || [];
@@ -77,37 +87,50 @@ function renderToolbar() {
     ...(selectedMissing ? [{ customer: hotspotState.customer, name: data?.meta?.customerName || hotspotState.customer }] : []),
     ...customers,
   ].map((item) => `<option value="${escapeHtml(item.customer)}"${hotspotState.customer === item.customer ? " selected" : ""}>${escapeHtml(item.name)}</option>`).join("");
-  return `
-    <div class="dashboard-tab-toolbar">
-      <p>${escapeHtml(subtitle)}</p>
-      <div class="customer-detail-toolbar">
-        <span class="data-badge-slot" data-screen-badge></span>
-        <label class="screen-filter">매체
-          <select data-screen-filter="media"><option value="">전체</option>${mediaOptions}</select>
-        </label>
-        <label class="screen-filter">고객사
-          <select data-screen-filter="customer"><option value="">전체</option>${customerOptions}</select>
-        </label>
-        <button type="button" class="secondary-button workspace-refresh-button" data-screen-refresh aria-label="새로고침">${icon("refresh", 16)}<span>새로고침</span></button>
-      </div>
-    </div>`;
+  return `<div class="screen-controls" role="group" aria-label="화면번호 조회 조건"><div class="screen-controls-fields">
+    <label class="screen-filter">매체
+      <select data-screen-filter="media"><option value="">전체</option>${mediaOptions}</select>
+    </label>
+    <label class="screen-filter">고객사
+      <select data-screen-filter="customer"><option value="">전체</option>${customerOptions}</select>
+    </label>
+    </div><div class="screen-controls-scope"><span>${escapeHtml(scopeText() || "팀 전체")} · 최근 8주</span>${hotspotState.media || hotspotState.customer ? '<button type="button" class="customer-more-button" data-screen-reset>필터 초기화</button>' : ""}</div></div>`;
+}
+
+function countLabel(value, unit = "건") {
+  return `${formatNumber(value)}${unit}${isComplete() ? "" : " 이상"}`;
+}
+
+function renderMetrics(data) {
+  const summary = data.summary || {};
+  const known = Math.max(0, Number(summary.issueCount || 0) - Number(summary.unknownScreenCount || 0));
+  const metrics = [
+    ["화면번호 있는 이슈", countLabel(known), "최근 8주 등록 기준"],
+    ["집계된 화면", countLabel(summary.screenCount, "개"), data.rows?.length ? `아래에는 신규 많은 상위 ${formatNumber(data.rows.length)}개 화면` : "현재 조회 조건 기준"],
+    ["화면번호 없음", countLabel(summary.unknownScreenCount), "화면별 집계에서 제외된 이슈"],
+  ];
+  return `<section class="workspace-kpis screen-metrics" aria-label="화면번호 집계 범위">${metrics.map(([label, value, helper]) => `
+    <article class="workspace-kpi"><span class="workspace-kpi-label">${label}</span><div class="workspace-kpi-value"><strong>${value}</strong></div><small>${helper}</small></article>`).join("")}</section>`;
 }
 
 function renderSpikes(data) {
   if (!isComplete()) {
-    return '<p class="customer-detail-note">일부 데이터만 확인해 화면번호 급증 여부는 판단하지 않았습니다.</p>';
+    return '<p class="customer-detail-note">일부 데이터만 확인해 화면번호 급증 여부는 판단하지 않았어요. 건수는 확인한 범위의 최소값이에요.</p>';
   }
-  return (data.spikes || []).map((spike) => {
+  const spikes = data.spikes || [];
+  if (!spikes.length) return "";
+  const rows = spikes.map((spike) => {
     const change = spike.ratio == null
-      ? `앞선 4주에는 없다가 지난주 ${formatNumber(spike.count)}건이 등록됐습니다.`
-      : `앞선 4주 평균 ${formatNumber(spike.baselineAverage, 1)}건에서 지난주 ${formatNumber(spike.count)}건으로 늘었습니다.`;
+      ? `앞선 4주에는 없다가 지난주 ${formatNumber(spike.count)}건이 등록됐어요.`
+      : `앞선 4주 평균 ${formatNumber(spike.baselineAverage, 1)}건에서 지난주 ${formatNumber(spike.count)}건으로 늘었어요.`;
     return `
-      <section class="screen-spike" aria-label="지난주 급증 화면">
+      <div class="screen-spike">
         <span class="screen-spike-badge">지난주 급증</span>
         <p><b>화면 ${escapeHtml(spike.screen)}</b> · ${escapeHtml(change)}</p>
         <button type="button" class="customer-issue-link" data-screen-select="${escapeHtml(spike.screen)}">${escapeHtml(spike.screen)} 자세히 보기 ›</button>
-      </section>`;
+      </div>`;
   }).join("");
+  return `<section class="workspace-section screen-spikes" aria-label="지난주 급증 화면">${rows}</section>`;
 }
 
 function renderHeatmap(data) {
@@ -116,20 +139,22 @@ function renderHeatmap(data) {
   const weeks = data.weeks || [];
   if (!rows.length) {
     return `
-      <section class="workspace-section screen-heatmap" aria-label="화면번호별 주간 신규 이슈">
-        <div class="customer-detail-section-body"><p class="customer-detail-empty">최근 8주에 화면번호가 기록된 이슈가 없습니다.</p></div>
+      <section class="workspace-section screen-heatmap screen-empty" aria-label="화면번호별 주간 신규 이슈">
+        ${icon("search", 24)}<h3>${!isComplete() ? "확인한 범위에는 화면번호가 기록된 이슈가 없어요." : hotspotState.media || hotspotState.customer ? "조건에 맞는 화면번호가 없어요." : "최근 8주에 화면번호가 기록된 이슈가 없어요."}</h3>
+        <p>${isComplete() ? "매체·고객사 조건을 바꾸거나 데이터를 새로고침해 보세요." : "전체 결과는 미확정이에요. 새로고침으로 다시 확인해 주세요."}</p>
+        <button type="button" class="customer-more-button" data-screen-refresh>새로고침</button>
       </section>`;
   }
   const head = weeks.map((week) => `<th scope="col"${week.partial ? ' class="is-partial" title="이번 주는 오늘까지만 반영"' : ""}>${escapeHtml(week.label)}${week.partial ? "*" : ""}</th>`).join("");
   const body = rows.map((row) => `
     <tr class="${row.screen === selected ? "is-selected" : ""}">
-      <th scope="row"><button type="button" class="screen-row-button" data-screen-select="${escapeHtml(row.screen)}" aria-pressed="${row.screen === selected}">${escapeHtml(row.screen)}</button></th>
+      <th scope="row"><button type="button" class="screen-row-button" data-screen-select="${escapeHtml(row.screen)}" aria-pressed="${row.screen === selected}" aria-controls="screenDetailTitle">${escapeHtml(row.screen)}</button></th>
       ${row.weeks.map((count) => `<td class="screen-heat is-l${heatLevel(count)}">${formatNumber(count)}</td>`).join("")}
       <td class="screen-total">${formatNumber(row.total)}</td>
     </tr>`).join("");
   return `
     <section class="workspace-section screen-heatmap" aria-label="화면번호별 주간 신규 이슈">
-      <header><div><h3>화면번호 × 주별 신규 이슈</h3></div><em>신규 많은 상위 ${formatNumber(rows.length)}개 화면</em></header>
+      <header><div><h3>화면번호별 신규 이슈</h3><p>화면번호를 선택하면 상세를 볼 수 있어요.</p></div><em>상위 ${formatNumber(rows.length)}개 화면</em></header>
       <div class="customer-detail-section-body">
         <div class="customer-issue-table-wrap">
           <table class="screen-heat-table">
@@ -137,7 +162,8 @@ function renderHeatmap(data) {
             <tbody>${body}</tbody>
           </table>
         </div>
-        <p class="customer-detail-note">주는 월요일부터 셉니다. * 표시한 이번 주는 오늘까지만 반영합니다. 화면을 누르면 오른쪽에 자세히 보입니다.</p>
+        <div class="screen-heat-legend" aria-label="주별 이슈 수 색상 범례"><span>주별 등록</span>${["0", "1", "2", "3–4", "5–6", "7+"].map((label, index) => `<span><i class="screen-heat is-l${index}" aria-hidden="true"></i>${label}건</span>`).join("")}</div>
+        <p class="customer-detail-note">주는 월요일부터 세요. * 이번 주는 오늘까지의 등록 건수예요.</p>
       </div>
     </section>`;
 }
@@ -148,7 +174,7 @@ function renderDetail() {
   const maxCustomer = Math.max(1, ...row.customers.map((item) => item.count));
   const customers = row.customers.slice(0, 5).map((item) => `
     <li>
-      <button type="button" class="customer-issue-link effort-ranked-name" data-screen-customer="${escapeHtml(item.customer)}" aria-label="${escapeHtml(item.name)} 고객사 상세 보기">${escapeHtml(item.name)}</button>
+      <button type="button" class="customer-issue-link effort-ranked-name" data-screen-customer="${escapeHtml(item.customer)}" aria-label="${escapeHtml(item.name)} 고객사 상세 보기">${customerMark(item.name)}<span>${escapeHtml(item.name)}</span></button>
       <span class="customer-ranked-track" aria-hidden="true"><i style="width:${Math.round((item.count / maxCustomer) * 100)}%"></i></span>
       <span class="customer-ranked-value">${formatNumber(item.count)}건</span>
     </li>`).join("");
@@ -169,15 +195,15 @@ function renderDetail() {
       <div class="customer-detail-section-body">
         <div class="screen-detail-heading">
           <span>선택한 화면</span>
-          <h3 id="screenDetailTitle">${escapeHtml(row.screen)}</h3>
-          <p>8주 신규 ${formatNumber(row.total)}건 · 미종료 ${formatNumber(row.openCount)}건 · 고객사 ${formatNumber(row.customers.length)}곳</p>
+          <h3 id="screenDetailTitle" tabindex="-1">${escapeHtml(row.screen)}</h3>
         </div>
-        <h4>고객사별</h4>
-        ${customers ? `<ol class="customer-ranked-list effort-ranked-list">${customers}</ol>` : '<p class="customer-detail-empty">고객사가 기록된 이슈가 없습니다.</p>'}
-        <h4>최근 등록 이슈</h4>
-        <ol class="screen-issue-list">${issues}</ol>
-        <h4>플레이북</h4>
-        ${playbooks ? `<ul class="customer-playbook-list screen-playbooks">${playbooks}</ul>` : '<p class="customer-detail-empty">이 화면 이슈를 근거로 한 공개 플레이북이 아직 없습니다.</p>'}
+        <dl class="screen-detail-metrics"><div><dt>8주 신규</dt><dd>${countLabel(row.total)}</dd></div><div><dt>미종료</dt><dd>${countLabel(row.openCount)}</dd></div><div><dt>고객사</dt><dd>${countLabel(row.customers.length, "곳")}</dd></div></dl>
+        <section class="screen-detail-section"><h4>최근 등록 이슈</h4>
+          ${issues ? `<ol class="screen-issue-list">${issues}</ol>` : '<p class="customer-detail-empty">확인한 최근 등록 이슈가 없어요.</p>'}</section>
+        <section class="screen-detail-section"><h4>고객사별</h4>
+          ${customers ? `<ol class="customer-ranked-list effort-ranked-list has-marks">${customers}</ol>` : '<p class="customer-detail-empty">고객사가 기록된 이슈가 없어요.</p>'}</section>
+        <section class="screen-detail-section"><h4>플레이북</h4>
+          ${playbooks ? `<ul class="customer-playbook-list screen-playbooks">${playbooks}</ul>` : '<p class="customer-detail-empty">이 화면 이슈를 근거로 한 공개 플레이북이 아직 없어요.</p>'}</section>
         <div class="screen-detail-actions">
           <button type="button" class="customer-primary-button" data-screen-ask="summary">개발팀 전달용 요약</button>
           <button type="button" class="secondary-button" data-screen-ask="list">이슈 ${formatNumber(row.total)}건 대화에서 보기</button>
@@ -192,16 +218,17 @@ function renderBody() {
     if (hotspotState.error) {
       return `<div class="workspace-error">${escapeHtml(hotspotState.error)} <button type="button" class="secondary-button" data-screen-refresh>다시 시도</button></div>`;
     }
-    return '<div class="workspace-loading">화면번호별 이슈를 불러오는 중입니다.</div>';
+    return '<div class="workspace-loading">화면번호별 이슈를 불러오는 중이에요.</div>';
   }
   return `
     ${hotspotState.error ? `<p class="customer-detail-error" role="alert">${escapeHtml(hotspotState.error)}</p>` : ""}
+    ${renderMetrics(data)}
     ${renderSpikes(data)}
     <div class="screen-hotspot-layout">${renderHeatmap(data)}${renderDetail()}</div>`;
 }
 
-function updateBadge(view) {
-  const slot = view.querySelector("[data-screen-badge]");
+function updateBadge(container) {
+  const slot = container?.querySelector("[data-screen-badge]");
   const meta = hotspotState.data?.meta;
   if (!slot) return;
   const badgeState = dataBadgeState({
@@ -224,10 +251,13 @@ function updateBadge(view) {
 function render() {
   const view = viewElement();
   if (!view) return;
-  const focused = focusKey(view);
-  view.innerHTML = `<div class="dashboard-tab-inner">${renderToolbar()}<div class="customer-detail-body" aria-busy="${hotspotState.loading}">${renderBody()}</div></div>`;
-  restoreFocus(view, focused);
-  updateBadge(view);
+  const { subtitle, tools } = tabHeaderSlots("screens");
+  const focused = focusKey(view) || focusKey(tools);
+  if (subtitle) subtitle.textContent = subtitle.title = toolbarSubtitle();
+  if (tools) tools.innerHTML = renderTools();
+  view.innerHTML = `<div class="dashboard-tab-inner">${renderFilters()}<div class="customer-detail-body" aria-busy="${hotspotState.loading}">${renderBody()}</div></div>`;
+  for (const container of [view, tools]) if (container) restoreFocus(container, focused);
+  updateBadge(tools);
 }
 
 async function loadScreenHotspot(refresh = false) {
@@ -243,13 +273,13 @@ async function loadScreenHotspot(refresh = false) {
     const response = await apiFetch(`${WORKSPACE_ENDPOINTS.screenHotspot}${query ? `?${query}` : ""}`);
     const payload = await responseJson(response);
     if (requestId !== hotspotState.requestId) return;
-    if (!response.ok) throw new Error(payload.detail || "화면번호별 이슈를 불러오지 못했습니다.");
+    if (!response.ok) throw new Error(payload.detail || "화면번호별 이슈를 불러오지 못했어요.");
     hotspotState.data = payload;
     hotspotState.error = "";
     if (!payload.rows?.some((row) => row.screen === hotspotState.selected)) hotspotState.selected = payload.rows?.[0]?.screen || "";
   } catch (error) {
     if (requestId !== hotspotState.requestId) return;
-    hotspotState.error = error.message || "화면번호별 이슈를 불러오지 못했습니다.";
+    hotspotState.error = error.message || "화면번호별 이슈를 불러오지 못했어요.";
   }
   hotspotState.loading = false;
   render();
@@ -290,7 +320,20 @@ function handleClick(event) {
   if (select) {
     hotspotState.selected = select.dataset.screenSelect;
     render();
-    return viewElement()?.querySelector(`.screen-row-button[data-screen-select="${CSS.escape(hotspotState.selected)}"]`)?.focus();
+    // 렌더러의 기존 포커스 복귀가 끝난 다음 새 선택 위치로 이동한다.
+    return Promise.resolve().then(() => {
+      if (viewElement()?.clientWidth <= 1100) {
+        const heading = viewElement()?.querySelector("#screenDetailTitle");
+        heading?.focus({ preventScroll: true });
+        return heading?.scrollIntoView({ block: "start" });
+      }
+      return viewElement()?.querySelector(`.screen-row-button[data-screen-select="${CSS.escape(hotspotState.selected)}"]`)?.focus();
+    });
+  }
+  if (target.closest("[data-screen-reset]")) {
+    hotspotState.media = "";
+    hotspotState.customer = "";
+    return loadScreenHotspot().then(() => restoreFocus(viewElement(), '[data-screen-filter="media"]'));
   }
   if (target.closest("[data-screen-refresh]")) return loadScreenHotspot(true);
   const ask = target.closest("[data-screen-ask]");
@@ -316,6 +359,9 @@ function initScreenHotspot() {
   if (!view) return;
   view.addEventListener("click", handleClick);
   view.addEventListener("change", handleChange);
+  const { tools } = tabHeaderSlots("screens");
+  tools?.addEventListener("click", handleClick);
+  tools?.addEventListener("change", handleChange);
   registerDashboardTab("screens", {
     view: viewElement,
     onShow: () => { if (!hotspotState.loading) void loadScreenHotspot(); },

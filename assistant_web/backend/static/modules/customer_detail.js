@@ -2,13 +2,13 @@
 import { apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { customerLabelText } from "./ui_format.js?v=20260911-6";
+import { formatPeriodRange, customerLabelText, customerMark } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { focusKey, restoreFocus } from "./view_focus.js?v=20261103-1";
 
 const PERIODS = [7, 14, 30, 90];
-const OPEN_PREVIEW_LIMIT = 10;
+const OPEN_PREVIEW_LIMIT = 5;
 const HEALTH_LABELS = { high: "위험", attention: "주의", stable: "안정", unknown: "판단 보류" };
 const TREND_LABELS = { worsening: "악화 중", improving: "개선 중", steady: "변화 없음" };
 
@@ -66,11 +66,11 @@ function countText(value) {
 
 function metric(label, value, helper, tone = "", unit = "") {
   return `
-    <div class="workspace-metric ${tone}" role="group" aria-label="${escapeHtml(label)}">
-      <span>${escapeHtml(label)}</span>
-      <strong>${value}${unit ? `<span class="customer-detail-unit">${escapeHtml(unit)}</span>` : ""}</strong>
+    <article class="workspace-kpi ${tone}" aria-label="${escapeHtml(label)}">
+      <span class="workspace-kpi-label">${escapeHtml(label)}</span>
+      <div class="workspace-kpi-value"><strong>${value}${unit ? `<span class="customer-detail-unit">${escapeHtml(unit)}</span>` : ""}</strong></div>
       <small>${escapeHtml(helper)}</small>
-    </div>`;
+    </article>`;
 }
 
 function renderMetrics(summary, period) {
@@ -79,24 +79,25 @@ function renderMetrics(summary, period) {
   const handlingHelper = summary.teamAverageHandlingDays == null
     ? "해결·종료 이슈 기준"
     : `팀 평균 ${formatDays(summary.teamAverageHandlingDays)}일`;
+  const unit = isComplete() ? "건" : "";
   return `
-    <section class="workspace-summary-grid customer-detail-metrics" aria-label="고객사 핵심 지표">
-      ${metric("미종료", countText(summary.open), `이월 ${formatNumber(summary.carriedOpen)}건`)}
-      ${metric("일정 지연", countText(summary.overdue), "완료 예정일 경과", "is-danger")}
-      ${metric("장기 미종료", countText(summary.aging), "30일 이상 미종료", "is-warning")}
+    <section class="workspace-kpis customer-detail-metrics" aria-label="고객사 핵심 지표">
+      ${metric("미종료", countText(summary.open), `이월 ${formatNumber(summary.carriedOpen)}건`, "", unit)}
+      ${metric("일정 지연", countText(summary.overdue), "완료 예정일 경과", summary.overdue ? "is-danger" : "", unit)}
+      ${metric("장기 미종료", countText(summary.aging), "30일 이상 미종료", summary.aging ? "is-warning" : "", unit)}
       ${metric("평균 처리일", formatDays(summary.averageHandlingDays), handlingHelper, "", summary.averageHandlingDays == null ? "" : "일")}
-      ${metric(`최근 ${period}일 신규`, countText(summary.newIssues), intakeHelper)}
+      ${metric(`최근 ${period}일 신규`, countText(summary.newIssues), intakeHelper, "", unit)}
     </section>`;
 }
 
 function renderHealth(health) {
-  const level = HEALTH_LABELS[health.level] ? health.level : "unknown";
+  const level = isComplete() && HEALTH_LABELS[health.level] ? health.level : "unknown";
   const reasons = (health.reasons || []).map((reason) => `<li>${escapeHtml(customerLabelText(reason))}</li>`).join("");
   return `
-    <section class="customer-detail-health is-${level}" aria-label="고객사 건강도 판단 근거">
-      <h3>${level === "unknown" ? "건강도를 확정하지 않았습니다" : `${HEALTH_LABELS[level]}으로 본 이유`}</h3>
-      ${reasons ? `<ul>${reasons}</ul>` : "<p>표시할 근거가 없습니다.</p>"}
-      <p class="customer-detail-note">팀 대시보드의 고객사 건강도와 같은 기준입니다.</p>
+    <section class="workspace-section customer-detail-health is-${level}" aria-label="고객사 건강도 판단 근거">
+      <h3>${level === "unknown" ? "건강도를 확정하지 않았어요" : `${HEALTH_LABELS[level]}으로 본 이유`}</h3>
+      ${reasons ? `<ul>${reasons}</ul>` : "<p>표시할 근거가 없어요.</p>"}
+      <p class="customer-detail-note">팀 대시보드의 고객사 건강도와 같은 기준이에요.</p>
     </section>`;
 }
 
@@ -105,13 +106,17 @@ function sectionHeader(title, meta = "") {
 }
 
 function renderMonthly(monthly) {
+  if (!monthly.some((row) => row.newCount > 0 || row.closedCount > 0)) {
+    return `<section class="workspace-section customer-detail-monthly" aria-label="월별 신규·완료">${sectionHeader("월별 신규 · 완료", "최근 6개월")}
+      <div class="customer-detail-section-body"><p class="customer-detail-empty">${isComplete() ? "최근 6개월에 신규·완료 이슈가 없어요." : "확인한 범위에는 월별 신규·완료 이슈가 없어요. 전체 결과는 미확정이에요."}</p></div></section>`;
+  }
   const max = Math.max(1, ...monthly.flatMap((row) => [row.newCount, row.closedCount]));
   const label = monthly.map((row) => `${row.label} 신규 ${row.newCount}건 완료 ${row.closedCount}건`).join(", ");
   const columns = monthly.map((row) => `
     <div class="customer-monthly-column">
       <div class="customer-monthly-bars" aria-hidden="true">
-        <i class="is-new" style="height:${Math.round((row.newCount / max) * 100)}%"></i>
-        <i class="is-closed" style="height:${Math.round((row.closedCount / max) * 100)}%"></i>
+        <i class="is-new${row.newCount ? "" : " is-zero"}" style="height:${Math.round((row.newCount / max) * 100)}%"></i>
+        <i class="is-closed${row.closedCount ? "" : " is-zero"}" style="height:${Math.round((row.closedCount / max) * 100)}%"></i>
       </div>
       <span>${escapeHtml(row.label)}</span>
       <small><b>${formatNumber(row.newCount)}</b> / ${formatNumber(row.closedCount)}</small>
@@ -122,7 +127,7 @@ function renderMonthly(monthly) {
       <div class="customer-detail-section-body">
         <div class="customer-monthly-legend" aria-hidden="true"><span><i class="is-new"></i>신규</span><span><i class="is-closed"></i>완료</span></div>
         <div class="customer-monthly-chart" role="img" aria-label="${escapeHtml(label)}">${columns}</div>
-        <p class="customer-detail-note">완료는 해결·종료된 이슈의 마지막 수정 월 기준입니다.</p>
+        <p class="customer-detail-note">완료는 해결·종료된 이슈의 마지막 수정 월 기준이에요.</p>
       </div>
     </section>`;
 }
@@ -141,6 +146,7 @@ function rankedBars(rows, emptyText) {
 function renderMedia(media) {
   if (!media.length) return "";
   const total = media.reduce((sum, row) => sum + row.count, 0);
+  if (!total) return "";
   const label = media.map((row) => `${row.name} ${row.count}건`).join(", ");
   return `
     <h4>매체 구분</h4>
@@ -155,7 +161,7 @@ function renderBreakdowns(data, period) {
     <section class="workspace-section customer-detail-breakdown" aria-label="화면번호와 매체 구분">
       ${sectionHeader("자주 나오는 화면번호", `최근 ${period}일 신규 기준`)}
       <div class="customer-detail-section-body">
-        ${rankedBars(data.screens || [], "이 기간에 화면번호가 기록된 신규 이슈가 없습니다.")}
+        ${rankedBars(data.screens || [], isComplete() ? "이 기간에 화면번호가 기록된 신규 이슈가 없어요." : "확인한 범위에는 화면번호가 기록된 신규 이슈가 없어요.")}
         ${renderMedia(data.media || [])}
       </div>
     </section>`;
@@ -185,26 +191,25 @@ function renderOpenIssues(data) {
     const due = formatShortDate(issue.dueDate);
     return `
       <tr>
-        <td><button type="button" class="customer-issue-link" data-customer-source="${escapeHtml(issue.id)}" aria-label="#${escapeHtml(issue.id)} 상세 보기">#${escapeHtml(issue.id)}</button></td>
-        <td class="customer-issue-title">${escapeHtml(issue.title)}</td>
-        <td><span class="status-badge">${escapeHtml(workspaceStatusLabel(issue.status))}</span></td>
-        <td>${escapeHtml(issue.handler || "")}</td>
-        <td class="is-number">${formatNumber(issue.ageDays)}일</td>
-        <td class="${issue.overdue ? "is-overdue" : ""}">${due ? `${escapeHtml(due)}${issue.overdue ? " 지남" : ""}` : "—"}</td>
+        <td class="customer-open-main"><div class="customer-open-meta"><span>#${escapeHtml(issue.id)}</span><span class="status-badge">${escapeHtml(workspaceStatusLabel(issue.status))}</span></div>
+          <button type="button" class="customer-issue-link customer-open-title" data-customer-source="${escapeHtml(issue.id)}" aria-label="#${escapeHtml(issue.id)} ${escapeHtml(issue.title)} 상세 보기">${escapeHtml(issue.title)}</button></td>
+        <td data-label="담당자">${escapeHtml(issue.handler || "미지정")}</td>
+        <td data-label="경과" class="is-number">${formatNumber(issue.ageDays)}일</td>
+        <td data-label="완료예정" class="${issue.overdue ? "is-overdue" : ""}">${due ? `${escapeHtml(due)}${issue.overdue ? " 지남" : ""}` : "—"}</td>
       </tr>`;
   }).join("");
   const more = issues.length > OPEN_PREVIEW_LIMIT
-    ? `<button type="button" class="customer-more-button" data-customer-expand aria-expanded="${detailState.expanded}">${detailState.expanded ? "접기" : `${formatNumber(issues.length)}건 모두 보기`}</button>`
+    ? `<button type="button" class="customer-more-button" data-customer-expand aria-expanded="${detailState.expanded}" aria-controls="customerOpenIssues">${detailState.expanded ? "접기" : `${formatNumber(issues.length)}건 모두 보기`}</button>`
     : "";
-  const capped = total > issues.length ? `<p class="customer-detail-note">경과일이 긴 ${formatNumber(issues.length)}건만 표시합니다. 전체 ${formatNumber(total)}건은 대화에서 조회할 수 있습니다.</p>` : "";
+  const capped = total > issues.length ? `<p class="customer-detail-note">경과일이 긴 ${formatNumber(issues.length)}건만 표시해요. 전체 ${formatNumber(total)}건은 대화에서 조회할 수 있어요.</p>` : "";
   return `
     <section class="workspace-section customer-detail-issues" aria-label="미종료 이슈">
-      <header><div><h3>미종료 이슈 <span class="customer-detail-count">${formatNumber(total)}</span></h3></div>
+      <header><div><h3>미종료 이슈 <span class="customer-detail-count">${formatNumber(visible.length)} / ${formatNumber(total)}건${isComplete() ? "" : " 이상"}</span></h3></div>
         ${issues.length > 1 ? `<div class="customer-sort" role="group" aria-label="정렬">${sortButton("age", "경과일순")}${sortButton("due", "완료예정일순")}</div>` : ""}</header>
       <div class="customer-detail-section-body">
-        ${issues.length ? `<div class="customer-issue-table-wrap"><table class="customer-issue-table">
-          <thead><tr><th scope="col">번호</th><th scope="col">제목</th><th scope="col">상태</th><th scope="col">담당자</th><th scope="col" class="is-number">경과</th><th scope="col">완료예정</th></tr></thead>
-          <tbody>${rows}</tbody></table></div>${more}${capped}` : '<p class="customer-detail-empty">미종료 이슈가 없습니다.</p>'}
+        ${issues.length ? `<div class="customer-issue-table-wrap" id="customerOpenIssues"><table class="customer-issue-table customer-open-table">
+          <thead><tr><th scope="col">이슈</th><th scope="col">담당자</th><th scope="col" class="is-number">경과</th><th scope="col">완료예정</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>${more}${capped}` : `<div class="customer-open-empty"><strong>${isComplete() ? "미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요."}</strong><p>${isComplete() ? "월별 신규·완료 추이와 관련 플레이북을 확인해 보세요." : "일부 데이터만 확인해 전체 결과는 미확정이에요."}</p></div>`}
       </div>
     </section>`;
 }
@@ -220,7 +225,7 @@ function renderPlaybooks(playbooks) {
     <section class="workspace-section customer-detail-playbooks" aria-label="관련 플레이북">
       ${sectionHeader("이 고객사에 쓰인 플레이북", "공개된 플레이북")}
       <div class="customer-detail-section-body">
-        ${cards ? `<ul class="customer-playbook-list">${cards}</ul>` : '<p class="customer-detail-empty">이 고객사 이슈를 근거로 한 공개 플레이북이 아직 없습니다.</p>'}
+        ${cards ? `<ul class="customer-playbook-list">${cards}</ul>` : '<p class="customer-detail-empty">이 고객사 이슈를 근거로 한 공개 플레이북이 아직 없어요.</p>'}
       </div>
     </section>`;
 }
@@ -229,12 +234,12 @@ function renderHeader() {
   const data = detailState.data;
   const name = data?.customer?.name || detailState.customer;
   const health = data?.health;
-  const level = HEALTH_LABELS[health?.level] ? health.level : "unknown";
+  const level = isComplete() && HEALTH_LABELS[health?.level] ? health.level : "unknown";
   const trend = TREND_LABELS[health?.trend];
   const meta = data?.meta;
   const subtitle = meta
-    ? `${formatShortDate(meta.periodFrom)} ~ ${formatShortDate(meta.periodTo)} · ${meta.scopeLabel || "팀"} 담당분`
-    : "고객사 데이터를 조회하고 있습니다.";
+    ? `${formatPeriodRange(meta.periodFrom, meta.periodTo)} · ${meta.scopeLabel || "팀"} 담당분`
+    : "고객사 데이터를 조회하고 있어요.";
   const periods = PERIODS.map((days) => `<button type="button" data-customer-period="${days}" aria-pressed="${detailState.period === days}">${days}일</button>`).join("");
   return `
     <nav class="customer-detail-crumb" aria-label="위치">
@@ -243,6 +248,7 @@ function renderHeader() {
     <header class="customer-detail-header">
       <div class="customer-detail-heading">
         <div class="customer-detail-title">
+          ${customerMark(name, "lg")}
           <h2 id="customerDetailTitle" tabindex="-1">${escapeHtml(name)}</h2>
           ${health ? `<span class="customer-health-badge is-${level}">${HEALTH_LABELS[level]}${trend && level !== "unknown" ? ` · ${trend}` : ""}</span>` : ""}
         </div>
@@ -266,15 +272,16 @@ function renderBody() {
     if (detailState.error) {
       return `<div class="workspace-error">${escapeHtml(detailState.error)} <button type="button" class="secondary-button" data-customer-refresh>다시 시도</button></div>`;
     }
-    return '<div class="workspace-loading">고객사 현황을 불러오는 중입니다.</div>';
+    return '<div class="workspace-loading">고객사 현황을 불러오는 중이에요.</div>';
   }
   const period = data.meta?.periodDays || detailState.period;
   return `
     ${detailState.error ? `<p class="customer-detail-error" role="alert">${escapeHtml(detailState.error)}</p>` : ""}
+    ${isComplete() ? "" : '<p class="customer-detail-note">일부 데이터만 확인했어요. 건수는 확인한 범위의 최소값이며, 전체 결과는 미확정이에요.</p>'}
     ${renderMetrics(data.summary || {}, period)}
     ${renderHealth(data.health || {})}
-    <div class="customer-detail-grid">${renderMonthly(data.monthly || [])}${renderBreakdowns(data, period)}</div>
     ${renderOpenIssues(data)}
+    <div class="customer-detail-grid">${renderMonthly(data.monthly || [])}${renderBreakdowns(data, period)}</div>
     ${renderPlaybooks(data.playbooks || [])}`;
 }
 
@@ -318,12 +325,12 @@ async function loadCustomerDetail(refresh = false) {
     const response = await apiFetch(`${WORKSPACE_ENDPOINTS.customer}?${params}`);
     const payload = await responseJson(response);
     if (requestId !== detailState.requestId) return;
-    if (!response.ok) throw new Error(payload.detail || "고객사 현황을 불러오지 못했습니다.");
+    if (!response.ok) throw new Error(payload.detail || "고객사 현황을 불러오지 못했어요.");
     detailState.data = payload;
     detailState.error = "";
   } catch (error) {
     if (requestId !== detailState.requestId) return;
-    detailState.error = error.message || "고객사 현황을 불러오지 못했습니다.";
+    detailState.error = error.message || "고객사 현황을 불러오지 못했어요.";
   }
   detailState.loading = false;
   render();

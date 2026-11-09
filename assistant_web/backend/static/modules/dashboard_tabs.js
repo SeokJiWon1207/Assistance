@@ -44,6 +44,15 @@ function selectDashboardTab(tab, { focus = false } = {}) {
   if (changed) tabViews.get(tab)?.onShow?.();
 }
 
+// 고객사·공수·화면번호 탭은 기준 설명과 도구를 팀 현황과 같은 머리글 경로 줄 자리에 그린다.
+// 칸은 index.html에 탭마다 하나씩 있고 CSS가 현재 탭(data-subview)의 칸만 보여 준다.
+function tabHeaderSlots(tab) {
+  return {
+    subtitle: document.querySelector(`[data-tab-subtitle="${tab}"]`),
+    tools: document.querySelector(`[data-tab-tools="${tab}"]`),
+  };
+}
+
 function currentDashboardTab() {
   return currentTab;
 }
@@ -71,4 +80,4 @@ function initDashboardTabs() {
   applyDashboardTab();
 }
 
-export { registerDashboardTab, applyDashboardTab, selectDashboardTab, currentDashboardTab, initDashboardTabs };
+export { registerDashboardTab, applyDashboardTab, selectDashboardTab, currentDashboardTab, initDashboardTabs, tabHeaderSlots };

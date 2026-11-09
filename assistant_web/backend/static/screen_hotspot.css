@@ -12,18 +12,21 @@
   font-size: 13px;
 }
 .screen-filter select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+/* 거르기·정렬 선택 상자는 도구 막대 높이(36px · 13px)에 맞춘다. 페이지 검색창만 44px을 쓴다. */
+.screen-filter .custom-select { width: auto; }
+.screen-filter .custom-select-trigger { min-height: 36px; height: 36px; min-width: 100px; padding: 0 12px; font-size: 13px; }
 
 .screen-spike {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 12px;
-  padding: 12px 16px;
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--line));
-  border-radius: var(--radius-card);
-  background: var(--surface);
+  padding: 12px 20px;
 }
-.screen-spike p { flex: 1 1 320px; margin: 0; color: var(--text); font-size: 14px; }
+.screen-spike p { flex: 1 1 320px; margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; }
+.screen-spike + .screen-spike { border-top: 1px solid var(--line); }
+/* 글자만 누르는 링크는 파란 13px(카드의 '모두 보기 ›'와 같은 크기), 행 전체가 눌리는 목록은 검은 글자 + 마우스 올림 바탕을 쓴다. */
+.screen-spike .customer-issue-link { font-size: 13px; white-space: nowrap; }
 .screen-spike-badge {
   padding: 2px 8px;
   border-radius: var(--radius-badge);
@@ -67,15 +70,16 @@
 .screen-total { padding: 0 6px; color: var(--text); font-weight: 700; text-align: right; }
 .screen-heat-table tr.is-selected .screen-total { color: var(--blue); }
 
-.screen-detail { border-color: color-mix(in srgb, var(--blue) 30%, var(--line)); }
+.screen-detail { min-width: 0; }
 .screen-detail-heading { display: grid; gap: 2px; }
 .screen-detail-heading span { color: var(--muted); font-size: 12px; }
-.screen-detail-heading h3 { margin: 0; color: var(--text); font-size: 20px; }
+.screen-detail-heading h3 { margin: 0; color: var(--text); font-size: 22px; scroll-margin-top: 20px; }
+.screen-detail-heading h3:focus { outline: none; }
 .screen-detail-heading p { margin: 0; color: var(--text-soft); font-size: 13px; }
 
 .screen-issue-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .screen-issue-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; font-size: 13px; }
-.screen-issue-title { overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.screen-issue-title { display: -webkit-box; overflow: hidden; color: var(--text); line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .screen-issue-list small { grid-column: 2; color: var(--muted); font-size: 12px; }
 .screen-playbooks { grid-template-columns: minmax(0, 1fr); }
 
@@ -89,4 +93,60 @@
 
 @media (max-width: 680px) {
   .screen-filter select { max-width: 140px; }
+}
+
+/* 조회 조건과 집계 범위는 표 밖에서 읽고, 선택 상세는 같은 중립 카드를 쓴다. */
+.screen-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.screen-controls-fields, .screen-controls-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; min-width: 0; }
+.screen-controls-scope { color: var(--muted); font-size: 12px; }
+.screen-controls .customer-more-button { color: var(--text-soft); }
+.screen-heatmap { min-width: 0; }
+.screen-heatmap > header { flex-wrap: wrap; align-items: flex-start; padding: 20px 20px 12px; border: 0; }
+.screen-heatmap > header p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.screen-heatmap > .customer-detail-section-body { padding: 0 20px 20px; gap: 16px; }
+.screen-heat-table thead th { padding-bottom: 8px; }
+.screen-heat-table th:first-child { position: sticky; left: 0; z-index: 1; min-width: 72px; background: var(--surface); }
+.screen-row-button, .screen-heat { height: 36px; }
+.screen-row-button { font-weight: 600; }
+.screen-heat-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--muted); font-size: 12px; }
+.screen-heat-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.screen-heat-legend .screen-heat { width: 10px; height: 10px; border-radius: 3px; }
+.screen-detail > .customer-detail-section-body { padding: 20px; gap: 16px; }
+.screen-detail-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.screen-detail-metrics dt { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.screen-detail-metrics dd { margin: 0; color: var(--text); font-size: 20px; font-weight: 600; }
+.screen-detail-section { display: grid; gap: 12px; min-width: 0; }
+.screen-detail-section + .screen-detail-section { padding-top: 16px; border-top: 1px solid var(--line); }
+.screen-detail-section h4 { margin: 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.screen-issue-list { gap: 0; }
+.screen-issue-list li { padding: 12px 0; gap: 4px 8px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.screen-issue-list li:first-child { padding-top: 0; }
+.screen-issue-list li:last-child { padding-bottom: 0; border: 0; }
+.screen-issue-list .customer-issue-link { text-align: left; font-size: 12px; }
+.screen-detail .effort-ranked-name { color: var(--text); }
+.screen-detail-actions { padding-top: 16px; border-top: 1px solid var(--line); }
+.screen-empty { grid-column: 1 / -1; display: grid; justify-items: center; gap: 12px; padding: 40px 20px; text-align: center; }
+.screen-empty > svg { color: var(--muted); fill: none; stroke: currentColor; stroke-width: 1.8; }
+.screen-empty h3 { font-size: 17px; line-height: 1.5; }
+.screen-empty p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.screen-empty .customer-more-button { justify-self: center; }
+
+@container dashboard-panel (max-width: 1100px) {
+  .screen-hotspot-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 560px) {
+  .screen-controls { padding: 14px; }
+  .screen-controls-fields { flex: 1 1 100%; flex-wrap: nowrap; gap: 12px; }
+  .screen-controls .screen-filter { flex: 1 1 0; min-width: 0; }
+  .screen-controls .custom-select { flex: 1 1 0; min-width: 0; }
+  .screen-controls .custom-select-trigger { width: 100%; min-width: 0; padding: 0 8px; }
+  .screen-controls-scope { width: 100%; justify-content: space-between; }
+  .screen-spike { padding: 12px 16px; gap: 6px 8px; }
+  .screen-spike p { flex-basis: 100%; }
+  .screen-heatmap > header { padding: 16px 16px 12px; }
+  .screen-heatmap > .customer-detail-section-body { padding: 0 16px 16px; }
+  .screen-detail > .customer-detail-section-body { padding: 16px; }
+  .screen-detail-actions { flex-direction: column; }
+  .screen-detail-actions > * { flex-basis: auto; }
 }

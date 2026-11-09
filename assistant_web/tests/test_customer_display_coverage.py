@@ -38,7 +38,17 @@ class CustomerDisplayCoverageTests(unittest.TestCase):
         from backend.config import CUSTOMER_DIRECTORY
         from backend.display import customer_name
         names = list_customer_names()
-        self.assertEqual(set(names), {'exact', 'projects'})
+        self.assertEqual(set(names), {'exact', 'projects', 'picker', 'logos'})
+        self.assertEqual(names['picker'][:2], ['교보증권', '다올투자증권'])
+        # 로고는 선택 목록 이름과 대표 이름 모두로 찾고, 같은 고객사는 같은 파일을 쓴다. 파일은 저장소에 있어야 한다.
+        from pathlib import Path
+        static = Path(__file__).resolve().parents[1] / 'backend' / 'static'
+        self.assertEqual(names['logos']['DB금융투자'], names['logos']['DB증권'])
+        self.assertEqual(names['logos']['iM증권'], '/static/assets/customers/im.png')
+        self.assertNotIn('삼성증권', names['logos'])
+        self.assertNotIn('메리츠증권(구 아이엠투자증권)', names['logos'])
+        for url in names['logos'].values():
+            self.assertTrue((static / url.removeprefix('/static/')).is_file(), url)
         for entry in CUSTOMER_DIRECTORY.values():
             for project in entry.get('projects', []):
                 self.assertEqual(names['projects'][project], entry['name'])

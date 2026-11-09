@@ -13,6 +13,7 @@
 """
 
 import re
+from copy import deepcopy
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -202,19 +203,21 @@ def _unavailable(text: str, constraints: Dict[str, Any], reason: str) -> Dict[st
 
 
 @with_store_scope
-def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def build_sla_report(text: str, *, mode: Optional[str] = None, constraints: Optional[dict] = None,
+                     group_by: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """처리시간/적체 질문에 라이브 이슈 기반 결정형 리포트로 답한다."""
     mode = mode or _sla_mode(text)
     if not mode:
         return None
 
-    constraints = extract_query_constraints(text)
+    structured = constraints is not None
+    constraints = deepcopy(constraints) if constraints is not None else extract_query_constraints(text)
     includes_effort = '공수' in text or constraints.get('effort_date_basis') == 'delivered_at'
     if includes_effort and not constraints.get('unified_plan_validated'):
         year, month = parse_effort_period(text)
         start, end, _, _ = effort_period_bounds(year, month, extract_effort_date_range(text) or constraints.get('created_at'))
         constraints = _effort_constraints(text, start, end, constraints)
-    if mode == "aging":
+    if mode == "aging" and not structured:
         # 경과일과 별도로 명시한 등록 기간이 있으면 둘을 교집합으로 적용한다.
         # 상대 날짜 파서가 "30일 넘게"를 먼저 읽어 "이번 달"을 놓치는 경우도 보정한다.
         period_text = re.sub(r"\d{1,3}\s*일\s*(?:이상|초과|넘(?:게|은|은지|었|긴))", " ", text)
@@ -245,7 +248,7 @@ def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[
             result["retrieval"]["stages"][0]["meta"].update({**coverage, "found_count": 0, "coverage": "complete"})
             return result
         # 조회 자체는 성공했으므로 '도구 사용 불가'가 아니라 '조건에 맞는 건이 없음'이다.
-        return _sla_failure(
+        result = _sla_failure(
             text,
             match_constraints,
             "조건에 맞는 이슈가 없습니다.",
@@ -253,8 +256,10 @@ def build_sla_report(text: str, *, mode: Optional[str] = None) -> Optional[Dict[
             status="ok",
             error_kind="no_results",
         )
+        result['retrieval']['stages'][0]['meta'] = {**coverage, 'found_count': 0, 'mode': mode}
+        return result
 
-    axis = _group_axis(text)
+    axis = _group_axis(text) if not structured else _group_axis({'customer': '고객사별', 'owner': '담당자별'}.get(group_by or '', ''))
     if mode == "duration":
         result = _build_duration_report(text, match_constraints, issues, axis)
         result['retrieval']['stages'][0]['meta'].update(coverage)
@@ -279,15 +284,18 @@ def _build_duration_report(
     axis: Optional[Tuple[str, Any, str]],
 ) -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
+    invalid_dates = 0
     for issue in issues:
         if not _is_closed(str(issue.get("status") or "")):
             continue
         created = _parse_date(str(issue.get("created_at") or ""))
         updated = _parse_date(str(issue.get("updated_at") or ""))
         if not created or not updated:
+            invalid_dates += 1
             continue
         days = (updated - created).days
         if days < 0:
+            invalid_dates += 1
             continue
         rows.append({**issue, "handling_days": days})
 
@@ -307,7 +315,9 @@ def _build_duration_report(
             f"- 최장: {max(all_days)}일 · 최단: {min(all_days)}일",
         ])
     else:
-        lines.append("종료된 이슈가 없어 리드타임을 계산할 수 없습니다.")
+        lines.append("날짜를 확인할 수 있는 해결·종료 이슈가 없어 리드타임을 계산할 수 없습니다.")
+    if invalid_dates:
+        lines.append(f"- 등록일·최종수정일 누락 또는 날짜 역전 {invalid_dates}건은 처리기간 계산에서 제외했습니다.")
 
     if axis:
         _axis_field, axis_extract, axis_label = axis
@@ -385,7 +395,11 @@ def _build_duration_report(
         "",
         "※ 정확한 종료 시각 필드가 없어 최종수정일을 완료 시각의 근사로 사용했습니다.",
     ])
-    return _finalize(text, constraints, lines, rows[:SLA_TOP_N], "duration")
+    result = _finalize(text, constraints, lines, rows[:SLA_TOP_N], "duration")
+    result['retrieval']['stages'][0]['meta'].update(
+        invalid_duration_count=invalid_dates, duration_count=len(rows),
+        duration_days=[r['handling_days'] for r in rows], duration_basis='created_at_to_updated_at_approximation')
+    return result
 
 
 def _build_aging_report(

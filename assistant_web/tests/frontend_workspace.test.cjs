@@ -58,15 +58,26 @@ async function harness(apiFetch, cache = core.conversationCache) {
   await naming.link(() => {});
   await naming.evaluate();
   const module = new vm.SourceTextModule(source, { context });
-  await module.link((specifier) => {
-    if (specifier.startsWith('./ui_format.js')) return naming;
+  const synthetic = (specifier) => {
     const exports = modules[specifier.replace(/\?v=.*$/, '')];
     return new vm.SyntheticModule(Object.keys(exports), function () {
       for (const [name, value] of Object.entries(exports)) this.setExport(name, value);
     }, { context });
+  };
+  // 지표·차트 카드는 실제 모듈로 그려 화면 문구까지 확인한다(차트·아이콘만 위의 모의 모듈을 쓴다).
+  const insights = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace_insights.js'), 'utf8'), { context });
+  await insights.link(synthetic);
+  // 목표일 칩·최근 활동도 실제 모듈로 그린다.
+  const home = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace_home.js'), 'utf8'), { context });
+  await home.link(synthetic);
+  await module.link((specifier) => {
+    if (specifier.startsWith('./ui_format.js')) return naming;
+    if (specifier.startsWith('./workspace_insights.js')) return insights;
+    if (specifier.startsWith('./workspace_home.js')) return home;
+    return synthetic(specifier);
   });
   await module.evaluate();
-  return { state, storage, timers, els, htmlWrites, badges, naming: naming.namespace, api: module.namespace };
+  return { state, storage, timers, els, htmlWrites, badges, naming: naming.namespace, api: module.namespace, home: home.namespace };
 }
 const message = (content) => ({ role: 'user', content });
 const json = (value) => JSON.parse(JSON.stringify(value));
@@ -111,7 +122,7 @@ test('unavailable notification collection does not present an empty result as no
     assert.doesNotMatch(html, /새 업무 알림이 없/);
   }
   const collected = { ...data, notificationScope: { status: 'ready' } };
-  assert.match(h.api.renderNotifications(collected), /새 업무 알림이 없습니다/);
+  assert.match(h.api.renderNotifications(collected), /새 업무 알림이 없어요/);
 });
 
 test('unavailable collection preserves known notifications and qualifies the unread empty filter', async () => {
@@ -119,8 +130,21 @@ test('unavailable collection preserves known notifications and qualifies the unr
   const data = { notifications: [{id:'saved',title:'기존 알림',read:true}], notificationScope: { status:'unavailable',message:'수집 보류' } };
   assert.match(h.api.renderNotifications(data), /기존 알림/);
   h.state.notificationFilter = 'unread';
-  assert.doesNotMatch(h.api.renderNotifications(data), /읽지 않은 알림이 없습니다/);
+  assert.doesNotMatch(h.api.renderNotifications(data), /읽지 않은 알림이 없어요/);
   assert.match(h.api.renderNotifications(data), /확인한 알림/);
+});
+
+test('playbook search suggests the same unique customer names as favorites', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  h.naming.setCustomerNames({exact: {nh: 'NH투자증권', 신한: '신한투자증권'},
+    projects: {'120NH': 'NH투자증권', '132SHGM': '신한투자증권'}});
+  const html = h.api.renderPlaybooks();
+  assert.match(html, /<form data-playbook-search-form autocomplete="off">/);
+  assert.match(html, /<input[^>]*name="playbook-query"[^>]*autocomplete="off"[^>]*list="playbookCustomerNames"/);
+  const suggestions = html.match(/<datalist id="playbookCustomerNames">(.*?)<\/datalist>/s)?.[1];
+  assert.equal(suggestions, h.api.renderFavoriteConversations().match(/<datalist[^>]*>(.*?)<\/datalist>/s)[1]);
+  assert.equal((suggestions.match(/<option/g) || []).length, 2);
+  assert.doesNotMatch(suggestions, /"nh"|"120NH"|"132SHGM"/);
 });
 
 test('playbook refresh failure preserves cached entries and exposes retry', async () => {
@@ -330,7 +354,7 @@ test('personal workspace joins a single live lookup and hides lists until comple
   await new Promise(setImmediate);
   assert.equal(h.els.workspaceRefreshBtn.disabled, true);
   assert.match(h.els.workspaceRefreshBtn.innerHTML, /불러오는 중…/);
-  assert.match(h.els.workspaceContent.innerHTML, /업무 정보를 불러오는 중입니다/);
+  assert.match(h.els.workspaceContent.innerHTML, /업무 정보를 불러오는 중이에요/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'true');
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /workspace-overview|workspace-issue-list/);
   assert.ok(h.htmlWrites.every((html) => !html.includes('이전 업무')));
@@ -382,7 +406,7 @@ test('unlinked personal account finishes after its initial lookup', async () => 
   });
   await h.api.ensureMyWorkspaceFresh();
   assert.equal(calls, 1);
-  assert.match(h.els.workspaceContent.innerHTML, /담당자명이 연결되지 않았습니다/);
+  assert.match(h.els.workspaceContent.innerHTML, /Mantis 담당자 연결이 필요해요/);
   assert.equal(h.els.workspaceContent.attributes['aria-busy'], 'false');
 });
 
@@ -395,7 +419,7 @@ test('personal workspace does not treat old cached data as freshly fetched', asy
   await h.api.loadMyWorkspace();
   await h.api.ensureMyWorkspaceFresh();
   assert.equal(calls, 2);
-  assert.match(h.els.workspaceContent.innerHTML, /일부 이슈만 확인했어요/);
+  assert.match(h.els.workspaceContent.innerHTML, /업무를 모두 확인하지 못했어요/);
   assert.doesNotMatch(h.els.workspaceContent.innerHTML, /실시간|전체 건수 미확정|조회 기준/);
   assert.equal(h.els.workspaceDataBadge.badge.state, 'partial');
 });
@@ -532,7 +556,7 @@ test('partial team brief does not assert no spikes or no priority issues', async
   const h = await harness(async () => ({ ok: true }));
   h.state.teamWeeklyBrief = {source: {search_complete: false}, summary: {}, priorities: [], customerSpikes: [], screenSpikes: []};
   const html = h.api.renderTeamWeeklyBrief();
-  assert.doesNotMatch(html, /급증한 고객사가 없습니다|급증한 화면번호가 없습니다|우선 확인할 이슈가 없습니다/);
+  assert.doesNotMatch(html, /급증한 고객사가 없어요|급증한 화면번호가 없어요|우선 확인할 이슈가 없어요/);
   assert.match(html, /비교 미확정/);
 });
 
@@ -646,4 +670,106 @@ test('a list response started before bulk deletion cannot reintroduce deleted co
   finishList({ok:true,json:async()=>({conversations:[{id:'old',messages:[message('원문')],updatedAt:'old'}]})});
   await loading;
   assert.equal(h.state.conversations.some(item=>item.id==='old'),false);
+});
+
+test('work tab shows due chips that filter and sort by due date, and a recent activity feed', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const issues = [
+    { id: 1, title: '목표일 없음', ageDays: 40, isOpen: true },
+    { id: 2, title: '지난 업무', dueDate: day(-3), overdue: true, ageDays: 10, isOpen: true },
+    { id: 3, title: '이번 주 업무', dueDate: day(2), ageDays: 5, isOpen: true },
+    { id: 4, title: '다음 달 업무', dueDate: day(30), ageDays: 1, isOpen: true },
+  ];
+  const data = {
+    user: { mantisUsername: 'user-a' }, summary: { open: 4 }, mantis: { search_complete: true, issues },
+    notifications: [
+      { id: 'o', type: 'overdue', title: '#2 일정이 지났습니다', description: '지난 업무', date: day(-3), read: true },
+      { id: 'n', type: 'note', issueId: 3, title: '#3 새 노트가 확인되었습니다', description: '이번 주 업무 · 작성자 허영교', date: new Date().toISOString(), read: false },
+      { id: 'a', type: 'assigned', issueId: 4, title: '#4 새 배정이 확인되었습니다', description: '다음 달 <업무>', date: new Date().toISOString(), read: true },
+    ],
+  };
+  let html = h.api.renderPersonalOverview(data);
+  assert.match(html, /data-workspace-due-filter="overdue" aria-pressed="false">기한 지남 <b>1<\/b>/);
+  assert.match(html, /data-workspace-due-filter="week" aria-pressed="false">7일 안 마감 <b>1<\/b>/);
+  assert.match(html, /data-workspace-due-filter="none" aria-pressed="false">목표일 없음 <b>1<\/b>/);
+  assert.match(html, /<option value="due" >목표일 임박순/);
+  // 최근 활동은 배정·노트만(작성자는 따로, 제목은 이스케이프), 기한 경고는 오른쪽 레일 맨 위 '알림'에 둔다.
+  const feed = html.slice(html.indexOf('workspace-activity-list'));
+  assert.ok(feed.indexOf('허영교님이 #3에 노트를 남겼어요') < feed.indexOf('#4 이슈가 나에게 배정됐어요'));
+  assert.doesNotMatch(feed, /#2 목표일이 지났어요/);
+  const notice = html.slice(html.indexOf('workspaceSideNoticeTitle'), html.indexOf('workspace-activity-list'));
+  assert.match(notice, /#2 일정이 지났습니다/);
+  assert.doesNotMatch(notice, /새 노트가 확인되었습니다/);
+  // 추이 차트 옆 '고객사별 담당'
+  assert.match(html, /<h3>고객사별 담당<\/h3>/);
+  assert.match(feed, /data-workspace-issue="3"/);
+  assert.match(feed, /다음 달 &lt;업무&gt;/);
+  assert.match(feed, /새 활동/);
+  h.state.workspaceDueFilter = 'week';
+  html = h.api.renderPersonalOverview(data);
+  const list = html.slice(html.indexOf('workspace-issue-list'), html.indexOf('</section>', html.indexOf('workspace-issue-list')));
+  assert.match(list, /이번 주 업무/);
+  assert.doesNotMatch(list, /지난 업무|목표일 없음|다음 달 업무/);
+  assert.match(html, /건 표시 · 전체 4건 중/);
+  h.state.workspaceDueFilter = 'all';
+  h.state.workspaceSort = 'due';
+  html = h.api.renderPersonalOverview(data);
+  const order = ['지난 업무', '이번 주 업무', '다음 달 업무', '목표일 없음'].map((title) => html.indexOf(`>${title}</button>`));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+});
+
+function emptyPersonalData() {
+  return {
+    user: { mantisUsername: 'user-a' },
+    summary: { open: 0, overdue: 0, aging: 0 },
+    mantis: { status: 'snapshot', search_complete: true, issues: [] },
+    weeklyBrief: { newIssues: 1, updatedIssues: 2, overdueIssues: 0 },
+    activity: { points: [{ date: '2026-11-09', count: 1 }], recentNew: 1, previousNew: 2 },
+    notifications: [{ id: 'note-29', type: 'note', issueId: 29, title: '#29 새 노트', description: '처리된 업무 · 작성자 검토자', read: false }],
+  };
+}
+
+test('confirmed empty work replaces repeated empty analytics with reports and actionable recent activity', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const html = h.api.renderPersonalOverview(emptyPersonalData());
+  assert.match(html, /진행 중인 담당 업무가 없어요/);
+  assert.doesNotMatch(html, /고객사별 담당|미종료 경과일|상태별 미종료|data-workspace-sort|class="workspace-kpis"/);
+  assert.match(html, /data-workspace-go="brief"/);
+  assert.match(html, /data-workspace-issue="29"/);
+  assert.match(html, /내 담당 신규 등록 추이/);
+  assert.ok(html.indexOf('이번 주 브리핑') < html.indexOf('내 담당 신규 등록 추이'));
+});
+
+test('empty partial or unlinked work retains uncertainty and a useful next step', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const partial = emptyPersonalData();
+  partial.mantis.search_complete = false;
+  const partialHtml = h.api.renderPersonalOverview(partial);
+  assert.match(partialHtml, /업무를 모두 확인하지 못했어요/);
+  assert.match(partialHtml, /data-workspace-retry/);
+  assert.doesNotMatch(partialHtml, /진행 중인 담당 업무가 없어요|모두 기한 내 진행 중/);
+  assert.match(partialHtml, /data-workspace-issue="29"/);
+
+  const unlinked = emptyPersonalData();
+  unlinked.user.mantisUsername = '';
+  const unlinkedHtml = h.api.renderPersonalOverview(unlinked);
+  assert.match(unlinkedHtml, /Mantis 담당자 연결이 필요해요/);
+  assert.match(unlinkedHtml, /관리자에게 담당자명 등록/);
+  assert.doesNotMatch(unlinkedHtml, /진행 중인 담당 업무가 없어요|모두 기한 내 진행 중|이번 주 브리핑/);
+  assert.match(unlinkedHtml, /data-workspace-go="notifications"/);
+});
+
+test('a due filter with no matches keeps existing work and filter controls reachable', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const data = emptyPersonalData();
+  data.summary.open = 1;
+  data.mantis.issues = [{ id: 8, title: '목표일 없는 업무', isOpen: true, status: 'assigned', ageDays: 2 }];
+  h.state.workspaceDueFilter = 'week';
+  const html = h.api.renderPersonalOverview(data);
+  assert.match(html, /이 조건에 맞는 미종료 이슈가 없어요/);
+  assert.match(html, /data-workspace-due-filter="all"/);
+  assert.match(html, /data-workspace-sort/);
+  assert.doesNotMatch(html, /진행 중인 담당 업무가 없어요|workspace-empty-overview/);
 });
