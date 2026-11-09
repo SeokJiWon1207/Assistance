@@ -17,7 +17,8 @@ class NotionCooldownTests(unittest.TestCase):
              patch.object(transport.time,'monotonic',side_effect=lambda:now[0]), \
              patch.object(transport,'interruptible_sleep',side_effect=sleep), \
              patch.object(transport.requests,'post',side_effect=post), \
-             patch.object(transport,'_notion_next_request_at',0.0):
+             patch.object(transport,'_notion_next_request_at',0.0), \
+             patch.object(transport,'_notion_retry_after_until',0.0):
             transport.notion_post_json('https://api.notion.test/one',{})
             transport.notion_post_json('https://api.notion.test/two',{})
         self.assertGreaterEqual(calls[1]-calls[0],30)

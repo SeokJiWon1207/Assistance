@@ -60,6 +60,7 @@ def _lookup_name_cached(kind: str, identifier: str, token: str, bucket: int) -> 
         f"{NOTION_API_BASE}/{kind}/{identifier}",
         headers={**get_notion_headers(), "Authorization": token}, timeout=bounded_timeout(20),
     )
+    transport.observe_notion_response(response)
     if response.status_code != 200:
         raise LookupError("Notion 이름 조회 실패")
     data = response.json()
@@ -132,6 +133,7 @@ def _page_content_cached(page_id: str, max_blocks: int, token: str, bucket: int)
                     f"{NOTION_API_BASE}/{path}", headers=get_notion_headers(),
                     params=payload, timeout=bounded_timeout(min(8, available)),
                 )
+            transport.observe_notion_response(response)
             if response.status_code != 200:
                 incomplete = True
                 return {}
@@ -266,6 +268,7 @@ def _request_notion_database(database_id: str) -> Dict[str, Any]:
         headers=get_notion_headers(),
         timeout=bounded_timeout(20),
     )
+    transport.observe_notion_response(response)
     if response.status_code >= 400:
         raise HTTPException(
             status_code=502,
@@ -366,6 +369,7 @@ def _fetch_notion_users_cached(_bucket: int) -> tuple[tuple[str, str], ...]:
             params=params,
             timeout=bounded_timeout(20),
         )
+        transport.observe_notion_response(response)
         if response.status_code >= 400:
             return tuple(users)
         data = response.json()

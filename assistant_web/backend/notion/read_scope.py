@@ -161,6 +161,7 @@ def _scope_cached(roots: Tuple[str, ...], token: str, bucket: int, max_seconds: 
                     f"{NOTION_API_BASE}/{path}", headers=get_notion_headers(),
                     timeout=bounded_timeout(min(8, remaining)),
                 )
+            transport.observe_notion_response(response)
             if response.status_code != 200:
                 complete = False
                 return {}

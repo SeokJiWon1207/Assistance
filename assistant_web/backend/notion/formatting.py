@@ -21,6 +21,9 @@ from backend.query_filters import filter_clause_label
 from backend.query.operations import extract_group_by, has_count_intent
 
 
+TITLE_SCOPE_NOTICE = "검색어가 본문에만 있는 문서는 더 있을 수 있습니다."
+
+
 def append_notion_completeness_notice(
     content: str, retrieval_result: Optional[Dict[str, Any]],
 ) -> str:
@@ -43,6 +46,7 @@ def append_notion_completeness_notice(
     notices = []
     # 결정형 Notion 목록을 재사용한 대체 답변에는 이미 검색 범위 안내가 있다.
     scope_already_explained = any(notice in content for notice in (
+        TITLE_SCOPE_NOTICE,
         "일부 항목을 아직 확인하지 못해 전체 건수와 다를 수 있습니다.",
         "전체 항목을 확인한 결과는 아닙니다.",
         "전체 조회가 끝나지 않아 결과가 없다고 확정할 수 없습니다.",
@@ -353,7 +357,10 @@ def format_deterministic_notion_answer(
         for marker in ("몇개", "몇건", "건수", "총몇")
     )
     total_matches = int(notion_stage.get("meta", {}).get("candidate_count", len(pages)))
-    if notion_stage.get("meta", {}).get("search_complete") is False or notion_stage.get("status") == "partial_error":
+    if scope_meta.get("tool") == "notion_catalog_title_search":
+        intro = (f"🔍 제목에 검색어가 모두 있고 조건에 맞는 Notion 문서 {total_matches}건을 확인했습니다. "
+                 f"{sort_label}으로 {len(pages)}건을 표시합니다. {TITLE_SCOPE_NOTICE}")
+    elif notion_stage.get("meta", {}).get("search_complete") is False or notion_stage.get("status") == "partial_error":
         intro = (
             f"🔍 조회한 범위에서 조건에 맞는 Notion 항목 {total_matches}건을 확인했습니다. "
             f"{sort_label}으로 {len(pages)}건을 표시합니다. "

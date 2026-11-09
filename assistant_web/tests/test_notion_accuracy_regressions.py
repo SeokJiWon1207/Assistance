@@ -83,6 +83,82 @@ class NotionAccuracyRegressionTests(unittest.TestCase):
         return {"id": identifier, "type": "paragraph", "has_children": False,
                 "paragraph": {"rich_text": [{"plain_text": text}]}}
 
+    def test_customer_list_prioritizes_allowed_database_and_preserves_verified_partial_results(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from backend.execution import CURRENT_BUDGET, ExecutionBudget, checkpoint, execution_scope
+
+        match = page("hit")
+        match["properties"]["제목"]["title"][0]["plain_text"] = "[한국투자증권] 서버 점검"
+        other = page("wrong-customer")
+        other["properties"]["제목"]["title"][0]["plain_text"] = "[신한투자증권] 서버 점검"
+        self.search_fixture([], {})
+        scanned = []
+
+        def query(url, payload, **kwargs):
+            database = url.split("/databases/")[1].split("/")[0]
+            scanned.append(database)
+            if database == "slow":
+                CURRENT_BUDGET.get().deadline = 0
+                checkpoint()
+            return response({"results": [match, other], "has_more": False})
+
+        scope = {"slow": "slow", "target": "target"}
+        with TemporaryDirectory() as directory, patch.object(search, "RUNTIME_DIR", Path(directory)), \
+             patch.object(search, "resolve_notion_read_scope", return_value=(scope, True)), \
+             patch.object(transport, "notion_post_json", side_effect=query), execution_scope(ExecutionBudget.create()):
+            index = {"titles": {"한국투자증권서버": [{"parent_id": "outside"}, {"parent_id": "target"}]}}
+            (Path(directory) / "notion_title_index.json").write_text(json.dumps(index))
+            result = search.execute_notion_search("한투 관련 최근 문서 찾아줘", constraints={
+                "filter_clauses": [{"field": "customer", "operator": "equals", "value": "한국투자증권"}]},
+                include_blocks=False)
+        self.assertEqual(scanned, ["target", "slow"])
+        self.assertEqual([row["id"] for row in result["notion_pages"]], ["hit"])
+        self.assertFalse(result["meta"]["result_window_complete"])
+        self.assertFalse(result["meta"]["search_complete"])
+        self.assertIn("live_search_time_limit", result["meta"]["incomplete_reasons"])
+
+    def test_live_title_lookup_uses_the_remaining_request_or_agent_time(self):
+        from backend.execution import ExecutionBudget, checkpoint, execution_scope
+
+        self.search_fixture([], {})
+        def lookup(allowance, elapsed):
+            clock = [1000.0]
+
+            def query(_url, _payload, **_kwargs):
+                clock[0] += elapsed
+                checkpoint()
+                return response({"results": [page("found")], "has_more": False})
+
+            with (patch("time.monotonic", side_effect=lambda: clock[0]),
+                  patch.dict(os.environ, {"NOTION_TITLE_QUERY_CACHE_SECONDS": "0"}),
+                  execution_scope(ExecutionBudget(clock[0] + allowance)),
+                  patch.object(transport, "notion_post_json", side_effect=query)):
+                return search.execute_notion_search("노션에서 '운영 문서' 찾아줘", include_blocks=False)
+
+        for allowance, elapsed in ((180, 165), (20, 6)):
+            with self.subTest(allowance=allowance):
+                result = lookup(allowance, elapsed)
+                self.assertEqual([p["id"] for p in result["notion_pages"]], ["found"])
+                self.assertTrue(result["meta"]["search_complete"])
+
+    def test_timeout_on_next_cursor_keeps_already_verified_document_from_same_db(self):
+        from backend.execution import CURRENT_BUDGET, checkpoint
+
+        self.search_fixture([], {})
+        def query(_url, payload, **_kwargs):
+            if payload.get("start_cursor"):
+                CURRENT_BUDGET.get().deadline = 0
+                checkpoint()
+            return response({"results": [page("first-page")], "has_more": True, "next_cursor": "next"})
+
+        with (patch.dict(os.environ, {"NOTION_TITLE_QUERY_CACHE_SECONDS": "0"}),
+              patch.object(transport, "notion_post_json", side_effect=query)):
+            result = search.execute_notion_search("노션에서 '운영 문서' 찾아줘", include_blocks=False)
+        self.assertEqual([p["id"] for p in result["notion_pages"]], ["first-page"])
+        self.assertFalse(result["meta"]["search_complete"])
+        self.assertIn("live_search_time_limit", result["meta"]["incomplete_reasons"])
+
     def test_count_includes_body_matches_after_display_limit(self):
         rows = [page(f"property-{i}", memo="needle") for i in range(5)] + [page("body-only")]
         self.search_fixture(rows, {"body-only": [self.paragraph("text", "needle 본문")]})

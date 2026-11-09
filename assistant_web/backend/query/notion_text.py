@@ -15,6 +15,18 @@ _REGISTRATION_ORDER = re.compile(
 )
 
 
+def is_plain_notion_topic(text: str) -> bool:
+    return bool(re.search(r'(?:관련|관한)\s*(?:(?:최근|최신)\s*)?(?:문서|페이지|자료)', text)
+                and not re.search(r'''["'`“”‘’]|본문|내용|노트|텍스트|제목|title|body|content|키워드|문자열|정확히|포함|들어''',
+                                  text, re.I))
+
+
+def split_notion_topic_terms(terms: list[str]) -> list[str]:
+    """일반 주제는 모든 단어를 찾되, 플래너의 검색어 한도 때문에 조건을 버리지는 않는다."""
+    words = list(dict.fromkeys(word for term in terms for word in term.split()))
+    return words if len(words) <= 6 else terms
+
+
 def notion_registration_sort(text: str) -> dict[str, str] | None:
     """기간을 임의로 만들지 않고 최근 등록·등록순 표현만 정렬로 해석한다."""
     if _REGISTRATION_ORDER.search(notion_structural_query(text)):

@@ -3,6 +3,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import json
 import os
+import time
 from typing import Any
 from backend.notion.body_index import BodyIndex, CONTENT_POLICY_VERSION
 
@@ -24,6 +25,31 @@ def _time(value: str) -> float:
         return result.timestamp() if result.tzinfo else 0
     except (ValueError, TypeError, AttributeError):
         return 0
+
+
+def catalog_freshness(index: BodyIndex, database_ids: list[str]) -> dict[str, Any]:
+    """조회 범위의 목록 행만 읽는다. DB 하나라도 만료되면 전체 목록이 만료된다."""
+    placeholders, params = index._scope(database_ids)
+    with index._database() as db:
+        rows = db.execute(
+            f'SELECT complete, updated_at FROM catalogs WHERE fingerprint=? AND database_id IN ({placeholders})',
+            params,
+        ).fetchall() if placeholders else []
+    now = time.time()
+    max_age = catalog_max_age_seconds()
+    timestamps = [_time(row['updated_at']) for row in rows]
+    oldest = min(timestamps, default=0)
+    database_count = len(params) - 1
+    complete = (bool(rows) and len(rows) == database_count and all(row['complete'] for row in rows)
+                and all(0 < stamp <= now for stamp in timestamps))
+    status = 'incomplete'
+    if complete:
+        status = 'fresh' if now - oldest < max_age else 'stale'
+    return {
+        'status': status, 'databaseCount': database_count, 'maxAgeSeconds': max_age,
+        'oldestUpdatedAt': datetime.fromtimestamp(oldest, timezone.utc).isoformat() if oldest > 0 else None,
+        'ageSeconds': int(now - oldest) if 0 < oldest <= now else None,
+    }
 
 
 def _state(index: BodyIndex, db, database_ids: list[str], page_ids=None, allowed_database_ids=None):

@@ -21,9 +21,10 @@ class NotionBoundaryTests(unittest.TestCase):
             ('client', 'cache_maintenance', ('start_notion_cache_warmer', 'warm_notion_database_cache')),
             ('mapping', 'values', ('notion_property_to_text', 'notion_title', 'notion_block_text')),
             ('search', 'matching', ('notion_page_matches_constraints', 'notion_page_match_score', 'notion_page_sort_key')),
+            ('search', 'filter_conditions', ('merge_common_notion_constraints',)),
             ('search', 'server_filters', ('notion_database_customer_filter', '_NOTION_USER_ID_HINTS')),
             ('complete_snapshot', 'snapshot_state', ('coverage', '_state', 'catalog_max_age_seconds')),
-            ('body_index_sync', 'crawl_transport', ('_request', '_Budget', '_ReadFailure', '_retry_after_lock')),
+            ('body_index_sync', 'crawl_transport', ('_request', '_Budget', '_ReadFailure')),
             ('body_index', 'page_ownership', ('segment_belongs_to_page', 'page_belongs_to_database')),
         ):
             old = importlib.import_module('backend.notion.' + legacy)
@@ -58,7 +59,7 @@ importlib.import_module("backend.notion.matching")
                 self.assertEqual(convert(case['input']), case['output'])
 
     def test_warmer_stops_and_refreshes_before_half_catalog_lifetime(self):
-        from backend.notion import cache_maintenance, snapshot_maintenance, snapshot_state
+        from backend.notion import cache_maintenance, snapshot_maintenance, snapshot_state, semantic_index
         for interval, lifetime, expected in ((3600, 1200, 600), (300, 1200, 300)):
             with self.subTest(interval=interval):
                 stop = Mock()
@@ -68,6 +69,7 @@ importlib.import_module("backend.notion.matching")
                     patch.object(cache_maintenance, 'Thread') as thread,
                     patch.object(cache_maintenance, 'warm_notion_database_cache', return_value=2) as warm,
                     patch.object(snapshot_maintenance, 'refresh_catalog_cache', return_value={'status': 'fresh'}) as refresh,
+                    patch.object(semantic_index, 'sync_semantic_index', return_value={'status': 'ready'}) as semantic,
                     patch.object(snapshot_state, 'catalog_max_age_seconds', return_value=lifetime),
                 ):
                     self.assertIs(cache_maintenance.start_notion_cache_warmer(interval), stop)
@@ -76,6 +78,7 @@ importlib.import_module("backend.notion.matching")
                     thread.call_args.kwargs['target']()
                 warm.assert_called_once()
                 refresh.assert_called_once()
+                semantic.assert_called_once_with(max_chunks=256, max_seconds=30)
                 stop.wait.assert_called_once_with(expected)
 
     def test_no_runtime_cycle_contains_a_notion_module(self):
@@ -84,7 +87,7 @@ importlib.import_module("backend.notion.matching")
 
     def test_foundations_do_not_import_search_or_maintenance(self):
         owners = {'backend.notion.' + name for name in (
-            'values', 'matching', 'page_ownership', 'schema_cache', 'read_api', 'crawl_transport', 'crawl_validation', 'snapshot_state',
+            'values', 'matching', 'filter_conditions', 'page_ownership', 'schema_cache', 'read_api', 'crawl_transport', 'crawl_validation', 'snapshot_state',
         )}
         forbidden = {'backend.notion.' + name for name in (
             'client', 'search', 'complete_snapshot', 'snapshot_maintenance', 'cache_maintenance', 'body_index_sync',

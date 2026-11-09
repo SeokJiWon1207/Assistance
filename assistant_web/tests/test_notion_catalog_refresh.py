@@ -15,6 +15,33 @@ from test_notion_body_index import page
 
 
 class NotionCatalogRefreshTests(unittest.TestCase):
+    def test_request_refresh_is_single_flight_and_retries_after_backoff(self):
+        from backend.notion import cache_maintenance as cache
+        from threading import Event
+
+        with (patch.dict('os.environ', {'NOTION_CACHE_WARM_ENABLED': 'true'}),
+              patch.object(cache, '_refresh_running', False), patch.object(cache, '_retry_after', 0.0),
+              patch.object(cache, '_retry_needed', Event(), create=True),
+              patch.object(cache.time, 'monotonic', return_value=100) as clock,
+              patch.object(cache, 'Thread') as thread,
+              patch.object(maintenance, 'refresh_catalog_cache', return_value={'status': 'incomplete'}) as refresh):
+            cache.request_catalog_refresh()
+            cache.request_catalog_refresh()
+            thread.return_value.start.assert_called_once()
+            refresh.assert_not_called()
+            thread.call_args.kwargs['target']()
+            refresh.assert_called_once()
+            cache.request_catalog_refresh()
+            thread.return_value.start.assert_called_once()
+            clock.return_value = 161
+            cache.retry_pending_catalog_refresh()
+            self.assertEqual(thread.return_value.start.call_count, 2)
+            refresh.return_value = {'status': 'fresh'}
+            thread.call_args.kwargs['target']()
+            clock.return_value = 230
+            cache.retry_pending_catalog_refresh()
+            self.assertEqual(thread.return_value.start.call_count, 2)
+
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.index = BodyIndex(self.root / 'index.sqlite3', fingerprint='connection')

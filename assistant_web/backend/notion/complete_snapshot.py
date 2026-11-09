@@ -2,6 +2,7 @@
 from backend.notion.snapshot_state import (
     API_EXCLUSIONS as API_EXCLUSIONS,
     catalog_max_age_seconds as catalog_max_age_seconds,
+    catalog_freshness,
     _time as _time,
     _state as _state,
     coverage as coverage,
@@ -130,18 +131,65 @@ def _current_results(index, pages, candidates, allowed):
     return True
 
 
-def _scope_current(read_scope):
+def _saved_catalog_scope(roots: list[str] | None = None) -> dict[str, str] | None:
     from backend.config import RUNTIME_DIR
-    from backend.notion.read_scope import child_database_search_enabled, _read_scope_max_age
+    from backend.notion.read_scope import READ_SCOPE_FILENAME, _id, _read_scope_max_age
+    try:
+        saved = json.loads((RUNTIME_DIR / READ_SCOPE_FILENAME).read_text())
+        age = datetime.now(timezone.utc).timestamp() - _time(saved.get('generated_at', ''))
+        scope = saved.get('read_scope')
+        if (saved.get('scope_complete') is not True or not isinstance(scope, dict)
+                or not 0 <= age <= _read_scope_max_age()):
+            return None
+        if roots is not None:
+            expected = [_id(root) for root in roots]
+            saved_roots = [_id(root) for root in saved.get('root_database_ids', [])]
+            if expected != saved_roots or not all(root in scope for root in expected):
+                return None
+        return scope
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _scope_current(read_scope):
+    from backend.notion.read_scope import child_database_search_enabled
     if not child_database_search_enabled():
         return True
+    saved = _saved_catalog_scope()
+    return saved is not None and saved == read_scope
+
+
+def get_notion_catalog_freshness(settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """읽기 전용 상태 점검. 자동 탐색 연결도 이미 확인된 DB만 사용한다."""
+    from backend.notion.body_index import connection_fingerprint
+    from backend.notion.discovery import cached_notion_database_ids
+    from backend.notion.read_scope import child_database_search_enabled
+    from backend.settings.notion import get_configured_notion_settings
+
+    if settings is None:
+        settings = get_configured_notion_settings()
+        if settings['token'] and not settings['database_ids']:
+            cached = cached_notion_database_ids(settings['token'])
+            if cached:
+                settings['database_ids'] = cached[0]
+    unknown = {'oldestUpdatedAt': None, 'ageSeconds': None, 'maxAgeSeconds': catalog_max_age_seconds()}
+    if not settings['token']:
+        return {**unknown, 'status': 'unconfigured'}
+    database_ids = settings['database_ids']
+    if not database_ids:
+        return {**unknown, 'status': 'scope_unavailable'}
+    if child_database_search_enabled():
+        scope = _saved_catalog_scope(database_ids)
+        if not scope:
+            return {**unknown, 'status': 'scope_incomplete'}
+        database_ids = list(scope)
     try:
-        saved = json.loads((RUNTIME_DIR / 'notion_read_scope.json').read_text())
-        age = datetime.now(timezone.utc).timestamp() - _time(saved.get('generated_at', ''))
-        return (saved.get('scope_complete') is True and saved.get('read_scope') == read_scope
-                and 0 <= age <= _read_scope_max_age())
-    except (OSError, ValueError):
-        return False
+        index = open_body_index(fingerprint=connection_fingerprint(settings))
+        if index is not None:
+            return catalog_freshness(index, database_ids)
+    except (BodyIndexError, OSError):
+        pass
+    return {**unknown, 'status': 'unavailable'}
 
 
 def _refresh_pending_inline(index, database_ids, allowed):
@@ -185,46 +233,51 @@ def _refresh_pending_inline(index, database_ids, allowed):
 
 
 def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
-                             pre_body_constraints, body_clauses, keyword_clauses, limit, include_blocks=True):
-    """전수 대조된 저장본만 사용하고, 불확실하면 기존 API 검색에 맡긴다.
+                             pre_body_constraints, body_clauses, keyword_clauses, limit, include_blocks=True,
+                             title_customers=(), prefer_topic_titles=False):
+    """전수 대조된 저장본으로 검색한다. 만료된 제목은 원문 재조회 후보로만 쓴다.
 
     보류·변경 페이지가 몇 건뿐이면 그 페이지만 다시 읽고 한 번 더 검색한다."""
     import sqlite3
     import requests
     from fastapi import HTTPException
+    from backend.notion.cache_maintenance import request_catalog_refresh, retry_pending_catalog_refresh
+    catalog_result = None
     try:
         index = open_body_index()
         if index is None or not _scope_current(read_scope):
+            request_catalog_refresh()
             return None
-        # 목록이 만료·누락되면 본문 재수집으로 복구할 수 없다. 원문 전체를
-        # 두 번 검사하기 전에 작은 목록 테이블만 읽고 실시간 검색에 맡긴다.
-        with index._database() as db:
-            placeholders, params = index._scope(database_ids)
-            if not placeholders:
-                return None
-            catalogs = list(db.execute(
-                f'SELECT complete, updated_at FROM catalogs '
-                f'WHERE fingerprint=? AND database_id IN ({placeholders})', params))
-            now = time.time()
-            max_age = catalog_max_age_seconds()
-            if len(catalogs) != len(params) - 1 or any(
-                not row['complete'] or not 0 <= now - _time(row['updated_at']) < max_age
-                for row in catalogs
-            ):
-                return None
+        freshness = catalog_freshness(index, list(read_scope))['status']
+        if freshness != 'fresh':
+            request_catalog_refresh()
+            if set(database_ids) != set(read_scope):
+                freshness = catalog_freshness(index, database_ids)['status']
+        else:
+            retry_pending_catalog_refresh()
+        if freshness == 'stale' and title_customers:
+            # 이전 제목은 우선 확인할 ID만 제공한다. 빈 결과나 검색 완료를 증명할 수 없다.
+            from backend.notion.catalog_search import search_catalog_snapshot
+            return search_catalog_snapshot(index, database_ids, read_scope=read_scope, constraints=constraints,
+                                           terms=terms, limit=limit, include_blocks=False,
+                                           title_customers=title_customers, hints_only=True)
+        if freshness != 'fresh':
+            return None
         if constraints.get('metadata_list'):
             from backend.notion.recent_catalog import search_recent_catalog
             return search_recent_catalog(index, database_ids, read_scope=read_scope,
                                          constraints=constraints, limit=limit)
         blocks_enabled = os.getenv('NOTION_FETCH_PAGE_BLOCKS', 'true').lower() not in {'0', 'false', 'no'}
-        if constraints.get('exact_title') and not body_clauses and not keyword_clauses:
+        if (constraints.get('exact_title') or title_customers or prefer_topic_titles) and not body_clauses and not keyword_clauses:
             from backend.notion.catalog_search import search_catalog_snapshot
             catalog_result = search_catalog_snapshot(index, database_ids, read_scope=read_scope,
-                constraints=constraints, terms=terms, limit=limit, include_blocks=include_blocks and blocks_enabled)
-            if catalog_result is not None:
+                constraints=constraints, terms=terms, limit=limit, include_blocks=include_blocks and blocks_enabled,
+                title_customers=title_customers)
+            if catalog_result is not None and (catalog_result['meta']['result_window_complete']
+                                               or (prefer_topic_titles and catalog_result['notion_pages'])):
                 return catalog_result
         if not blocks_enabled:
-            return None
+            return catalog_result
         refreshed = 0
         for attempt in range(2):
             outcome = _search_snapshot_once(
@@ -234,14 +287,14 @@ def search_complete_snapshot(database_ids, *, terms, read_scope, constraints,
             if outcome is not _STALE:
                 if outcome is not None and refreshed:
                     outcome['meta']['inline_refreshed_page_count'] = refreshed
-                return outcome
+                return outcome or catalog_result
             healed = None if attempt else _refresh_pending_inline(index, database_ids, list(read_scope))
             if not healed:
-                return None
+                return catalog_result
             refreshed = healed
-        return None
+        return catalog_result
     except (BodyIndexError, sqlite3.Error, OSError, ValueError, HTTPException, requests.RequestException):
-        return None
+        return catalog_result
 
 
 def _search_snapshot_once(index, database_ids, *, terms, read_scope, constraints,

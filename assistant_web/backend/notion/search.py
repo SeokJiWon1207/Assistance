@@ -34,6 +34,7 @@ from backend.notion.page_enrichment import (
 from backend.notion.body_index_search import (
     _indexed_body_matches as _indexed_body_matches,
 )
+from backend.notion.filter_conditions import merge_common_notion_constraints as merge_common_notion_constraints
 from backend.notion import read_api
 from backend.notion import schema as notion_schema
 from backend.notion import transport
@@ -47,6 +48,7 @@ from datetime import date as date, datetime as datetime, timedelta as timedelta,
 from contextlib import closing
 from dataclasses import dataclass, field
 from functools import lru_cache, partial
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
@@ -79,8 +81,8 @@ from backend.query.notion_constraints import (
     _STATUS_SPOKEN_SUFFIX as _STATUS_SPOKEN_SUFFIX,
     _STATUS_WORD_END as _STATUS_WORD_END,
 )
-from backend.query.notion_constraints import _OWNER_SUFFIXES, _OWNER_PREDICATE
-from backend.execution import CURRENT_BUDGET
+from backend.query.notion_constraints import _OWNER_PREDICATE
+from backend.execution import checkpoint, request_execution
 from backend.ordered_prefetch import iter_in_order
 from backend.sources.people_catalog import load_known_people as load_known_people
 from backend.notion.read_api import NOTION_CONTENT_INCOMPLETE as NOTION_CONTENT_INCOMPLETE, fetch_notion_database_schema as fetch_notion_database_schema, fetch_notion_database_title as fetch_notion_database_title, fetch_notion_page_blocks as fetch_notion_page_blocks, fetch_notion_users as fetch_notion_users
@@ -95,6 +97,7 @@ from backend.notion.mapping import normalize_notion_page as normalize_notion_pag
 from backend.notion.read_scope import resolve_notion_read_scope
 from backend.intent.notion_grounding import grounded_notion_body_constraints
 from backend.query.notion_text import notion_literal_title, notion_registration_sort, notion_structural_query, split_notion_body_query, without_registration_order
+from backend.query.notion_text import is_plain_notion_topic, split_notion_topic_terms
 from backend.notion.query_cache import cached_title_query
 from backend.notion.body_index_search import find_indexed_body_candidates
 from backend.notion.database_roles import select_notion_database_ids
@@ -175,6 +178,8 @@ def ground_notion_terms(text: str, terms: List[str], constraints: Dict[str, Any]
     """플래너가 빠뜨린 분기를 복원하고 본문 질문을 제목의 AND 조건에서 뺀다."""
     if constraints.get("exact_title"):
         return terms
+    if is_plain_notion_topic(text):
+        terms = split_notion_topic_terms(terms)
     requested_fields = {
         normalize_for_match(term)
         for kind, pattern in _NOTION_FIELD_QUESTIONS.items()
@@ -401,84 +406,6 @@ def remove_notion_database_label_terms(terms: List[str], database_label: str) ->
     ]
 
 
-def merge_common_notion_constraints(
-    notion_constraints: Dict[str, Any],
-    constraints: Optional[Dict[str, Any]],
-) -> Dict[str, Any]:
-    """공통 필터 계획을 Notion 검색/후처리 조건으로 연결한다."""
-    merged = {
-        **notion_constraints,
-        "common_filter_clauses": normalize_filter_clauses((constraints or {}).get("filter_clauses") or []),
-        "customer_aliases": list((constraints or {}).get("customer_aliases") or []),
-        "excluded_statuses": list(
-            dict.fromkeys(
-                [
-                    *(notion_constraints.get("excluded_statuses") or []),
-                    *((constraints or {}).get("excluded_statuses") or []),
-                ]
-            )
-        ),
-    }
-    if notion_constraints.get("native_status_constraint"):
-        # Notion 원문 상태를 Mantis의 open/closed로 재해석한 공통 조건과
-        # 교집합하면 실제 DB 옵션과 모순되어 정상 문서도 모두 사라진다.
-        native_status = normalize_for_match(str(merged.get("status") or ""))
-        merged["common_filter_clauses"] = [
-            clause for clause in merged["common_filter_clauses"]
-            if clause["field"] != "status" or (
-                clause["operator"] == "in"
-                and len(values_for_clause(clause.get("value"))) > 1
-                and native_status in {
-                    normalize_for_match(value) for value in values_for_clause(clause.get("value"))
-                }
-            )
-        ]
-        merged["excluded_statuses"] = list(notion_constraints.get("excluded_statuses") or [])
-    for clause in merged["common_filter_clauses"]:
-        values = values_for_clause(clause.get("value"))
-        if clause["field"] == "customer" and clause["operator"] in {"equals", "in"}:
-            aliases = [
-                str(alias)
-                for alias in merged.get("customer_aliases", [])
-                if len(normalize_for_match(str(alias))) >= 3
-            ]
-            expanded = list(dict.fromkeys([*values, *aliases]))
-            clause["operator"] = "in"
-            clause["value"] = expanded
-            values = expanded
-        if clause["field"] == "owner" and merged.get("owner"):
-            owner = str(merged["owner"])
-            corrected = [owner if value in {owner + suffix for suffix in _OWNER_SUFFIXES} else value for value in values]
-            if corrected != values:
-                clause["value"] = corrected if isinstance(clause.get("value"), list) else corrected[0]
-                values = corrected
-        if clause["field"] == "status":
-            if clause["operator"] in {"not_equals", "not_in"}:
-                merged["excluded_statuses"].extend(values)
-            elif clause["operator"] == "in" and len(values) > 1:
-                # 원문 파서가 잡은 첫 값이 OR 후보에 포함돼도 단일 AND 조건으로 남기지 않는다.
-                if normalize_for_match(str(merged.get("status") or "")) in {
-                    normalize_for_match(value) for value in values
-                }:
-                    merged["status"] = ""
-            elif clause["operator"] in {"equals", "in"} and values and not merged.get("status"):
-                merged["status"] = values[0]
-        elif clause["field"] == "owner" and clause["operator"] in {"equals", "in"}:
-            if len(values) > 1:
-                if normalize_for_match(str(merged.get("owner") or "")) in {
-                    normalize_for_match(value) for value in values
-                }:
-                    merged["owner"] = ""
-            elif values and not merged.get("owner"):
-                merged["owner"] = values[0]
-        elif clause["field"] == "database" and clause["operator"] in {"equals", "contains"} and values and not merged.get("database_label"):
-            merged["database_label"] = values[0]
-        elif clause["field"] == "title" and clause["operator"] == "equals" and values and not merged.get("exact_title"):
-            merged["exact_title"] = values[0]
-    merged["excluded_statuses"] = list(dict.fromkeys(merged["excluded_statuses"]))
-    return merged
-
-
 # 노션 API는 and/or 복합 필터를 두 단계까지만 중첩할 수 있다.
 
 
@@ -488,13 +415,16 @@ def _title_index_cached(path: str, mtime_ns: int, size: int) -> Dict[str, tuple[
         data = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    titles = data.get("titles") if isinstance(data, dict) else None
+    if not isinstance(titles, dict):
+        return {}
     return {
         str(title): tuple(
             str(item.get("parent_id") or "").replace("-", "")
             for item in matches
-            if item.get("parent_id")
+            if isinstance(item, dict) and item.get("parent_id")
         )
-        for title, matches in (data.get("titles") or {}).items()
+        for title, matches in titles.items()
         if isinstance(matches, list)
     }
 
@@ -514,6 +444,28 @@ def indexed_exact_title_database_ids(exact_title: str, database_ids: List[str]) 
         for parent_id in index.get(normalize_for_match(exact_title), ())
         if parent_id in allowed
     ))
+
+
+def _customer_database_order(aliases: List[str], terms: List[str], database_ids: List[str]) -> List[str]:
+    """제목 색인은 실시간 조회 순서만 정하고 소속·검색 조건은 API 결과에서 확인한다."""
+    path = RUNTIME_DIR / "notion_title_index.json"
+    try:
+        stat = path.stat()
+    except OSError:
+        return []
+    index = _title_index_cached(str(path), stat.st_mtime_ns, stat.st_size)
+    customers = {normalize_for_match(alias) for alias in aliases if alias.strip()}
+    topics = [normalize_for_match(term) for term in terms]
+    hits: Counter[str] = Counter()
+    topic_hits: Counter[str] = Counter()
+    for title, parents in index.items():
+        if any(customer in title for customer in customers):
+            hits.update(parents)
+            if topics and all(topic in title for topic in topics):
+                topic_hits.update(parents)
+    allowed = {identifier.replace("-", ""): identifier for identifier in database_ids}
+    return [allowed[parent] for parent in sorted(hits, key=lambda key: (topic_hits[key], hits[key]), reverse=True)
+            if parent in allowed]
 
 
 def indexed_title_term_database_ids(terms: List[str], database_ids: List[str]) -> List[str]:
@@ -567,13 +519,22 @@ def notion_search_max_workers() -> int:
         return 4
 
 
+@request_execution
 def execute_notion_search(
     query_text: str,
     limit: int = 5,
     constraints: Optional[Dict[str, Any]] = None,
     planned_terms: Optional[List[str]] = None,
     include_blocks: bool = True,
+    derive_text_constraints: bool = True,
+    prefer_catalog_titles: bool = False,
+    require_complete: bool = False,
 ) -> Dict[str, Any]:
+    """derive_text_constraints=False면 문장은 검색어로만 쓰고 조건은 constraints로만 받는다.
+
+    조건을 바꿀 권한이 없는 검색어(에이전트가 작성한 검색어)가 상태·담당자·기간·DB를
+    새로 만들지 못하게 한다.
+    """
     settings = resolve_notion_settings()
     database_ids = settings.get("database_ids", [])
     if not settings["token"] or not database_ids:
@@ -591,20 +552,24 @@ def execute_notion_search(
         }
 
     read_scope, scope_complete = resolve_notion_read_scope(database_ids, settings["token"])
+    if not scope_complete:
+        from backend.notion.cache_maintenance import request_catalog_refresh
+        request_catalog_refresh()
     database_ids = list(read_scope)
-    native_constraints = extract_notion_constraints(query_text)
+    condition_text = query_text if derive_text_constraints else ""
+    native_constraints = extract_notion_constraints(condition_text)
     notion_constraints = merge_common_notion_constraints(
         native_constraints,
         constraints,
     )
-    _body_subject, body_clauses = split_notion_body_query(query_text)
+    _body_subject, body_clauses = split_notion_body_query(condition_text)
     if body_clauses:
         # 원문으로 확인된 본문 조건은 플래너가 만든 제목/상태 조건보다 우선한다.
         # 리터럴을 제거한 문장에서 다른 명시적 조건은 그대로 추출한다.
         grounded_constraints = grounded_notion_body_constraints(query_text, constraints or {})
         notion_constraints = merge_common_notion_constraints(native_constraints, grounded_constraints)
     notion_constraints["body_filter_clauses"] = body_clauses
-    structural_query = notion_structural_query(query_text)
+    structural_query = notion_structural_query(condition_text)
     temporal_field = notion_temporal_field(structural_query)
     if temporal_field != "created_at":
         date_text = structural_query
@@ -709,7 +674,7 @@ def execute_notion_search(
     ]
     scoped_database_ids = list(database_ids)
     database_ids, selected_database_role = select_notion_database_ids(
-        database_ids, query_text, terms, notion_constraints,
+        database_ids, condition_text, terms, notion_constraints,
     )
     created_at_filtered = any(
         clause.get("field") == "created_at"
@@ -718,33 +683,45 @@ def execute_notion_search(
     created_order = created_at_filtered or (notion_constraints.get("sort") or {}).get("field") == "created_at"
     metadata_list = bool(
         created_order and not include_blocks and not terms and not exact_title and not body_clauses and not keyword_clauses
-        and not has_count_intent(query_text) and not notion_constraints.get("group_by")
+        and not require_complete and not has_count_intent(query_text) and not notion_constraints.get("group_by")
         and not any(notion_constraints.get(key) for key in ("status", "owner", "unassigned_owner", "excluded_statuses"))
         and all(clause.get("field") == "created_at" for clause in notion_constraints.get("common_filter_clauses", []))
     )
     if metadata_list:
         notion_constraints["metadata_list"] = True
+    require_complete_scan = bool(require_complete or has_count_intent(query_text) or notion_constraints.get("group_by"))
+    customer_values = [value for clause in notion_constraints["common_filter_clauses"]
+                       if clause["field"] == "customer" and clause["operator"] in {"equals", "in"}
+                       for value in values_for_clause(clause["value"])]
+    customer_list = bool(len(database_ids) > 1 and customer_values and not require_complete_scan and not exact_title
+                         and not keyword_clauses and not body_clauses)
+    verified_titles: List[Dict[str, Any]] = []
     if scope_complete:
         from backend.notion.complete_snapshot import search_complete_snapshot
+        candidate_titles = bool(prefer_catalog_titles and title_terms and not require_complete_scan
+                                and not exact_title and not include_blocks and not body_clauses and not keyword_clauses)
         snapshot_result = search_complete_snapshot(
             database_ids, terms=terms, read_scope=read_scope, constraints=notion_constraints,
             pre_body_constraints=pre_body_constraints, body_clauses=body_clauses,
-            keyword_clauses=keyword_clauses, limit=limit, include_blocks=include_blocks)
+            keyword_clauses=keyword_clauses, limit=limit, include_blocks=include_blocks,
+            title_customers=customer_values if customer_list and title_terms and not include_blocks else (),
+            prefer_topic_titles=candidate_titles)
         if snapshot_result is not None:
             snapshot_result["meta"]["selected_database_role"] = selected_database_role
-            return snapshot_result
+            if (snapshot_result["meta"].get("tool") != "notion_catalog_title_search"
+                    or snapshot_result["meta"].get("result_window_complete")
+                    or (candidate_titles and snapshot_result["notion_pages"])):
+                return snapshot_result
+            verified_titles = snapshot_result["notion_pages"]
     target_database_label = notion_constraints.get("database_label", "")
-    pages: List[Dict[str, Any]] = []
+    pages: List[Dict[str, Any]] = list(verified_titles)
     scanned_count = 0
     database_meta = []
     errors = []
     search_complete = scope_complete
     incomplete_reasons: set[str] = set() if scope_complete else {"child_database_discovery"}
-    seen_page_ids: set[str] = set()
+    seen_page_ids = {str(page["id"]) for page in verified_titles}
     content_incomplete_page_ids: set[str] = set()
-    require_complete_scan = bool(
-        has_count_intent(query_text) or notion_constraints.get("group_by")
-    )
     max_pages = notion_search_max_pages(
         notion_constraints,
         require_complete=require_complete_scan,
@@ -779,8 +756,10 @@ def execute_notion_search(
         if title_terms and not exact_title
         else []
     )
+    customer_databases = _customer_database_order(customer_values, title_terms, database_ids) if customer_list else []
     indexed_database_ids = list(dict.fromkeys([
         *indexed_exact_database_ids,
+        *customer_databases,
         *indexed_term_database_ids,
     ]))
     indexed_ids = set(indexed_database_ids)
@@ -805,9 +784,10 @@ def execute_notion_search(
             if indexed is not None:
                 body_index_meta = {**indexed["coverage"], "candidate_count": indexed["candidate_count"],
                                    "validation_complete": indexed["validation_complete"]}
-                pages = _indexed_body_matches(indexed, notion_constraints, pre_body_constraints,
-                                              body_clauses, keyword_clauses, terms, read_scope)
-                body_index_used = bool(pages)
+                indexed_pages = _indexed_body_matches(indexed, notion_constraints, pre_body_constraints,
+                                                      body_clauses, keyword_clauses, terms, read_scope)
+                body_index_used = bool(indexed_pages)
+                pages.extend(page for page in indexed_pages if str(page["id"]) not in seen_page_ids)
                 # 현재 원문으로 확인된 결과라도 후보 발견은 저장본 시점 기준이다.
                 # 신규/변경 페이지의 미색인 키워드를 실시간 전체 건수로 확정하지 않는다.
                 if body_index_used or indexed["incomplete_reasons"]:
@@ -823,12 +803,12 @@ def execute_notion_search(
                 seen_page_ids.update(str(page["id"]) for page in pages)
 
         def scan_database(
-            database_id: str,
+            scan: _NotionDatabaseScan,
             title_pass: bool,
             seen_before: frozenset[str],
         ) -> _NotionDatabaseScan:
             """DB 하나를 조회한다. 공유 상태는 건드리지 않고 결과에 담아 돌려준다."""
-            scan = _NotionDatabaseScan(database_id)
+            database_id = scan.database_id
             try:
                 database_label = read_api.fetch_notion_database_title(database_id)
                 root_id = read_scope.get(database_id)
@@ -1339,29 +1319,33 @@ def execute_notion_search(
 
         def title_results_suffice() -> bool:
             # 제목 검색이 누락 없이 끝났고 결과가 있으면 전체 검색을 이어가지 않는다.
-            return bool(title_search_complete and pages and not require_complete_scan and not body_index_used)
+            return bool(title_search_complete and pages and not require_complete_scan and not body_index_used
+                        and (not customer_list or len(pages) >= limit))
 
         # DB 조회는 단계 안에서만 미리 실행하고, 병합과 종료 판단은 원래 DB 순서를 따른다.
         from backend.notion.search_budget import bounded_live_search
-        with bounded_live_search((body_index_used or bool(exact_title))
-                                 and not require_complete_scan) as live_search:
+        pending_scans: Dict[str, _NotionDatabaseScan] = {}
+        with bounded_live_search(not require_complete_scan, include_blocks=include_blocks) as live_search:
             workers = notion_search_max_workers()
             for title_pass in ((True, False) if title_first else (False,)):
                 full_pass_after_title = title_first and not title_pass
                 if full_pass_after_title and title_results_suffice():
                     title_search_only = True
                     break
+                pending_scans = {db_id: _NotionDatabaseScan(db_id) for db_id in search_database_ids}
                 scans = iter_in_order(
                     partial(scan_database, title_pass=title_pass, seen_before=frozenset(seen_page_ids)),
-                    search_database_ids,
+                    pending_scans.values(),
                     workers=workers,
                 )
                 with closing(scans) as ordered_scans:
-                    for _database_id, scan in ordered_scans:
+                    for _, scan in ordered_scans:
                         if full_pass_after_title and title_results_suffice():
                             title_search_only = True
                             break
                         merge_scan(scan)
+                        del pending_scans[scan.database_id]
+                pending_scans.clear()
             if title_search_only:
                 result_window_complete = True
                 candidate_count_complete = False
@@ -1384,20 +1368,13 @@ def execute_notion_search(
             # 색인 hit가 있어도 새 미색인 문서를 찾아 합친다. 검증된 오래된 결과가
             # limit를 채웠다는 이유로 최근 원본 후보 확인을 생략하지 않는다.
             require_body_scan = require_complete_scan or body_index_used
-            body_scan_deadline = time.monotonic() + 30 if body_index_used else float("inf")
-            active_budget = CURRENT_BUDGET.get()
-            if body_index_used and active_budget is not None:
-                body_scan_deadline = min(body_scan_deadline, active_budget.deadline - 5)
             for candidate_index in range(max_candidates):
                 for database_id, candidates in body_scan_candidate_groups:
                     if candidate_index >= len(candidates):
                         continue
                     if not require_body_scan and len(pages) >= limit:
                         break
-                    if time.monotonic() >= body_scan_deadline:
-                        body_scan_budget_exhausted = True
-                        incomplete_reasons.add("body_index_live_scan_limit")
-                        break
+                    checkpoint()
                     if body_scan_attempted_count >= NOTION_BODY_SCAN_MAX_PER_REQUEST:
                         body_scan_budget_exhausted = True
                         break
@@ -1520,23 +1497,27 @@ def execute_notion_search(
                     str(meta.get("database_id") or ""), 0,
                 )
         if live_search['limited']:
+            # 작업자가 모두 멈춘 뒤, 다음 커서를 기다리던 DB에서도 앞 페이지의 검증된 문서를 회수한다.
+            for scan in pending_scans.values():
+                if scan.events:
+                    merge_scan(scan)
             search_complete = False
             candidate_count_complete = False
             result_window_complete = False
             incomplete_reasons.add('live_search_time_limit')
     except requests.RequestException as exc:
-        return {
-            "source": "notion",
-            "status": "error",
-            "error_kind": "dependency",
-            "reason": f"Notion connection failed: {exc}",
-            "notion_pages": [],
-            "meta": {"displayed_count": 0},
-        }
+        if not pages:
+            return {
+                "source": "notion", "status": "error", "error_kind": "dependency",
+                "reason": f"Notion connection failed: {exc}", "notion_pages": [], "meta": {"displayed_count": 0},
+            }
+        errors.append({"database_label": "Notion", "error_kind": "dependency", "reason": type(exc).__name__})
+        search_complete = candidate_count_complete = result_window_complete = False
 
     pages.sort(
         key=lambda page: (
-            bool(terms) and (page.get("match_method") == "notion_title_filter" or page.get("index_title_match", False)),
+            bool(terms) and (page.get("match_method") in {"notion_title_filter", "notion_catalog_snapshot"}
+                             or page.get("index_title_match", False)),
             notion_page_sort_key(page, created_at_filtered=created_order),
         ),
         reverse=True,
@@ -1602,6 +1583,7 @@ def execute_notion_search(
             "candidate_count_complete": candidate_count_complete,
             "result_window_complete": result_window_complete,
             "scanned_count": scanned_count,
+            "revalidated_title_hint_count": len(verified_titles),
             "search_complete": search_complete and not errors,
             "incomplete_reasons": sorted(incomplete_reasons | ({"query_error"} if errors else set())),
             "content_complete": (

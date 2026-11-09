@@ -59,8 +59,9 @@ def body_index_path() -> Path:
     return RUNTIME_DIR / "notion_body_index.sqlite3"
 
 
-def connection_fingerprint() -> str:
-    settings = resolve_notion_settings()
+def connection_fingerprint(settings: dict[str, Any] | None = None) -> str:
+    if settings is None:
+        settings = resolve_notion_settings()
     identity = [NOTION_API_BASE, settings.get("token", ""), settings.get("version", ""),
                 sorted({_id(value) for value in settings.get("database_ids", []) if value}),
                 os.getenv("NOTION_INCLUDE_CHILD_DATABASES", "false").lower() in {"1", "true", "yes"}]

@@ -83,6 +83,202 @@ class NotionCatalogSearchTests(unittest.TestCase):
         self.assertEqual(self.page_reads, [])
         self.assertFalse(self.index.status(list(self.scope))['content_complete'])
 
+    def test_customer_topic_list_revalidates_title_hits_before_spending_time_on_bodies(self):
+        self.add('verified', title='[한투] 조건검색 검증용 문서(서버)', database='db0')
+        self.add('wrong', title='[신한투자증권] 조건검색 서버', database='db1')
+        self.add('renamed', title='한투 서버 조건검색', database='db2')
+        self.current['renamed']['properties']['제목']['title'][0]['plain_text'] = '한투 사내 일정'
+        with patch.object(search, 'find_indexed_body_candidates') as bodies:
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=1,
+                planned_terms=['조건검색 서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual(result['meta']['terms'], ['조건검색', '서버'])
+        self.assertEqual([row['id'] for row in result['notion_pages']], ['verified'])
+        self.assertFalse(result['meta']['candidate_count_complete'])
+        self.assertTrue(result['meta']['title_search_only'])
+        self.assertLessEqual(len(self.live_queries), 3)
+        bodies.assert_not_called()
+
+    def test_underfilled_customer_title_results_are_kept_while_searching_properties(self):
+        self.scope.clear()
+        self.scope.update({'db0': 'db0', 'db1': 'db1'})
+        title = self.add('title', title='한투 서버의 조건검색 개선', database='db0')
+        other = self.add('property', title='한투 운영 기록', database='db1')
+        other['properties']['메모'] = {'type': 'rich_text', 'rich_text': [{'plain_text': '조건검색 서버'}]}
+
+        def query(url, payload, **_kwargs):
+            if '/db0/' in url:
+                rows = [title]
+            else:
+                rows = [] if 'filter' in payload else [other]
+            result = requests.Response()
+            result.status_code = 200
+            result._content = json.dumps({'results': rows, 'has_more': False}).encode()
+            return result
+        with (patch.object(transport, 'notion_post_json', side_effect=query),
+              patch.object(search, 'find_indexed_body_candidates', return_value=None)):
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=2,
+                planned_terms=['조건검색', '서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual([row['id'] for row in result['notion_pages']], ['title', 'property'])
+
+    def test_related_issue_search_can_open_an_underfilled_title_window_without_proving_absence(self):
+        self.add('ticket', title='한투 비교차트 업데이트 현상')
+        with patch.object(search, 'find_indexed_body_candidates', side_effect=AssertionError('전수 검색')) as scan:
+            result = self.run_search('비교차트 업데이트', limit=5, planned_terms=['비교차트', '업데이트'],
+                constraints={'filter_clauses': [{'field': 'customer', 'operator': 'equals', 'value': '한투'}]},
+                derive_text_constraints=False, prefer_catalog_titles=True)
+        self.assertEqual([p['id'] for p in result['notion_pages']], ['ticket'])
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertFalse(result['meta']['candidate_count_complete'])
+        self.assertFalse(result['meta']['result_window_complete'])
+        scan.assert_not_called()
+
+    def test_guide_rechecks_current_content_ownership_customer_and_excludes_the_opened_page(self):
+        from backend.notion import related_guides as guides
+        from test_notion_body_index import segment
+        for pid, title in [('opened', 'NH 덤프파일 기록'), ('wrong', 'NH 덤프파일 가이드'),
+                           ('moved', 'NH 덤프파일 매뉴얼'), ('valid', 'NH 덤프파일 확인 방법')]:
+            self.add(pid, title=title, database='db' + str(len(self.current)))
+        expected = '덤프 파일을 분석하려면 메모리 창을 선택합니다.'
+        checked = []
+
+        def current(entry, allowed, **kw):
+            pid = entry['page_id']
+            checked.append(pid)
+            self.assertIn(entry['database_id'], allowed)
+            self.assertGreaterEqual(kw['limits'].max_seconds, 20)
+            if pid == 'moved':
+                return None
+            raw = deepcopy(self.current[pid])
+            raw['properties']['고객사'] = {'type': 'select', 'select': {'name': '신한' if pid == 'wrong' else 'NH'}}
+            return {'raw_page': raw, 'accessible_content_complete': True,
+                    'segments': [segment('다른 페이지의 비공개 지침', owner='other'), segment(expected, owner=pid)]}
+
+        with (patch.object(guides, 'resolve_notion_settings', return_value={'database_ids': list(self.scope), 'token': 't'}),
+              patch.object(guides, 'resolve_notion_read_scope', return_value=(self.scope, True)),
+              patch.object(guides, 'open_body_index', return_value=self.index),
+              patch.object(guides, 'fetch_notion_database_title', return_value='업무'),
+              patch.object(guides, 'validate_index_candidate', side_effect=current)):
+            page, excerpt, report = guides.find_alternate_guide(['덤프파일'], {'filter_clauses': [
+                {'field': 'customer', 'operator': 'equals', 'value': 'NH'}]}, {'opened'}, {})
+            self.assertEqual((page['id'], excerpt, report['outcome']), ('valid', expected, 'found'))
+            self.assertEqual(page['content'], expected)
+            self.assertEqual(report['candidate_count'], 3)
+            self.assertNotIn('opened', checked)
+            found, _, negative = guides.find_alternate_guide(['덤프파일'], {'filter_clauses': [
+                {'field': 'customer', 'operator': 'equals', 'value': 'NH'}]}, {'opened', 'valid'}, {})
+            self.assertIsNone(found)
+            self.assertEqual(negative['checked_count'], 2)
+
+    def test_guide_body_requires_a_topic_and_instructions_with_body_reads_enabled(self):
+        from backend.notion import related_guides as guides
+        self.assertEqual(guides.topic_terms('비교차트 실시간 업데이트 오류', ['실시간', '업데이트', '비교차트']), ['비교차트'])
+        for title, body in [('비교차트 사용법', ''), ('비교차트 사용법', '비교차트 사용법'),
+                            ('iOS 가이드 요청', '비교차트 업데이트를 요청합니다.'),
+                            ('다른 기능 가이드', '비교차트 이슈를 접수했습니다.\n다른 기능은 설치합니다.')]:
+            self.assertFalse(guides.guide_passage(title, body, ['비교차트'])[1])
+        with (patch.dict('os.environ', {'NOTION_FETCH_PAGE_BLOCKS': 'false'}),
+              patch.object(guides, 'resolve_notion_settings') as settings):
+            page, _, report = guides.find_alternate_guide(['비교차트'], {}, set(), {})
+            self.assertIsNone(page)
+            self.assertEqual(report['outcome'], 'body_disabled')
+            settings.assert_not_called()
+
+    def test_topic_title_with_different_spacing_is_checked_on_the_current_page(self):
+        self.add('spaced', title='[한투] 조건 검색 문서 서버', database='db0')
+        empty = requests.Response()
+        empty.status_code = 200
+        empty._content = b'{"results": [], "has_more": false}'
+        with (patch.object(transport, 'notion_post_json', return_value=empty),
+              patch.object(search, 'find_indexed_body_candidates', return_value=None)):
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=1,
+                planned_terms=['조건검색', '서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual([row['id'] for row in result['notion_pages']], ['spaced'])
+        self.assertEqual(self.page_reads, ['spaced'])
+
+    def test_partial_title_verification_survives_a_subsequent_live_timeout(self):
+        from backend.execution import CURRENT_BUDGET, checkpoint
+
+        self.scope.clear()
+        self.scope.update({'db0': 'db0', 'db1': 'db1'})
+        self.add('verified', title='한투 서버 조건검색', database='db0')
+        self.add('unavailable', title='한투 조건검색 서버', database='db1')
+        self.current['unavailable'] = _ReadFailure('http_503')
+        attempts = []
+
+        def query(url, payload, **kwargs):
+            attempts.append(url)
+            if len(attempts) == 1:
+                return self.query(url, payload, **kwargs)
+            if len(attempts) == 2:
+                raise requests.ConnectionError('second catalog database unavailable')
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+        with (patch.object(transport, 'notion_post_json', side_effect=query),
+              patch.dict('os.environ', {'NOTION_SEARCH_MAX_WORKERS': '1'}),
+              patch.object(search, 'find_indexed_body_candidates', return_value=None)):
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=2,
+                planned_terms=['조건검색', '서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual([row['id'] for row in result['notion_pages']], ['verified'])
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertIn('live_search_time_limit', result['meta']['incomplete_reasons'])
+
+    def test_rate_limited_database_query_uses_current_page_ids_from_fresh_catalog(self):
+        from backend.execution import CURRENT_BUDGET, checkpoint
+
+        self.add('one', title='한투 조건검색 서버', database='db0')
+        self.add('two', title='한투 서버와 조건검색', database='db1')
+        self.add('revoked', title='한투 조건검색 서버 예전 자료', database='db2')
+        self.current['revoked'] = _ReadFailure('http_403')
+
+        def timeout(*_args, **_kwargs):
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+
+        with (patch.object(notion_schema, 'notion_property_schema', return_value={}),
+              patch.object(transport, 'notion_post_json', side_effect=timeout),
+              patch.object(search, 'find_indexed_body_candidates', return_value=None)):
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=2,
+                planned_terms=['조건검색', '서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual({p['id'] for p in result['notion_pages']}, {'one', 'two'})
+        self.assertEqual(set(self.page_reads), {'one', 'two', 'revoked'})
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertTrue(result['meta']['result_window_complete'])
+
+    def test_expired_customer_title_hints_require_live_access_and_survive_timed_out_scan(self):
+        from backend.execution import CURRENT_BUDGET, checkpoint
+
+        self.add('readable', title='한투 조건검색 검증용 서버', database='db0')
+        self.add('renamed', title='한투 서버 조건검색', database='db1')
+        self.add('revoked', title='한투 조건검색 서버 이력', database='db2')
+        self.add('temporary', title='한투 조건검색 서버 작업', database='db3')
+        self.add('wrong-id', title='한투 조건검색 서버 검증', database='db4')
+        self.current['renamed']['properties']['제목']['title'][0]['plain_text'] = '한투 다른 문서'
+        self.current['revoked'] = _ReadFailure('http_403')
+        self.current['temporary'] = _ReadFailure('http_503')
+        self.current['wrong-id']['id'] = 'other-page'
+        with closing(sqlite3.connect(self.index.path)) as db, db:
+            db.execute("UPDATE catalogs SET updated_at='2020-01-01T00:00:00+00:00'")
+
+        def timeout(*_args, **_kwargs):
+            CURRENT_BUDGET.get().deadline = 0
+            checkpoint()
+
+        with (patch.object(transport, 'notion_post_json', side_effect=timeout),
+              patch.object(search, 'find_indexed_body_candidates', return_value=None)):
+            result = self.run_search('한투에서 조건검색 서버 관련 문서 찾아줘', limit=5,
+                planned_terms=['조건검색 서버'], constraints={'filter_clauses': [
+                    {'field': 'customer', 'operator': 'equals', 'value': '한투'}]})
+        self.assertEqual([p['id'] for p in result['notion_pages']], ['readable'])
+        self.assertEqual(set(self.page_reads), {'readable', 'renamed', 'revoked', 'temporary', 'wrong-id'})
+        self.assertEqual(result['meta']['revalidated_title_hint_count'], 1)
+        self.assertFalse(result['meta']['search_complete'])
+        self.assertIn('live_search_time_limit', result['meta']['incomplete_reasons'])
+
     def test_disabling_body_fetch_keeps_the_metadata_snapshot_fast_path(self):
         self.add()
         with patch.dict('os.environ', {'NOTION_FETCH_PAGE_BLOCKS': 'false'}):
@@ -180,6 +376,18 @@ class NotionCatalogSearchTests(unittest.TestCase):
                 self.live_queries.clear()
                 self.run_search()
                 self.assertEqual(len(self.live_queries), 240)
+
+    def test_only_an_unusable_catalog_requests_background_recovery(self):
+        from backend.notion import cache_maintenance
+
+        self.add()
+        with patch.object(cache_maintenance, 'request_catalog_refresh', create=True) as request:
+            self.run_search()
+            request.assert_not_called()
+            with closing(sqlite3.connect(self.index.path)) as db, db:
+                db.execute("UPDATE catalogs SET updated_at='2020-01-01T00:00:00+00:00'")
+            self.run_search()
+            request.assert_called_once_with()
 
     def test_revoked_or_moved_candidate_is_never_returned_from_catalog(self):
         self.add()

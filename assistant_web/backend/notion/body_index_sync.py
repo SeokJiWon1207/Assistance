@@ -5,8 +5,6 @@ from __future__ import annotations
 from backend.notion.crawl_transport import (
     _ReadFailure as _ReadFailure,
     _Budget as _Budget,
-    _retry_after_until as _retry_after_until,
-    _retry_after_lock as _retry_after_lock,
     _wait_for_retry_after as _wait_for_retry_after,
     _request as _request,
 )
@@ -106,6 +104,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
     reasons: set[str] = set()
     unsupported_children: set[str] = set()
     child_databases: set[str] = set()
+    links: list[dict[str, str]] = []
     seen_containers: set[str] = set()
     seen_blocks: set[str] = set()
     owned_synced_originals: set[str] = set()
@@ -184,6 +183,9 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
                     continue
                 if kind == "unsupported":
                     continue
+                if projection is None:
+                    from backend.notion.page_links import page_links
+                    links.extend(page_links(block))
                 if kind == "child_page":
                     if projection is None:
                         unsupported_children.add(block_id)
@@ -262,6 +264,7 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
             if str(exc) in {"http_403", "http_404", "synced_source_outside_scope"}:
                 source_exclusions.update({"foreign_synced_block", str(exc)})
     return {"text": "\n".join(segment["text"] for segment in segments), "segments": segments,
+            "page_links": links,
             "complete": not reasons, "incomplete_reasons": sorted(reasons),
             "supported_content_complete": not (reasons - {"unsupported_block"}),
             "unsupported_elements": unsupported_elements,
@@ -276,7 +279,8 @@ def crawl_notion_page_content(page_id: str, *, limits: CrawlLimits | None = None
 def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[str], *,
                              index: BodyIndex | None = None, deadline: float | None = None,
                              limits: CrawlLimits | None = None,
-                             catalog_page: dict[str, Any] | None = None) -> dict[str, Any] | None:
+                             catalog_page: dict[str, Any] | None = None,
+                             raise_transient: bool = False) -> dict[str, Any] | None:
     """접근·소속·수정본을 확인한 원문만 검색 결과로 반환한다.
 
     접근 거부, 삭제, 다른 DB로의 이동은 None이다. 수정 시각이 같아도
@@ -290,6 +294,11 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
     limits = limits or CrawlLimits(max_requests=100, max_seconds=25)
     end = min(deadline, time.monotonic() + limits.max_seconds) if deadline is not None else time.monotonic() + limits.max_seconds
     budget = _Budget(end, max(6, limits.max_requests))
+    def failed(exc):
+        if index is not None:
+            index.record_failure(page_id, str(exc))
+        if raise_transient and str(exc) not in {'http_401', 'http_403', 'http_404'}:
+            raise exc
     try:
         before = None
         if catalog_page and (catalog_page.get("parent") or {}).get("type") in {"database_id", "data_source_id"}:
@@ -304,8 +313,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             before = crawl_transport.request_json(f"pages/{page_id}", budget)
         before_parents = _page_ancestors(before, budget)
     except _ReadFailure as exc:
-        if index is not None:
-            index.record_failure(page_id, str(exc))
+        failed(exc)
         return None
     if not _valid_page(before, page_id, database_id, allowed, before_parents):
         if index is not None:
@@ -316,8 +324,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
     try:
         expanded = read_full_properties(before, budget)
     except _ReadFailure as exc:
-        if index is not None:
-            index.record_failure(page_id, str(exc))
+        failed(exc)
         return None
     content = crawl_notion_page_content(page_id, limits=limits, deadline=end, allowed_database_ids=allowed)
     reasons = set(content["incomplete_reasons"])
@@ -326,8 +333,7 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
         # 부모 이동은 자식의 수정 시각을 바꾸지 않을 수 있어 수집 뒤 다시 읽는다.
         after_parents = _page_ancestors(after, budget)
     except _ReadFailure as exc:
-        if index is not None:
-            index.record_failure(page_id, str(exc))
+        failed(exc)
         return None
     if not _valid_page(after, page_id, database_id, allowed, after_parents):
         if index is not None:
@@ -337,6 +343,8 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
         if index is not None:
             index.upsert_page(database_id, after, parent_pages=after_parents)
             index.record_failure(page_id, "page_changed_during_read")
+        if raise_transient:
+            raise _ReadFailure('page_changed_during_read')
         return None
     after = {**after, "properties": expanded["properties"],
              "_body_index_full_property_revision": revision}
@@ -378,7 +386,9 @@ def validate_index_candidate(record: dict[str, Any], allowed_database_ids: list[
             complete = False
         if not complete:
             index.record_failure(page_id, ",".join(sorted(reasons)))
+    from backend.notion.page_links import page_links
     return {"raw_page": after, "database_id": database_id, "content": content["text"],
+            "page_links": [*content.get("page_links", []), *page_links(after)],
             "segments": content["segments"], "complete": complete, "incomplete_reasons": sorted(reasons),
             "supported_content_complete": not (reasons - {"unsupported_block"}),
             "unsupported_elements": content["unsupported_elements"],

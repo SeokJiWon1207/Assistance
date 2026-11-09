@@ -6,8 +6,10 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 
 from backend.auth import current_request_user
+from backend.execution import RequestStopped
 from backend.settings.notion import NOTION_API_BASE, get_notion_headers
 from backend.notion.discovery import resolve_notion_settings, notion_is_configured
+from backend.notion.complete_snapshot import get_notion_catalog_freshness
 from backend.schemas import ChromaSearchRequest, NotionPageUpdateRequest, NotionPageWriteRequest
 from backend.notion.schema import ensure_readable_notion_database
 from backend.sources.notion import (
@@ -43,6 +45,7 @@ def notion_status_endpoint() -> Dict[str, Any]:
         "databaseIds": [database_id[-8:] for database_id in database_ids],
         "databaseSource": settings.get("database_source", "configured"),
         "databaseDiscoveryError": bool(settings.get("database_discovery_error")),
+        "catalog": get_notion_catalog_freshness(settings),
         "version": settings["version"],
     }
 
@@ -50,7 +53,10 @@ def notion_status_endpoint() -> Dict[str, Any]:
 @router.post("/api/notion/search")
 def search_notion(request: ChromaSearchRequest) -> Dict[str, Any]:
     limit = max(1, min(request.limit, 20))
-    return execute_notion_search(request.query, limit, extract_query_constraints(request.query))
+    try:
+        return execute_notion_search(request.query, limit, extract_query_constraints(request.query))
+    except RequestStopped as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get("/api/notion/pages/{page_id}")

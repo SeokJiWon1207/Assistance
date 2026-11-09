@@ -42,7 +42,7 @@ class BodyIndexSyncTests(unittest.TestCase):
         clock = patch.object(sync.time, "monotonic", side_effect=lambda: self.now)
         clock.start()
         self.addCleanup(clock.stop)
-        cooldown = patch.object(crawl_transport, "_retry_after_until", 0.0, create=True)
+        cooldown = patch('backend.notion.transport._notion_retry_after_until', 0.0)
         cooldown.start()
         self.addCleanup(cooldown.stop)
         self.directory = tempfile.TemporaryDirectory()

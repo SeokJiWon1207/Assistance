@@ -33,6 +33,15 @@ def notion_discovery_max_databases() -> int:
         return 20
 
 
+def cached_notion_database_ids(token: str) -> Tuple[List[str], str, str] | None:
+    """상태 점검에서는 원격 탐색 없이 현재 연결의 캐시만 확인한다."""
+    with _notion_discovery_lock:
+        cached = _notion_discovery_cache.get(token)
+        if cached and cached[0] > time.monotonic():
+            return list(cached[1]), cached[2], cached[3]
+    return None
+
+
 def discover_notion_database_ids(token: str) -> Tuple[List[str], str, str]:
     """API 키의 integration에 연결된 DB를 Notion 검색 API로 찾는다.
 
@@ -41,11 +50,9 @@ def discover_notion_database_ids(token: str) -> Tuple[List[str], str, str]:
     실패도 짧게 캐시해 Notion 장애 때 요청마다 재시도하지 않는다.
     반환값은 (DB ID 목록, 오류 메시지, 오류 종류 dependency|configuration)이다.
     """
-    now = time.monotonic()
-    with _notion_discovery_lock:
-        cached = _notion_discovery_cache.get(token)
-        if cached and cached[0] > now:
-            return list(cached[1]), cached[2], cached[3]
+    cached = cached_notion_database_ids(token)
+    if cached is not None:
+        return cached
 
     database_ids: List[str] = []
     error = ""

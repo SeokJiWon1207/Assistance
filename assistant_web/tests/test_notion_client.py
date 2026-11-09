@@ -292,6 +292,12 @@ class NotionClientTests(unittest.TestCase):
 
 
 class NotionPostJsonTests(unittest.TestCase):
+    def setUp(self):
+        for name in ('_notion_next_request_at', '_notion_retry_after_until'):
+            state = patch.object(transport, name, 0.0)
+            state.start()
+            self.addCleanup(state.stop)
+
     def test_post_retries_network_failure_with_bounded_timeout(self):
         success = Mock(status_code=200)
         with (
