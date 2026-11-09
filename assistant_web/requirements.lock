@@ -166,7 +166,7 @@ numpy==2.5.2
     # via
     #   chromadb
     #   onnxruntime
-oauthlib==4.0.0
+oauthlib==4.0.1
     # via
     #   -c assistant_web/constraints-security.txt
     #   requests-oauthlib
