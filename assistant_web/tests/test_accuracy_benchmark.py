@@ -39,7 +39,8 @@ class CaseFormatTests(unittest.TestCase):
     def test_example_file_documents_every_expectation_type(self):
         cases = benchmark.load_cases(EXAMPLE)
         kinds = {expect["type"] for case in cases for turn in case["turns"] for expect in turn["expect"]}
-        self.assertEqual(kinds, {"count", "issue_ids", "notion_titles", "plan", "contains", "not_contains", "clarify", "delivered"})
+        self.assertEqual(kinds, {"count", "issue_ids", "notion_titles", "plan", "contains", "not_contains", "clarify",
+                                 "delivered", "agent"})
         # 저장소의 예시는 실제 점수에 섞이지 않도록 모두 dev 문항이다.
         self.assertEqual({case["split"] for case in cases}, {"dev"})
 
@@ -65,6 +66,13 @@ class CaseFormatTests(unittest.TestCase):
 
 
 class ScoringTests(unittest.TestCase):
+    def test_exact_order_and_shadow_skip_are_visible_in_scoring(self):
+        expected = {'type': 'issue_ids', 'ids': [9, 2], 'match': 'exact', 'ordered': True}
+        swapped = response(sources=[{'issue_id': 2}, {'issue_id': 9}])
+        self.assertIsNotNone(benchmark.check_expectation(expected, swapped, date.today()))
+        self.assertIsNotNone(benchmark.check_expectation({'type': 'delivered'},
+            response(mode='agent_query_shadow_skipped', content='건너뛰었습니다.'), date.today()))
+
     RUN_DATE = date(2026, 10, 21)
 
     def check(self, expect, actual):
@@ -74,6 +82,31 @@ class ScoringTests(unittest.TestCase):
         self.assertIsNone(self.check({"type": "count", "value": 1234}, response(stages=[count_stage(1234)], content="총 1,234건입니다.")))
         self.assertIn("집계 결과", self.check({"type": "count", "value": 5}, response(stages=[count_stage(4)], content="총 5건")))
         self.assertIn("표시되지", self.check({"type": "count", "value": 5}, response(stages=[count_stage(5)], content="총 4건")))
+
+    def test_complete_snapshot_list_proves_its_total_regardless_of_the_selected_tool(self):
+        stage = {'source': 'mantis_snapshot', 'status': 'ok', 'meta': {
+            'tool': 'mantis_complete_snapshot', 'found_count': 11, 'search_complete': True}}
+        evidence = benchmark.compact_response({'retrieval': {'stages': [stage]}, 'content': '총 11건 중 3건을 표시했습니다.'})
+        self.assertIsNone(self.check({'type': 'count', 'value': 11}, evidence))
+        for text in ['11건을 표시했습니다. 전체 15건입니다.', '총 111건입니다.']:
+            self.assertIsNotNone(self.check({'type': 'count', 'value': 11}, {**evidence, 'content': text}))
+        stage['meta']['found_count'] = 0
+        answer = response(stages=[stage], content='관련 이슈는 지금 조건으로는 찾지 못했어요.')
+        self.assertIsNone(self.check({'type': 'count', 'value': 0}, answer))
+        stage['meta']['search_complete'] = False
+        self.assertIsNotNone(self.check({'type': 'count', 'value': 0}, answer))
+
+    def test_agent_list_total_is_scored_without_requiring_a_separate_count_call(self):
+        stage = {'source': 'mantis_snapshot', 'status': 'ok', 'meta': {
+            'operation': 'list', 'total_count': 1196, 'found_count': 1196, 'search_complete': True}}
+        evidence = benchmark.compact_response({'retrieval': {'stages': [stage]},
+            'content': '적용 조건에 맞는 Mantis 이슈는 1196건입니다. 최근 2건을 표시했습니다.'})
+        self.assertIsNone(self.check({'type': 'count', 'value': 1196}, evidence))
+        self.assertIsNotNone(self.check({'type': 'count', 'value': 2}, evidence))
+        for field, value in [('search_complete', False), ('total_count', None)]:
+            invalid = {**stage, 'meta': {**stage['meta'], field: value}}
+            self.assertIsNotNone(self.check({'type': 'count', 'value': 1196},
+                response(stages=[invalid], content=evidence['content'])))
 
     def test_issue_and_notion_sources_support_exact_includes_and_excludes(self):
         actual = response(sources=[{"issue_id": 1}, {"issue_id": "2"}, {"type": "notion", "title": "배포  체크리스트"}])
@@ -148,6 +181,28 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(failures, ["실행 오류: Timeout: model"])
         missing = benchmark.score_cases(cases[:1], [], self.RUN_DATE)["results"][0]["turns"][0]["failures"]
         self.assertEqual(missing, ["응답이 없습니다(실행되지 않음)"])
+
+    def test_agent_expectations_compare_tool_selection_and_summarize_usage(self):
+        agent = {"stopReason": "sufficient_evidence", "finalization": "grounded", "modelRequests": 4, "toolCalls": 2,
+                 "tools": ["search_mantis_issues", "search_notion_pages"], "toolErrors": [],
+                 "usage": {"promptTokens": 120, "completionTokens": 30, "unreportedCalls": 1}}
+        check = benchmark.check_agent
+        self.assertIsNone(check({"type": "agent", "entered": True, "tools_include": ["search_mantis_issues"],
+                                 "max_tool_calls": 2, "finalization": ["grounded"]}, agent))
+        self.assertIn("불필요한 도구", check({"type": "agent", "tools_exclude": ["search_notion_pages"]}, agent))
+        self.assertIn("최대 1회", check({"type": "agent", "max_tool_calls": 1}, agent))
+        self.assertIn("진입하지 않았습니다", check({"type": "agent", "entered": True}, None))
+        self.assertIsNone(check({"type": "agent", "entered": False}, None))
+        with self.assertRaises(benchmark.CaseError):
+            benchmark.validate_expectation({"type": "agent", "unknown": 1}, "x")
+        summary = benchmark.summarize_agent([{"agent": agent}, {"agent": None}])
+        self.assertEqual(summary["entered_rate"], 0.5)
+        self.assertEqual((summary["prompt_tokens"], summary["unreported_token_calls"]), (120, 1))
+        self.assertEqual(summary["tool_counts"], {"search_mantis_issues": 1, "search_notion_pages": 1})
+        compact = benchmark.compact_agent({"trace": [{"step": "tool", "tool": "search_mantis_issues", "queryHash": "x"}],
+                                           "toolCalls": 1})
+        self.assertEqual(compact["tools"], ["search_mantis_issues"])
+        self.assertNotIn("queryHash", json.dumps(compact))
 
     def test_nearest_rank_percentile(self):
         self.assertIsNone(benchmark.nearest_rank([], 95))

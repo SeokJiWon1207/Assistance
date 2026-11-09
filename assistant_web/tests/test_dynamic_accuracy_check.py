@@ -191,9 +191,8 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
             patch.object(accuracy, "prepare_mantis_store", return_value={"search_complete": True}),
             patch.object(accuracy, "prepare_notion_catalog", side_effect=RuntimeError('incomplete catalog')),
             patch.object(accuracy, "fetch_mantis_snapshot", return_value=[{"id": 1}]),
-            patch.object(accuracy, "fetch_notion_snapshot", return_value=[]),
+            patch.object(accuracy, "fetch_notion_snapshot", return_value=[]) as fetch_notion,
             patch.object(accuracy, "build_mantis_cases", side_effect=RuntimeError("oracle unavailable")),
-            patch.object(accuracy, "build_notion_cases", return_value=[]),
             patch.object(accuracy, "get_model_registry", return_value=[]),
             patch.object(accuracy, "write_report", return_value=(Path("r.json"), Path("r.md"))) as write,
             redirect_stdout(StringIO()),
@@ -205,8 +204,42 @@ class IndependentAccuracyOracleTests(unittest.TestCase):
         self.assertEqual(exit_code, 1, "원본 수집 실패도 최종 incomplete 리포트가 있어야 한다")
         report = write.call_args.args[0]
         self.assertEqual(report["summary"]["status"], "incomplete")
+        self.assertEqual(report["generated_questions"], 0, "목록 준비 실패 후 빈 제목 문항도 채점하면 안 된다")
+        fetch_notion.assert_not_called()
+        self.assertIn("freshness", report["notion_catalog"])
         self.assertTrue(any("oracle" in error for error in report["errors"]))
         self.assertTrue(any("Notion catalog" in error for error in report["errors"]))
+
+    def test_catalog_expiring_after_sampling_excludes_notion_from_the_score(self):
+        stale = {"status": "stale", "ageSeconds": 7200, "maxAgeSeconds": 7200,
+                 "oldestUpdatedAt": "2026-11-04T05:01:00+00:00"}
+        mantis_case = AccuracyCase("mantis-only", "mantis", "이슈", "#1", "exact_issue_ids", [1])
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(accuracy, "REPORT_DIR", Path(directory)),
+            patch.dict(os.environ),
+            patch.object(accuracy.sys, "argv", ["accuracy", "--all-cases", "--follow-up-scenarios", "0"]),
+            patch.object(accuracy, "prepare_mantis_store", return_value={}),
+            patch.object(accuracy, "prepare_notion_catalog", return_value={"status": "refreshed"}),
+            patch.object(accuracy, "get_notion_catalog_freshness", return_value=stale),
+            patch.object(accuracy, "fetch_mantis_snapshot", return_value=[]),
+            patch.object(accuracy, "fetch_notion_snapshot", return_value=[]),
+            patch.object(accuracy, "build_mantis_cases", return_value=[mantis_case]),
+            patch.object(accuracy, "build_natural_language_cases", return_value=[]),
+            patch.object(accuracy, "get_model_registry", return_value=[{"id": "fixture"}]),
+            patch.object(accuracy, "run_case", return_value={
+                **vars(mantis_case), "passed": True, "outcome": "passed",
+            }) as run,
+            redirect_stdout(StringIO()),
+        ):
+            self.assertEqual(accuracy.main(), 1)
+            run.assert_called_once_with(mantis_case, "fixture")
+            report = json.loads(next(Path(directory).glob("*.json")).read_text())
+            self.assertEqual(report["summary"]["status"], "incomplete")
+            self.assertEqual(report["notion_catalog"]["blocked_at"], stale)
+            self.assertEqual(report["summary"]["by_source"]["notion"]["attempted"], 0)
+            self.assertEqual(report["summary"]["by_source"]["mantis"]["passed"], 1)
+            self.assertIn("7200초", next(Path(directory).glob("*.md")).read_text())
 
     def test_customer_followup_accepts_display_alias_but_rejects_another_customer(self):
         case = AccuracyCase("mantis-exact-id", "mantis", "정확 ID", "#31597", "exact_issue_ids", [31597])

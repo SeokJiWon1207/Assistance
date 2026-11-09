@@ -40,6 +40,7 @@ load_dotenv(APP_DIR / ".env")
 
 from backend.settings.catalogs import get_customer_aliases
 from backend.settings.notion import NOTION_API_BASE, parse_notion_database_ids
+from backend.notion.complete_snapshot import get_notion_catalog_freshness
 from backend.notion.discovery import discover_notion_database_ids
 from backend.settings.catalogs import get_customer_directory
 from backend.customer_identity import customer_alias_owner
@@ -1401,6 +1402,17 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
     filter_recall_label = (
         f"{filter_recall.get('score')}%" if filter_recall.get("score") is not None else "N/A"
     )
+    catalog = report.get("notion_catalog") or {}
+    freshness = catalog.get("blocked_at") or catalog.get("freshness") or {}
+    catalog_notes = []
+    if freshness:
+        age_label = "갱신 시각 미확인"
+        if freshness.get("ageSeconds") is not None:
+            age_label = (f"가장 오래된 갱신 {freshness['oldestUpdatedAt']} · "
+                         f"경과 {freshness['ageSeconds']}초 / 유효기간 {freshness['maxAgeSeconds']}초")
+        catalog_notes.append(f"- Notion 목록 상태 `{freshness['status']}` · {age_label}")
+        if catalog.get("status") == "unavailable" or catalog.get("blocked_at"):
+            catalog_notes.append("- 목록을 확인하지 못한 시점부터 Notion 문항 채점을 중단했습니다.")
     lines = [
         "# Dynamic accuracy report",
         "",
@@ -1422,6 +1434,7 @@ def write_report(report: Dict[str, Any]) -> tuple[Path, Path]:
         f"- Dependency errors: {summary.get('dependency_errors', 0)}",
         f"- Mantis snapshot: {report['snapshots']['mantis']} items",
         f"- Notion snapshot: {report['snapshots']['notion']} items",
+        *catalog_notes,
         "- 검증 범위: Notion은 표본 제목·속성 검사이며, 본문 검색 정확도와 전체 문서 재현율은 이 점수에 포함하지 않습니다.",
         "",
         "| Result | Group | Source | Category | Question | Expected | Actual |",
@@ -1487,7 +1500,10 @@ def prepare_notion_catalog() -> Dict[str, Any]:
     metadata = refresh_catalog_cache()
     if metadata.get('status') not in {'fresh', 'refreshed'}:
         raise RuntimeError(f"Notion catalog preparation {metadata.get('status', 'unavailable')}")
-    return metadata
+    freshness = get_notion_catalog_freshness()
+    if freshness["status"] != "fresh":
+        raise RuntimeError(f"Notion catalog after preparation: {freshness['status']}")
+    return {**metadata, "freshness": freshness}
 
 
 def main() -> int:
@@ -1517,6 +1533,7 @@ def main() -> int:
     try:
         notion_catalog = prepare_notion_catalog()
     except Exception as exc:
+        notion_catalog = {"status": "unavailable", "freshness": get_notion_catalog_freshness()}
         errors.append(f"Notion catalog preparation failed: {type(exc).__name__}: {str(exc)[:300]}")
     emit_progress(args.progress, {"type": "status", "message": "Mantis·Notion 실시간 스냅샷을 수집하고 있습니다"})
     try:
@@ -1524,18 +1541,19 @@ def main() -> int:
     except Exception as exc:
         mantis_issues = []
         errors.append(f"Mantis snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
-    try:
-        notion_pages = fetch_notion_snapshot()
-    except Exception as exc:
-        notion_pages = []
-        errors.append(f"Notion snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
+    notion_pages: Optional[List[Dict[str, str]]] = None
+    if notion_catalog["status"] != "unavailable":
+        try:
+            notion_pages = fetch_notion_snapshot()
+        except Exception as exc:
+            errors.append(f"Notion snapshot failed: {type(exc).__name__}: {str(exc)[:300]}")
 
     try:
         mantis_cases = build_mantis_cases(mantis_issues, rng, augment_mutable_oracle=True)
     except Exception as exc:
         mantis_cases = []
         errors.append(f"Mantis oracle preparation failed: {type(exc).__name__}: {str(exc)[:300]}")
-    candidate_cases = mantis_cases + build_notion_cases(notion_pages, rng)
+    candidate_cases = mantis_cases + (build_notion_cases(notion_pages, rng) if notion_pages is not None else [])
     if args.all_cases:
         candidate_cases += build_natural_language_cases(candidate_cases)
     cases = candidate_cases if args.all_cases else select_rotating_cases(candidate_cases, args.questions, rng)
@@ -1555,8 +1573,23 @@ def main() -> int:
     emit_progress(args.progress, {"type": "run_start", "total": planned_total if model_id else 0})
     results: List[Dict[str, Any]] = []
     base_results_by_id: Dict[str, Dict[str, Any]] = {}
+
+    def can_measure(source: str) -> bool:
+        if source != "notion":
+            return True
+        if "blocked_at" in notion_catalog:
+            return False
+        freshness = get_notion_catalog_freshness()
+        if freshness["status"] == "fresh":
+            return True
+        notion_catalog["blocked_at"] = freshness
+        errors.append(f"Notion catalog became {freshness['status']} before measurement")
+        return False
+
     if model_id:
         for index, case in enumerate(cases, start=1):
+            if not can_measure(case.source):
+                continue
             emit_progress(args.progress, {
                 "type": "case_start",
                 "caseId": case.id,
@@ -1574,6 +1607,8 @@ def main() -> int:
 
         cases_by_id = {case.id: case for case in cases}
         for offset, scenario in enumerate(follow_up_scenarios, start=1):
+            if not can_measure(scenario.source):
+                continue
             parent_case = cases_by_id[scenario.parent_case_id]
             parent_result = base_results_by_id[scenario.parent_case_id]
             emit_progress(args.progress, {
@@ -1639,7 +1674,7 @@ def main() -> int:
         "model_requests": len(base_results) + sum(
             1 for result in follow_up_results if result.get("outcome") != "blocked_by_prerequisite"
         ),
-        "snapshots": {"mantis": len(mantis_issues), "notion": len(notion_pages)},
+        "snapshots": {"mantis": len(mantis_issues), "notion": len(notion_pages or [])},
         "evaluation_scope": {
             "mantis_oracle": "raw_source_fields_with_live_candidate_revalidation",
             "notion_oracle": "sampled_titles_and_properties",

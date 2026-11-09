@@ -8,6 +8,26 @@ from test_unified_planner import proposal
 USER = {'uid': 'repair', 'mantisUsername': '석지원'}
 
 class AccuracyRepairTests(unittest.TestCase):
+    def test_customer_question_uses_bound_issue_project(self):
+        from backend.answers import format_deterministic_issue_answer
+        question = '0031678 이 이슈는 어느 고객사 건이야?'
+        plan = self.plan(question)
+        self.assertEqual(plan['operation'], 'get')
+        issue = {'id': 31678, 'project': '141IBK(IBK증권)', 'summary': '[GEX] 폴더 문의'}
+        retrieval = {'intent_plan': plan, 'stages': [
+            {'source': 'mantis_id_lookup', 'status': 'ok', 'issues_list': [issue]}]}
+        answer = format_deterministic_issue_answer(question, plan['resolved_constraints'], retrieval, 5)
+        self.assertIn('IBK투자증권', answer)
+        self.assertNotIn('GEX', answer)
+        self.assertEqual(self.plan(question + ' 그리고 원인도 알려줘')['operation'], 'clarify')
+
+    def test_independent_question_cannot_inherit_customer(self):
+        q = '별개로 2025년 HTS 종료 이슈 몇 건이야?'
+        previous = self.previous()
+        with self.assertRaisesRegex(ValueError, '독립 질문'):
+            validate_plan(q, proposal(scope='inherit', followup=True,
+                status={'mode':'include','values':['closed'],'evidence':'종료'}), USER, previous)
+
     def test_find_and_tell_preserves_at_sign_in_exact_notion_title(self):
         p = self.plan("노션에서 '@허영교' 항목을 찾아서 알려줘")
         self.assertEqual(p.get('operation'), 'search')

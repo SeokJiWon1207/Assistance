@@ -1,0 +1,18 @@
+{
+  "currency": "USD",
+  "as_of": "2026-11-09",
+  "source": "https://developers.openai.com/api/docs/pricing",
+  "cache_source": "https://developers.openai.com/api/docs/guides/prompt-caching",
+  "models": {
+    "gpt-6-luna": {
+      "input_per_million": 0.10,
+      "cached_input_per_million": 0.01,
+      "output_per_million": 0.50,
+      "cache_write_input_per_million": 0.125,
+      "cache_write_12h_input_per_million": 0.25,
+      "max_input_tokens": 272000,
+      "service_tiers": ["default", "standard"],
+      "endpoint_origin": "https://api.openai.com"
+    }
+  }
+}
