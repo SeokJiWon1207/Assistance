@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from backend import auth, audit, workspace, conversation_history, workspace_notifications
 from backend.db_migrations import run_sqlite_migrations
+from backend.storage import workspace_schema
 
 
 def snapshot_database(path):
@@ -26,7 +27,8 @@ def migration_cases():
         'users': [auth._create_users_schema, auth._add_password_change_fields, auth._add_password_reset_state],
         'audit': [audit._create_audit_schema, audit._add_validation_log_user_uid, audit._add_failed_checks_summary],
         'workspace': [workspace._create_workspace_schema, workspace._create_team_brief_schema, workspace._create_playbook_schema,
-                      conversation_history.migrate_messages, workspace_notifications.create_notification_schema],
+                      conversation_history.migrate_messages, workspace_notifications.create_notification_schema,
+                      workspace_schema.create_conversation_trash_schema],
     }
     records = []
     with tempfile.TemporaryDirectory() as directory:

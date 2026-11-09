@@ -41,7 +41,9 @@ test('management selects loaded matching records without deleting until confirme
 test('all confirmation makes one delete request and blocks duplicate confirmation',async()=>{
   const h=await harness();h.el('#conversationManageBtn').listeners.click();h.el('#conversationDeleteAll').listeners.click();
   assert.match(h.el('#conversationDeleteDescription').textContent,/불러오지 않은/);
-  assert.match(h.el('#conversationDeleteDescription').textContent,/복구할 수 없/);
+  // 서버 대화는 보관함에서 복원할 수 있고, 이 기기에만 있던 미저장 대화만 되돌릴 수 없다.
+  assert.match(h.el('#conversationDeleteDescription').textContent,/30일 동안 '최근 삭제한 대화'에서 복원/);
+  assert.match(h.el('#conversationDeleteDescription').textContent,/미저장 대화는 복구할 수 없/);
   await h.el('#conversationDeleteConfirm').listeners.click();
   assert.equal(h.calls(),1);assert.equal(h.el('#conversationDeleteModal').hidden,true);
 });

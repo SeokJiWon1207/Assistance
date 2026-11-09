@@ -32,8 +32,14 @@ class ConversationBulkDeleteTests(TestCase):
         self.assertIsNone(workspace.get_conversation('a', 'one'))
         self.assertIsNotNone(workspace.get_conversation('a', 'keep'))
         self.assertIsNotNone(workspace.get_conversation('b', 'one'))
+        # 삭제한 대화는 보관함으로 옮겨 메시지를 남기고, 영구 삭제해야 메시지까지 지운다.
+        trash = workspace.list_conversation_trash('a')['conversations']
+        self.assertEqual([(item['id'], item['messageCount']) for item in trash], [('one', 1)])
+        self.assertEqual(workspace.list_conversation_trash('b')['conversations'], [])
+        self.assertEqual(workspace.purge_conversation_trash('a', ['one']), ['one'])
         with sqlite3.connect(self.path) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM conversation_messages WHERE user_uid='a' AND conversation_id='one'").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM conversation_messages WHERE user_uid='b' AND conversation_id='one'").fetchone()[0], 1)
 
     def test_all_includes_favorites_and_unloaded_history_beyond_one_hundred(self):
         for i in range(105):
@@ -48,13 +54,18 @@ class ConversationBulkDeleteTests(TestCase):
 
     def test_failure_rolls_back_parent_and_message_deletions(self):
         self.save('a', 'one')
+        self.save('a', 'two')
         with sqlite3.connect(self.path) as db:
-            db.execute("CREATE TRIGGER fail_delete BEFORE DELETE ON conversation_messages BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            db.execute("CREATE TRIGGER fail_delete BEFORE DELETE ON conversations WHEN old.conversation_id='two' "
+                       "BEGIN SELECT RAISE(ABORT, 'test failure'); END")
         with self.assertRaises(sqlite3.IntegrityError):
-            workspace.delete_conversations('a', ['one'])
+            workspace.delete_conversations('a', ['one', 'two'])
+        # 한 건이라도 실패하면 앞서 보관함으로 옮긴 대화까지 되돌린다.
         self.assertIsNotNone(workspace.get_conversation('a', 'one'))
+        self.assertIsNotNone(workspace.get_conversation('a', 'two'))
+        self.assertEqual(workspace.list_conversation_trash('a')['conversations'], [])
         with sqlite3.connect(self.path) as db:
-            self.assertEqual(db.execute('SELECT COUNT(*) FROM conversation_messages').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM conversation_messages').fetchone()[0], 2)
 
     def test_invalid_scope_never_deletes_anything(self):
         self.save('a', 'one')
@@ -81,12 +92,16 @@ class ConversationBulkDeleteTests(TestCase):
     def test_deleted_revision_cannot_be_saved_as_a_conflict_recovery(self):
         for bulk in (False, True):
             with self.subTest(bulk=bulk):
-                saved = workspace.save_conversation('a', 'old', '삭제할 대화', [{'role': 'user', 'content': '질문'}], False)
+                cid = f'old-{int(bulk)}'
+                saved = workspace.save_conversation('a', cid, '삭제할 대화', [{'role': 'user', 'content': '질문'}], False)
                 if bulk:
                     self.client.post('/api/workspace/conversations/bulk-delete', json={'all': True})
                 else:
-                    self.client.delete('/api/workspace/conversations/old')
-                response = self.client.put('/api/workspace/conversations/old', json={
+                    self.client.delete(f'/api/workspace/conversations/{cid}')
+                response = self.client.put(f'/api/workspace/conversations/{cid}', json={
                     'expectedUpdatedAt': saved['updatedAt'], 'messages': [{'role': 'user', 'content': '늦은 저장'}], 'startIndex': 0})
                 self.assertEqual(response.status_code, 410, response.text)
-                self.assertIsNone(workspace.get_conversation('a', 'old'))
+                self.assertIsNone(workspace.get_conversation('a', cid))
+                # 버전 정보 없이 처음 저장하는 것처럼 보내도 보관 중인 메시지를 덮지 않는다.
+                fresh = self.client.put(f'/api/workspace/conversations/{cid}', json={'messages': [{'role': 'user', 'content': '덮어쓰기'}]})
+                self.assertEqual(fresh.status_code, 410, fresh.text)

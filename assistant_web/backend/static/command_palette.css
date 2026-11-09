@@ -1,0 +1,251 @@
+/* ⌘K 명령 팔레트: 화면 위쪽 가운데에 뜨는 검색 창 */
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: rgba(15, 20, 28, 0.36);
+  animation: modal-backdrop-in 0.14s ease-out;
+}
+
+.command-palette-backdrop[hidden] {
+  display: none;
+}
+
+.command-palette {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: min(560px, 76vh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 2px 4px rgba(25, 31, 40, 0.06), 0 24px 64px rgba(25, 31, 40, 0.22);
+  outline: none;
+}
+
+body.theme-dark .command-palette {
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.command-palette-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.command-palette-search svg {
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.command-palette-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+  outline: none;
+}
+
+.command-palette-search input::placeholder {
+  color: var(--muted);
+}
+
+.command-palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  overscroll-behavior: contain;
+}
+
+.command-palette-group + .command-palette-group {
+  margin-top: 4px;
+}
+
+.command-palette-group-label {
+  margin: 0;
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.command-palette-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: var(--control-radius);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.command-palette-option.is-active {
+  background: var(--blue-soft);
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+
+.command-palette-option[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.command-palette-option-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
+  color: var(--text-soft);
+}
+
+.command-palette-option.is-active .command-palette-option-icon {
+  background: var(--surface);
+  color: var(--blue);
+}
+
+.command-palette-option-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.command-palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-option.is-issue .command-palette-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.command-palette-meta {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-empty {
+  margin: 0;
+  padding: 28px 10px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.command-palette-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-alt) 50%, var(--surface));
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.command-palette-footer kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-soft);
+  font: inherit;
+}
+
+@media (max-width: 560px) {
+  .command-palette-backdrop {
+    padding-top: 16px;
+  }
+
+  .command-palette-meta {
+    display: none;
+  }
+
+  /* 터치 화면에는 키보드 안내가 필요 없다. */
+  .command-palette-footer {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette-backdrop {
+    animation: none;
+  }
+}
+
+/* 대시보드·내 업무 머리의 검색 칸. 누르면 ⌘K 팔레트를 연다. */
+.search-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 168px;
+  min-height: 36px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: var(--surface-alt);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search-pill span {
+  flex: 1;
+  text-align: left;
+}
+
+.search-pill kbd {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.search-pill:hover {
+  color: var(--text-soft);
+}
+
+.search-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (max-width: 680px) {
+  .search-pill { min-width: 0; }
+  .search-pill span, .search-pill kbd { display: none; }
+}

@@ -1,0 +1,97 @@
+/* 입력창 왼쪽 아래 도구 묶음: 템플릿 · 조건 */
+.composer-tools {
+  grid-area: template;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-conditions-button em {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: var(--on-accent, #ffffff);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.composer-conditions-button em[hidden] {
+  display: none;
+}
+
+.composer-conditions-button[aria-expanded="true"] {
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+/* 입력창 위로 여는 작은 메뉴 */
+.composer-conditions-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 25;
+  display: grid;
+  gap: 10px;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: 0 2px 4px rgba(25, 31, 40, 0.04), 0 16px 40px rgba(25, 31, 40, 0.16);
+}
+
+body.theme-dark .composer-conditions-menu {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.composer-conditions-menu[hidden] {
+  display: none;
+}
+
+.composer-conditions-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-conditions-group > span {
+  min-width: 36px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.composer-condition-chip {
+  min-height: var(--chip-height-sm);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.composer-condition-chip:hover {
+  background: var(--surface-alt);
+}
+
+.composer-condition-chip[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 600;
+}
+
+.composer-condition-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}

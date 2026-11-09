@@ -58,8 +58,8 @@ export function initConversationBulkActions() {
     const names = state.conversations.filter((item) => ids.includes(item.id));
     const preview = names.slice(0, 3).map((item) => String(item.title || "새 대화").slice(0, 60)).join(" · ");
     description.textContent = all
-      ? "즐겨찾기와 아직 목록에 불러오지 않은 서버 대화, 이 기기의 미저장 대화를 모두 삭제합니다. 다른 사용자의 대화는 유지됩니다. 삭제한 대화는 복구할 수 없습니다."
-      : `${preview}${names.length > 3 ? ` 외 ${names.length - 3}개` : ""}. 선택한 대화의 질문·답변과 즐겨찾기를 서버와 이 기기에서 삭제합니다. 삭제한 대화는 복구할 수 없습니다.`;
+      ? "즐겨찾기와 아직 목록에 불러오지 않은 서버 대화, 이 기기의 미저장 대화를 모두 삭제합니다. 다른 사용자의 대화는 유지됩니다. 서버에 저장된 대화는 30일 동안 '최근 삭제한 대화'에서 복원할 수 있고, 이 기기에만 있던 미저장 대화는 복구할 수 없습니다."
+      : `${preview}${names.length > 3 ? ` 외 ${names.length - 3}개` : ""}. 선택한 대화를 목록에서 삭제합니다. 서버에 저장된 대화는 30일 동안 '최근 삭제한 대화'에서 복원할 수 있고, 이 기기에만 있던 미저장 대화는 복구할 수 없습니다.`;
     error.hidden = true;
     modal.hidden = false;
     confirm.textContent = all ? "모든 대화 삭제" : `${ids.length}개 삭제`;

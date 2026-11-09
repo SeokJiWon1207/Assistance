@@ -221,9 +221,15 @@ button:disabled { cursor: not-allowed; }
 /* 업무·대시보드·관리자는 같은 폭과 컴포넌트 리듬을 사용한다. */
 :root { --control-radius: var(--radius-button); --radius-sm: var(--radius-badge); --radius-lg: var(--radius-card); }
 .workspace-modal-header h2, .dashboard-heading h2, .admin-section-header h2 { font-size: 24px; line-height: 1.4; }
-.personal-panel .workspace-refresh-button { display: inline-flex; width: 36px; min-width: 36px; padding: 0; font-size: 0; justify-content: center; }
-.personal-panel .workspace-refresh-button > span { display: none; }
-.workspace-tabs button { min-height: 48px; font-size: 15px; }
+/* 새로고침은 팀 대시보드와 같이 글자 단추로 두고, 좁은 화면에서만 아이콘으로 줄인다. */
+.personal-panel .workspace-refresh-button { display: inline-flex; align-items: center; gap: 6px; width: auto; justify-content: center; white-space: nowrap; }
+@media (max-width: 560px) {
+  .personal-panel .workspace-refresh-button { width: 36px; min-width: 36px; padding: 0; }
+  .personal-panel .workspace-refresh-button > span { display: none; }
+}
+/* 두 업무 화면의 탭은 도움말 버튼과 독립적으로 같은 크기를 쓴다. */
+:is(.workspace-tabs, .dashboard-tabs) { gap: var(--space-5); }
+:is(.workspace-tabs, .dashboard-tabs) [role="tab"] { min-height: 48px; font-size: 15px; }
 .workspace-content.is-overview, .workspace-content.is-overview.has-status { grid-template-rows: auto; overflow-y: auto; }
 .workspace-overview { grid-template-rows: auto auto; align-content: start; }
 .workspace-overview > .workspace-section { min-height: 0; }
@@ -246,11 +252,11 @@ button:disabled { cursor: not-allowed; }
 .workspace-search input { width: 100%; max-width: 440px; border-radius: var(--radius-input); }
 .playbook-layout.has-detail { display: grid; grid-template-columns: minmax(240px,.75fr) minmax(0,1.6fr); gap: var(--space-5); align-items: start; }
 .playbook-list { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius-card); overflow: hidden; gap: 0; background: var(--surface); }
-.playbook-list-item { display: grid; gap: var(--space-2); width: 100%; padding: 20px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
+.playbook-list-item { display: grid; gap: var(--space-2); width: 100%; padding: 20px var(--content-padding); border: 0; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
 .playbook-list-item:last-child { border-bottom: 0; }
 .playbook-list-item[aria-pressed="true"] { background: color-mix(in srgb, var(--blue) 6%, var(--surface)); box-shadow: inset 3px 0 var(--blue); }
-.playbook-list-item:hover { background: var(--surface-alt); }
-.playbook-list-item strong { font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+.playbook-list-item:hover:not([aria-pressed="true"]) { background: var(--surface-alt); }
+.playbook-list-item strong { font-size: var(--font-body); line-height: 1.6; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .playbook-list-item small, .playbook-list-item time { font-size: 12px; color: var(--muted); }
 .playbook-list-item .playbook-status { justify-self: start; }
 .playbook-detail { min-width: 0; }
@@ -302,8 +308,8 @@ button:disabled { cursor: not-allowed; }
   .workspace-list-controls { width: 100%; justify-content: space-between; }
   .workspace-favorite-grid { grid-template-columns: minmax(0,1fr); padding: var(--space-3); }
   .workspace-section > header { flex-wrap: wrap; gap: var(--space-2); }
-  .workspace-tabs { gap: 20px; }
-  .workspace-tabs button { font-size: 14px; }
+  :is(.workspace-tabs, .dashboard-tabs) { gap: 20px; }
+  :is(.workspace-tabs, .dashboard-tabs) [role="tab"] { font-size: 14px; }
   .workspace-metric { padding: var(--space-4); }
   .workspace-metric strong { font-size: 26px; }
   .auth-gate { padding: var(--space-4); }
@@ -401,7 +407,7 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 540px) {
   :root { --content-padding: var(--space-4); --font-headline: 18px; }
   .workspace-modal-header h2, .dashboard-heading h2, .admin-section-header h2 { font-size: 22px; }
-  .workspace-section > header, .workspace-issue-row { padding: var(--content-padding); }
+  .workspace-section > header, .workspace-issue-row, .playbook-list-item { padding: var(--content-padding); }
   .dashboard-body { gap: var(--space-4); padding-top: var(--space-4); }
   .workspace-metric strong { font-size: 26px; }
 }
@@ -441,4 +447,53 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 540px) {
   .dashboard-decision-actions { width: 100%; }
   .dashboard-decision-action { width: 100%; }
+}
+
+/* 고객사 로고 칸. 로고는 가로형 글자 로고가 많아 칸 안에 비율대로 맞춘다(흰 바탕 고정, 어두운 테마에서도 원본 색). */
+.customer-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 56px;
+  height: 24px;
+  padding: 2px 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.customer-mark img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.customer-mark.is-md {
+  width: 88px;
+  height: 36px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.customer-mark.is-lg {
+  width: 120px;
+  height: 48px;
+  padding: 6px 10px;
+  border-radius: 12px;
+}
+
+.customer-mark.is-text {
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.customer-mark.is-md.is-text,
+.customer-mark.is-lg.is-text {
+  font-size: 14px;
 }

@@ -2,14 +2,21 @@ import { initUiDetails } from "./ui_details.js?v=20261023-1";
 import { setCustomerNames } from "./ui_format.js?v=20260911-6";
 import "./events.js?v=20260911-6";
 import { state, els, defaultOptions, canUseAdminTools, apiFetch } from "./runtime.js?v=20260911-6";
-import { loadConversations, loadMyWorkspace, prefetchTeamBrief, showToast } from "./workspace.js?v=20260911-6";
+import { loadConversations, loadMyWorkspace, prefetchTeamBrief, showToast, openConversation } from "./workspace.js?v=20260911-6";
 import { loadTheme, setShowSources, setAbComparison, autoResizeInput, renderMessages, loadModels, loadDataStatus, renderChatDataBadge } from "./chat.js?v=20260911-6";
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
-import { initDashboard, loadDashboard } from "./dashboard.js?v=20260911-6";
+import { initDashboard, loadDashboard, showChatView, showPersonalView, showDashboardView } from "./dashboard.js?v=20260911-6";
+import { initAppSidebar } from "./app_sidebar.js?v=20261109-1";
 import { initEffortBoard } from "./effort_board.js?v=20261103-1";
 import { initScreenHotspot } from "./screen_hotspot.js?v=20261103-1";
-import { initDashboardTabs } from "./dashboard_tabs.js?v=20261103-1";
+import { initCustomerOverview } from "./customer_overview.js?v=20261106-1";
+import { initDashboardTabs } from "./dashboard_tabs.js?v=20261110-1";
 import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
+import { initCommandPalette } from "./command_palette.js?v=20261105-1";
+import { initHomeRecents } from "./home_recents.js?v=20261105-1";
+import { initDashboardViews } from "./dashboard_views.js?v=20261105-1";
+import { initComposerConditions } from "./composer_conditions.js?v=20261109-1";
+import { initConversationTrash } from "./conversation_trash.js?v=20261105-1";
 
 initUiDetails();
 
@@ -68,7 +75,17 @@ async function bootstrapApplication(authState = {}) {
   initDashboard();
   initEffortBoard();
   initScreenHotspot();
+  initCustomerOverview();
   initDashboardTabs();
+  initCommandPalette();
+  initHomeRecents();
+  initDashboardViews();
+  initComposerConditions();
+  initConversationTrash();
+  initAppSidebar({
+    showChatView, showPersonalView, showDashboardView, openConversation,
+    openIssue: (id) => import("./chat_source_detail.js?v=20260911-6").then(({ openSourceDetail }) => openSourceDetail({ type: "chroma", issue_id: id })),
+  });
   // 승인 대기 배지는 관리자 센터를 열기 전에도 보여야 하므로 미리 불러 둔다.
   if (adminToolsVisible) preloadAdminBadges();
   if (state.currentUser?.uid) {

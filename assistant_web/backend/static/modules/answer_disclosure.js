@@ -8,7 +8,7 @@ const headingText = (node) => (node.textContent || "").trim().replace(/^\d+[.)]\
 
 function keepVisible(node) {
   if (tag(node) === "details" || tag(node) === "table") return true;
-  if (["answer-callout", "criteria-chips", "query-basis", "issue-table-wrap", "markdown-table-wrap", "notion-card-list", "issue-detail-card"]
+  if (["answer-title", "answer-metrics", "answer-issue-list", "answer-callout", "criteria-chips", "query-basis", "issue-table-wrap", "markdown-table-wrap", "notion-card-list", "issue-detail-card"]
     .some(name => node.classList.contains(name))) return true;
   // 조회 한계와 조건은 결과를 해석하는 데 필요하므로 본문에 남긴다.
   return /일부|부분 조회|미확정|미확인|확인\s*불가|확인하지 못|확인할 수 없|조회 실패|불완전|주의[:：]|제외|한계/.test(node.textContent || "");
@@ -64,7 +64,8 @@ export function collapseAnswerBody(container, answer, { hasChart = false } = {})
   hidden.forEach(group => group.nodes.forEach(node => body.appendChild(node)));
   details.appendChild(body);
   // 명시적인 요약만 앞으로 옮긴다. 요약이 없으면 첫 문단을 그대로 보여 준다.
-  const ordered = [...summaries, ...visible.filter(group => !summaries.includes(group))];
+  const titles = visible.filter(group => group.nodes.some(node => node.classList.contains("answer-title")));
+  const ordered = [...titles, ...summaries.filter(group => !titles.includes(group)), ...visible.filter(group => !titles.includes(group) && !summaries.includes(group))];
   container.replaceChildren(...ordered.flatMap(group => group.nodes), details);
   return details;
 }

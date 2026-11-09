@@ -1,0 +1,131 @@
+/* 최근 삭제한 대화 창 */
+.conversation-trash-modal {
+  width: min(640px, 100%);
+}
+
+.conversation-trash-list {
+  max-height: min(420px, 56vh);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+.conversation-trash-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.conversation-trash-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 14px 16px;
+}
+
+.conversation-trash-item + .conversation-trash-item {
+  border-top: 1px solid var(--line);
+}
+
+.conversation-trash-item > svg {
+  flex-shrink: 0;
+  color: var(--muted);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conversation-trash-main {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conversation-trash-main strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-trash-main small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conversation-trash-remaining {
+  color: var(--text-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.conversation-trash-remaining.is-urgent {
+  color: var(--warning-strong);
+  font-weight: 600;
+}
+
+.conversation-trash-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conversation-trash-actions .secondary-button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.conversation-trash-purge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.conversation-trash-purge svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conversation-trash-purge:hover,
+.conversation-trash-purge.is-confirming {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  color: var(--danger);
+}
+
+.conversation-trash-purge:disabled,
+.conversation-trash-actions .secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.conversation-trash-empty {
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+#conversationTrashPurgeAll[hidden] {
+  display: none;
+}

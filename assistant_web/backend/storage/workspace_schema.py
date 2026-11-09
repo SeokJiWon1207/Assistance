@@ -1,4 +1,4 @@
-"""workspace.sqlite3의 경로와 순차 스키마 소유자. 기존 5개 버전을 유지한다."""
+"""workspace.sqlite3의 경로와 순차 스키마 소유자. 기존 6개 버전을 유지한다."""
 import os
 import json
 import sqlite3
@@ -119,10 +119,20 @@ def create_notification_schema(db: sqlite3.Connection) -> None:
     db.execute("CREATE INDEX workspace_events_user_time ON workspace_events(user_uid, observed_at DESC)")
 
 
-def init_workspace_db() -> None:
+def create_conversation_trash_schema(db: sqlite3.Connection) -> None:
+    # 삭제한 대화의 머리 정보만 옮겨 둔다. 메시지는 conversation_messages에 그대로 두고,
+    # 보관 기간이 지나거나 영구 삭제할 때 함께 지운다.
+    db.execute("""CREATE TABLE conversation_trash (
+        user_uid TEXT NOT NULL, conversation_id TEXT NOT NULL, title TEXT NOT NULL,
+        favorite INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        deleted_at TEXT NOT NULL, PRIMARY KEY (user_uid, conversation_id))""")
+    db.execute("CREATE INDEX idx_conversation_trash_user_deleted ON conversation_trash(user_uid, deleted_at DESC)")
+
+
+def init_workspace_db(path: Path | None = None) -> None:
     run_sqlite_migrations(
-        workspace_db_path(),
+        path or workspace_db_path(),
         [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, migrate_messages,
-         create_notification_schema],
+         create_notification_schema, create_conversation_trash_schema],
         database_name="workspace",
     )

@@ -1,0 +1,1016 @@
+/* 내 업무 · 팀 대시보드의 공통 화면. 기존 Snow 배치에 Astryx의 중립 카드·정보 위계를 적용한다.
+   옅은 바탕 · 얇은 경계의 카드 · 의미가 있는 지표만 색으로 강조 · 파란 실선/연한 점선 비교 차트.
+   넓은 화면에서는 글자 사이드바와 접을 수 있는 오른쪽 레일을 쓴다.
+   모서리는 네 단계: 작은 단추·배지 6px, 버튼·입력 8px, 카드 16px, 알약 999px.
+   막대·범례 칸 같은 차트 표시는 크기에 맞춘 작은 반경을 그대로 쓴다. */
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]), .dashboard-detail, #chromaModal {
+  --snow-bg: #f6f7f9;
+  --snow-panel: #ffffff;
+  --snow-hover: rgba(28, 28, 28, 0.05);
+  --snow-text: #20242b;
+  --snow-sub: #667085;
+  --snow-line: #e4e7ec;
+  --snow-kpi-a: #e3f5ff;
+  --snow-kpi-b: #e5ecf6;
+  --snow-indigo: #95a4fc;
+  --snow-mint: #baedbd;
+  --snow-sky: #b1e3ff;
+  --snow-rose: #f4a3ab;
+  --bg: var(--snow-bg);
+  --surface: var(--snow-panel);
+  --surface-alt: #f1f3f5;
+  --line: var(--snow-line);
+  --text: var(--snow-text);
+  --muted: var(--snow-sub);
+  --chart-1: #2c74db;
+  --chart-2: #a8c5da;
+  --chart-3: #95a4fc;
+  --chart-4: #baedbd;
+  --chart-5: #b1e3ff;
+  --chart-6: #a1e3cb;
+  background: var(--snow-bg);
+}
+
+body.theme-dark :is(.app-shell:is([data-view="personal"], [data-view="dashboard"]), .dashboard-detail, #chromaModal) {
+  --snow-bg: #181a1d;
+  --snow-panel: #22252a;
+  --snow-hover: rgba(255, 255, 255, 0.06);
+  --snow-text: #f1f5f9;
+  --snow-sub: #a8b0bd;
+  --snow-line: #353a42;
+  /* 예전 다크 테마의 푸른 남색 바탕·선·회색 글자를 Snow의 중립 회색으로 바꿔
+     버튼·입력·배지·차트 카드처럼 공용 변수를 쓰는 요소도 새 카드와 같은 색을 쓴다. */
+  --surface: var(--snow-panel);
+  --surface-alt: #2b3036;
+  --line: var(--snow-line);
+  --line-strong: #4d4d4d;
+  --text: var(--snow-text);
+  --text-soft: #d4d4d4;
+  --muted: var(--snow-sub);
+  --chart-1: #6ea8ff;
+  background: var(--snow-bg);
+}
+
+/* 카드: 얇은 경계와 같은 모서리. 배경색 대신 제목·숫자·상태가 정보의 강도를 정한다. */
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-section, .ops-card, .customer-card, .dashboard-chart, .workspace-insight-card, .workspace-chart-card) {
+  border: 1px solid var(--snow-line);
+  border-radius: 16px;
+  background: var(--snow-panel);
+  box-shadow: none;
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.personal-panel, .dashboard-panel, .dashboard-tab-view, .dashboard-body, .workspace-content) {
+  background: var(--snow-bg);
+}
+
+/* 지표: 네 카드가 같은 바탕을 공유하고 위험이 있는 숫자만 구분한다. */
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-kpi, .snow-kpi) {
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid var(--snow-line);
+  border-radius: 16px;
+  background: var(--snow-panel);
+  color: var(--text);
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi-label {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi-value strong {
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -.5px;
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi.is-danger .workspace-kpi-value strong {
+  color: var(--danger);
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi.is-warning .workspace-kpi-value strong {
+  color: var(--warning-strong);
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* 신규 등록 증감은 업무량의 방향이다. 처리 성과의 좋음·나쁨 색과 구분한다. */
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi-delta:is(.is-up, .is-down) {
+  background: var(--surface-alt);
+  color: var(--text-soft);
+}
+
+.app-shell:is([data-view="personal"], [data-view="dashboard"]) button.snow-kpi:hover {
+  border-color: var(--line-strong);
+  background: color-mix(in srgb, var(--blue) 3%, var(--snow-panel));
+}
+
+/* 팀 현황의 누를 수 있는 지표 타일: 모양은 .workspace-kpi와 같고 단추 기본 모양만 지운다. */
+.snow-kpi {
+  min-height: 108px;
+  font: inherit;
+  text-align: left;
+}
+
+button.snow-kpi {
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi {
+    padding: 16px;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi-value {
+    gap: 6px;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .workspace-kpi-delta {
+    padding-inline: 6px;
+  }
+}
+
+.snow-kpi[aria-pressed="true"]:not([data-dashboard-metric="open"]) {
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.snow-kpi:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* 머리: 경로 줄. 넓은 화면에서 왼쪽 메뉴 접기 버튼 · 화면 이름 / 현재 보기 */
+.view-rail-toggle,
+.view-side-toggle {
+  display: none;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.view-rail-toggle:hover,
+.view-side-toggle:hover {
+  background: var(--snow-hover, var(--surface-alt));
+}
+
+.view-rail-toggle:focus-visible,
+.view-side-toggle:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.view-crumb-current:empty {
+  display: none;
+}
+
+/* 넓은 화면: 글자 사이드바 + 경로 줄 + 오른쪽 레일 */
+.rail-subnav,
+.rail-shortcuts {
+  display: none;
+}
+
+@media (min-width: 1100px) {
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) {
+    --rail-w: 220px;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .app-rail {
+    align-items: stretch;
+    gap: 20px;
+    padding: 20px 16px;
+    overflow-y: auto;
+    border-right-color: var(--snow-line);
+    background: var(--snow-bg);
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-brand {
+    align-self: flex-start;
+    width: 36px;
+    height: 36px;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 8px 0 16px;
+    color: var(--snow-text);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item .ui-icon {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item:hover {
+    background: var(--snow-hover);
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item.is-active {
+    background: var(--snow-hover);
+    font-weight: 600;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    width: 4px;
+    height: 16px;
+    border-radius: 4px;
+    background: var(--snow-text);
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-item em {
+    position: static;
+    margin-left: auto;
+  }
+
+  body:not(.rail-collapsed) .app-shell[data-view="personal"] .rail-subnav[data-rail-subnav="personal"],
+  body:not(.rail-collapsed) .app-shell[data-view="dashboard"] .rail-subnav[data-rail-subnav="dashboard"] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 6px;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-shortcuts {
+    display: grid;
+    gap: 4px;
+  }
+
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) .rail-account-button {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 8px;
+  }
+
+  /* 탭은 사이드바 하위 메뉴가 대신한다(화면 안의 탭 줄은 접은 사이드바·좁은 화면에서만). */
+  body:not(.rail-collapsed) .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(#workspaceTabs, .dashboard-tabs) {
+    display: none;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.view-rail-toggle, .view-side-toggle) {
+    display: grid;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-modal-header, .dashboard-header) {
+    min-height: 68px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-bottom: 1px solid var(--snow-line);
+    background: var(--snow-bg);
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .view-crumb {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .view-crumb h2 {
+    margin: 0;
+    color: var(--snow-sub);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .view-crumb-current {
+    color: var(--snow-text);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) .view-crumb-current::before {
+    content: "/";
+    margin-right: 8px;
+    color: var(--snow-sub);
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) #workspaceModalEyebrow {
+    display: none;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(#dashboardSubtitle, .dashboard-tab-subtitle) {
+    margin: 0 0 0 8px;
+    color: var(--snow-sub);
+    font-size: 13px;
+  }
+
+  /* 오른쪽 레일: 카드 대신 왼쪽 선으로 나뉜 칸. 머리의 오른쪽 패널 버튼으로 접는다. */
+  .app-shell[data-view="personal"] .workspace-overview.is-insights {
+    grid-template-columns: minmax(0, 1fr) 248px;
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-side, .ops-side) {
+    gap: 8px;
+    padding: 4px 0 4px 20px;
+    border-left: 1px solid var(--snow-line);
+  }
+
+  .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-side, .ops-side) .workspace-side-card {
+    padding: 4px 0 16px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  body.side-rail-hidden .app-shell[data-view="personal"] .workspace-overview.is-insights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.side-rail-hidden .app-shell:is([data-view="personal"], [data-view="dashboard"]) :is(.workspace-side, .ops-side) {
+    display: none;
+  }
+}
+
+.app-shell[data-view="personal"] .workspace-overview.is-insights.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell[data-view="personal"] .personal-panel:has(.workspace-overview.is-empty) .view-side-toggle {
+  display: none;
+}
+
+.app-shell[data-view="personal"] .workspace-empty-followup > .workspace-side-card {
+  padding: 20px;
+  border: 1px solid var(--snow-line);
+  border-radius: 16px;
+  background: var(--snow-panel);
+  box-shadow: none;
+}
+
+/* 왼쪽 사이드바의 하위 메뉴와 바로가기 */
+.rail-subitem {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 8px 0 42px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--snow-sub, var(--muted));
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-subitem:hover {
+  background: var(--snow-hover, var(--surface-alt));
+  color: var(--snow-text, var(--text));
+}
+
+.rail-subitem[aria-current="page"] {
+  color: var(--snow-text, var(--text));
+  font-weight: 600;
+}
+
+.rail-subitem:focus-visible,
+.rail-shortcut:focus-visible,
+.rail-shortcut-tabs button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.rail-shortcut-tabs {
+  display: flex;
+  gap: 12px;
+  padding: 0 8px 4px;
+}
+
+.rail-shortcut-tabs button {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--snow-sub, var(--muted));
+  font: inherit;
+  font-size: 14px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.rail-shortcut-tabs button[aria-pressed="true"] {
+  opacity: 1;
+}
+
+.rail-shortcut-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--snow-text, var(--text));
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-shortcut:hover {
+  background: var(--snow-hover, var(--surface-alt));
+}
+
+.rail-shortcut i {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--snow-sub, var(--muted));
+  opacity: 0.6;
+}
+
+.rail-shortcut span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-shortcut-empty {
+  padding: 4px 8px;
+  color: var(--snow-sub, var(--muted));
+  font-size: 13px;
+}
+
+/* 팀 현황: 본문 + 오른쪽 레일(알림 · 팀 활동 · 팀원) */
+.ops-summary-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: 24px;
+  align-items: start;
+}
+
+.ops-summary-main {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.ops-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.side-rail-hidden .ops-summary-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ops-side h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ops-side-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-side-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+button.ops-side-item {
+  cursor: pointer;
+}
+
+button.ops-side-item:hover {
+  background: var(--snow-hover, var(--surface-alt));
+}
+
+button.ops-side-item:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.ops-side-icon {
+  display: grid;
+  flex: 0 0 24px;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--snow-kpi-a, var(--blue-soft));
+  color: #1c1c1c;
+}
+
+.ops-side-icon.is-round {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-side-icon .ui-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ops-side-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ops-side-text > span {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ops-side-text small {
+  color: var(--snow-sub, var(--muted));
+  font-size: 12px;
+}
+
+.ops-side-count {
+  align-self: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-side-count.is-high {
+  color: #b4232f;
+  font-weight: 600;
+}
+
+body.theme-dark .ops-side-count.is-high {
+  color: #ff8a94;
+}
+
+.ops-side-empty {
+  padding: 4px;
+  color: var(--snow-sub, var(--muted));
+  font-size: 13px;
+}
+
+.ops-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.ops-row.is-wide-first {
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+}
+
+/* 우선 확인 이슈 표(Snow 주문 목록 모양) */
+.ops-priority-table-wrap {
+  overflow-x: auto;
+  padding: 0;
+}
+
+.ops-priority-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ops-priority-table th {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--snow-line, var(--line));
+  color: var(--snow-sub, var(--muted));
+  font-weight: 400;
+  text-align: left;
+}
+
+.ops-priority-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--snow-line, var(--line));
+  vertical-align: middle;
+}
+
+.ops-priority-table tbody tr:hover {
+  background: var(--snow-hover);
+}
+
+.ops-priority-table td:nth-child(3) {
+  min-width: 220px;
+  line-height: 1.6;
+}
+
+.ops-priority-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.ops-priority-table button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ops-priority-table button:hover {
+  text-decoration: underline;
+}
+
+.ops-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.ops-owner i {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--snow-kpi-b, var(--surface-alt));
+  color: #1c1c1c;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.ops-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.ops-flag::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.ops-flag.is-overdue { color: #b4232f; }
+.ops-flag.is-aging { color: #9a5b00; }
+.ops-flag.is-unassigned { color: #2f6f99; }
+.ops-flag.is-high { color: #5a5cc4; }
+
+body.theme-dark .ops-flag.is-overdue { color: #ff8a94; }
+body.theme-dark .ops-flag.is-aging { color: #ffc966; }
+body.theme-dark .ops-flag.is-unassigned { color: #8ccff5; }
+body.theme-dark .ops-flag.is-high { color: #c6c7f8; }
+
+@media (max-width: 1099px) {
+  .ops-summary-layout,
+  .ops-row.is-wide-first {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ops-side {
+    display: none;
+  }
+}
+
+/* 내 업무: 추이 차트 옆 '고객사별 담당' */
+.workspace-chart-row.is-wide-first {
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+}
+
+.workspace-customer-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workspace-customer-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(48px, 72px) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.workspace-customer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-customer-track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--snow-hover, var(--surface-alt));
+}
+
+.workspace-customer-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--chart-1);
+}
+
+.workspace-customer-list b {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1099px) {
+  .workspace-chart-row.is-wide-first {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 좁은 레일 옆 '고객사별 신규'는 막대를 줄이고 이름을 살린다. */
+.ops-row.is-wide-first .ops-customer-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+/* 바깥 카드의 여백을 사용해 고객사명에 충분한 너비를 남긴다. */
+.ops-row.is-wide-first .ops-customer-list {
+  padding: 0;
+}
+
+.ops-row.is-wide-first .ops-customer-track {
+  display: none;
+}
+
+/* 상세 패널이 차지한 440px를 뺀 실제 본문 폭으로 배치를 정한다. */
+.dashboard-panel {
+  container: dashboard-panel / inline-size;
+}
+
+.ops-summary-main {
+  container: dashboard-summary / inline-size;
+}
+
+/* 넓은 대시보드: 경로 옆 기준 설명은 한 줄로 줄이고(전체 문구는 title) 도구 막대는 한 줄을 지킨다. */
+@container dashboard-panel (min-width: 1201px) {
+  .app-shell[data-view="dashboard"] .dashboard-heading {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .app-shell[data-view="dashboard"] .dashboard-heading.view-crumb {
+    flex-wrap: nowrap;
+  }
+
+  .app-shell[data-view="dashboard"] .dashboard-heading > :is(button, h2, .view-crumb-current) {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .app-shell[data-view="dashboard"] :is(#dashboardSubtitle, .dashboard-tab-subtitle) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-shell[data-view="dashboard"] .dashboard-toolbar {
+    flex: 0 0 auto;
+  }
+}
+
+@container dashboard-panel (max-width: 1200px) {
+  .ops-summary-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ops-side {
+    display: none;
+  }
+
+  @media (min-width: 861px) {
+    .app-shell[data-view="dashboard"] .dashboard-toolbar .view-side-toggle {
+      display: none;
+    }
+
+    .app-shell[data-view="dashboard"] .dashboard-header {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 12px;
+      padding-bottom: 12px;
+    }
+
+    .dashboard-heading,
+    .dashboard-toolbar {
+      flex: 1 0 100%;
+      min-width: 0;
+    }
+
+    .dashboard-toolbar {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+
+    .dashboard-toolbar > * {
+      flex-shrink: 0;
+    }
+
+    .dashboard-toolbar .workspace-refresh-button {
+      white-space: nowrap;
+    }
+  }
+}
+
+@container dashboard-summary (max-width: 860px) {
+  .ops-row,
+  .ops-row.is-wide-first {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 이슈·분포: 바로 처리할 목록을 먼저 두고 분석은 그 아래에서 읽는다. */
+.app-shell[data-view="dashboard"] .dashboard-panel:is([data-subview="issues"], [data-subview="customers"], [data-subview="effort"], [data-subview="screens"]) .view-side-toggle {
+  display: none;
+}
+
+.app-shell[data-view="dashboard"] .dashboard-priority-section.is-filtered {
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--snow-line));
+}
+
+.app-shell[data-view="dashboard"] .dashboard-priority-section > header {
+  padding: 20px 20px 12px;
+}
+
+.dashboard-priority-overview {
+  margin: 0 20px 12px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dashboard-priority-section > .workspace-table-wrap {
+  margin: 0 20px;
+}
+
+.dashboard-priority-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.dashboard-priority-table .dashboard-priority-main {
+  box-shadow: none;
+}
+
+.dashboard-priority-table .dashboard-issue-title {
+  word-break: keep-all;
+}
+
+@media (min-width: 801px) {
+  .dashboard-priority-table td {
+    padding: 14px 12px;
+    border-bottom-color: var(--line);
+  }
+}
+
+[data-ops-pane="issues"] .dashboard-grid {
+  gap: 16px;
+  align-items: start;
+}
+
+.dashboard-dist-head {
+  margin-top: 12px;
+}
+
+/* 상세 패널을 열었을 때도 실제 본문 폭에 맞춰 분포가 줄어든다. */
+@container dashboard-panel (max-width: 1100px) {
+  [data-ops-pane="issues"] .dashboard-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  [data-ops-pane="issues"] .dashboard-members-chart {
+    grid-column: 1 / -1;
+  }
+}
+
+@container dashboard-panel (max-width: 760px) {
+  [data-ops-pane="issues"] :is(.dashboard-grid, .ops-overview-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  @media (min-width: 801px) {
+    .dashboard-priority-table {
+      min-width: 640px;
+    }
+  }
+}
+
+@media (max-width: 560px) {
+  [data-ops-pane="issues"] .snow-kpi {
+    min-height: 0;
+  }
+
+  .app-shell[data-view="dashboard"] [data-ops-pane="issues"] .workspace-kpi {
+    gap: 4px;
+    padding: 12px;
+  }
+
+  .app-shell[data-view="dashboard"] [data-ops-pane="issues"] .workspace-kpi-value strong {
+    font-size: 22px;
+  }
+
+  .dashboard-panel:is([data-subview="customers"], [data-subview="effort"], [data-subview="screens"]) .dashboard-tab-tools .workspace-refresh-button {
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 36px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .app-shell[data-view="dashboard"] .dashboard-priority-section > header {
+    padding: 16px 16px 12px;
+  }
+
+  .dashboard-priority-overview {
+    margin: 0 16px 12px;
+  }
+
+  .dashboard-priority-section > .workspace-table-wrap {
+    margin: 0 16px;
+  }
+}
+
+/* 공수와 화면번호도 같은 지표 크기를 쓰되 실제 본문 폭에 맞춰 줄을 나눈다. */
+.app-shell[data-view="dashboard"] :is(.effort-board-metrics, .customer-detail-metrics) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.app-shell[data-view="dashboard"] .screen-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+@container dashboard-panel (max-width: 1100px) {
+  .app-shell[data-view="dashboard"] :is(.effort-board-metrics, .customer-detail-metrics) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  :is(.effort-board-metrics, .customer-detail-metrics) > .workspace-kpi { grid-column: span 2; }
+  :is(.effort-board-metrics, .customer-detail-metrics) > .workspace-kpi:nth-child(n+4) { grid-column: span 3; }
+}
+
+@container dashboard-panel (max-width: 560px) {
+  .app-shell[data-view="dashboard"] :is(.effort-board-metrics, .screen-metrics, .customer-detail-metrics) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :is(.effort-board-metrics, .customer-detail-metrics) > .workspace-kpi { grid-column: auto; }
+  :is(.effort-board-metrics, .customer-detail-metrics) > .workspace-kpi:nth-child(4) { grid-column: auto; }
+  :is(.effort-board-metrics, .screen-metrics, .customer-detail-metrics) > .workspace-kpi:last-child { grid-column: 1 / -1; }
+  .app-shell[data-view="dashboard"] :is(.effort-board-metrics, .screen-metrics, .customer-detail-metrics) .workspace-kpi { padding: 12px; gap: 4px; }
+  .app-shell[data-view="dashboard"] :is(.effort-board-metrics, .screen-metrics, .customer-detail-metrics) .workspace-kpi-value strong { font-size: 22px; }
+}

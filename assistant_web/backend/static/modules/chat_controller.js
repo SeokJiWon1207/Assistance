@@ -113,6 +113,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
     streaming: false,
     progress: "요청을 준비하고 있습니다",
     templateId,
+    startedAt: Date.now(),
   });
   const assistantIndex = state.messages.length - 1;
   const renderMessages = controllerHook("renderMessages");
@@ -154,6 +155,9 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       renderMessages();
     }, abortController.signal);
     const streamed = Boolean(state.messages[assistantIndex]?.streaming);
+    const startedAt = Number(state.messages[assistantIndex]?.startedAt);
+    const answerSeconds = Number.isFinite(startedAt) && startedAt > 0
+      ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined;
     state.messages[assistantIndex] = {
       role: "assistant",
       content: answer.content,
@@ -170,6 +174,7 @@ async function requestAssistant(content, questionAskedAt = "", templateId = "") 
       playbookSaved: false,
       questionAskedAt,
       templateId,
+      ...(answerSeconds === undefined ? {} : { answerSeconds }),
     };
     controllerHooks.markFreshAnswer?.(state.messages[assistantIndex], { streamed });
   } catch (error) {

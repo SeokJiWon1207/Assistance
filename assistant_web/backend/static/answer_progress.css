@@ -1,0 +1,120 @@
+/* 답변 생성 경과 시간: 진행 단계 아래 작은 배지와 오래 걸릴 때의 안내 */
+.answer-elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin: 0 0 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-elapsed svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.stream-progress .answer-elapsed {
+  min-height: 24px;
+  margin: 0 0 0 4px;
+  font-size: 12px;
+}
+
+.answer-slow-hint {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.answer-slow-hint[hidden] {
+  display: none;
+}
+
+/* 답변 글자가 이미 나오고 있으면 오래 걸린다는 안내는 필요 없다. */
+.stream-progress .answer-slow-hint {
+  display: none;
+}
+
+/* 완료된 답변의 동작 줄 끝: "9초 만에 답변" */
+.message-elapsed {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 서버가 접어 보낸 원문 근거(<details>/<summary> 줄): 답변 접기(.answer-disclosure)와 같은 모양 */
+.answer-evidence-details {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.answer-evidence-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 12px 16px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  list-style: none;
+  cursor: pointer;
+}
+
+.answer-evidence-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.answer-evidence-details > summary::before {
+  content: "";
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.answer-evidence-details[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.answer-evidence-details[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.answer-evidence-details > summary:hover {
+  background: var(--surface-alt);
+}
+
+.answer-evidence-details > summary:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--blue);
+}
+
+.answer-evidence-details > :not(summary) {
+  margin-inline: 16px;
+}
+
+.answer-evidence-details > :last-child:not(summary) {
+  margin-bottom: 16px;
+}

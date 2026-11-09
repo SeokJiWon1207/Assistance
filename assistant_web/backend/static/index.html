@@ -7,19 +7,32 @@
     <link rel="stylesheet" href="/static/styles.css?v=20261026-1" />
     <link rel="stylesheet" href="/static/charts.css?v=20261001-1" />
     <link rel="stylesheet" href="/static/responsive.css?v=20261023-2" />
-    <link rel="stylesheet" href="/static/workspace.css?v=20261030-1" />
-    <link rel="stylesheet" href="/static/dashboard.css?v=20261030-5" />
+    <link rel="stylesheet" href="/static/workspace.css?v=20261110-1" />
+    <link rel="stylesheet" href="/static/dashboard.css?v=20261110-3" />
     <link rel="stylesheet" href="/static/vendor/bklit/charts.css?v=20261030-1" />
     <link rel="stylesheet" href="/static/template_picker.css?v=20261023-3" />
     <link rel="stylesheet" href="/static/conversation_list.css?v=20261023-2" />
     <link rel="stylesheet" href="/static/admin_center.css?v=20261023-4" />
-    <link rel="stylesheet" href="/static/design_system.css?v=20261030-5" />
-    <link rel="stylesheet" href="/static/bklit_charts.css?v=20261030-1" />
+    <link rel="stylesheet" href="/static/design_system.css?v=20261110-1" />
+    <link rel="stylesheet" href="/static/bklit_charts.css?v=20261110-2" />
     <link rel="stylesheet" href="/static/answer_disclosure.css?v=20261030-1" />
-    <link rel="stylesheet" href="/static/customer_detail.css?v=20261103-2" />
-    <link rel="stylesheet" href="/static/dashboard_tabs.css?v=20261103-1" />
-    <link rel="stylesheet" href="/static/effort_board.css?v=20261103-2" />
-    <link rel="stylesheet" href="/static/screen_hotspot.css?v=20261103-1" />
+    <link rel="stylesheet" href="/static/customer_detail.css?v=20261109-layout-4" />
+    <link rel="stylesheet" href="/static/dashboard_tabs.css?v=20261110-1" />
+    <link rel="stylesheet" href="/static/effort_board.css?v=20261109-layout-3" />
+    <link rel="stylesheet" href="/static/screen_hotspot.css?v=20261109-layout-3" />
+    <link rel="stylesheet" href="/static/customer_overview.css?v=20261109-layout-2" />
+    <link rel="stylesheet" href="/static/command_palette.css?v=20261106-1" />
+    <link rel="stylesheet" href="/static/answer_progress.css?v=20261106-1" />
+    <link rel="stylesheet" href="/static/home_recents.css?v=20261105-2" />
+    <link rel="stylesheet" href="/static/dashboard_views.css?v=20261106-1" />
+    <link rel="stylesheet" href="/static/composer_conditions.css?v=20261105-1" />
+    <link rel="stylesheet" href="/static/conversation_trash.css?v=20261105-1" />
+    <link rel="stylesheet" href="/static/workspace_insights.css?v=20261109-layout-1" />
+    <link rel="stylesheet" href="/static/workspace_home.css?v=20261106-2" />
+    <link rel="stylesheet" href="/static/dashboard_overview.css?v=20261110-1" />
+    <link rel="stylesheet" href="/static/snow_theme.css?v=20261109-layout-4" />
+    <link rel="stylesheet" href="/static/issue_detail.css?v=20261109-layout-4" />
+    <link rel="stylesheet" href="/static/answer_summary.css?v=20261109-1" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -60,6 +73,14 @@
       <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
       <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></symbol>
       <symbol id="i-template" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 10v10"/></symbol>
+      <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+      <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9Z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9Z"/></symbol>
+      <symbol id="i-report" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 17v-3M12 17v-6M15 17v-2"/></symbol>
+      <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="3" width="11" height="18" rx="1.5"/><path d="M15 9h4a1 1 0 0 1 1 1v11h-5M8 7h3M8 11h3M8 15h3M10 21v-3"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M5 19V5a2 2 0 0 1 2-2h12v14H7a2 2 0 0 0-2 2Zm0 0a2 2 0 0 0 2 2h12v-4M9 7h6M9 11h4"/></symbol>
+      <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 4h14v11l-5 5H5Z"/><path d="M14 20v-5h5M8 9h8M8 13h4"/></symbol>
+      <symbol id="i-user-plus" viewBox="0 0 24 24"><path d="M15 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M16 11h6"/></symbol>
     </svg>
     <section id="authGate" class="auth-gate" aria-live="polite">
       <canvas id="authScene" class="auth-scene" aria-hidden="true"></canvas>
@@ -105,6 +126,13 @@
       <!-- 주 메뉴: 넓은 화면에서는 왼쪽 레일, 좁은 화면에서는 아래 탭바. 대화 목록(.sidebar)은 대화 화면에서만 보인다. -->
       <nav class="app-rail" aria-label="주 메뉴">
         <button id="brandHome" class="rail-brand" type="button" title="새 대화 시작" aria-label="홈으로 이동하고 새 대화 시작">AI</button>
+        <section id="railShortcuts" class="rail-shortcuts" aria-label="바로가기">
+          <div class="rail-shortcut-tabs" role="group" aria-label="바로가기 종류">
+            <button type="button" data-rail-shortcuts="favorites" aria-pressed="true">즐겨찾기</button>
+            <button type="button" data-rail-shortcuts="recent" aria-pressed="false">최근 본 이슈</button>
+          </div>
+          <ul id="railShortcutList" class="rail-shortcut-list"></ul>
+        </section>
         <div class="rail-items">
           <button id="viewChatBtn" class="rail-item is-active" type="button" aria-current="page">
             <svg class="ui-icon" aria-hidden="true"><use href="#i-chat"/></svg>
@@ -114,10 +142,24 @@
             <svg class="ui-icon" aria-hidden="true"><use href="#i-clipboard"/></svg>
             <span>내 업무</span> <em id="workspaceUnreadBadge" hidden>0</em>
           </button>
+          <div class="rail-subnav" data-rail-subnav="personal" aria-label="내 업무 보기">
+            <button type="button" class="rail-subitem" data-rail-tab="workspace:overview">업무</button>
+            <button type="button" class="rail-subitem" data-rail-tab="workspace:brief">주간 보고</button>
+            <button type="button" class="rail-subitem" data-rail-tab="workspace:playbooks">플레이북</button>
+            <button type="button" class="rail-subitem" data-rail-tab="workspace:notifications">알림</button>
+            <button type="button" class="rail-subitem" data-rail-tab="workspace:favorites">즐겨찾기</button>
+          </div>
           <button id="viewDashboardBtn" class="rail-item" type="button" hidden>
             <svg class="ui-icon" aria-hidden="true"><use href="#i-grid"/></svg>
             <span>대시보드</span>
           </button>
+          <div class="rail-subnav" data-rail-subnav="dashboard" aria-label="팀 대시보드 보기">
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:overview">팀 현황</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:issues">이슈 · 분포</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:customers">고객사</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:effort">공수 · 처리시간</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:screens">화면번호</button>
+          </div>
           <button id="viewAdminBtn" class="rail-item" type="button" hidden>
             <svg class="ui-icon" aria-hidden="true"><use href="#i-shield"/></svg>
             <span>관리자</span> <em id="adminPendingBadge" hidden>0</em>
@@ -150,6 +192,7 @@
       <aside class="sidebar" aria-labelledby="sidebarTitle">
         <div class="sidebar-head">
           <h2 id="sidebarTitle">대화</h2>
+          <button id="commandPaletteBtn" class="icon-command" type="button" aria-label="빠른 이동" title="빠른 이동" data-command-palette-open><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-search"/></svg></button>
           <button id="newChatBtn" class="icon-command" type="button" aria-label="새 대화" title="새 대화"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-plus"/></svg></button>
           <button id="sidebarCloseBtn" class="sidebar-close icon-command" type="button" aria-label="대화 목록 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
         </div>
@@ -267,6 +310,7 @@
         </details>
 
         <div class="sidebar-footer-actions">
+          <button id="conversationTrashBtn" class="sidebar-action-button" type="button" aria-haspopup="dialog"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-trash"/></svg><strong>최근 삭제한 대화</strong></button>
           <button id="resetOptionsBtn" class="sidebar-action-button" type="button"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><strong>초기화</strong></button>
         </div>
       </aside>
@@ -274,13 +318,17 @@
       <section class="main-view-shell">
         <section id="personalPanel" class="personal-panel" aria-labelledby="viewPersonalBtn" hidden>
         <header class="modal-header workspace-modal-header">
-          <div>
+          <div class="view-crumb">
+            <button type="button" class="view-rail-toggle" data-rail-collapse aria-pressed="false" aria-label="왼쪽 메뉴 접기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
             <p id="workspaceModalEyebrow">개인 워크스페이스</p>
             <h2 id="workspaceModalTitle">내 업무</h2>
+            <span class="view-crumb-current" data-crumb-current="workspace"></span>
           </div>
           <div class="workspace-header-actions">
+            <button class="search-pill" type="button" data-command-palette-open aria-label="이슈·대화·화면 검색"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><span>검색</span><kbd data-command-palette-shortcut>⌘K</kbd></button>
             <span id="workspaceDataBadge" class="data-badge-slot"></span>
             <button id="workspaceRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="업무 새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
+            <button type="button" class="view-side-toggle" data-side-rail-toggle aria-pressed="true" aria-label="오른쪽 패널 접기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-panel-right"/></svg></button>
           </div>
         </header>
         <div id="workspaceTabs" class="workspace-tabs" role="tablist" aria-label="워크스페이스 보기">
@@ -305,11 +353,20 @@
 
         <section id="dashboardPanel" class="dashboard-panel" aria-labelledby="viewDashboardBtn" hidden>
           <header class="dashboard-header">
-            <div class="dashboard-heading">
+            <div class="dashboard-heading view-crumb">
+              <button type="button" class="view-rail-toggle" data-rail-collapse aria-pressed="false" aria-label="왼쪽 메뉴 접기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-sidebar"/></svg></button>
               <h2>팀 대시보드</h2>
+              <span class="view-crumb-current" data-crumb-current="dashboard"></span>
               <p id="dashboardSubtitle">운영 데이터를 조회하고 있습니다.</p>
+              <p class="dashboard-tab-subtitle" data-tab-subtitle="customers"></p>
+              <p class="dashboard-tab-subtitle" data-tab-subtitle="effort"></p>
+              <p class="dashboard-tab-subtitle" data-tab-subtitle="screens"></p>
             </div>
             <div class="dashboard-toolbar">
+              <button class="search-pill" type="button" data-command-palette-open aria-label="이슈·대화·화면 검색"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg><span>검색</span><kbd data-command-palette-shortcut>⌘K</kbd></button>
+              <div class="dashboard-tab-tools" data-tab-tools="customers" role="group" aria-label="고객사 도구"></div>
+              <div class="dashboard-tab-tools" data-tab-tools="effort" role="group" aria-label="공수·처리시간 도구"></div>
+              <div class="dashboard-tab-tools" data-tab-tools="screens" role="group" aria-label="화면번호 도구"></div>
               <span id="dashboardSource" class="data-badge-slot"></span>
               <fieldset id="dashboardPeriod" class="dashboard-period">
                 <legend class="sr-only">비교 기간</legend>
@@ -319,15 +376,20 @@
                 <button type="button" data-dashboard-period="90" aria-pressed="false">90일</button>
               </fieldset>
               <button id="dashboardRefreshBtn" class="secondary-button workspace-refresh-button" type="button" aria-label="새로고침"><svg class="ui-icon" width="16" height="16" aria-hidden="true"><use href="#i-refresh"/></svg><span>새로고침</span></button>
+              <button type="button" class="view-side-toggle" data-side-rail-toggle aria-pressed="true" aria-label="오른쪽 패널 접기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-panel-right"/></svg></button>
             </div>
           </header>
           <div id="dashboardTabs" class="dashboard-tabs" role="tablist" aria-label="팀 대시보드 보기">
-            <button type="button" id="dashboardTab-overview" role="tab" aria-selected="true" aria-controls="dashboardBody" data-dashboard-tab="overview">운영 현황</button>
+            <button type="button" id="dashboardTab-overview" role="tab" aria-selected="true" aria-controls="dashboardBody" data-dashboard-tab="overview">팀 현황</button>
+            <button type="button" id="dashboardTab-issues" role="tab" aria-selected="false" aria-controls="dashboardBody" tabindex="-1" data-dashboard-tab="issues">이슈 · 분포</button>
+            <button type="button" id="dashboardTab-customers" role="tab" aria-selected="false" aria-controls="customerOverviewView" tabindex="-1" data-dashboard-tab="customers">고객사</button>
             <button type="button" id="dashboardTab-effort" role="tab" aria-selected="false" aria-controls="effortBoardView" tabindex="-1" data-dashboard-tab="effort">공수 · 처리시간</button>
             <button type="button" id="dashboardTab-screens" role="tab" aria-selected="false" aria-controls="screenHotspotView" tabindex="-1" data-dashboard-tab="screens">화면번호</button>
           </div>
+          <div id="dashboardViewsBar" class="dashboard-views-bar" role="region" aria-label="저장된 보기와 내보내기" hidden></div>
           <div id="dashboardFilterbar" class="dashboard-filterbar" role="region" aria-label="적용 필터" hidden></div>
           <div id="dashboardBody" class="dashboard-body" aria-live="polite"></div>
+          <div id="customerOverviewView" class="dashboard-tab-view customer-overview" role="tabpanel" aria-labelledby="dashboardTab-customers" hidden></div>
           <div id="effortBoardView" class="dashboard-tab-view effort-board" role="tabpanel" aria-labelledby="dashboardTab-effort" hidden></div>
           <div id="screenHotspotView" class="dashboard-tab-view screen-hotspot" role="tabpanel" aria-labelledby="dashboardTab-screens" hidden></div>
           <div id="customerDetailView" class="customer-detail" aria-labelledby="customerDetailTitle" hidden></div>
@@ -390,10 +452,18 @@
             <span>이 질문부터 다시 작성합니다.</span>
             <button id="cancelEditBtn" type="button">취소</button>
           </div>
-          <button id="templateToggleBtn" class="template-toggle-button" type="button" aria-controls="templatePicker" aria-expanded="false" aria-label="팀 템플릿 열기">
-            <svg class="ui-icon" aria-hidden="true"><use href="#i-template"/></svg>
-            <span class="template-toggle-label">템플릿</span>
-          </button>
+          <div class="composer-tools">
+            <button id="templateToggleBtn" class="template-toggle-button" type="button" aria-controls="templatePicker" aria-expanded="false" aria-label="팀 템플릿 열기">
+              <svg class="ui-icon" aria-hidden="true"><use href="#i-template"/></svg>
+              <span class="template-toggle-label">템플릿</span>
+            </button>
+            <button id="composerConditionsBtn" class="template-toggle-button composer-conditions-button" type="button" aria-controls="composerConditionsMenu" aria-expanded="false" aria-label="질문 조건 추가">
+              <svg class="ui-icon" aria-hidden="true"><use href="#i-plus"/></svg>
+              <span class="template-toggle-label">조건</span>
+              <em data-condition-count hidden>0</em>
+            </button>
+            <div id="composerConditionsMenu" class="composer-conditions-menu" hidden></div>
+          </div>
           <span class="composer-hint" id="composerHint">Enter 전송 · Shift+Enter 줄바꿈</span>
           <textarea
             id="promptInput"
@@ -542,8 +612,42 @@
       </section>
     </div>
 
+    <div id="conversationTrashModal" class="modal-backdrop" hidden>
+      <section id="conversationTrashDialog" class="modal conversation-trash-modal" role="dialog" aria-modal="true" aria-labelledby="conversationTrashTitle" aria-describedby="conversationTrashDescription">
+        <header class="modal-header">
+          <div><p>대화 관리</p><h3 id="conversationTrashTitle">최근 삭제한 대화</h3></div>
+          <button id="conversationTrashClose" class="modal-close" type="button" aria-label="최근 삭제한 대화 닫기"><svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg></button>
+        </header>
+        <div class="modal-form">
+          <p id="conversationTrashDescription" class="modal-form-description">삭제한 대화는 30일 동안 보관돼요. 복원하면 대화 목록으로 돌아오고, 기간이 지나면 자동으로 영구 삭제됩니다.</p>
+          <p id="conversationTrashError" class="login-error" role="alert" hidden></p>
+          <div id="conversationTrashList" class="conversation-trash-list" aria-live="polite"></div>
+          <div class="modal-form-actions">
+            <button id="conversationTrashPurgeAll" class="conversation-danger-button" type="button" hidden>모두 영구 삭제</button>
+            <button id="conversationTrashDone" class="secondary-button" type="button">닫기</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ⌘K 명령 팔레트. 목록은 command_palette.js가 입력할 때마다 다시 그린다. -->
+    <div id="commandPalette" class="command-palette-backdrop" hidden>
+      <section id="commandPaletteDialog" class="command-palette" role="dialog" aria-modal="true" aria-labelledby="commandPaletteTitle">
+        <h2 id="commandPaletteTitle" class="sr-only">빠른 이동</h2>
+        <div class="command-palette-search">
+          <svg class="ui-icon" width="18" height="18" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="commandPaletteInput" type="text" role="combobox" aria-expanded="true" aria-controls="commandPaletteList" aria-autocomplete="list" aria-label="이슈 번호, 대화, 템플릿, 화면 이름 검색" placeholder="이슈 번호, 대화, 템플릿, 화면 이름으로 찾기" autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="commandPaletteList" class="command-palette-list" role="listbox" aria-label="검색 결과"></div>
+        <footer class="command-palette-footer">
+          <span>↑↓ 이동 · Enter 실행 · Esc 닫기</span>
+          <span><kbd data-command-palette-shortcut>⌘K</kbd> 열고 닫기</span>
+        </footer>
+      </section>
+    </div>
+
     <script src="/static/frontend_core.js?v=20261007-1"></script>
-    <script src="/static/custom_select.js?v=20260918-1"></script>
+    <script src="/static/custom_select.js?v=20261106-1"></script>
     <script src="/static/auth_scene.js?v=20261021-1"></script>
     <script src="/static/auth.js?v=20261023-1"></script>
     <script type="module" src="/static/app.js?v=20260911-6"></script>

@@ -1,11 +1,12 @@
 import { mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
-import { renderProgressSteps } from "./chat_progress.js?v=20261023-1";
+import { renderProgressSteps, renderElapsed, appendAnswerDuration, syncElapsedTicker } from "./chat_progress.js?v=20261105-1";
+import { emptyStateElement } from "./chat_empty_state.js?v=20261105-1";
 import { appendAnswerContextControls, selectAnswerContext } from "./chat_ab_context.js?v=20261024-1";
 import { customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
 import { answerSearchPresentation } from "./search_conditions.js?v=20261030-1";
 import { presentAssistantAnswer, wrapRelatedSources } from "./answer_disclosure.js?v=20261030-1";
+import { prepareSummaryAnswer, groupAnswerEvidence, renderAnswerByline } from "./answer_summary.js?v=20261109-1";
 import { state, els, defaultOptions, themeStorageKey, apiFetch, automaticSourceTools, messageClockLabel, messageDayKey, messageDayLabel } from "./runtime.js?v=20260911-6";
-import { TEAM_TEMPLATES, renderTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { showToast, persistConversations } from "./workspace.js?v=20260911-6";
 import { formatBadgeDate, formatBadgeTime, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { configureChatController, sendChat, requestAssistant } from "./chat_controller.js?v=20260911-6";
@@ -255,22 +256,7 @@ function renderMessages() {
   let lastDayKey = "";
 
   if (state.messages.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.innerHTML = `
-      <div>
-        <p class="empty-state-eyebrow">${escapeHtml(state.currentUser?.displayName || state.currentUser?.name || "사용자")}님, ${new Date().getHours() < 12 ? "좋은 아침이에요" : new Date().getHours() < 18 ? "좋은 오후예요" : "좋은 저녁이에요"}</p>
-        <h3>어떤 업무를 도와드릴까요?</h3>
-        <p class="empty-state-source-intro">Mantis 이슈와 Notion 문서를 바탕으로 답변해요.</p>
-        <div class="starter-heading"><strong>팀 템플릿</strong><button type="button" data-open-all-templates>전체 ${TEAM_TEMPLATES.length}개 보기</button></div>
-        <div class="starter-grid" aria-label="팀 공용 템플릿">
-          ${state.teamTemplatesError
-            ? `<p class="status-warning">${escapeHtml(state.teamTemplatesError)} 직접 질문은 계속 사용할 수 있습니다.</p>`
-            : renderTeamTemplates()}
-        </div>
-      </div>
-    `;
-    els.messages.appendChild(empty);
+    els.messages.appendChild(emptyStateElement());
     updateComposerShadow();
     return;
   }
@@ -303,6 +289,7 @@ function renderMessages() {
     if (message.loading && !message.content) {
       bubble.innerHTML = `
         ${renderProgressSteps(message)}
+        ${renderElapsed(message)}
         <span class="loading-inline">
           <span>${escapeHtml(message.progress || "요청을 준비하고 있습니다")}</span>
           <span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -355,15 +342,24 @@ function renderMessages() {
       if (message.streaming && message.progress) {
         const progress = document.createElement("div");
         progress.className = "stream-progress";
-        progress.innerHTML = `<span></span><em>${escapeHtml(message.progress)}</em>`;
+        progress.innerHTML = `<span></span><em>${escapeHtml(message.progress)}</em>${renderElapsed(message)}`;
         content.appendChild(progress);
       }
       if (!message.loading && !message.streaming && !content.querySelector(".ab-comparison")) {
-        content.appendChild(renderMessageActions(message, messageIndex));
+        const actions = renderMessageActions(message, messageIndex);
+        appendAnswerDuration(actions, message);
+        content.appendChild(actions);
       }
       const followUps = content.querySelector(".follow-up-panel");
       if (followUps && !content.querySelector(".ab-comparison")) content.appendChild(followUps);
-      row.append(avatar, content);
+      if (row.classList.contains("ab-layout")) {
+        row.append(avatar, content);
+      } else {
+        row.classList.add("is-summary-answer");
+        avatar.innerHTML = icon("sparkle", 16);
+        content.prepend(renderAnswerByline(avatar));
+        row.appendChild(content);
+      }
     }
     els.messages.appendChild(row);
     const freshAnswer = freshAnswers.get(message);
@@ -404,6 +400,7 @@ function appendAssistantExtras(container, message, messageIndex) {
   }
   if (message.effortRanking) container.appendChild(renderEffortRankingChart(message.effortRanking, { complete }));
   if (message.effortTrend) container.appendChild(renderEffortTrendChart(message.effortTrend, { complete }));
+  prepareSummaryAnswer(container, message);
   presentAssistantAnswer(container, message);
   if (message.sources?.length && !shouldHideSourceList(message.content, message.sources)) {
     container.appendChild(wrapRelatedSources(renderSourceList(message.sources, messageIndex), message, message.sources.length));
@@ -414,6 +411,7 @@ function appendAssistantExtras(container, message, messageIndex) {
   if (message.verification) {
     container.appendChild(renderVerificationPanel(message.verification, message.auditId));
   }
+  groupAnswerEvidence(container, message);
   if (message.playbookCandidate && ["manager", "admin"].includes(state.currentUser?.role)) {
     const action = document.createElement("section");
     action.className = "playbook-candidate-action";
@@ -693,6 +691,7 @@ function renderAbComparison(message, aBubble, messageIndex) {
 
 function setBusy(busy) {
   state.busy = busy;
+  syncElapsedTicker(busy, els.messages);
   globalThis.dispatchEvent?.(new Event("conversations:rendered"));
   els.input.disabled = false;
   els.input.placeholder = busy ? "답변을 만드는 동안 다음 질문을 적어 둘 수 있어요" : (state.messages.length ? "이어서 질문하거나 / 를 입력해 템플릿을 여세요" : "이슈를 찾거나, 요약하거나, 원인을 물어보세요. / 를 입력하면 템플릿이 열립니다.");

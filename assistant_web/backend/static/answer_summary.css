@@ -1,0 +1,100 @@
+/* TDS 기반 요약 우선 답변. 대화 안의 표시만 바꾸며 원문·차트·조회 결과는 유지한다. */
+.chat-panel {
+  background: var(--surface);
+  --answer-ink: #191f28;
+  --answer-text: #4e5968;
+  --answer-muted: #6b7684;
+  --answer-soft: #f2f4f6;
+  --answer-line: #e5e8eb;
+  --answer-blue: #1b64da;
+  --answer-blue-soft: #e8f3ff;
+  --answer-red: #d22030;
+}
+body.theme-dark .chat-panel {
+  --answer-ink: #f2f4f6;
+  --answer-text: #c4cad3;
+  --answer-muted: #a1aab8;
+  --answer-soft: #272b32;
+  --answer-line: #363d47;
+  --answer-blue: #9bc4ff;
+  --answer-blue-soft: #20344e;
+  --answer-red: #ff98a0;
+}
+.chat-panel > .messages { gap: 36px; background: var(--surface); }
+.chat-panel > .chat-header { background: var(--surface); }
+.chat-panel .message.is-summary-answer { display: block; max-width: 920px; }
+.chat-panel .message.user { max-width: 920px; }
+.chat-panel .message.user .bubble { background: var(--answer-soft); border-radius: 16px 16px 4px 16px; padding: 13px 18px; color: var(--answer-ink); }
+.answer-byline { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; color: var(--answer-ink); font-size: 13px; font-weight: 600; }
+.answer-byline .assistant-avatar { width: 26px; height: 26px; border: 0; border-radius: 8px; background: var(--answer-blue-soft); color: var(--answer-blue); }
+.answer-byline .assistant-avatar .ui-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.chat-panel .message.assistant .bubble { padding: 0; color: var(--answer-text); font-size: 16px; line-height: 1.65; }
+.chat-panel .assistant-answer, .chat-panel .notion-answer { min-width: 0; gap: 20px; }
+.chat-panel .assistant-answer p { line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+.chat-panel .assistant-answer > .answer-heading,
+.chat-panel .notion-answer > .answer-heading { margin: 8px 0 0; font-size: 17px; line-height: 1.5; color: var(--answer-ink); font-weight: 700; }
+.chat-panel .assistant-answer > .answer-heading:first-child { margin-top: 0; }
+.chat-panel .assistant-answer .answer-title { margin: 0; color: var(--answer-ink); font-size: 26px; line-height: 1.35; font-weight: 700; letter-spacing: -.04em; word-break: keep-all; overflow-wrap: anywhere; }
+.chat-panel .assistant-answer .answer-summary-lead { color: var(--answer-ink); font-size: 17px; line-height: 1.65; word-break: keep-all; overflow-wrap: anywhere; }
+.chat-panel .answer-list { margin: 0; padding-left: 22px; gap: 8px; line-height: 1.7; }
+.chat-panel .answer-list li::marker { color: var(--answer-muted); }
+.chat-panel .answer-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 20px; margin: 0; padding: 22px 24px; border-radius: 16px; background: var(--answer-soft); }
+.answer-metric { min-width: 0; }
+.answer-metric dt { margin: 0 0 6px; color: var(--answer-text); font-size: 13px; line-height: 1.5; }
+.answer-metric dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 0; color: var(--answer-ink); font-size: 26px; line-height: 1.3; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.answer-metric dd.is-overdue { color: var(--answer-red); }
+.answer-metric-unit { font-size: 14px; font-weight: 500; }
+.answer-metric-note { display: block; margin-top: 8px; color: var(--answer-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.chat-panel .message.assistant .issue-table-wrap.is-summary-list { background: transparent; border: 0; border-radius: 0; overflow: visible; }
+.answer-issue-list { display: grid; min-width: 0; }
+.answer-issue-item + .answer-issue-item { border-top: 1px solid var(--answer-line); }
+.answer-issue-row { display: flex; align-items: center; gap: 16px; width: 100%; min-width: 0; padding: 18px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--answer-ink); text-align: left; font: inherit; }
+button.answer-issue-row { cursor: pointer; }
+button.answer-issue-row:hover { background: var(--answer-soft); }
+button.answer-issue-row:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.answer-issue-copy { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.answer-issue-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; font-size: 16px; line-height: 1.55; font-weight: 600; overflow-wrap: anywhere; }
+.answer-issue-title .status-badge { flex-shrink: 0; padding: 2px 6px; border-radius: 6px; font-size: 12px; line-height: 1.6; font-weight: 600; }
+.answer-issue-meta { color: var(--answer-muted); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.answer-issue-arrow { flex: 0 0 auto; color: var(--answer-muted); font-size: 20px; font-weight: 400; }
+.answer-full-table { margin-top: 8px; color: var(--answer-muted); }
+.answer-full-table > summary { padding: 10px 8px; font-size: 13px; cursor: pointer; }
+.answer-table-scroll { max-width: 100%; overflow-x: auto; border-radius: 12px; margin-top: 8px; }
+.chat-panel .message.assistant .markdown-table-wrap { border-color: var(--answer-line); border-radius: 12px; }
+.chat-panel .markdown-table :is(th,td), .chat-panel .issue-table :is(th,td) { border-color: var(--answer-line); padding: 13px 14px; }
+.chat-panel .markdown-table th, .chat-panel .issue-table th { background: var(--answer-soft); color: var(--answer-muted); font-size: 13px; font-weight: 500; }
+.chat-panel .markdown-table td, .chat-panel .issue-table td { font-size: 14px; line-height: 1.65; }
+.chat-panel .answer-evidence,
+.chat-panel .answer-disclosure,
+.chat-panel .answer-evidence-details { width: 100%; min-width: 0; border: 0; border-radius: 12px; background: var(--answer-soft); }
+.chat-panel .message-content > .answer-evidence { margin-top: 20px; }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details) > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 14px 16px; list-style: none; color: var(--answer-text); font-size: 14px; line-height: 1.5; font-weight: 500; cursor: pointer; }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details) > summary::-webkit-details-marker { display: none; }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details) > summary::before { display: none; }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details) > summary::after { content: ''; width: 6px; height: 6px; margin-left: auto; flex-shrink: 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details)[open] > summary::after { transform: rotate(225deg); }
+.chat-panel :is(.answer-evidence,.answer-disclosure,.answer-evidence-details) > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 12px; }
+.chat-panel .answer-disclosure-closed, .chat-panel .answer-disclosure-open { display: none; }
+.answer-evidence > section { padding: 0 16px 16px; }
+.answer-evidence h4 { margin: 0 0 8px; color: var(--answer-text); font-size: 13px; font-weight: 600; }
+.answer-evidence .source-list { padding: 0; border: 0; background: transparent; }
+.chat-panel .answer-data-scope-row { color: var(--answer-muted); font-size: 13px; line-height: 1.65; }
+.chat-panel .answer-data-scope.is-warning { margin-bottom: 16px; }
+body.hide-related-sources #messages .answer-evidence:not(:has(.answer-evidence-scope)) { display: none; }
+.chat-panel .message.assistant .message-actions { margin-top: 16px; gap: 6px; flex-wrap: wrap; }
+.chat-panel .message.assistant .message-action-btn { color: var(--answer-muted); min-height: 34px; min-width: 34px; border-radius: 8px; }
+.chat-panel .message.assistant .message-action-btn[data-message-action="copy"] { width: auto; padding: 7px 10px; gap: 6px; }
+.chat-panel .message.assistant .message-action-btn[data-message-action="copy"] > span { display: inline; font-size: 13px; }
+@media (max-width: 680px) {
+  .chat-panel .message.is-summary-answer { display: block; }
+  .chat-panel > .messages { gap: 28px; }
+  .answer-byline { margin-bottom: 16px; }
+  .chat-panel .assistant-answer .answer-title { font-size: 22px; }
+  .chat-panel .assistant-answer .answer-summary-lead { font-size: 17px; }
+  .chat-panel .answer-metrics { padding: 18px 16px; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr)); }
+  .answer-metric dd { font-size: 26px; }
+  .answer-issue-row { padding: 16px 2px; gap: 8px; }
+  .answer-issue-title { font-size: 15px; }
+  .answer-issue-meta { font-size: 12px; }
+  .chat-panel .message.assistant .message-action-btn { min-height: 44px; min-width: 44px; }
+}

@@ -1,0 +1,94 @@
+/* 첫 화면: 팀 템플릿 아래의 최근 본 이슈 · 이어서 볼 대화 */
+/* 빈 화면은 대화 칸 grid의 행으로 줄을 세운다. 내용이 화면보다 길어지면 auto 행이 줄어들어
+   overflow: hidden인 템플릿 목록이 한 줄 높이로 잘리므로, 행을 내용 높이에 맞추고 칸 자체를 스크롤한다. */
+.chat-panel:has(> .messages > .empty-state) {
+  grid-auto-rows: max-content;
+}
+
+.empty-state .home-recents {
+  order: 8;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: -16px;
+  margin-bottom: 40px;
+}
+
+.home-recent-card {
+  min-width: 0;
+  padding: 16px;
+  /* 빈 화면 묶음의 가운데 정렬을 물려받지 않는다. */
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+
+.home-recent-card h4 {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  color: var(--text-soft);
+  /* '팀 템플릿' 묶음 제목과 같은 13px/700 */
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.home-recent-card ul {
+  display: grid;
+  /* 긴 제목이 칸을 카드보다 넓히지 않도록 칸 폭을 카드에 맞추고 제목을 말줄임한다. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-recent-row:hover {
+  background: var(--surface-alt);
+}
+
+.home-recent-row:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.home-recent-id {
+  flex-shrink: 0;
+  min-width: 56px;
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-recent-title {
+  flex: 1;
+  /* 사이드바 대화 제목과 같은 14px/500 */
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-recent-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}

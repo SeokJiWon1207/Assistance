@@ -8,7 +8,8 @@ import { closeAccountMenu, closeMobileSidebar, isAccountMenuOpen, isMobileSideba
 import { initTemplatePicker, openTemplatePicker, showTemplateForm, closeTemplatePicker, isTemplatePickerOpen, handleTemplatePickerKeydown, syncTemplatePickerWithPrompt, completedTemplateQuestion, rememberTemplate } from "./template_picker.js?v=20260911-6";
 
 import { initConversationBulkActions } from "./conversation_bulk.js?v=20261026-1";
-import { renderConversationList } from "./workspace.js?v=20260911-6";
+import { renderConversationList, restoreConversationOnServer } from "./workspace.js?v=20260911-6";
+import { stripDetailsMarkup } from "./answer_details_block.js?v=20261106-1";
 
 initTemplatePicker();
 initConversationBulkActions();
@@ -270,8 +271,12 @@ els.conversationList.addEventListener("click", (event) => {
         state.activeConversationId = previousActiveId;
         state.messages = previousMessages;
         persistConversations();
-        // 서버에서도 같은 ID로 다시 저장해 삭제를 되돌린다.
-        scheduleConversationSync(removed);
+        // 서버 보관함에서 되돌린다. 삭제 요청이 서버에 닿지 않았으면 같은 ID로 다시 저장한다.
+        if (state.currentUser?.uid) {
+          restoreConversationOnServer(removed)
+            .then((saved) => { if (!saved || removed.syncPending) scheduleConversationSync(removed); })
+            .catch(() => showToast("서버에서 대화를 되돌리지 못했어요. '최근 삭제한 대화'에서 다시 복원해 주세요.", "warning"));
+        }
         renderMessages();
         showToast("삭제를 취소했어요.");
       },
@@ -443,6 +448,14 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
     return;
   }
+  const dueFilter = event.target.closest("[data-workspace-due-filter]");
+  if (dueFilter) {
+    state.workspaceDueFilter = dueFilter.dataset.workspaceDueFilter;
+    state.workspaceIssuesExpanded = false;
+    renderWorkspace();
+    els.workspaceContent.querySelector(`[data-workspace-due-filter="${dueFilter.dataset.workspaceDueFilter}"]`)?.focus();
+    return;
+  }
   // 업무 탭 옆 칸의 '주간 보고 열기'·'모두 보기'는 해당 탭으로 옮긴다.
   const goTab = event.target.closest("[data-workspace-go]");
   if (goTab) {
@@ -501,7 +514,7 @@ els.workspaceContent?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formData = new FormData(searchForm);
     state.playbookFilter = {
-      q: String(formData.get("q") || "").trim(),
+      q: String(formData.get("playbook-query") || "").trim(),
       status: String(formData.get("status") || ""),
     };
     loadPlaybooks(true).catch((error) => showToast(error.message, "warning"));
@@ -582,7 +595,7 @@ els.messages.addEventListener("click", (event) => {
     if (!message || state.busy) return;
     if (actionButton.dataset.messageAction === "copy") {
       const text = actionButton.dataset.answerVariant === "B" ? message.abTest?.variantB?.content : message.content;
-      navigator.clipboard.writeText(customerAnswerText(text || "")).then(() => {
+      navigator.clipboard.writeText(customerAnswerText(stripDetailsMarkup(text || ""))).then(() => {
         const original = actionButton.innerHTML;
         actionButton.innerHTML = `${MESSAGE_ACTION_ICONS.check}<span>복사됨</span>`;
         setTimeout(() => { actionButton.innerHTML = original; }, 1200);

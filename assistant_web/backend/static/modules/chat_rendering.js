@@ -4,6 +4,8 @@ import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
 import { parseIssueListLine } from "./issue_text.js?v=20261014-1";
 import { isQuotedSourceFence, renderQuotedSourceBlock, collapseQuotedSourceHistory } from "./chat_source_quote.js?v=20261015-1";
+import { parseDetailsBlock, foldedDetails } from "./answer_details_block.js?v=20261106-1";
+import { isSummarySectionHeading } from "./answer_summary.js?v=20261109-1";
 import {
   isMarkdownTableRow,
   isMarkdownTableSeparatorRow,
@@ -211,12 +213,12 @@ function appendAnswerParagraph(container, rawBlock, sources = [], messageIndex =
 
   rawLines.forEach((line) => {
     const headingMatch = line.match(/^#{1,6}\s+(.+)$/);
-    if (headingMatch) {
+    if (headingMatch || isSummarySectionHeading(line)) {
       flushParagraph();
       flushList();
       const heading = document.createElement("h3");
       heading.className = "answer-heading";
-      appendInlineMarkdown(heading, headingMatch[1], sources, messageIndex);
+      appendInlineMarkdown(heading, headingMatch ? headingMatch[1] : line, sources, messageIndex);
       container.appendChild(heading);
       return;
     }
@@ -282,6 +284,16 @@ function renderAssistantContent(content, sources = [], messageIndex = 0) {
   let index = 0;
   while (index < lines.length) {
     const line = lines[index];
+
+    // 서버가 접어 보낸 근거(<details>/<summary> 줄)는 태그를 글자로 보이지 않고 실제 접기 상자로 그린다.
+    const folded = parseDetailsBlock(lines, index);
+    if (folded) {
+      flushText();
+      flushIssues();
+      wrap.appendChild(foldedDetails(folded, (text) => renderAssistantContent(text, sources, messageIndex)));
+      index = folded.nextIndex;
+      continue;
+    }
 
     // 서버 검증을 마친 원문은 목록·표·인라인 Markdown보다 먼저 문자 그대로 읽는다.
     const quote = renderQuotedSourceBlock(lines, index);
