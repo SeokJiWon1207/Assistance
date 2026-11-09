@@ -28,7 +28,7 @@ def migration_cases():
         'audit': [audit._create_audit_schema, audit._add_validation_log_user_uid, audit._add_failed_checks_summary],
         'workspace': [workspace._create_workspace_schema, workspace._create_team_brief_schema, workspace._create_playbook_schema,
                       conversation_history.migrate_messages, workspace_notifications.create_notification_schema,
-                      workspace_schema.create_conversation_trash_schema],
+                      workspace_schema.create_conversation_trash_schema, workspace_schema.create_suggestion_schema],
     }
     records = []
     with tempfile.TemporaryDirectory() as directory:

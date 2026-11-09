@@ -14,6 +14,7 @@ import { initDashboardTabs } from "./dashboard_tabs.js?v=20261110-1";
 import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
 import { initCommandPalette } from "./command_palette.js?v=20261105-1";
 import { initHomeRecents } from "./home_recents.js?v=20261105-1";
+import { initHomeSuggestions } from "./home_suggestions.js?v=20261109-3";
 import { initDashboardViews } from "./dashboard_views.js?v=20261105-1";
 import { initComposerConditions } from "./composer_conditions.js?v=20261109-1";
 import { initConversationTrash } from "./conversation_trash.js?v=20261105-1";
@@ -79,6 +80,7 @@ async function bootstrapApplication(authState = {}) {
   initDashboardTabs();
   initCommandPalette();
   initHomeRecents();
+  initHomeSuggestions();
   initDashboardViews();
   initComposerConditions();
   initConversationTrash();

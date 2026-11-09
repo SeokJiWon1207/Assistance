@@ -25,6 +25,7 @@ from backend.api.quality import router as quality_router  # noqa: E402
 from backend.api.search import router as search_router  # noqa: E402
 from backend.api.templates import router as templates_router  # noqa: E402
 from backend.api.workspace import router as workspace_router  # noqa: E402
+from backend.api.suggestions import router as suggestions_router  # noqa: E402
 from backend.config import STATIC_DIR  # noqa: E402
 from backend.settings.catalogs import initialize_customer_catalogs  # noqa: E402
 from backend.startup_validation import get_cors_allowed_origins, validate_runtime_security  # noqa: E402
@@ -56,6 +57,8 @@ async def lifespan(_application: FastAPI):
     try:
         yield
     finally:
+        from backend.suggestions.service import stop_services
+        stop_services()
         for stop in stops:
             stop.set()
 
@@ -98,6 +101,7 @@ def create_app() -> FastAPI:
     )
     application.include_router(auth_router)
     application.include_router(workspace_router)
+    application.include_router(suggestions_router)
     application.include_router(search_router)
     application.include_router(templates_router)
     application.include_router(notion_router)

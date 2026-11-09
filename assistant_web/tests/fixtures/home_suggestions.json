@@ -1,0 +1,8 @@
+[
+  {"name":"mantis_overdue","mantis":{"id":31105,"summary":"기한 확인","status":{"name":"assigned"},"handler":{"real_name":"담당"},"created_at":"2026-10-01T00:00:00Z","custom_fields":[{"field":{"name":"개발완료목표일"},"value":"2026-10-31"}]},"sources":["mantis"],"count":1},
+  {"name":"notion_due","notion":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"담당 문서","status":"진행 중","owner_user_ids":["owner"],"due_date":"2026-10-31"},"sources":["notion"],"count":1,"reason":"due_review"},
+  {"name":"explicit_link_stage_difference","mantis":{"id":31105,"summary":"모바일 대응","status":{"name":"assigned"},"handler":{"real_name":"담당"}},"notion":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"검증 문서","_verified_body":true,"_owned_segments":[{"block_id":"b","text":"개발 완료. 고객 검증 예정"}]},"linked":true,"sources":["mantis","notion"],"count":1,"kind":"compare_records"},
+  {"name":"similar_title_different_work","mantis":{"id":31105,"summary":"동일 기능","status":{"name":"assigned"},"handler":{"real_name":"담당"}},"notion":{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","title":"동일 기능","owner_user_ids":["owner"]},"linked":false,"sources":["mantis","notion"],"count":2},
+  {"name":"notion_429","mantis":{"id":31105,"summary":"진행 확인","status":{"name":"assigned"},"handler":{"real_name":"담당"}},"notionFailure":429,"sources":["mantis"],"count":1},
+  {"name":"account_scope_changed","before":{"uid":"u","displayName":"기존 담당","mantisUsername":"old"},"after":{"uid":"u","displayName":"새 담당","mantisUsername":"new"},"count":0}
+]

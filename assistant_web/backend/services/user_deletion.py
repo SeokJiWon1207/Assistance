@@ -21,7 +21,8 @@ def _delete_local_data(uid: str) -> None:
             db.execute('BEGIN IMMEDIATE')
             for table in ('conversation_messages', 'conversations',
                           'notification_reads', 'weekly_team_brief_reads',
-                          'workspace_observations', 'workspace_events'):
+                          'workspace_observations', 'workspace_events',
+                          'suggestion_cache', 'suggestion_dismissals', 'suggestion_jobs'):
                 db.execute(f'DELETE FROM workspace.{table} WHERE user_uid = ?', (uid,))
             # 휴지통 기능이 아직 도입되지 않은 DB에서도 계정을 삭제할 수 있다.
             if db.execute("SELECT 1 FROM workspace.sqlite_master WHERE type = 'table' "

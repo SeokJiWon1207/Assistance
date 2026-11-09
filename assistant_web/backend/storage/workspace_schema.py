@@ -129,10 +129,22 @@ def create_conversation_trash_schema(db: sqlite3.Connection) -> None:
     db.execute("CREATE INDEX idx_conversation_trash_user_deleted ON conversation_trash(user_uid, deleted_at DESC)")
 
 
+def create_suggestion_schema(db: sqlite3.Connection) -> None:
+    db.execute('''CREATE TABLE suggestion_cache (
+        user_uid TEXT NOT NULL, scope_key TEXT NOT NULL, payload TEXT NOT NULL, expires REAL NOT NULL,
+        PRIMARY KEY(user_uid, scope_key))''')
+    db.execute('''CREATE TABLE suggestion_dismissals (
+        user_uid TEXT NOT NULL, scope_key TEXT NOT NULL, dedupe_key TEXT NOT NULL, revision TEXT NOT NULL,
+        touched REAL NOT NULL, PRIMARY KEY(user_uid, scope_key, dedupe_key, revision))''')
+    db.execute('''CREATE TABLE suggestion_jobs (
+        user_uid TEXT PRIMARY KEY, scope_key TEXT NOT NULL, token TEXT NOT NULL,
+        expires REAL NOT NULL, started REAL NOT NULL)''')
+
+
 def init_workspace_db(path: Path | None = None) -> None:
     run_sqlite_migrations(
         path or workspace_db_path(),
         [_create_workspace_schema, _create_team_brief_schema, _create_playbook_schema, migrate_messages,
-         create_notification_schema, create_conversation_trash_schema],
+         create_notification_schema, create_conversation_trash_schema, create_suggestion_schema],
         database_name="workspace",
     )

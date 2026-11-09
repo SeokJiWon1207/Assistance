@@ -1,0 +1,36 @@
+/* 입력창 아래, 팀 템플릿 위의 개인 업무 추천. */
+.empty-state .home-suggestions { order: 5; text-align: left; margin-top: 8px; margin-bottom: 12px; min-width: 0; }
+.home-suggestions[hidden] { display: none; }
+.home-suggestions-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.home-suggestions h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--text-soft); }
+.home-suggestions button { font: inherit; cursor: pointer; border: 0; background: transparent; color: var(--text); border-radius: var(--control-radius); }
+.home-suggestions button:disabled { cursor: wait; opacity: .6; }
+.home-suggestions-heading button, .home-suggestion-hide { font-size: 12px; min-height: 36px; color: var(--muted); padding: 4px 8px; }
+.home-suggestions .home-suggestions-status { margin: 4px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.home-suggestions-status:empty { display: none; }
+.home-suggestions ul { padding: 0; margin: 6px 0 0; list-style: none; display: grid; gap: 4px; }
+.home-suggestions li { padding: 8px; border-bottom: 1px solid var(--line); min-width: 0; }
+.home-suggestions li:last-child { border-bottom: 0; }
+.home-suggestion-row { display: flex; align-items: flex-start; gap: 12px; }
+.home-suggestions .home-suggestion-title { flex: 1; min-width: 0; text-align: left; padding: 6px 0; font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.home-suggestion-title:hover { color: var(--blue); }
+/* 출처와 질문 보기를 한 줄에 둔다. 펼친 질문만 줄 전체를 쓴다. */
+.home-suggestion-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.home-suggestion-meta a { color: var(--muted); text-decoration: underline dotted; text-underline-offset: 4px; overflow-wrap: anywhere; max-width: 100%; }
+.home-suggestion-meta a:hover { color: var(--text-soft); }
+.home-suggestions details { font-size: 12px; color: var(--muted); }
+.home-suggestions details[open] { flex-basis: 100%; }
+.home-suggestions summary { cursor: pointer; width: fit-content; padding: 2px 0; }
+.home-suggestions details p { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-alt); border-radius: var(--control-radius); line-height: 1.6; margin: 6px 0 0; color: var(--text-soft); }
+.home-suggestions :is(button, a, summary):focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+/* 마우스가 있는 환경에서는 숨김을 행에 올리거나 포커스할 때만 보인다. 터치 환경은 항상 보인다. */
+@media (hover: hover) and (pointer: fine) {
+  .home-suggestion-hide { opacity: 0; transition: opacity .12s; }
+  .home-suggestions li:hover .home-suggestion-hide, .home-suggestions li:focus-within .home-suggestion-hide { opacity: 1; }
+}
+@media (max-width: 640px) {
+  .home-suggestion-row { gap: 6px; }
+  .home-suggestion-hide { min-height: 44px; }
+  .home-suggestions summary { min-height: 32px; display: list-item; align-content: center; }
+  .home-suggestion-meta { gap: 10px; }
+}
