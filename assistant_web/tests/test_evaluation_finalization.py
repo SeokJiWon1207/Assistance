@@ -93,6 +93,22 @@ class EvaluationFinalizationTests(unittest.TestCase):
         followups.assert_not_called()
         baseline.assert_not_called()
 
+    def test_customer_claim_with_title_citation_is_checked_against_project(self):
+        from backend.evaluation.delivery import decide_delivery
+        sources = [{"type": "mantis", "issue_id": 31678, "title": "[GEX] 폴더 문의",
+                    "project": "141IBK(IBK증권)"}]
+        retrieval = {"query_plan": {"source": "mantis", "operation": "explain"}, "stages": []}
+        for claim, allowed in [
+            ("- **어느 고객사 건**: 이 이슈는 GEX 고객사 건입니다. (#31678 · 필드 summary)", False),
+            ("#31678의 고객사는 **GEX**입니다.", False),
+            ("#31678의 고객사는 **IBK투자증권**입니다.", True),
+            ("과거 메모 인용: 이 이슈는 GEX 고객사 건입니다. (#31678 · 필드 description)", True),
+        ]:
+            with self.subTest(claim=claim):
+                report = verification_module.build_verification_report(
+                    "이 이슈는 어느 고객사 건이야?", claim, sources, retrieval, "agent_model")
+                self.assertEqual(decide_delivery(report).allowed, allowed)
+
     def test_delivery_blocks_definite_calculation_and_scope_errors_only(self):
         from backend.evaluation.delivery import decide_delivery
         for check_id in ("count_result", "count_filters", "effort_recalculation", "work_scope", "constraints"):
@@ -193,6 +209,7 @@ class EvaluationFinalizationTests(unittest.TestCase):
         self.assertEqual(row[1], "model")
         self.assertEqual(row[3], "user-1")
         self.assertEqual(payload["sources"], [])
+        self.assertEqual(payload["followupSources"], evidence)
         self.assertEqual(payload["queryPlan"], {"source": "mantis"})
         self.assertEqual(payload["retrievalStages"][0]["meta"]["displayed_count"], 1)
         self.assertEqual(json.loads(row[4]), [{"id": "grounding", "label": "근거"}])

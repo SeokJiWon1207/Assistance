@@ -13,6 +13,10 @@ BLOCKING_CHECKS = frozenset({
     "work_evidence", "work_answer_count",
     "followup_effort_result",
     "trend_cells", "trend_display", "trend_issue_count",
+    # 에이전트 경로: 허용 모델 외 전송, 원장 밖 인용, 조건 미적용 자료의 본문 근거 사용은 전달하지 않는다.
+    "agent_transfer_policy", "agent_citations", "agent_reference_grade",
+    "agent_response_composition",
+    "agent_query_result", "agent_aggregation_result", "agent_step_conditions", "agent_comparison_result", "agent_notion_result", "agent_notion_contract",
 })
 
 

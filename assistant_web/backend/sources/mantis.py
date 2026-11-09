@@ -123,7 +123,7 @@ def clear_mantis_recent_cache() -> None:
 
 
 def extract_snapshot_limit(text: str, default: int = 800) -> int:
-    match = re.search(r"최신\s*(\d+)\s*건\s*기준", text)
+    match = re.search(r"(?:최신|최근)\s*(\d+)\s*건\s*기준", text)
     if not match:
         return default
     return max(1, min(int(match.group(1)), 3000))
@@ -369,6 +369,7 @@ def get_mantis_snapshot_freshness_status() -> Dict[str, Any]:
 def execute_mantis_snapshot_search(
     limit: int,
     constraints: Dict[str, Any],
+    *, group_key=None,
 ) -> Dict[str, Any]:
     """Search the complete local Mantis snapshot for structured historical queries."""
     snapshot = scan_mantis_documents(
@@ -376,7 +377,7 @@ def execute_mantis_snapshot_search(
         lambda content: chroma_text_matches_constraints(content, constraints),
         normalize_chroma_issue_document,
         example_limit=limit,
-        group_key=lambda issue: str(issue.get("project") or "미상"),
+        group_key=group_key or (lambda issue: str(issue.get("project") or "미상")),
         constraints=constraints,
         use_raw_constraints=True,
     )
@@ -400,7 +401,9 @@ def execute_mantis_snapshot_search(
             "displayed_count": len(snapshot["issues"]),
             "matched_issue_ids": sorted(snapshot["matched_ids"]),
             "ordered_matched_ids": snapshot.get("ordered_matched_ids") or [],
-            "matched_customer_groups": snapshot.get("matched_groups") or {},
+            "matched_customer_groups": {} if group_key else snapshot.get("matched_groups") or {},
+            **({'group_counts': snapshot.get('group_counts') or {},
+                'matched_groups': snapshot.get('matched_groups') or {}} if group_key else {}),
             "applied_filters": constraints,
             "tool": "mantis_complete_snapshot" if snapshot.get("fetchedAt") else "mantis_chroma_snapshot",
             "snapshot_as_of": get_mantis_snapshot_freshness(),

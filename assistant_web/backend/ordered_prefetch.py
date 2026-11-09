@@ -1,10 +1,9 @@
 """순서를 지키면서 뒤 작업을 미리 실행하는 공용 반복자."""
 
-from contextvars import copy_context
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Callable, Generator, Iterable, TypeVar
 
-from backend.execution import CURRENT_BUDGET, checkpoint, wait_for_result
+from backend.execution import checkpoint, submit_with_context, wait_for_result
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -30,10 +29,7 @@ def iter_in_order(
     try:
         for index, item in enumerate(queue):
             while next_index < len(queue) and len(pending) < limit:
-                pending[next_index] = pool.submit(copy_context().run, func, queue[next_index])
-                budget = CURRENT_BUDGET.get()
-                if budget is not None:
-                    budget.track(pending[next_index])
+                pending[next_index] = submit_with_context(pool, func, queue[next_index])
                 next_index += 1
             yield item, wait_for_result(pending.pop(index))
     finally:

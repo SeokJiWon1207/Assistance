@@ -341,6 +341,21 @@ def run_retrieval_pipeline(
     tools: Dict[str, bool],
     intent_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if (intent_plan or {}).get('planner') == 'explicit_references':
+        from backend.notion.direct_lookup import read_explicit_pages
+        explicit = dict((intent_plan or {})['resolved_constraints'])
+        stages = []
+        if tools.get('notion') and explicit.get('notion_page_ids'):
+            notion_filters = {**explicit, 'issue_ids': [], 'exclude_issue_ids': [],
+                'filter_clauses': [c for c in explicit.get('filter_clauses', []) if c.get('field') != 'issue_id']}
+            stages.append(read_explicit_pages(explicit['notion_page_ids'], notion_filters))
+        if tools.get('mantis') and explicit.get('issue_ids'):
+            try:
+                stages.append(execute_mantis_id_lookup(explicit['issue_ids'], {**explicit, 'answer_query': query_text}))
+            except (HTTPException, requests.RequestException):
+                stages.append({'source': 'mantis_id_lookup', 'status': 'error', 'issues_list': [], 'meta': {'search_complete': False}})
+        return {'query': query_text, 'keyword': '', 'constraints': explicit, 'intent_plan': intent_plan,
+                'query_plan': intent_plan, 'limit': limit, 'stages': stages}
     if (intent_plan or {}).get("operation") == "explain" and (intent_plan or {}).get("source") not in {"notion", "both"}:
         return _explanation_retrieval(query_text, limit, tools, intent_plan or {})
     constraints = merge_query_plan_constraints(extract_query_constraints(query_text), intent_plan)

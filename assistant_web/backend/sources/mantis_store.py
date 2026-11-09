@@ -37,6 +37,7 @@ LOGGER = logging.getLogger(__name__)
 MAX_AGE_SECONDS = 3600
 _request_store: ContextVar[dict | None] = ContextVar("mantis_request_store", default=None)
 _request_streams: ContextVar[dict | None] = ContextVar("mantis_request_streams", default=None)
+_request_read_lock: ContextVar[Any] = ContextVar("mantis_request_read_lock", default=None)
 _generation_lock = Lock()
 _generation_cache: dict[tuple, tuple] = {}
 _refresh_lock = Lock()
@@ -63,11 +64,13 @@ def store_request_scope():
     token = _request_store.set({})
     streams: dict[tuple, _StoreStream] = {}
     stream_token = _request_streams.set(streams)
+    lock_token = _request_read_lock.set(Lock())
     try:
         yield
     finally:
         _request_store.reset(token)
         _request_streams.reset(stream_token)
+        _request_read_lock.reset(lock_token)
         for stream in streams.values():
             stream.close()
 
@@ -260,6 +263,15 @@ def read_scoped_store(*, allow_stale=False, summary_only=False):
 
 @measured("store_read")
 def read_complete_store(*, allow_stale: bool = False, summary_only: bool = False) -> IssueBatch | None:
+    lock = _request_read_lock.get()
+    if lock is not None:
+        # 작업자들이 같은 요청 문맥을 복사해도 최초 캐시 읽기·게시를 하나의 연산으로 유지한다.
+        with execution_slot(lock):
+            return _read_request_store(allow_stale=allow_stale, summary_only=summary_only)
+    return _read_request_store(allow_stale=allow_stale, summary_only=summary_only)
+
+
+def _read_request_store(*, allow_stale: bool, summary_only: bool) -> IssueBatch | None:
     scope = _request_store.get()
     try:
         key = (str(store_path()), connection_key(), allow_stale, summary_only) if scope is not None else None

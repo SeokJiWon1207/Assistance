@@ -21,6 +21,18 @@ class RefreshBudget:
 
 
 _CURRENT: ContextVar[RefreshBudget | None] = ContextVar('mantis_short_refresh', default=None)
+_REUSE: ContextVar[dict[int, Any] | None] = ContextVar('mantis_issue_reuse', default=None)
+
+
+@contextmanager
+def issue_reuse_scope():
+    """한 요청에서 이미 읽은 원문을 다시 요청하지 않는다. 갱신 시간 제한은 바꾸지 않는다."""
+    current = _REUSE.get()
+    token = _REUSE.set(current if current is not None else {})
+    try:
+        yield _REUSE.get()
+    finally:
+        _REUSE.reset(token)
 
 
 @contextmanager
@@ -37,7 +49,15 @@ def fetch_with_refresh_budget(issue_id: int, fetch: Callable):
     budget = _CURRENT.get()
     checkpoint()
     if budget is None:
-        return fetch(20, 3)
+        reuse = _REUSE.get()
+        if reuse is None:
+            return fetch(20, 3)
+        if issue_id in reuse:
+            return deepcopy(reuse[issue_id])
+        row = fetch(20, 3)
+        checkpoint()
+        reuse[issue_id] = deepcopy(row)
+        return row
     if issue_id in budget.cache:
         budget.cache_hits += 1
         return deepcopy(budget.cache[issue_id])

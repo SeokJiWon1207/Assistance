@@ -129,7 +129,35 @@ def build_verification_report(
     sources: List[Dict[str, Any]],
     retrieval_result: Optional[Dict[str, Any]],
     mode: str,
+    *, _notion_conditions: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    if mode == 'agent_composed':
+        from backend.evaluation.agent_response import verify_composed_response
+        return verify_composed_response(question, content, sources, retrieval_result or {},
+                                        verify_part=build_verification_report, add_dimension=add_verification_dimension)
+    if mode == 'agent_notion_results':
+        from backend.intent.execution_contract import validate_execution_contract
+        from backend.notion.filter_conditions import merge_common_notion_constraints
+        from backend.services.agent.deterministic_answers import notion_result_check
+        retrieval = retrieval_result or {}
+        plan = retrieval.get('query_plan') or retrieval.get('intent_plan') or {}
+        contract = validate_execution_contract(question, plan)
+        canonical = merge_common_notion_constraints({}, plan.get('resolved_constraints') or {}) if contract['valid'] else None
+        report = build_verification_report(question, content, sources, retrieval_result, 'deterministic_notion_list',
+                                           _notion_conditions=canonical)
+        check = notion_result_check(question, content, retrieval_result or {})
+        conditions = {'id': 'agent_notion_contract', 'label': 'Notion 실행 조건 근거',
+                      'status': 'pass' if contract['valid'] else 'fail',
+                      'detail': '검증된 도구 조건으로 원문 속성을 대조하며 출력 항목을 사람 이름으로 재해석하지 않음'}
+        report = add_verification_dimension(report, 'notion_result', 'Notion 결과', [conditions, check], '전체 조회와 현재 속성 검증')
+        report['mode'] = mode
+        return report
+    if mode == 'agent_comparison_results':
+        from backend.evaluation.agent_comparison import verify_agent_comparison
+        return verify_agent_comparison(question, content, retrieval_result or {}, mode)
+    if mode == 'agent_aggregation_results':
+        from backend.evaluation.agent_queries import verify_agent_aggregation
+        return verify_agent_aggregation(question, content, retrieval_result or {}, mode)
     if mode == 'validated_aggregation':
         from backend.evaluation.aggregation import verify_aggregation
         return verify_aggregation(question, content, retrieval_result or {}, mode)
@@ -138,7 +166,7 @@ def build_verification_report(
         return verify_work_report(question, content, sources, retrieval_result or {})
     constraints = (retrieval_result or {}).get("constraints") or extract_query_constraints(question)
     query_plan = (retrieval_result or {}).get("query_plan") or (retrieval_result or {}).get("intent_plan") or {}
-    if mode in {"status_clarification", "search_terms_clarification", "unified_plan_clarification"}:
+    if mode in {"status_clarification", "search_terms_clarification", "unified_plan_clarification", "agent_plan_clarification"}:
         resolution = query_plan.get("status_resolution") or {}
         label = "검색어 확인 대기" if mode == "search_terms_clarification" else "상태 확인 대기"
         detail = (
@@ -199,6 +227,8 @@ def build_verification_report(
         and stage.get("meta", {}).get("coverage") not in {"saved_filter", "top_k", "snapshot_matches"}
         for stage in (retrieval_result or {}).get("stages", [])
     )
+    if mode.startswith("agent_") and (retrieval_result or {}).get("agent_query_outcome"):
+        completed_empty_search = (retrieval_result or {})["agent_query_outcome"] == "complete_empty"
     from backend.evaluation.effort_trend import trend_checks
     monthly_checks = trend_checks(content, retrieval_result) if mode == 'deterministic_effort_trend' else []
     verified_monthly = bool(monthly_checks) and all(c['status'] == 'pass' for c in monthly_checks)
@@ -262,7 +292,7 @@ def build_verification_report(
     )
 
     retrieval_checks.append(check_issue_fields(field_claims, sources))
-    if mode == "model" and query_plan.get("source") in {"mantis", "both"}:
+    if mode in {"model", "agent_model"} and query_plan.get("source") in {"mantis", "both"}:
         count_text = plain_text(content)
         claimed_counts = [int(match.group(1) or match.group(2)) for match in re.finditer(
             r"(?:이슈|결과)(?:는|가)?\s*(?:총|전체)\s*([\d,]+)\s*건"
@@ -287,7 +317,8 @@ def build_verification_report(
 
     matched_sources = []
     definite_mismatches = 0
-    notion_constraints = extract_notion_constraints(str((retrieval_result or {}).get("query") or question))
+    notion_constraints = (_notion_conditions if _notion_conditions is not None else
+                          extract_notion_constraints(str((retrieval_result or {}).get("query") or question)))
     expected_people = extract_query_constraints(str((retrieval_result or {}).get("query") or question)).get("people", {}).get("names") or []
     for stage in (retrieval_result or {}).get("stages", []):
         if stage.get("source") != "notion":
@@ -392,7 +423,13 @@ def build_verification_report(
     else:
         count_status = "pass"
         count_detail = f"확인 {len(sources)}건"
-    retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
+    if mode == "agent_query_results":
+        from backend.evaluation.agent_queries import verify_query_results
+        from backend.intent.display_contract import expected_display_limit
+        result_check = verify_query_results(content, (retrieval_result or {}).get("stages") or [], expected_display_limit(question, query_plan))
+        retrieval_checks.extend([result_check, {**result_check, 'id': 'agent_query_result'}])
+    else:
+        retrieval_checks.append({"id": "count", "label": "요청 건수", "status": count_status, "detail": count_detail})
     needs_full_scope = bool(
         query_plan.get("operation") in {"count", "aggregate"}
         or query_plan.get("followup_effort") or constraints.get("followup_effort")
@@ -681,6 +718,28 @@ def build_verification_report(
         "mode": mode,
         "verifiedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "note": "점수는 자동 판정이 완료된 영역만 평균하며, '검토 필요' 영역은 상태로 별도 표시합니다.",
+    }
+
+
+def add_verification_dimension(report: Dict[str, Any], dimension_id: str, label: str,
+                               checks: List[Dict[str, str]], description: str) -> Dict[str, Any]:
+    """기존 리포트에 검사 영역을 더하고 점수·상태·검사 목록을 같은 규칙으로 다시 계산한다."""
+    weights = {"pass": 1.0, "warning": 0.5, "fail": 0.0, "review": 0.0}
+    status = ("fail" if any(check["status"] == "fail" for check in checks) else
+              "warning" if any(check["status"] in {"warning", "review"} for check in checks) else "pass")
+    dimension = {"id": dimension_id, "label": label, "status": status, "checks": list(checks),
+                 "score": round(sum(weights.get(check["status"], 0) for check in checks) / len(checks) * 100),
+                 "description": description}
+    dimensions = [*report.get("dimensions", []), dimension]
+    applicable = [item for item in dimensions if item["status"] != "na"]
+    completed = [item for item in applicable if item["score"] is not None]
+    return {
+        **report, "dimensions": dimensions,
+        "checks": [check for item in dimensions for check in item.get("checks", [])],
+        "score": round(sum(item["score"] for item in completed) / len(completed)) if completed else 0,
+        "status": ("fail" if any(item["status"] == "fail" for item in applicable) else
+                   "warning" if any(item["status"] in {"warning", "review"} for item in applicable) else "pass"),
+        "completedDimensions": len(completed), "applicableDimensions": len(applicable),
     }
 
 

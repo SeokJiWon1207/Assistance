@@ -8,7 +8,8 @@ from typing import Any, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException
 
-from backend.settings.catalogs import get_customer_aliases, get_customer_directory, get_customer_project_display_names
+from backend.settings.catalogs import get_customer_aliases, get_customer_directory, get_customer_logos, get_customer_picker, get_customer_project_display_names
+from backend.customer_identity import customer_alias_owner
 from backend.display import customer_name
 from backend.sources.mantis_store import read_scoped_store, with_store_scope
 from backend.team_templates import (
@@ -71,4 +72,20 @@ def list_customer_names() -> Dict[str, Any]:
                      for project in item.get("projects", [])})
     projects.update(get_customer_project_display_names())
     exact.update(get_customer_project_display_names())
-    return {"exact": exact, "projects": projects}
+    # 검색 자동완성 등 고객사 선택 목록은 설정된 이름만 설정 순서대로 보인다.
+    return {"exact": exact, "projects": projects, "picker": list(get_customer_picker()), "logos": customer_logo_urls(exact)}
+
+
+CUSTOMER_LOGO_URL = "/static/assets/customers/"
+
+
+def customer_logo_urls(exact: Dict[str, str]) -> Dict[str, str]:
+    """화면에 보이는 고객사 이름(대표 이름·선택 목록 이름) -> 로고 주소. 로고가 없는 고객사는 빠진다."""
+    logos = get_customer_logos()
+    names = {*exact.values(), *get_customer_picker()}
+    urls = {}
+    for name in sorted(names):
+        owner = customer_alias_owner(name)
+        if owner in logos:
+            urls[name] = CUSTOMER_LOGO_URL + logos[owner]
+    return urls

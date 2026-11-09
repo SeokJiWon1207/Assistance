@@ -192,7 +192,8 @@ def _select_audit_variant(payload: Dict[str, Any], variant: str) -> Dict[str, An
             or not isinstance(baseline.get("content"), str) or not baseline["content"].strip()):
         return {}
     # B도 동일 조회 계획에 대해 전송 전 검증을 통과한 경우만 후속 문맥으로 사용한다.
-    return {**payload, "answer": baseline["content"], "sources": baseline.get("sources") or []}
+    return {**payload, "answer": baseline["content"], "sources": baseline.get("sources") or [],
+            "followupSources": baseline.get("sources") or []}
 
 
 def load_audit_sources(audit_id: str, user_uid: str = "", *, variant: str = "A") -> List[Dict[str, Any]]:
@@ -214,8 +215,33 @@ def load_audit_sources(audit_id: str, user_uid: str = "", *, variant: str = "A")
         payload = json.loads(row[0])
     except (TypeError, ValueError):
         return []
-    sources = _select_audit_variant(payload, variant).get("sources")
-    return sources if isinstance(sources, list) else []
+    selected = _select_audit_variant(payload, variant)
+    if (selected.get("verification") or {}).get("delivery") == "blocked":
+        return []
+    sources = selected.get("followupSources", selected.get("sources"))
+    return [source for source in sources if isinstance(source, dict) and source.get("evidence_grade") != "reference"] if isinstance(sources, list) else []
+
+
+def load_audit_turn(audit_id: str, user_uid: str, expected_question: str, *, variant: str = "A") -> Dict[str, Any]:
+    """동일 사용자·질문·선택 답변의 전송을 허용한 턴만 문맥 요약에 제공한다."""
+    if not user_uid or not expected_question or not re.fullmatch(r"[0-9a-f]{32}", audit_id or ""):
+        return {}
+    try:
+        init_audit_db()
+        with closing(open_sqlite(AUDIT_DB_PATH, profile=AUDIT)) as connection:
+            row = connection.execute(
+                "SELECT payload, created_at FROM validation_logs WHERE id = ? AND user_uid = ? AND question = ?",
+                (audit_id, user_uid, expected_question),
+            ).fetchone()
+        payload = json.loads(row[0]) if row else {}
+        if not isinstance(payload, dict):
+            return {}
+        payload = _select_audit_variant(payload, variant)
+        if (payload.get("verification") or {}).get("delivery") != "allowed" or not isinstance(payload.get("queryPlan"), dict):
+            return {}
+        return {**payload, "question": expected_question, "recorded_at": row[1]}
+    except (sqlite3.Error, ValueError, TypeError):
+        return {}
 
 
 def load_audit_query_plan(audit_id: str, user_uid: str, expected_question: str, *, variant: str = "A") -> Dict[str, Any]:

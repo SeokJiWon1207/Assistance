@@ -8,6 +8,8 @@
     "apiKeyEnv": "GEMINI_API_KEY",
     "reasoningEffort": "minimal",
     "maxOutputTokens": 2048,
+    "supportsTools": true,
+    "supportsParallelToolCalls": true,
     "expiresAt": "",
     "enabled": true
   },
@@ -22,6 +24,8 @@
     "maxOutputTokens": 2048,
     "preferred": true,
     "fallbackModelIds": ["gemini-3.1-flash-lite"],
+    "supportsTools": true,
+    "supportsParallelToolCalls": true,
     "expiresAt": "",
     "enabled": true
   },
@@ -34,6 +38,8 @@
     "apiKeyEnv": "COMPANY_MODEL_46_API_KEY",
     "expiresAtEnv": "COMPANY_MODEL_46_EXPIRES_AT",
     "think": false,
+    "supportsTools": true,
+    "supportsParallelToolCalls": true,
     "expiresAt": "2026-12-31",
     "enabled": true
   },

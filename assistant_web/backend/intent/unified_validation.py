@@ -39,6 +39,7 @@ from backend.intent.validation_rules import (
 from backend.intent.execution_contract import (
     validate_execution_contract as validate_execution_contract,
 )
+from backend.query.notion_text import is_plain_notion_topic, split_notion_topic_terms
 
 
 def constraints_from_clauses(clauses, status, scope, user, previous, *, self_field="owner"):
@@ -116,6 +117,8 @@ def constraints_from_clauses(clauses, status, scope, user, previous, *, self_fie
 
 def validate_plan(question, parsed, user, previous):
     require(isinstance(parsed, dict), '계획 JSON 형식 오류')
+    from backend.intent.conversation_scope import followup_previous
+    previous, followup_context = followup_previous(parsed, previous)
     required = {'source', 'operation', 'scope', 'followup', 'filters', 'status', 'clear_fields', 'terms', 'group_by', 'limit'}
     require(required <= parsed.keys(), '필수 계획 항목 누락')
     source, operation, scope = (parsed.get(k) for k in ('source', 'operation', 'scope'))
@@ -126,6 +129,9 @@ def validate_plan(question, parsed, user, previous):
     require(scope in {'self', 'team', 'all', 'target', 'default', 'inherit'}, '잘못된 범위')
     followup = parsed['followup']
     require(isinstance(followup, bool), '후속 질문 형식 오류')
+    from backend.intent.context import starts_independent_question
+    require(not (followup and starts_independent_question(question)),
+            '독립 질문에는 이전 조건을 상속할 수 없습니다. followup=false로 현재 질문만 해석하세요')
     if re.match(r'^\s*(?:그중|그\s*조건|같은\s*조건)', unquoted(question)):
         require(followup and bool(previous.get('resolved_constraints')),
                 '후속 조건을 이어받을 이전 확정 계획이 필요합니다. 앞 조건이 없으면 clarify로 답하세요')
@@ -226,10 +232,7 @@ def validate_plan(question, parsed, user, previous):
     require(isinstance(raw, list) and len(raw) <= 20, '필터 개수 오류')
     # '관련 문서'의 일반 주제를 본문 전용 keyword로 좁히지 않는다.
     # 명시한 본문/제목/리터럴 조건과 후속의 기존 범위는 그대로 둔다.
-    plain_notion_topics = bool(
-        source == 'notion' and operation == 'search' and not followup
-        and re.search(r'(?:관련|관한)\s*(?:(?:최근|최신)\s*)?(?:문서|페이지|자료)', question)
-        and not re.search(r'''["'`“”‘’]|본문|내용|노트|텍스트|제목|title|body|content|키워드|문자열|정확히|포함|들어''', question, re.I))
+    plain_notion_topics = source == 'notion' and operation == 'search' and not followup and is_plain_notion_topic(question)
     incoming = []
     grounded_raw = []
     for item in raw:
@@ -352,6 +355,9 @@ def validate_plan(question, parsed, user, previous):
         check_customer_scope(question, c['filter_clauses'], incoming)
         from backend.query.notion_text import notion_literal_title
         title = notion_literal_title(question)
+        if operation == 'explain' and not title and '제목' not in question and 'title' not in question.casefold():
+            require(not any(clause['field'] == 'title' for clause in incoming),
+                    '설명 질문의 주제를 문서 제목 필터로 단정할 수 없습니다. title equals/contains 대신 terms로 표현하세요')
         if title:
             require(any(clause['field'] == 'title' and clause['operator'] == 'equals'
                         and clause.get('value') == title for clause in c['filter_clauses']),
@@ -361,6 +367,8 @@ def validate_plan(question, parsed, user, previous):
         c['list_scope_edit'] = True
     terms = parsed['terms']
     require(isinstance(terms, list) and len(terms) <= 6 and all(isinstance(t, str) and 0 < len(t) <= 100 for t in terms), '검색어 형식 오류')
+    if operation == 'report' and report in {'handoff', 'postmortem', 'notice'}:
+        require(not terms, '이슈 문서의 출력 항목은 검색어가 아닙니다. terms=[]로 두고 실제 조회 주제만 keyword/title 등 filters에 원문 근거와 함께 지정하세요')
     if followup and not terms and 'terms' not in clear and not (replaced & {'keyword', 'title'}):
         terms = list(previous.get('terms') or [])
     if operation == 'report' and report == 'similar':
@@ -371,6 +379,8 @@ def validate_plan(question, parsed, user, previous):
     if source == 'notion':
         from backend.intent.customer_constraints import consume_customer_terms
         terms = consume_customer_terms(terms, c['filter_clauses'])
+        if plain_notion_topics:
+            terms = split_notion_topic_terms(terms)
     if operation in {'count', 'aggregate'}:
         for term in terms:
             require(term in question or (followup and term in (previous.get('terms') or [])), '집계 검색어의 원문 근거 누락')
@@ -381,6 +391,8 @@ def validate_plan(question, parsed, user, previous):
                 c['filter_clauses'].append(clause)
     group = parsed['group_by']
     require(group in {None, 'customer', 'platform', 'status', 'owner', 'month'}, '그룹 조건 오류')
+    from backend.intent.aggregation_spec import check_target
+    check_target(operation, group, aggregation)
     if source == 'mantis' and operation in {'count', 'aggregate'} and group and c.get('created_at') and not aggregation:
         from backend.intent.aggregation_spec import explanation_requested
         require(not explanation_requested(unquoted(question)),
@@ -388,6 +400,8 @@ def validate_plan(question, parsed, user, previous):
     limit = parsed['limit']
     require(limit is None or (type(limit) is int and 1 <= limit <= 200), '표시 개수 오류')
     require(operation != 'count' or limit is None, '전체 집계에 표시 개수를 적용할 수 없습니다')
+    from backend.intent.display_contract import validate_display_limit
+    validate_display_limit(question, source, operation, limit)
     sort = parsed.get('sort') or (previous.get('sort') if followup else None) or {'field': 'created_at', 'direction': 'desc'}
     require(isinstance(sort, dict) and sort.get('field') in {'created_at', 'updated_at', 'issue_id'} and sort.get('direction') in {'asc', 'desc'}, '정렬 형식 오류')
     if parsed.get('sort') or (followup and previous.get('sort')):
@@ -428,6 +442,7 @@ def validate_plan(question, parsed, user, previous):
             **({'effort': deepcopy(effort_options)} if effort_options else {}),
             'similar_literal_filters': [f for f in c['filter_clauses'] if f['field'] == 'keyword'] if report == 'similar' else [],
             'interpretation': {'status': deepcopy(status), 'followup': followup, 'scope': scope,
+                               'followup_context': followup_context,
                                'evidence': deepcopy(raw), 'clear_fields': clear,
                                'clear_evidence': clear_evidence, 'comparison_end': comparison_end,
                                'scope_evidence': scope_evidence, 'ignored_changes': ignored_changes}}

@@ -5,6 +5,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 from threading import Event, Thread
+from io import BytesIO
 
 import requests
 from fastapi import HTTPException
@@ -73,6 +74,31 @@ class ModelCircuitTests(unittest.TestCase):
             self.assertIs(self.call(), success)
 
         self.assertEqual(post.call_count, 4)
+
+    def test_blocked_redirects_close_streams_without_opening_the_circuit(self):
+        redirects = [requests.Response(), requests.Response()]
+        for response in redirects:
+            response.status_code = 307
+            response.raw = BytesIO(b"redirect body")
+        with llm.model_transfer_scope(lambda _: True), patch.object(llm.requests, "post", side_effect=redirects):
+            for _ in redirects:
+                with self.assertRaises(llm.ModelTransferBlocked):
+                    llm.post_model_chat(MODEL, "key", {}, timeout=8, stream=True)
+        self.assertTrue(all(response.raw.closed for response in redirects))
+        self.assertEqual(llm.model_circuit_status_for(MODEL)["consecutiveFailures"], 0)
+        with patch.object(llm.requests, "post", return_value=Mock(status_code=200)):
+            self.assertEqual(self.call().status_code, 200)
+
+    def test_blocked_redirect_during_recovery_does_not_extend_cooldown(self):
+        self.open_circuit()
+        self.clock += 61
+        with llm.model_transfer_scope(lambda _: True), patch.object(llm.requests, "post", return_value=Mock(status_code=307)):
+            with self.assertRaises(llm.ModelTransferBlocked):
+                self.call()
+        self.assertEqual(llm.model_circuit_status_for(MODEL)["consecutiveFailures"], 2)
+        with patch.object(llm.requests, "post", return_value=Mock(status_code=200)):
+            self.call()
+        self.assertEqual(llm.model_circuit_status_for(MODEL)["circuit"], "closed")
 
     def test_gateway_errors_count_as_unavailable_but_client_errors_do_not(self):
         with patch.object(llm.requests, "post", side_effect=[Mock(status_code=400), Mock(status_code=429)]):
@@ -176,6 +202,7 @@ class ModelCircuitTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.call()
         self.assertEqual(llm.model_circuit_status_for(MODEL)["consecutiveFailures"], 2)
+        self.assertEqual(llm.model_circuit_status_for(MODEL)["retryAfterSeconds"], 60)
         self.clock += 61
         with patch.object(llm.requests, "post", return_value=Mock(status_code=200)):
             self.call()

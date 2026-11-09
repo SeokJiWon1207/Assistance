@@ -177,6 +177,11 @@ SPIKE_RATIO = 1.5             # 직전 평균 대비 몇 배 이상이면 급증
 SPIKE_BASELINE_MONTHS = 3     # 직전 몇 개월 평균을 기준선으로 쓸지
 SPIKE_TOP_N = 10             # 최대 노출 개수
 
+def _scan_coverage(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: snapshot[key] for key in ('search_complete', 'snapshot_complete', 'fetchedAt', 'coverage', 'matched_count')
+            if key in snapshot}
+
+
 SPIKE_QUESTION = re.compile(
     r"급증|폭증|급등"
     r"|(?:평소|여느\s*때)\s*(?:보다|대비)"
@@ -197,17 +202,17 @@ def _spike_axis(text: str) -> Tuple[str, Any, str]:
 
 
 @with_store_scope
-def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
+def build_mantis_spike_report(text: str, *, constraints: Optional[dict] = None, axis: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """평소 대비 이슈가 급증한 축(고객사/화면번호/담당자)을 찾아 답한다.
 
     '많은 순'이 아니라 최근 월 건수를 직전 몇 개월 평균과 비교해 '튄 순'으로
     정렬한다. 기준선이 없는(직전 0건) 신규 급증도 함께 드러낸다.
     """
-    if not SPIKE_QUESTION.search(str(text or "")):
+    if constraints is None and not SPIKE_QUESTION.search(str(text or "")):
         return None
 
-    axis_key, axis_extract, axis_label = _spike_axis(text)
-    constraints = extract_query_constraints(text)
+    axis_key, axis_extract, axis_label = _spike_axis({'owner': '담당자', 'screen': '화면번호'}.get(axis or '', '') if constraints is not None else text)
+    constraints = constraints if constraints is not None else extract_query_constraints(text)
     # 축값과 등록월을 한 번의 스캔으로 함께 세기 위해 복합 그룹키를 쓴다.
     sep = "\x1f"
 
@@ -327,6 +332,7 @@ def build_mantis_spike_report(text: str) -> Optional[Dict[str, Any]]:
             "source": "mantis_spike",
             "status": "ok",
             "meta": {
+                **_scan_coverage(snapshot),
                 "axis": axis_key,
                 "recent_month": recent_month,
                 "baseline_months": baseline_months,
@@ -374,18 +380,19 @@ def _detect_pivot_axis(text: str) -> Optional[Tuple[str, Any, str]]:
 
 
 @with_store_scope
-def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
+def build_mantis_pivot_report(text: str, *, constraints: Optional[dict] = None, axis: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """축(고객사/화면번호/담당자/상태) × 월 교차 건수를 표로 보여준다.
 
     단일 축 집계(build_mantis_count_report)와 달리 두 축을 동시에 요청했을 때만
     동작한다. 한 번의 스캔으로 (축값×월) 복합 집계를 낸 뒤 피벗 표로 조립한다.
     """
-    detected = _detect_pivot_axis(text)
+    detected = _detect_pivot_axis(({'owner': '담당자별', 'status': '상태별', 'screen': '화면번호별'}.get(axis or '', '고객사별') + ' 월별')
+                                  if constraints is not None else text)
     if not detected:
         return None
     axis_field, axis_extract, axis_label = detected
 
-    constraints = extract_query_constraints(text)
+    constraints = constraints if constraints is not None else extract_query_constraints(text)
     sep = "\x1f"
 
     def group_key(issue: Dict[str, Any]) -> str:
@@ -492,6 +499,7 @@ def build_mantis_pivot_report(text: str) -> Optional[Dict[str, Any]]:
             "source": "mantis_pivot",
             "status": "ok",
             "meta": {
+                **_scan_coverage(snapshot),
                 "axis": axis_field,
                 "shown_months": shown_months,
                 "row_count": len(rows),

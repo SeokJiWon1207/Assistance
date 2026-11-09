@@ -49,7 +49,12 @@ class TeamTemplateConfigTests(unittest.TestCase):
         expected_options = customer_template_options()
 
         self.assertEqual(len(customer_fields), 7)
-        self.assertGreaterEqual(len(expected_options), 33)
+        # 선택 목록은 설정(picker_names)의 22개 고객사만, 설정 순서대로 보인다.
+        self.assertEqual(expected_options[:3], ["교보증권", "다올투자증권", "메리츠증권"])
+        self.assertEqual(expected_options[-1], "코스콤")
+        self.assertEqual(len(expected_options), 22)
+        for hidden in ("글로벌워치", "넥스트증권", "메리츠증권(구 아이엠투자증권)", "DB증권", "아이엠증권"):
+            self.assertNotIn(hidden, expected_options)
         self.assertEqual(len(expected_options), len(set(expected_options)))
         for field in customer_fields:
             self.assertEqual(field["type"], "customer")
@@ -58,7 +63,35 @@ class TeamTemplateConfigTests(unittest.TestCase):
             self.assertIn("한국투자증권", field["options"])
             self.assertIn("NH투자증권", field["options"])
             self.assertIn("eBest", field["optionSearchTerms"]["LS증권"])
-            self.assertIn("101PopcornRenewal", field["optionSearchTerms"]["DB증권"])
+            self.assertIn("101PopcornRenewal", field["optionSearchTerms"]["DB금융투자"])
+
+    def test_picker_names_must_name_distinct_known_customers(self):
+        from backend.settings.catalogs import resolve_picker_names
+        aliases = {"db": ["DB증권", "DB금융투자"], "하이투자": ["iM증권", "아이엠증권"]}
+        self.assertEqual(resolve_picker_names(["DB금융투자", "IM증권"], aliases), {"DB금융투자": "db", "IM증권": "하이투자"})
+        with self.assertRaisesRegex(ValueError, "별칭에 없습니다"):
+            resolve_picker_names(["없는증권"], aliases)
+        with self.assertRaisesRegex(ValueError, "같은 고객사"):
+            resolve_picker_names(["DB증권", "DB금융투자"], aliases)
+
+    def test_customer_logos_must_use_known_keys_and_safe_file_names(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from backend.settings import catalogs
+        aliases = {"kb": ["KB증권"]}
+        cases = [({"kb": "kb.png"}, None), ({"없음": "kb.png"}, "별칭에 없습니다"),
+                 ({"kb": "../secret.png"}, "파일 이름"), ({"kb": "KB.PNG"}, "파일 이름")]
+        for logos, error in cases:
+            with self.subTest(logos=logos), tempfile.TemporaryDirectory() as folder:
+                (Path(folder) / "customer_directory.json").write_text(json.dumps({"customer_logos": logos}), encoding="utf-8")
+                with patch.object(catalogs, "CONFIG_DIR", Path(folder)):
+                    if error:
+                        with self.assertRaisesRegex(ValueError, error):
+                            catalogs.load_customer_logos(aliases)
+                    else:
+                        self.assertEqual(catalogs.load_customer_logos(aliases), logos)
 
     def test_mantis_project_names_map_to_customer_display_names(self):
         self.assertEqual(customer_display_for_project("147MiraeAsset(미래에셋증권)"), "미래에셋증권")
@@ -88,7 +121,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
     def test_im_securities_option_and_counts_use_hi_project(self):
         self.assertEqual(customer_display_for_project("163Hi-ib(하이투자증권)"), "아이엠증권")
         self.assertEqual(customer_display_for_project("114Solomon(아이엠증권)"), "메리츠증권(구 아이엠투자증권)")
-        terms = customer_template_search_terms()["아이엠증권"]
+        terms = customer_template_search_terms()["iM증권"]
         for alias in ("하이투자", "IM증권", "163Hi-ib"):
             self.assertIn(alias, terms)
         self.assertNotIn("Solomon", terms)
@@ -96,7 +129,8 @@ class TeamTemplateConfigTests(unittest.TestCase):
             {"project": {"name": "163Hi-ib(하이투자증권)"}, "created_at": "2026-10-01"},
             {"project": {"name": "114Solomon(아이엠증권)"}, "created_at": "2026-10-01"},
         ], today=date(2026, 10, 7))
-        self.assertEqual(counts, {"아이엠증권": 1, "메리츠증권(구 아이엠투자증권)": 1})
+        # 선택 목록 밖 고객사(옛 아이엠투자증권)는 정렬용 건수에 넣지 않는다.
+        self.assertEqual(counts, {"iM증권": 1})
 
     def test_customer_options_put_busy_customers_first_and_keep_config_order_for_ties(self):
         payload = load_team_templates()
@@ -121,7 +155,7 @@ class TeamTemplateConfigTests(unittest.TestCase):
         for available in (True, False):
             result = order_customer_options(payload, {}, statistics={"available": available, "asOf": "2026-10-06T00:00:00Z"})
             field = next(field for template in result["templates"] for field in template["fields"] if field["type"] == "customer")
-            self.assertEqual(field["optionDetails"].get("시그널메이커"), "0건" if available else None)
+            self.assertEqual(field["optionDetails"].get("코스콤"), "0건" if available else None)
             self.assertIn("최근 90일" if available else "집계 미확인", field["optionsHint"])
             self.assertNotIn("optionsHint", next(field for template in payload["templates"] for field in template["fields"] if field["type"] == "customer"))
 

@@ -18,8 +18,26 @@ _TITLE = re.compile(
     rf'(?:\s*(?P<excluded>.+?)\s*상태는\s*빼고[.!?]?)?', re.I)
 
 
+def customer_field_issue(text):
+    """번호가 확정된 단일 이슈의 고객사 속성 질문만 인식한다."""
+    return re.fullmatch(
+        r'(?:(?:맨티스|멘티스|Mantis)\s*)?(?:이슈\s*)?#?(?P<id>\d{3,8})\s*'
+        r'(?:(?P<reference>이|그|해당)\s*)?(?:이슈)?(?:는|은|의)?\s*'
+        r'(?:(?:어느|어떤)\s*(?:고객사|프로젝트)(?:\s*건)?(?:이야|인가요|야|예요)|'
+        r'(?:고객사|프로젝트)(?:는|가|를)?\s*(?:어디(?:야|인가요)|알려\s*(?:줘|주세요)))[?.!]?',
+        text.strip(), re.I)
+
+
 def literal_plan(question, previous):
     text = question.strip()
+    field = customer_field_issue(text)
+    if field:
+        followup = bool(field['reference'] and previous.get('resolved_constraints'))
+        plan = _proposal('mantis', followup,
+                         [{'field': 'issue_id', 'operator': 'equals', 'value': field['id'], 'evidence': field['id']}],
+                         {'mode': 'inherit' if followup else 'unspecified', 'values': [], 'evidence': ''})
+        plan.update(operation='get', scope='inherit' if followup else 'target')
+        return plan
     selected = re.fullmatch(
         rf'(?P<id>\d{{3,7}})\s+(?:그\s*중\s*)?(?:첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열|\d+)\s*번째\s*'
         rf'(?:이슈|항목)(?:를|을)?\s*(?:자세히\s*)?{_REQUEST}', text)

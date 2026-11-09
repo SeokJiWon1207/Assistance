@@ -101,7 +101,7 @@ get_notion_headers()
         catalogs = self.module('backend.settings.catalogs')
         self.enterContext(patch.object(catalogs, 'CONFIG_DIR', Path(folder)))
         self.enterContext(patch.object(catalogs, '_initialized', False))
-        for name in ('CUSTOMER_ALIASES', 'CUSTOMER_DIRECTORY', 'CUSTOMER_PROJECT_DISPLAY_NAMES'):
+        for name in ('CUSTOMER_ALIASES', 'CUSTOMER_DIRECTORY', 'CUSTOMER_PROJECT_DISPLAY_NAMES', 'CUSTOMER_PICKER', 'CUSTOMER_LOGOS'):
             self.enterContext(patch.dict(getattr(catalogs, name), {}, clear=True))
         self.enterContext(patch.dict(catalogs.DEFAULT_CUSTOMER_ALIASES, {'기본': ['기본별칭']}, clear=True))
         return catalogs

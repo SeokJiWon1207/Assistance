@@ -65,6 +65,17 @@ def prepare_chat_pipeline(
     if len(messages) > history_limit:
         messages = messages[-history_limit:]
 
+    from backend.intent.direct_references import explicit_reference_plan
+    direct_plan = explicit_reference_plan(latest_user_text)
+    if direct_plan:
+        return ChatPipelineContext(
+            latest_user_text=latest_user_text, model=model, api_key=api_key, messages=messages,
+            retrieval_text=latest_user_text, enabled_tools={'mantis': True, 'notion': True, 'vectorDb': True, **request.tools},
+            system_notes=[answer_style_instruction(request.answerStyle), CONVERSATION_TONE_NOTE, build_current_date_note()],
+            query_constraints=direct_plan['resolved_constraints'], active_limit=direct_plan['limit'], intent_plan=direct_plan,
+            authenticated_owner=str((user or {}).get('mantisUsername') or (user or {}).get('displayName') or ''),
+        )
+
     from backend.intent.unified import enabled as unified_enabled
     if unified_enabled():
         from backend.services.unified_planning import prepare_context

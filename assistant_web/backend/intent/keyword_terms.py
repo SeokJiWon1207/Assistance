@@ -343,14 +343,14 @@ _BARE_KOREAN_LIMIT_PATTERN = re.compile(
 )
 
 
-def extract_requested_limit(text: str) -> Optional[int]:
+def extract_requested_limit(text: str, *, max_limit: int = 20) -> Optional[int]:
     numeric_match = _NUMERIC_LIMIT_PATTERN.search(text)
     if numeric_match:
-        return max(1, min(int(numeric_match.group(1)), 20))
+        return max(1, min(int(numeric_match.group(1)), max_limit))
     for pattern in (_KOREAN_LIMIT_PATTERN, _BARE_KOREAN_LIMIT_PATTERN):
         match = pattern.search(text)
         if match:
-            return max(1, min(KOREAN_COUNT_WORDS[match.group(1)], 20))
+            return max(1, min(KOREAN_COUNT_WORDS[match.group(1)], max_limit))
     return None
 
 

@@ -40,9 +40,14 @@ def generate_model_response(
     retrieval_result: Optional[Dict[str, Any]],
     query_constraints: Dict[str, Any],
     active_limit: int,
+    candidate_models: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """활성 모델 폴백, 스트림 해석, 검색 타임아웃 폴백을 한곳에서 처리한다."""
-    candidate_models = [model, *get_fallback_models(model, get_model_registry())]
+    """활성 모델 폴백, 스트림 해석, 검색 타임아웃 폴백을 한곳에서 처리한다.
+
+    candidate_models를 주면 그 후보만 사용한다. 생략하면 기존 대체 모델 정책을 따른다.
+    """
+    if candidate_models is None:
+        candidate_models = [model, *get_fallback_models(model, get_model_registry())]
 
     data = None
     final_model = model

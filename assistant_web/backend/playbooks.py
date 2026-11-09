@@ -8,6 +8,9 @@ import uuid
 from contextlib import closing
 from typing import Any, Dict, Iterable, List, Optional
 
+from backend.customer_identity import customer_alias_owner
+from backend.display import customer_name
+from backend.settings.catalogs import get_customer_project_display_names
 from backend.storage.sqlite import open_sqlite
 from backend.storage.profiles import WORKSPACE, WORKSPACE_ROWS
 from backend.utils.dates import local_timestamp as _now
@@ -62,6 +65,19 @@ def _json_list(value: Any) -> List[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
+def _has_customer_tag(tags_json: str, display_name: str) -> bool:
+    # 생성한 초안은 고객사 표시명 대신 Mantis 프로젝트를 태그로 저장한다.
+    overrides = get_customer_project_display_names()
+    for tag in _json_list(tags_json):
+        code = str(tag).partition("(")[0].strip()
+        if code.casefold().endswith("_project"):
+            code = code[:-len("_Project")]
+        if code in overrides or customer_alias_owner(code):
+            if customer_name(code).casefold() == display_name.casefold():
+                return True
+    return False
+
+
 def _row_to_playbook(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": row["id"],
@@ -105,12 +121,16 @@ def list_playbooks(
         like = f"%{keyword}%"
         clauses.append(
             "(title LIKE ? OR symptom LIKE ? OR cause LIKE ? OR resolution LIKE ? "
-            "OR verification LIKE ? OR tags_json LIKE ? OR source_issue_ids_json LIKE ?)"
+            "OR verification LIKE ? OR tags_json LIKE ? OR source_issue_ids_json LIKE ? "
+            "OR has_customer_tag(tags_json, ?))"
         )
         parameters.extend([like] * 7)
+        parameters.append(keyword)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     parameters.append(max(1, min(int(limit or 100), 200)))
     with closing(open_sqlite(workspace_db_path(), profile=WORKSPACE_ROWS)) as connection:
+        if keyword:
+            connection.create_function("has_customer_tag", 2, _has_customer_tag)
         rows = connection.execute(
             f"""
             SELECT * FROM resolution_playbooks

@@ -37,7 +37,7 @@ EXPLICIT_STATUS_REQUEST = re.compile(
 # '30일 넘은' 같은 기준일 이전 조건은 상한만 있어 제외한다.
 RELATIVE_CREATED_AT_EVIDENCE = re.compile(
     r'\s*(?:등록일\s*(?:이|은|기준)?\s*)?'
-    r'(?P<expr>최근\s*\d{1,3}\s*(?:일|개월|달)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
+    r'(?P<expr>최근\s*\d{1,3}\s*(?:일|개월|달|주)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
     r'|지난\s*주|저번\s*주|전\s*주|이번\s*주|금주|그제|그저께|엊그제|어제|전일|오늘|금일)'
     r'(?:\s*(?:에|의|간|동안|사이|중|이내|안에|기준|기간|등록일|(?:에\s*)?(?:등록|생성|접수)(?:된|한|됐던|되었던)?'
     r'|(?:에\s*)?(?:올라온|들어온)))*\s*[.?!]?\s*')
@@ -94,6 +94,23 @@ def check_status(question, status, followup, source, operation=None, report_kind
         from backend.intent.entities import extract_status_constraints
         explicit = extract_status_constraints(text)
         require(not explicit, '명시된 상태 조건이 누락됐습니다: ' + ', '.join(explicit))
+
+
+def check_compound_issue_list(question, plan):
+    """에이전트가 설명 중 집계할 이슈에도 동일한 건수·목록 조건 검사를 적용한다."""
+    from backend.intent.keyword_terms import extract_requested_limit
+    from backend.query.operations import has_count_intent
+
+    if plan.get('source') not in {'mantis', 'both'} or plan.get('operation') != 'explain':
+        return
+    # 이슈 조건 뒤에 붙인 문서의 기간과 상태는 이슈 목록의 필터가 아니다.
+    prefix = re.split(r'notion|노션', question, maxsplit=1, flags=re.I)[0]
+    list_question = prefix if has_count_intent(prefix) or extract_requested_limit(prefix) else question
+    if not (has_count_intent(list_question) or extract_requested_limit(list_question)):
+        return
+    interpretation = plan['interpretation']
+    check_status(list_question, interpretation['status'], interpretation['followup'], 'mantis', 'search')
+    check_query_period(list_question, 'mantis', 'search', plan['filter_clauses'])
 
 
 def evidence_is_grounded(evidence, question):
@@ -295,7 +312,12 @@ def check_aging_period(question, source, operation, clauses, report_kind=None):
 def check_query_period(question, source, operation, clauses, report_kind=None):
     """명확한 조회 기간의 누락·잘못된 상속만 거부한다. 필터를 생성하지 않는다."""
     if source != 'mantis' or not (operation in {'count', 'search', 'aggregate'} or
-            operation == 'report' and report_kind in {'weekly', 'monthly', 'profile', 'effort', 'sla', 'effort_sla'}):
+            operation == 'report' and report_kind in {'weekly', 'monthly', 'profile', 'effort', 'sla', 'effort_sla',
+                                                     'handoff', 'postmortem', 'notice'}):
+        return
+    if (report_kind in {'handoff', 'postmortem', 'notice'}
+            and any(c['field'] == 'issue_id' for c in clauses)):
+        # 특정 이슈의 이번 달 노트로 문서를 쓰는 요청은 이슈 등록일 검색이 아니다.
         return
     text = unquoted(question)
     # 따옴표 없이 쓴 제목/본문 검색어도 날짜 조건으로 승격하지 않는다.
@@ -305,11 +327,15 @@ def check_query_period(question, source, operation, clauses, report_kind=None):
                 text = text.replace(value, ' ')
     if re.search(r'(?:기간|등록일|날짜).{0,12}(?:해제|제거|풀|빼|무관|관계없|상관없|제한\s*없이)', text):
         return
-    if report_kind not in {'effort', 'effort_sla'} and re.search(r'(?:개발|QC|전달|배포|마감|수정|해결|종료|완료)\s*(?:일|날짜|기한)|'
+    # 문서의 전달 대상·작성 목적은 조회 기간이 아니다. 문서 작업에서는 실제로
+    # 확정한 전달일 필터가 있을 때만 등록 기간 검사를 대신한다.
+    work_period = (report_kind not in {'handoff', 'postmortem', 'notice'}
+                   or any(c['field'] == 'delivered_at' for c in clauses))
+    if work_period and report_kind not in {'effort', 'effort_sla'} and re.search(r'(?:개발|QC|전달|배포|마감|수정|해결|종료|완료)\s*(?:일|날짜|기한)|'
                  r'(?:완료|해결|종료|수정|변경|전달|배포|처리)(?:된|한|했|됐|할|해야)', text, re.I):
         return
     periods = list(re.finditer(
-        r'(?<![A-Za-z가-힣0-9])(?:최근\s*\d{1,3}\s*(?:일|개월|달)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
+        r'(?<![A-Za-z가-힣0-9])(?:최근\s*\d{1,3}\s*(?:일|개월|달|주)|지난\s*달|저번\s*달|전\s+달|전월|이번\s*달|이달|금월|당월'
         r'|지난\s*주|저번\s*주|전\s*주(?!차)|이번\s*주|금주(?!차)|그저께|엊그제|그제|어제|전일(?!\s*정산)|오늘|금일)'
         r'(?=$|[\s,.?!:~()]|에|의|만|도|로|부터|까지|것|건|중|분|은|는|자)', text))
     if len(periods) != 1:

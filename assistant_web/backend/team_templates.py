@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 from backend.customer_identity import customer_project_owner, text_matches_customer_aliases
 from backend.config import CONFIG_DIR
-from backend.settings.catalogs import get_customer_aliases, get_customer_directory
+from backend.settings.catalogs import get_customer_aliases, get_customer_directory, get_customer_picker
 
 
 TEAM_TEMPLATES_PATH = CONFIG_DIR / "team_templates.json"
@@ -58,7 +58,9 @@ def _customer_display_name(canonical: str, aliases: List[str]) -> str:
 
 
 def customer_template_options() -> List[str]:
-    """고객사 별칭 설정과 같은 순서로 중복 없는 대표 이름을 반환한다."""
+    """선택 목록 설정(picker_names) 순서의 고객사 이름. 설정이 없으면 별칭 설정 순서의 대표 이름을 쓴다."""
+    if get_customer_picker():
+        return list(get_customer_picker())
     options: List[str] = []
     seen = set()
     for canonical, aliases in get_customer_aliases().items():
@@ -73,6 +75,10 @@ def customer_template_options() -> List[str]:
 
 def customer_template_search_terms() -> Dict[str, str]:
     """대표 이름을 코드명과 모든 현업 별칭으로 검색할 수 있게 만든다."""
+    if get_customer_picker():
+        catalog = get_customer_aliases()
+        return {name: " ".join(dict.fromkeys(value.strip() for value in [name, owner, *catalog.get(owner, [])] if value.strip()))
+                for name, owner in get_customer_picker().items()}
     search_terms: Dict[str, str] = {}
     for canonical, aliases in get_customer_aliases().items():
         display_name = _customer_display_name(canonical, aliases)
@@ -93,6 +99,20 @@ def customer_display_for_project(project_name: str) -> Optional[str]:
     return None
 
 
+def customer_option_for_project(project_name: str) -> Optional[str]:
+    """Mantis 프로젝트가 속한 선택 목록 이름. 목록 밖 고객사는 None이다."""
+    picker = get_customer_picker()
+    if not picker:
+        return customer_display_for_project(project_name)
+    owner = customer_project_owner(project_name)
+    labels = {key: name for name, key in picker.items()}
+    if owner:
+        return labels.get(owner)
+    aliases = get_customer_aliases()
+    return next((name for name, key in picker.items()
+                 if text_matches_customer_aliases(project_name, [key, *aliases.get(key, [])])), None)
+
+
 def recent_customer_issue_counts(
     issues: Iterable[Mapping[str, Any]],
     *,
@@ -110,7 +130,7 @@ def recent_customer_issue_counts(
         by_project[str(project.get("name") or "") if isinstance(project, Mapping) else str(project)] += 1
     counts: Counter = Counter()
     for project_name, count in by_project.items():
-        display_name = customer_display_for_project(project_name) if project_name else None
+        display_name = customer_option_for_project(project_name) if project_name else None
         if display_name:
             counts[display_name] += count
     return dict(counts)

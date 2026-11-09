@@ -22,6 +22,34 @@ def proposal(**changes):
 
 
 class AggregationSpecTests(unittest.TestCase):
+    def test_global_metrics_and_plain_count_keep_their_valid_contracts(self):
+        spec = specification(group_by=[], metrics=['issue_count'], comparison=None, explain=False)
+        question = '전사 2026년 8월부터 9월까지 이슈 등록 건수를 집계해줘'
+        plan = validate_plan(question, proposal(aggregation=spec), {}, {})
+        self.assertTrue(validate_execution_contract(question, plan)['valid'])
+        question = '전사 이슈가 몇 건이야?'
+        plan = validate_plan(question, proposal(operation='count', aggregation=None), {}, {})
+        self.assertIsNone(plan['group_by'])
+        self.assertTrue(validate_execution_contract(question, plan)['valid'])
+
+    def test_execution_rejects_missing_or_malformed_aggregation_targets(self):
+        valid = validate_plan(QUESTION, proposal(), {}, {})
+        for aggregation, group in ((None, None), ({}, None), (None, 'screen'),
+                                   (specification(), 'customer')):
+            with self.subTest(aggregation=aggregation, group=group):
+                plan = {**copy.deepcopy(valid), 'aggregation': aggregation, 'group_by': group}
+                self.assertFalse(validate_execution_contract(QUESTION, plan)['valid'])
+
+    def test_period_cannot_be_invented_from_a_customer_and_status_phrase(self):
+        question = '전사 한투 미해결 이슈를 상태별로 몇 건인지 알려줘.'
+        spec = specification(group_by=['status'], metrics=['issue_count'], comparison=None, explain=False,
+                             period={'from': '2026-11-06', 'to': '2026-11-06', 'evidence': '전사 한투 미해결 이슈'})
+        proposed = proposal(aggregation=spec,
+            filters=[{'field': 'customer', 'operator': 'equals', 'value': '한투', 'evidence': '한투'}],
+            status={'mode': 'open', 'values': [], 'evidence': '미해결'})
+        with self.assertRaisesRegex(ValueError, '기간 근거'):
+            validate_plan(question, proposed, {}, {})
+
     def test_explicit_group_summary_cannot_drop_explanation(self):
         question = '2026년 11월 2일 등록된 미종료 이슈를 고객사별로 요약해줘'
         spec = specification(group_by=['customer'], metrics=['issue_count'], comparison=None,

@@ -10,6 +10,7 @@ from typing import Any
 import requests
 
 from backend.execution import RequestStopped
+from backend.llm import ModelTransferBlocked
 from backend.reports.comparison_narrative import _chat
 
 LABELS = {'issue_count': '등록 건수', 'effort': '공수'}
@@ -144,7 +145,57 @@ def validate_claim(claim, catalog):
     return True
 
 
-def summarize_aggregation(question, result, model, api_key):
+def _repair_aggregation(claims, catalog, chat, can_repair, meta):
+    from backend.evidence.repair import Failure, repair_items
+    units = {f'c{i}': claim for i, claim in enumerate(claims)}
+    valid = {k: c for k, c in units.items() if validate_claim(c, catalog)}
+    def review(values):
+        if not values:
+            return {}
+        verdict = chat(REVIEW, {'claims': list(values.values()),
+            'facts': [catalog[c['fact_ids'][0]] for c in values.values()]}, max_tokens=80)
+        supported = verdict.get('supported') if isinstance(verdict, dict) and set(verdict) == {'supported'} else None
+        if (not isinstance(supported, list) or len(supported) != len(values)
+                or any(type(v) is not bool for v in supported)):
+            raise ValueError('집계 설명 의미 검토 형식 오류')
+        return {key: value for (key, value), ok in zip(values.items(), supported, strict=True) if ok}
+    verified = review(valid)
+    failures = {}
+    for key, claim in units.items():
+        if key in verified:
+            continue
+        refs = claim.get('fact_ids') if isinstance(claim, dict) else None
+        known = isinstance(refs, list) and len(refs) == 1 and isinstance(refs[0], str) and refs[0] in catalog
+        failures[key] = Failure('missing_evidence' if not known else 'expression' if key in valid else 'numeric',
+                                'semantic_not_supported' if key in valid else 'invalid_server_fact')
+    def propose(targets):
+        response = chat(WRITE + '\n실패한 항목만 보정한다. JSON {"repairs":{"c1":{"fact_ids":["F001"],"text":"문장"}}}로 출력한다. '
+                        'repair에 지정된 id와 fact_ids를 유지한다. 다른 항목을 바꾸지 않는다.',
+                        {'repair': {k: {'claim': units[k], 'kind': v.kind} for k, v in targets.items()},
+                         'facts': list(catalog.values())}, max_tokens=700)
+        if not isinstance(response, dict) or set(response) != {'repairs'}:
+            raise ValueError('invalid aggregation repair')
+        return response['repairs']
+    def validate(values):
+        normalized = {k: normalize_claim(v, catalog) for k, v in values.items()}
+        return review({k: c for k, c in normalized.items() if validate_claim(c, catalog)
+                       and c['fact_ids'] == units[k]['fact_ids']})
+    audit: dict = {}
+    meta['repair'] = audit
+    try:
+        merged = repair_items(verified, failures, propose=propose, validate=validate,
+            revalidate=lambda items: len(items) <= 4 and all(validate_claim(c, catalog) for c in items.values()),
+            can_attempt=can_repair, audit=audit)
+    except ModelTransferBlocked:
+        raise
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        merged = verified
+        audit['status'] = 'unavailable'
+    return [merged[key] for key in units if key in merged]
+
+
+def summarize_aggregation(question, result, model, api_key, *, chat=None, can_repair=None):
+    chat = chat or _chat
     meta: dict[str, Any] = {'status': 'not_requested', 'calls': 0}
     if not result['spec']['explain']:
         return '', meta
@@ -156,15 +207,25 @@ def summarize_aggregation(question, result, model, api_key):
     meta['facts'] = facts
     try:
         meta['calls'] += 1
-        draft = _chat(model, api_key, WRITE, {'question': question, 'facts': facts}, max_tokens=700, timeout=6)
+        draft = chat(model, api_key, WRITE, {'question': question, 'facts': facts}, max_tokens=700, timeout=6)
         claims = draft.get('claims') if isinstance(draft, dict) else None
         if isinstance(claims, list):
             claims = [normalize_claim(c, catalog) for c in claims]
-        if (not isinstance(claims, list) or not 1 <= len(claims) <= 4
-                or any(not validate_claim(c, catalog) for c in claims)):
+        if not isinstance(claims, list) or not 1 <= len(claims) <= 4:
+            raise ValueError('집계 사실·숫자·부호·기간·그룹 검증 실패')
+        if can_repair is not None:
+            def call(system, data, *, max_tokens):
+                meta['calls'] += 1
+                return chat(model, api_key, system, data, max_tokens=max_tokens, timeout=6)
+            claims = _repair_aggregation(claims, catalog, call, can_repair, meta)
+            if not claims:
+                raise ValueError('집계 설명 검증 실패')
+            meta.update(status='accepted', claims=claims)
+            return '\n'.join('- ' + c['text'] + ' [' + c['fact_ids'][0] + ']' for c in claims), meta
+        if any(not validate_claim(c, catalog) for c in claims):
             raise ValueError('집계 사실·숫자·부호·기간·그룹 검증 실패')
         meta['calls'] += 1
-        review = _chat(model, api_key, REVIEW, {'claims': claims, 'facts': [catalog[c['fact_ids'][0]] for c in claims]},
+        review = chat(model, api_key, REVIEW, {'claims': claims, 'facts': [catalog[c['fact_ids'][0]] for c in claims]},
                        max_tokens=80, timeout=6)
         if (not isinstance(review, dict) or set(review) != {'supported'}
                 or not isinstance(review['supported'], list) or len(review['supported']) != len(claims)
@@ -172,7 +233,7 @@ def summarize_aggregation(question, result, model, api_key):
             raise ValueError('집계 설명 의미 검토 실패')
         meta.update(status='accepted', claims=claims)
         return '\n'.join('- ' + c['text'] + ' [' + c['fact_ids'][0] + ']' for c in claims), meta
-    except RequestStopped:
+    except (RequestStopped, ModelTransferBlocked):
         raise
     except requests.RequestException:
         meta.update(status='unavailable', reason='model_unavailable')

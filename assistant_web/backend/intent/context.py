@@ -150,6 +150,11 @@ def parse_ordinal_reference(text: str) -> Optional[int]:
     match = re.search(r"(\d{1,2})\s*번째", text)
     if match:
         return int(match.group(1))
+    # '목록을 2번 조회', 화면번호, 이슈 ID와 구분한다. 목록/그중에 직접
+    # 붙은 위치만 허용하며 범위 초과도 반환해 호출자가 조회를 차단하게 한다.
+    match = re.search(r"(?:목록(?:에서|의)?|그\s*중(?:에서)?)\s*(\d+)\s*번(?!째|\d)", text)
+    if match:
+        return int(match.group(1))
     match = re.search(r"(첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째", text)
     if match:
         return KOREAN_ORDINAL_WORDS[match.group(1)]
@@ -163,6 +168,10 @@ def parse_ordinal_reference(text: str) -> Optional[int]:
 def has_demonstrative_issue_reference(text: str) -> bool:
     """'이 이슈의', '그 건은'처럼 직전에 보던 대상을 가리키는 표현인지 판별한다."""
     return bool(DEMONSTRATIVE_ISSUE_PATTERN.search(str(text or "")))
+
+
+def starts_independent_question(text: str) -> bool:
+    return bool(re.match(r'^\s*(?:별개로(?=[\s,.:])|새(?:로운)?\s*질문(?:이야|입니다|인데요)?(?=[\s,.:]))', text))
 
 
 def resolve_reference_from_context(

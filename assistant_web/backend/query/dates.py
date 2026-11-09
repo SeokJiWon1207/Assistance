@@ -268,6 +268,11 @@ def extract_relative_created_at_range(question: str, today: Optional[date] = Non
         start = base - timedelta(days=max(days - 1, 0))
         return {"from": start.isoformat(), "to": base.isoformat(), "precision": "recent_days"}
 
+    if match := re.search(r"최근\s*(\d{1,3})\s*주", question):
+        days = max(int(match.group(1)), 1) * 7
+        start = base - timedelta(days=days - 1)
+        return {"from": start.isoformat(), "to": base.isoformat(), "precision": "recent_weeks"}
+
     if match := re.search(r"최근\s*(\d{1,3})\s*(?:개월|달)", question):
         months = max(int(match.group(1)), 1)
         start_year, start_month = base.year, base.month - (months - 1)

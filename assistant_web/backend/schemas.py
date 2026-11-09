@@ -190,6 +190,8 @@ class ConversationMessage(BaseModel):
     playbookSaved: bool = False
     createdAt: str = Field(default="", max_length=64)
     questionAskedAt: str = Field(default="", max_length=64)
+    # 답변을 받기까지 걸린 초. 다른 기기에서 열어도 "N초 만에 답변"을 같게 보여준다.
+    answerSeconds: Optional[int] = Field(default=None, ge=0, le=86400)
 
     @model_validator(mode="after")
     def cap_follow_ups(self):

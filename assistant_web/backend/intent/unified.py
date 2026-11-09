@@ -20,6 +20,7 @@ PROMPT = '''사용자 질문 전체를 사내 조회 실행 계획 JSON 하나�
 필수 키: source,operation,scope,followup,filters,status,clear_fields,terms,group_by,limit.
 명시한 이슈 번호는 issue_id 필터에 반드시 보존한다. 입력의 mentioned_people은 질문에 실제 등장하는 인물 후보다. '담당자 권한별의'에서 권한별은 사람 이름이며 owner equals 필터이지 담당자별 group_by가 아니다. 이름이 명시된 담당자 조건을 누락하지 않는다.
 Notion에서 인용한 문서 제목을 찾는 요청은 title equals 필터로 보존하며 terms=[]로 둔다. 제목 안의 고객사·번호·매체·상태는 별도 필터가 아니다. '본문/내용에 문자열 포함' 요청은 정확 제목 조회와 다르므로 keyword contains를 쓴다. Notion의 시작전 같은 상태는 filters의 status not_equals/not_in 등으로 표현하고 최상위 status는 unspecified다.
+Notion 설명·사용법 질문의 기능/주제는 terms로 둔다. 정확한 제목을 인용하거나 제목 조건을 명시하지 않았는데 title equals/contains 필터를 만들지 않는다. '한투 조건검색 서버 문서에서 서버 접속 방법을 설명해줘'는 source=notion, operation=explain, customer equals 한투, terms=["조건검색","서버","접속"]이며 title 필터는 없다.
 source: mantis(고객사 소프트웨어 이슈/버그/차트/HTS/MTS), notion(사내 문서/공지/휴가/회의), both(둘 다 명시), general(일반 대화).
 일반 지식·프로그래밍·개념 설명·번역·문장 수정·일반 메일 작성·추천·인사는 지원하는 일반 대화다. 사내 자료 조회가 필요 없으면 source=general, operation=explain, scope=default, followup=false, filters=[], status={"mode":"unspecified","values":[],"evidence":""}, clear_fields=[], terms=[], group_by=null, limit=null로 출력한다. report_kind는 생략한다. 사내 기능 범위 밖이라는 이유로 clarify나 거절을 반환하지 않는다.
 오류·차트·화면·회의록·휴가·고객사명·Mantis·Notion이라는 단어만으로 사내 조회를 선택하지 않는다. 'HTTP 404 오류가 뭔지', '회의록 작성 요령', 'Notion과 엑셀의 차이', 'NH투자증권이 어떤 회사인지', '친구 생일 축하 메일'은 general이다. 'Mantis에서 오류 이슈 찾아줘', '우리 팀 회의록 찾아줘', 특정 이슈 번호의 설명은 실제 사내 조회다. 이전 계획이 있어도 새로 제시한 일반 질문은 이전 이슈·고객사·상태를 상속하지 않는다.
@@ -57,6 +58,7 @@ clear_fields: 후속에서 명시적으로 해제한 검색 필드 배열. 담�
 미종료 조회 후 '해결 상태도 함께 포함'은 status.mode=include, values=["resolved"], change=add다. 미종료+resolved가 되며 closed는 계속 제외한다. '개발완료는 빼고'는 mode=exclude, values=["developed"], change=remove다. '할당된 이슈만'은 mode=include, values=["assigned"], change=replace다. 상태를 filters에 중복하지 않는다.
 terms: 실제 내용 검색어 최대6개. count의 건수/남았어/몇개, 담당자/고객사/상태 같은 필터값은 검색어가 아니다. 특정 이슈 번호가 있으면 일반적으로 terms=[]. 유사 사례 비교에서는 CPU·메모리 누수 같은 비교 주제는 terms에 지정할 수 있다. 주제를 keyword contains 필터로 강제하지 마라. 본문/노트에 정확한 문자열을 포함하라고 명시한 경우에만 keyword contains를 쓴다. 고객사·매체·담당자·기간·상태·명시적 제목 및 제외 조건은 계속 filters로 보존한다.
 group_by: null|customer|platform|status|owner|month. limit: null 또는 목록 표시 개수(1~200). count는 항상 null.
+기간을 지정하지 않은 단일 그룹 건수는 operation=aggregate, group_by=해당 그룹, aggregation 생략으로 표현한다. 기간이 없는데 오늘/이번 달을 임의로 추가하지 않는다.
 복합 그룹·집계 분석은 operation=aggregate, 최상위 group_by=null, limit=null로 두고 aggregation을 추가한다. 상위 N개는 aggregation.top_n에만 적는다:
 {"group_by":["customer","month"],"metrics":["issue_count","effort"],"period":{"from":"2026-08-01","to":"2026-09-30","evidence":"2026년 8월부터 9월까지"},"comparison":"previous_month","top_n":10,"explain":true}.
 aggregation.group_by는 customer/platform/status/owner/issue_type/month 중 중복 없이 최대 3개, metrics는 issue_count(등록건수)/effort(공수)만 허용한다. SQL·수식·임의 지표·date_basis는 금지한다. 서버가 건수=등록일, 공수=고객사전달일을 적용한다. 수정일/완료일 기준 집계는 clarify다.
@@ -70,6 +72,8 @@ report_kind=effort 또는 effort_sla일 때 effort={"type":"total|ranking|trend"
 report일 때 report_kind=effort|effort_sla|weekly|monthly|profile|sla|pivot|spike|customers|priority|aging|due|comparison|completed|waiting|similar|triage|handoff|postmortem|notice. 그 외에는 생략한다.
 고객사 프로필은 report/profile, 월간 고객사 리포트는 report/monthly, 주간 보고서는 report/weekly, 공수와 평균 처리시간은 report/effort_sla, 유사 과거 이슈의 원인·해결 비교는 report/similar, 장애 초동 대응(영향 범위·초동 확인 순서·유사 사례·담당자 전달)은 report/triage다.
 이슈 인수인계는 report/handoff, 사후 분석서는 report/postmortem, 고객 안내 메일/안내문 초안은 report/notice다. 이는 외부 발송이나 Notion 쓰기가 아닌 읽기 전용 문서 작성이다.
+이 문서 종류는 출력 목적이며 단일 이슈 번호가 필수는 아니다. 화면번호·기간·고객사 조건의 여러 이슈를 조회해 개발팀 전달용 증상·재현 조건을 요약하는 요청도 report/handoff다. 조회 조건은 filters에 보존하고 '개발팀 전달', '증상 중심 요약' 등 출력 지시를 terms나 keyword 필터로 넣지 않는다. 예: 화면번호 0000 최근 8주는 screen_number="0000"과 created_at 기간 필터이며 issue_id를 요구하지 않는다.
+handoff/postmortem/notice의 terms는 []로 둔다. 조회할 기능·오류명을 한정했다면 keyword/title 필터로 명시하고, 문서에 써 달라는 항목은 필터로 만들지 않는다. 최근 N주는 오늘을 포함한 N×7일이며 최근 8주는 오늘부터 55일 전~오늘이다.
 보고서 표제의 미종료/완료/원인·담당자는 보고서 항목이며 검색 필터가 아니다. 상태를 제한하라고 명시하지 않은 보고서는 status=unspecified, evidence=""를 쓴다. 특히 주간보고서의 신규·미종료·장기 적체를 하나의 상태로 필터링하지 않는다.
 고객사 프로필을 고객사별 건수 aggregate로, 유사 사례 비교를 단일 이슈 explain으로 대체하지 않는다. 특정 이슈 문서/비교의 scope=target, 그 외 고객사 보고서는 기본 team 범위를 유지한다.
 조건이 모호하거나 필요한 기능/근거가 없으면 operation=clarify, reason에 이유. 누락된 조건으로 전체를 조회하지 않는다. JSON 외 문장을 출력하지 않는다.
@@ -96,7 +100,8 @@ def enabled():
 
 
 @measured('unified_planning')
-def plan_question(question, model, api_key, user, previous):
+def plan_question(question, model, api_key, user, previous, *, ordinal_guide_tools=False, conversation_context=None,
+                  model_first=False):
     explicit_fallback = 'fallbackModelIds' in model
     if not api_key and not explicit_fallback:
         return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
@@ -107,7 +112,7 @@ def plan_question(question, model, api_key, user, previous):
     if not candidates:
         return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': '질문 해석 모델을 사용할 수 없습니다.'}
     from backend.intent.literal_plans import literal_plan
-    literal = literal_plan(question, previous or {})
+    literal = None if model_first else literal_plan(question, previous or {})
     if literal is not None:
         try:
             plan = validate_plan(question, literal, user or {}, previous or {})
@@ -116,23 +121,38 @@ def plan_question(question, model, api_key, user, previous):
         except ValueError:
             # 지원 문법처럼 보여도 근거 계약에 맞지 않으면 일반 해석으로 보낸다.
             pass
-    previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'aggregation', 'sort', 'resolved_constraints', 'terms', 'group_by', 'grounding_text')} if previous else None
+    previous_context = {k: previous.get(k) for k in ('source', 'operation', 'report_kind', 'effort', 'aggregation', 'sort', 'limit', 'resolved_constraints', 'terms', 'group_by', 'grounding_text', 'list_context')} if previous else None
     from backend.intent.customer_constraints import CustomerScopeError
     from backend.execution import checkpoint
     prompt = PROMPT + f'\n오늘={date.today().isoformat()}\n고객사 사전=' + json.dumps(get_customer_aliases(), ensure_ascii=False)
+    if conversation_context:
+        from backend.intent.conversation_contract import CONTEXT_RULES
+        from backend.tools.redaction import redact
+        prompt += '\n' + CONTEXT_RULES
+        previous_context = redact(previous_context)
+    if ordinal_guide_tools:
+        prompt += ('\n이번 실행에는 count_mantis_issues, list_mantis_issues, Notion 검색·본문 읽기 도구가 있다. '
+                   '한 질문에서 이슈 목록의 특정 순번에 관련된 Notion 가이드도 요청하면 지원하는 작업이다. '
+                   'source=both, operation=explain으로 이슈에 명시한 고객사·상태·기간·정렬·목록 개수를 보존한다. '
+                   '미해결 이슈를 세는 경우 status.mode=open, evidence는 질문의 상태 표현이다. '
+                   '기간 표현 없이 최근 N건을 요청하면 limit=N과 최상위 sort만 사용한다. '
+                   'sort는 {"field":"created_at","direction":"desc"}이며 filters에 넣지 않는다. '
+                   '순번은 목록 결과에서 결정하므로 issue_id와 문서 제목을 추측하지 않는다. '
+                   '가이드를 찾아 달라는 말은 이슈 검색 필터가 아니다.')
     compact_document = eligible(question,previous or {})
     if compact_document:
         prompt += '\n이번 입력은 직전 단일 이슈 문서의 표현 변경 후보이다. 질문 전체를 확인하고 대상·조회 조건·문서 종류 변경 없이 형식·말투·인수 대상만 바꾸는 경우 {"document_presentation_only":true}만 출력하라. 그 밖의 경우 기존 필수 키를 갖춘 전체 계획을 출력하라.'
     payload = {'model': model.get('model', model['id']), 'temperature': 0, 'seed': 42, 'max_tokens': 1100,
                'stream': False, 'messages': [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': json.dumps(
                    {'question': question, 'previous_confirmed_plan': previous_context,
+                    **({'conversation_context': conversation_context} if conversation_context else {}),
                     'previous_task': {k: previous.get(k) for k in ('operation','report_kind')} if previous else None,
                     'allowed_clear_fields': sorted(SUPPORTED_FIELDS | {'terms','team'}),
                     'task_rules': '이전 질문과 현재 질문을 비교하여 현재 작업과 바뀐 검색 조건을 따로 판단한다. '
                                   '이전 조건을 유지해도 건수 조회 뒤 항목 나열 요청은 operation=search로 전환한다. '
                                   '보고서의 분량·말투·배치만 변경하면 report 작업과 report_kind를 유지한다. '
                                   '회의 안건은 기존 사후 분석의 표현 형식이다. '
-                                  '현재 질문에 없는 필드는 모두 상속한다. 고객사/담당자만 지정하는 것은 '
+                                  '후속 질문에서만 바뀌지 않은 조건을 상속한다. 고객사/담당자만 지정하는 것은 '
                                   '그 필드의 값 교체이며 다른 필드의 해제가 아니다. clear_fields는 실제 해제 요청에만 쓴다. '
                                   '비교 종료는 operation 변경이며 clear_fields에는 allowed_clear_fields만 쓴다.',
                     'filter_contract': {
@@ -152,6 +172,7 @@ def plan_question(question, model, api_key, user, previous):
             # 기본 2K/4K 창은 해석 규칙 앞부분을 잘라 필수 JSON 계약까지 잃는다.
             candidate_payload['num_ctx'] = 16384
         for attempt in range(1 if customer_reinterpretation else 2):
+            parsed = None
             try:
                 checkpoint()
                 parsed = _propose(candidate, key, candidate_payload)
@@ -162,6 +183,12 @@ def plan_question(question, model, api_key, user, previous):
                         raise ValueError('표현 변경 축약 계획에 새로운 조건을 섞을 수 없습니다')
                     parsed=expand(question,previous)
                 plan = validate_plan(question, parsed, user or {}, previous or {})
+                if conversation_context:
+                    from backend.intent.conversation_contract import validate_followup_display
+                    validate_followup_display(question, plan, previous or {})
+                if ordinal_guide_tools:
+                    from backend.intent.validation_rules import check_compound_issue_list
+                    check_compound_issue_list(question, plan)
                 plan['planner_model_id'] = candidate['id']
                 if candidate['id'] != model['id']:
                     plan['planner_fallback_from'] = model['id']
@@ -169,6 +196,9 @@ def plan_question(question, model, api_key, user, previous):
             except ValueError as exc:
                 reason = str(exc)
                 if attempt == 0 and not customer_reinterpretation:
+                    if isinstance(parsed, dict):
+                        candidate_payload['messages'].append({
+                            'role': 'assistant', 'content': json.dumps(parsed, ensure_ascii=False)})
                     repair_hint = (
                         '. 복합 집계는 최상위 group_by=null, limit=null이어야 합니다. '
                         '그룹은 aggregation.group_by, 상위 N개는 aggregation.top_n에만 적으세요. '
@@ -181,6 +211,9 @@ def plan_question(question, model, api_key, user, previous):
                             '독립 질문에서 상위 개수 미지정 시 aggregation.top_n=10, '
                             '후속에서는 이전 top_n을 유지하세요. 명시한 개수가 지원 범위를 넘으면 clarify하세요'
                         )
+                    if reason.startswith('설명 질문의 주제를'):
+                        repair_hint = ('. 직전 계획의 filters에서 title 필터를 제거하고 해당 기능·주제 문자열은 terms에만 넣으세요. '
+                                       '고객사·DB 등 질문에 명시된 다른 조건은 유지하세요. 제목에 해당 문자열이 있어야 한다는 제한은 질문에 없습니다')
                     if reason == '전체 집계에 표시 개수를 적용할 수 없습니다':
                         repair_hint = (
                             '. 이전 질문과 현재 질문의 요청 작업을 다시 비교하세요. '

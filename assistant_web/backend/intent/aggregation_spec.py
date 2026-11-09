@@ -9,6 +9,19 @@ MAX_MONTHS = 36
 MAX_TOP_N = 20
 
 
+def check_target(operation, group, specification):
+    """단순 그룹 또는 계산 명세가 없는 집계는 확정/실행하지 않는다."""
+    from backend.intent.validation_rules import require
+    if specification is not None:
+        require(operation == 'aggregate' and group is None, '집계 명세와 작업·단순 그룹 충돌')
+        check_shape(specification)
+    elif operation == 'aggregate':
+        require(isinstance(group, str) and group in DIMENSIONS - {'issue_type'},
+                '집계 기준이 누락됐습니다. 기간 없는 단일 그룹 건수로 보정하려면 '
+                'changes에 aggregation=null과 해당 group_by를 함께 지정하세요. '
+                '복합 그룹·공수·기간·비교 요청은 aggregation 명세를 유지하고 잘못된 값만 고치세요.')
+
+
 def explanation_requested(text):
     if re.search(r'표만|설명\s*없이|(?:설명|요약|분석|해석).{0,6}(?:빼|제외|생략|하지\s*(?:마|말))', text):
         return False
@@ -61,6 +74,11 @@ def validate_aggregation(question, specification, previous=None):
         require(not removed or bool(re.search(r'대신|말고|합쳐|합산|구분.{0,10}(?:없|빼|해제|제거)|그룹.{0,10}(?:해제|제거)', text)),
                 '후속 필터·상위 개수 변경에서는 기존 집계 그룹을 유지해야 합니다: ' + ', '.join(sorted(removed)))
     if 'period' in specification and spec['period'] != (previous or {}).get('period'):
+        from backend.query.dates import question_has_temporal_expression, extract_relative_created_at_range
+        evidence = spec['period']['evidence']
+        require(question_has_temporal_expression(evidence) or extract_relative_created_at_range(evidence)
+                or re.search(r'(?<!\d)(?:19|20)\d{2}[-./]\d{1,2}(?:[-./]\d{1,2})?(?!\d)', evidence),
+                '집계 기간 근거가 없습니다. 기간 없는 단일 그룹 건수는 aggregation을 생략하고 group_by를 사용하세요')
         check_clause({'field': 'created_at', 'operator': 'between',
                       'value': [spec['period']['from'], spec['period']['to']],
                       'evidence': spec['period']['evidence']}, question, 'mantis')

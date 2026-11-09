@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from contextlib import closing
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -92,6 +93,71 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "ready")
         self.assertEqual(response.json()["checks"]["structuredIndexDb"]["reason"], "missing")
 
+    def test_readiness_reports_oldest_notion_catalog_in_the_configured_scope(self):
+        from backend.notion import body_index
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(body_index, "RUNTIME_DIR", Path(directory)),
+            patch.dict(os.environ, {"NOTION_DATABASE_IDS": "first,second", "NOTION_API_TOKEN": "fixture",
+                                    "NOTION_INCLUDE_CHILD_DATABASES": "false",
+                                    "NOTION_SNAPSHOT_CATALOG_MAX_AGE_SECONDS": "7200"}),
+            patch.object(operations_api, "_sqlite_check", return_value={"status": "ok"}),
+            patch.object(operations_api, "get_model_transport_security_status", return_value={"status": "secure"}),
+        ):
+            index = body_index.BodyIndex()
+            index.upsert_catalog("first", [], complete=True)
+
+            def freshness():
+                response = self.client.get("/ready")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("notion", response.json()["freshness"])
+                return response.json()["freshness"]["notion"]
+
+            self.assertEqual(freshness()["status"], "incomplete")
+            index.upsert_catalog("second", [], complete=True)
+            index.upsert_catalog("outside", [], complete=False)
+            self.assertEqual(freshness()["status"], "fresh")
+            oldest = (datetime.now(timezone.utc) - timedelta(hours=2, minutes=5)).isoformat()
+            with closing(sqlite3.connect(index.path)) as db, db:
+                db.execute("UPDATE catalogs SET updated_at=? WHERE database_id='first'", [oldest])
+            state = freshness()
+            self.assertEqual(state["status"], "stale")
+            self.assertEqual(state["oldestUpdatedAt"], oldest)
+            self.assertGreaterEqual(state["ageSeconds"], 7500)
+            self.assertEqual((state["maxAgeSeconds"], state["databaseCount"]), (7200, 2))
+            with patch.dict(os.environ, {"NOTION_API_TOKEN": "different"}):
+                self.assertEqual(freshness()["status"], "unavailable")
+
+    def test_readiness_does_not_start_notion_discovery_for_an_uncached_connection(self):
+        with patch.dict(os.environ, {"NOTION_DATABASE_IDS": "", "NOTION_DATABASE_ID": "",
+                                     "NOTION_ISSUE_DB_ID": "", "NOTION_API_TOKEN": "uncached-token"}):
+            state = self.client.get("/ready").json()["freshness"]["notion"]
+        self.assertEqual(state["status"], "scope_unavailable")
+        self.assertIsNone(state["ageSeconds"])
+
+    def test_readiness_with_missing_child_scope_skips_the_page_title_index(self):
+        from backend import config
+        from backend.notion import read_scope
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(read_scope, "RUNTIME_DIR", Path(directory)),
+            patch.object(config, "RUNTIME_DIR", Path(directory)),
+            patch.dict(os.environ, {"NOTION_DATABASE_IDS": "root", "NOTION_API_TOKEN": "fixture",
+                                    "NOTION_INCLUDE_CHILD_DATABASES": "true"}),
+        ):
+            (Path(directory) / read_scope.TITLE_INDEX_FILENAME).write_text("{}")
+            read_text = Path.read_text
+
+            def read_metadata(path, *args, **kwargs):
+                self.assertNotEqual(path.name, read_scope.TITLE_INDEX_FILENAME)
+                return read_text(path, *args, **kwargs)
+
+            with patch.object(Path, "read_text", read_metadata):
+                state = self.client.get("/ready").json()["freshness"]["notion"]
+            self.assertEqual(state["status"], "scope_incomplete")
+
     @patch.object(search_api, "get_model_registry")
     def test_models_endpoint_exposes_only_public_fields(self, registry):
         registry.return_value = [
@@ -139,8 +205,10 @@ class ApiIntegrationTests(unittest.TestCase):
         ]
         self.assertTrue(customer_fields)
         self.assertTrue(all(field["type"] == "customer" for field in customer_fields))
-        self.assertTrue(all({"LS증권", "다올투자증권", "케이프투자증권", "신영증권"}.issubset(field["options"])
+        self.assertTrue(all({"LS증권", "다올투자증권", "케이프투자증권", "코스콤"}.issubset(field["options"])
                             for field in customer_fields))
+        # 선택 목록 설정(picker_names) 밖 고객사는 보이지 않는다.
+        self.assertTrue(all("신영증권" not in field["options"] for field in customer_fields))
 
     def test_team_templates_endpoint_lists_customers_with_recent_issues_first(self):
         class Batch(list):
@@ -169,8 +237,9 @@ class ApiIntegrationTests(unittest.TestCase):
             for field in template["fields"]
             if field["type"] == "customer"
         )
-        self.assertEqual(options[:3], ["케이프투자증권", "NH투자증권", "KB증권"])
-        self.assertEqual(len(options), 37)
+        # 최근 이슈가 많은 순, 같으면(200일 전 KB 포함 0건) 설정 순서(교보증권부터)다.
+        self.assertEqual(options[:3], ["케이프투자증권", "NH투자증권", "교보증권"])
+        self.assertEqual(len(options), 22)
 
     @patch.object(workspace_api, "get_weekly_team_brief")
     @patch.object(workspace_api, "current_request_user")
@@ -356,6 +425,7 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["configured"])
+        self.assertIn("maxAgeSeconds", payload["catalog"])
         self.assertEqual(payload["databaseIds"], ["90abcdef"])
         self.assertNotIn("token", payload)
         self.assertNotIn("1234567890abcdef1234567890abcdef", response.text)

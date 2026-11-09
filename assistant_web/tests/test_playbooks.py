@@ -47,6 +47,24 @@ class ResolutionPlaybookTests(unittest.TestCase):
             self.assertEqual(archived["status"], "archived")
             self.assertEqual(playbooks.list_playbooks("세션"), [])
 
+    def test_search_by_suggested_customer_name_finds_legacy_project_tags(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ, {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")}
+        ):
+            payload = {"title": "로그인 대응", "symptom": "세션 만료", "resolution": "설정 확인"}
+            saved = playbooks.create_playbook(
+                {**payload, "tags": ["132SHGM_Project"], "status": "published"}, {}
+            )
+            playbooks.create_playbook({**payload, "tags": ["132SHGM"], "status": "draft"}, {})
+            playbooks.create_playbook({**payload, "tags": ["098Itas"], "status": "published"}, {})
+
+            playbooks.create_playbook({**payload, "tags": ["KyoboSDK"], "status": "published"}, {})
+            self.assertEqual(playbooks.list_playbooks("교보증권"), [])
+
+            result = playbooks.list_playbooks("신한투자증권")
+            self.assertEqual([entry["id"] for entry in result], [saved["id"]])
+            self.assertEqual(result[0]["tags"], ["132SHGM_Project"])
+
     def test_workspace_migration_keeps_playbooks_with_notifications_version_five(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ,
@@ -61,7 +79,8 @@ class ResolutionPlaybookTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE name = 'resolution_playbooks'"
                 ).fetchone()
 
-        self.assertEqual(version, 5)
+        # 7번째 버전(개인 업무 추천)이 더해져도 플레이북 테이블은 그대로 남는다.
+        self.assertEqual(version, 7)
         self.assertEqual(table[0], "resolution_playbooks")
 
 

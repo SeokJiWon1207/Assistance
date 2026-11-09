@@ -29,6 +29,7 @@
 - `assistant_web/backend/reports/`: 결정형 집계·리포트 빌더
 - `assistant_web/backend/evaluation/`: 답변 검증·비교·회귀 평가
 - `assistant_web/backend/tools/`: 채팅 오케스트레이터가 쓰는 읽기 전용 데이터 도구
+- `assistant_web/backend/services/agent/`: 설명·조사 에이전트 경로(기본 OFF, `assistant_web/docs/AGENT_HARNESS.md`)
 - `assistant_web/backend/static/`: 브라우저 UI와 기능별 JS/CSS 모듈
 - `assistant_web/tests/`: Python·Node 회귀 테스트
 - `assistant_web/scripts/accuracy/`: 실제 저장본·모델을 쓰는 정확도 점검
@@ -55,7 +56,11 @@ assistant_web/scripts/check.sh
 
 ## 테스트·검증 데이터 전송
 
-프로젝트의 테스트·검증에 필요한 이슈 원문(제목, 본문, 노트, 담당자 등)을 설정된 회사 모델로 전송하는 것은 사용자가 사전 승인했다. 같은 범위의 검증에서는 전송 승인을 반복해서 묻지 않는다.
+프로젝트의 테스트·검증에 필요한 이슈 원문(제목, 본문, 노트, 담당자 등)을 설정된 회사 모델로 전송하는 것은 사용자가 사전 승인했다.
+
+2026-11-04의 최근 2주 재검증과 같은 사례의 회귀 검증에는 Mantis·Notion 원문(제목, 본문, 노트, 담당자 등)을 OpenAI Luna(`gpt-6-luna`, `https://api.openai.com`)로, Luna 장애 시 Google Gemini(`gemini-3.1-flash-lite`, `https://generativelanguage.googleapis.com`)로 전송하는 것도 사용자가 승인했다.
+
+같은 범위의 검증에서는 승인을 반복해서 묻지 않는다. 모델 허용 목록과 마스킹 정책을 적용하며, 다른 외부 모델·목적지 또는 추가 데이터 범위에는 별도 승인이 필요하다.
 
 ## Git 커밋 메시지 규칙
 

@@ -273,7 +273,11 @@ def supplement_explanation_notes(grounding: dict[str, Any], selected: list[int],
 
 def generate_grounded_explanation(
     request: ChatRequest, context: ChatPipelineContext, generate: Callable[..., dict[str, Any]],
+    supplement: Callable[..., tuple[dict[str, Any], dict[str, Any]]] | None = None,
+    can_repair: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
+    """supplement를 주면 원문 보강을 그 함수로 실행한다(요청 공통 예산 통제용). 생략하면 기존 보강을 쓴다."""
+    supplement = supplement or supplement_explanation_notes
     from backend.evaluation.explanation_quotes import render_quote_answer, validate_quote_answer
     grounding = build_model_retrieval_context(context.retrieval_result or {}, context.active_limit)
     shown, catalog = evidence_catalog(grounding)
@@ -401,12 +405,14 @@ def generate_grounded_explanation(
                     from backend.services.explanation_investigation import investigation_plan, bounded_investigation
                     investigation = investigation_plan(context.latest_user_text, validated, grounding, payload.get('investigate'))
                     grounding, supplement_meta = bounded_investigation(
-                        partial(supplement_explanation_notes,
+                        partial(supplement,
                             grounding, investigation['issue_ids'], context.latest_user_text, context.retrieval_result or {},
                             (context.retrieval_result or {}).get('constraints', context.query_constraints)),
                         grounding, investigation)
                     supplement_meta['elapsed_ms'] = round((perf_counter() - started) * 1000, 1)
-                    invalid_source = any(f['reason'] != 'fetch_failed' for f in supplement_meta['failures'])
+                    # 조회 실패·예산 소진은 부분 근거 안내로 남기고, 변경·접근 제한만 설명을 막는다.
+                    invalid_source = any(f['reason'] not in {'fetch_failed', 'budget_exhausted'}
+                                         for f in supplement_meta['failures'])
                     if invalid_source:
                         return {**response, 'content': '추가 원문 조회에서 이슈의 변경·접근 제한 또는 조건 불일치가 확인되어 설명을 확정하지 못했습니다. 다시 조회해 주세요.',
                                 'sources': [], 'sourcesForFollowUps': [],
@@ -521,7 +527,8 @@ def generate_grounded_explanation(
                 summary_repair = {'calls': 0, 'status': 'not_needed'}
                 if not summaries:
                     from backend.services.explanation_narrative import repair_summary
-                    summaries, summary_repair = repair_summary(request, context, validated, grounding, generate)
+                    summaries, summary_repair = repair_summary(request, context, validated, grounding, generate,
+                                                               can_repair=can_repair)
                     model_calls['summary_repair'] += summary_repair['calls']
                     if summaries and summary_repair.get('modelId'):
                         response['modelId'] = summary_repair['modelId']

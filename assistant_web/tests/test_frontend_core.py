@@ -160,21 +160,26 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("@media (max-width: 860px)", dashboard_css)
         self.assertIn("@media (max-width: 560px)", dashboard_css)
 
-    def test_stylesheets_use_tds_type_sizes_and_weights(self):
-        # TDS 단계 중 앱에서 쓰기로 한 9단계와 Light~Bold 굵기만 쓴다.
+    def test_stylesheets_use_approved_type_sizes_and_weights(self):
+        # 기존 앱의 크기·굵기 범위를 유지하되, 승인된 화면별 확장 크기를 허용한다.
         # 12 캡션 · 13 보조 · 14 목록 · 15 버튼 · 16 본문 · 17 카드 제목 · 20 화면 제목 · 22 섹션 제목 · 26 지표 숫자
-        tds_sizes = {12, 13, 14, 15, 16, 17, 20, 22, 26}
-        tds_weights = {300, 400, 500, 600, 700}
+        type_sizes = {12, 13, 14, 15, 16, 17, 20, 22, 26}
+        type_weights = {300, 400, 500, 600, 700}
+        extended_sizes = {
+            "design_system.css": {18, 24, 30},  # PDF 개선안의 제목·지표
+            "snow_theme.css": {28},  # 팀·내 업무의 핵심 지표
+            "workspace_insights.css": {18},  # 빈 업무 안내 제목
+            "customer_overview.css": {28},  # 고객사별 미종료 핵심 지표
+        }
         for path in sorted(STATIC_DIR.glob("*.css")):
             # @font-face의 굵기 범위는 글꼴 파일이 지원하는 범위라 화면 스타일 검사에서 뺀다.
             text = re.sub(r"@font-face\s*\{[^}]*\}", "", path.read_text(encoding="utf-8"))
             with self.subTest(stylesheet=path.name):
                 sizes = {float(value) for value in re.findall(r"font-size:\s*([0-9.]+)px", text)}
                 weights = {int(value) for value in re.findall(r"font-weight:\s*([0-9]+)", text)}
-                # PDF 개선안의 제목·지표 크기는 최종 디자인 시스템에서 확장한다.
-                allowed_sizes = tds_sizes | {18, 24, 30} if path.name == "design_system.css" else tds_sizes
+                allowed_sizes = type_sizes | extended_sizes.get(path.name, set())
                 self.assertLessEqual(sizes, allowed_sizes)
-                self.assertLessEqual(weights, tds_weights)
+                self.assertLessEqual(weights, type_weights)
                 # 영문 라벨용 대문자 변환은 쓰지 않는다.
                 self.assertNotIn("text-transform: uppercase", text)
 
@@ -555,13 +560,19 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertNotIn("renderTeamWeeklyBrief", dashboard_js)
         self.assertIn("data-open-team-brief", dashboard_js)
 
-    def test_personal_workspace_keeps_summary_visible_and_scrolls_issue_list(self):
+    def test_personal_workspace_overview_scrolls_as_one_page_with_charts(self):
         workspace_js = (STATIC_DIR / "modules" / "workspace.js").read_text(encoding="utf-8")
         workspace_css = (STATIC_DIR / "workspace.css").read_text(encoding="utf-8")
+        insights_css = (STATIC_DIR / "workspace_insights.css").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
 
         self.assertIn('class="workspace-list workspace-issue-list"', workspace_js)
-        self.assertIn('class="workspace-overview"', workspace_js)
+        # 지표·추이·도넛 카드가 목록 위에 붙어 업무 탭 본문 전체가 한 페이지로 스크롤된다.
+        self.assertIn('class="workspace-overview is-insights"><div class="workspace-main">', workspace_js)
+        self.assertIn("workspaceKpis(data, complete)", workspace_js)
+        self.assertIn("workspaceCharts(data, complete,", workspace_js)
+        self.assertIn(".workspace-overview.is-insights {", insights_css)
+        self.assertIn(".workspace-main > .workspace-section .workspace-issue-list", insights_css)
         self.assertIn('role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0"', workspace_js)
         self.assertIn('classList.toggle("is-overview", isPersonalOverview)', workspace_js)
         # 표시 건수는 목록 머리 한 곳에서만 보여 준다.

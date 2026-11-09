@@ -1,7 +1,6 @@
 """범위가 제한된 Mantis 페이지 수집과 원본 데이터 단기 캐시."""
 
 from collections import OrderedDict
-from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -11,7 +10,7 @@ from typing import Any, Callable, Generator
 
 from fastapi import HTTPException
 
-from backend.execution import checkpoint, execution_slot, wait_for_result
+from backend.execution import checkpoint, execution_slot, submit_with_context, wait_for_result
 from backend.ordered_prefetch import iter_in_order
 
 
@@ -52,8 +51,8 @@ def _collect(
     complete = False
     checkpoint()
     pool = ThreadPoolExecutor(max_workers=workers)
-    futures = [pool.submit(copy_context().run, fetch_page, page) for page in range(1, page_count + 1)]
     try:
+        futures = [submit_with_context(pool, fetch_page, page) for page in range(1, page_count + 1)]
         # 페이지 순서로 결과를 읽으며 짧은 페이지까지의 오류는 전파한다.
         # 짧은 페이지를 확인한 뒤의 future는 읽지 않아 그 요청의 오류도 전파하지 않는다.
         for future in futures:

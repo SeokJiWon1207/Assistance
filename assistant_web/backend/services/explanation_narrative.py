@@ -10,13 +10,54 @@ from fastapi import HTTPException
 from backend.evaluation.explanation_quotes import safe_excerpts
 from backend.evaluation.explanation_summary import summary_evidence_items, summary_items
 from backend.execution import RequestStopped, checkpoint
+from backend.llm import ModelTransferBlocked
 
 
 def _object(response):
     return json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', response.get('content', '').strip()))
 
 
-def repair_summary(request, context, validated, grounding, generate):
+def repair_summary(request, context, validated, grounding, generate, *, can_repair=None):
+    """통과한 항목은 고정하고 실패 항목만 기존 원문·의미 검사로 보정한다."""
+    from backend.evidence.repair import Failure, repair_items
+    meta: dict[str, Any] = {'calls': 0, 'status': 'not_attempted'}
+    items = summary_evidence_items(validated, context.latest_user_text)
+    if (not validated.get('valid') or not 1 <= len(items) <= 5
+            or not any(i.get('draft_answer') and i.get('evidence') for i in items)):
+        return [], meta
+    units = {f's{i}': deepcopy(item) for i, item in enumerate(items)}
+    original = validated.get('answer_items') or []
+    def checked(values):
+        return summary_items({**validated, 'answer_items': list(values.values())}, grounding, context.latest_user_text)
+    verified = {k: item for i, (k, item) in enumerate(units.items())
+                if item == original[i] and checked({k: item})}
+    failures = {k: Failure('expression' if item.get('evidence') else 'missing_evidence', 'unsupported_summary')
+                for k, item in units.items() if k not in verified}
+    audit: dict = {}
+    meta['repair'] = audit
+    def propose(targets):
+        subset = {**deepcopy(validated), 'answer_items': [deepcopy(units[k]) for k in targets]}
+        summaries, detail = _rewrite_summary(request, context, subset, grounding, generate)
+        meta.update(detail)
+        return {key: {**units[key], 'draft_answer': value['answer']} for key, value in zip(targets, summaries, strict=False)}
+    def assembled(values):
+        # 근거 부족을 사실 부재로 바꾸지 않고, 요청 항목 자체는 남긴다.
+        return {key: values.get(key, {**item, 'evidence': [], 'unanswered': True,
+                       'draft_answer': '제공된 근거에서는 이 항목을 확인하지 못했습니다.'}) for key, item in units.items()}
+    merged = repair_items(verified, failures, propose=propose,
+        validate=lambda values: {k: v for k, v in values.items() if checked({k: v})},
+        revalidate=lambda values: len(checked(assembled(values))) == len(items),
+        can_attempt=can_repair or (lambda: True), audit=audit)
+    if not merged:
+        return [], meta
+    summaries = checked(assembled(merged))
+    if len(summaries) != len(items):
+        return [], {**meta, 'status': 'rejected_by_checks'}
+    meta['status'] = 'partial' if audit['unresolved'] else 'accepted'
+    return summaries, meta
+
+
+def _rewrite_summary(request, context, validated, grounding, generate):
     """문장만 보정하며 기존 근거 검사와 별도의 의미 대조를 모두 통과해야 한다."""
     meta: dict[str, Any] = {'calls': 0, 'status': 'not_attempted'}
     items = summary_evidence_items(validated, context.latest_user_text)
@@ -85,7 +126,7 @@ def repair_summary(request, context, validated, grounding, generate):
             return [], {**meta, 'status': 'rejected_by_review'}
         return summaries, {**meta, 'status': 'accepted', 'modelId': draft.get('modelId'),
                            'usedFallbackModel': draft.get('usedFallbackModel')}
-    except RequestStopped:
+    except (RequestStopped, ModelTransferBlocked):
         raise
     except (requests.RequestException, HTTPException, ValueError, TypeError, KeyError):
         return [], {**meta, 'status': 'error'}

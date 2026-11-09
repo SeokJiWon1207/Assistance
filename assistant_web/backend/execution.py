@@ -4,12 +4,14 @@ import os
 import time
 from _thread import LockType
 from contextlib import contextmanager
-from contextvars import ContextVar
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError, wait
+from contextvars import ContextVar, copy_context
+from concurrent.futures import Executor, Future, TimeoutError as FutureTimeoutError, wait
 from dataclasses import dataclass, field
 from functools import wraps
 from threading import Event, Lock
-from typing import Any, Iterator, TypeVar
+from typing import Any, Callable, Iterator, TypeVar
+
+T = TypeVar('T')
 
 
 class RequestStopped(RuntimeError):
@@ -43,12 +45,33 @@ class ExecutionBudget:
         return remaining
 
     def cancel(self) -> None:
-        self.cancelled.set()
+        with self._lock:
+            self.cancelled.set()
+            pending = tuple(self._workers)
+        # cancel의 완료 콜백도 _lock을 쓰므로 잠금 밖에서 실행한다.
+        for future in pending:
+            future.cancel()
+
+    def publish(self, action: Callable[[], T]) -> T:
+        """취소와 확정 결과 반영 사이의 선후 관계를 하나의 잠금으로 정한다."""
+        with self._lock:
+            self.remaining()
+            return action()
+
+    def child(self, seconds: float) -> "ExecutionBudget":
+        """부모 마감을 넘지 않고 취소·선실행 작업 추적을 공유하는 하위 예산."""
+        child = ExecutionBudget(deadline=min(self.deadline, time.monotonic() + max(0.0, seconds)),
+                                cancelled=self.cancelled)
+        child._workers, child._lock = self._workers, self._lock
+        return child
 
     def track(self, future: Future[Any]) -> None:
         with self._lock:
             self._workers.add(future)
+            cancelled = self.cancelled.is_set()
         future.add_done_callback(self._finished)
+        if cancelled:
+            future.cancel()
 
     def _finished(self, future: Future[Any]) -> None:
         with self._lock:
@@ -65,7 +88,6 @@ class ExecutionBudget:
 
 
 CURRENT_BUDGET: ContextVar[ExecutionBudget | None] = ContextVar("execution_budget", default=None)
-T = TypeVar("T")
 
 
 @contextmanager
@@ -87,6 +109,45 @@ def checkpoint() -> None:
     budget = CURRENT_BUDGET.get()
     if budget is not None:
         budget.remaining()
+
+
+class StepTimeout(TimeoutError):
+    """하위 단계의 제한 시간만 지났고 요청 전체는 계속 실행할 수 있다."""
+
+
+def run_with_deadline(seconds: float, action: Callable[[], T]) -> T:
+    """요청 마감 안에서 한 단계에 더 짧은 제한을 둔다. 요청 취소·마감은 그대로 올린다."""
+    parent = CURRENT_BUDGET.get()
+    child = parent.child(seconds) if parent is not None else ExecutionBudget(time.monotonic() + max(0.0, seconds))
+    try:
+        with execution_scope(child):
+            result = action()
+            checkpoint()
+            return result
+    except RequestStopped:
+        if parent is not None:
+            parent.remaining()
+        if child.cancelled.is_set():
+            raise
+        raise StepTimeout("단계 제한 시간을 초과했습니다.") from None
+
+
+def submit_with_context(pool: Executor, action: Callable[..., T], *args, **kwargs) -> Future[T]:
+    """요청 정책·마감·취소 문맥을 복사하고 대기/실행 중인 작업을 요청이 소유한다."""
+    checkpoint()
+    context = copy_context()
+    budget = CURRENT_BUDGET.get()
+
+    def invoke():
+        checkpoint()
+        result = action(*args, **kwargs)
+        checkpoint()
+        return result
+
+    future = pool.submit(context.run, invoke)
+    if budget is not None:
+        budget.track(future)
+    return future
 
 
 def wait_for_result(future: Future[T]) -> T:

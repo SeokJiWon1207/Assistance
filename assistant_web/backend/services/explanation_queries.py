@@ -38,6 +38,7 @@ def prepare_explanation_queries(query: str, plan: dict[str, Any] | None, model: 
                                 api_key: str, tools: dict[str, Any]) -> dict[str, Any] | None:
     """모델은 검색 문자열만 반환하며 고객·기간·상태 필터에는 접근하지 않는다."""
     if (not plan or plan.get('operation') != 'explain'
+            or plan.get('planner') == 'explicit_references'
             or plan.get('resolved_constraints', {}).get('issue_ids')
             or not tools.get('mantis') or not tools.get('vectorDb') or not model.get('model')
             or os.getenv('MANTIS_MULTIQUERY_ENABLED', 'true').lower() == 'false'):

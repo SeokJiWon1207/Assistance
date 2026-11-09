@@ -20,7 +20,7 @@ from backend.evaluation.comparison import (
 from backend.evaluation.data_scope import build_answer_data_scope
 from backend.evaluation.delivery import BLOCKED_ANSWER, decide_delivery
 from backend.execution import checkpoint
-from backend.evaluation.verification import build_verification_report
+from backend.evaluation.verification import add_verification_dimension, build_verification_report
 from backend.schemas import ChatRequest
 from backend.notion.formatting import append_notion_completeness_notice
 
@@ -47,6 +47,7 @@ def finalize_chat_response(
         evidence_sources = sources
     retrieval_result = response.get("retrieval")
     mode = (response.get("raw") or {}).get("mode", "model")
+    agent_checks = response.pop("agentChecks", None)
     emit_chat_status("근거와 답변을 검증하고 있습니다", "verification")
     verification = build_verification_report(
         verification_question if verification_question is not None else question,
@@ -55,6 +56,11 @@ def finalize_chat_response(
         retrieval_result,
         mode,
     )
+    if agent_checks:
+        verification = add_verification_dimension(
+            verification, "agent", "에이전트 근거 경계", agent_checks,
+            "전송 정책, 근거 원장 인용, 조건 미적용 자료 구분을 검사합니다.",
+        )
     checkpoint()
     verification["dataScope"] = build_answer_data_scope(retrieval_result)
     delivery = decide_delivery(verification)
@@ -77,7 +83,12 @@ def finalize_chat_response(
         )
     # 원문 선택 검증을 거친 설명은 보류 응답까지 자유서술 AB 경로로 우회하지 않는다.
     source_quote_explanation = (response.get("groundingReview") or {}).get("method") == "validated_source_quotes"
-    if delivery.allowed and not source_quote_explanation and should_attach_ab_test(request, retrieval_result, mode):
+    # 에이전트 답변은 지정된 폴백 경로 외의 A/B 비교 모델로 근거를 다시 보내지 않는다.
+    agent_answer = bool(response.get("agentReview")) or str(mode).startswith("agent_")
+    if agent_answer and delivery.allowed and sources and request.showSources:
+        emit_chat_event("evidence", sources=sources, sourceCount=len(sources))
+    if (delivery.allowed and not source_quote_explanation and not agent_answer
+            and should_attach_ab_test(request, retrieval_result, mode)):
         checkpoint()
         candidate_model_id = str(
             request.abModelId or os.getenv("AB_COMPARISON_MODEL_ID", "")
@@ -165,6 +176,7 @@ def finalize_chat_response(
             "responseFormat": request.responseFormat,
         },
         "sources": sources,
+        "followupSources": evidence_sources if delivery.allowed else [],
         # 차단된 실행의 조건은 다음 질문에 상속하지 않는다.
         "queryPlan": (retrieval_result or {}).get("query_plan") if delivery.allowed else None,
         "filterAudit": (retrieval_result or {}).get("filter_audit") if retrieval_result else None,
@@ -181,6 +193,9 @@ def finalize_chat_response(
         "verification": verification,
         "abTest": response.get("abTest"),
     }
+    if response.get("agentReview"):
+        # 도구 원문·모델 메시지는 저장하지 않고 정제한 실행 요약만 남긴다.
+        payload["agent"] = response["agentReview"]
     if blocked_answer is not None:
         payload["blockedAnswer"] = blocked_answer
     checkpoint()

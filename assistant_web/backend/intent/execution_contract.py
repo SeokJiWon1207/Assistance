@@ -6,6 +6,11 @@ def validate_execution_contract(question, plan):
     """실행 계획의 근거/필터 일치 검사. 의미 정확도 평가는 별도 정답 데이터로 수행한다."""
     checks = []
     try:
+        if plan.get('operation') == 'compare' or plan.get('query_scopes'):
+            from backend.intent.comparison_contract import check_comparison_contract
+            check_comparison_contract(question, plan, validate_execution_contract)
+            return {'valid': True, 'checks': [{'id': 'unified_contract', 'label': '비교 범위별 근거·실행 조건',
+                    'status': 'pass', 'detail': '각 범위의 단일 조건 계약과 공통 조건 일치 검사'}]}
         require(plan.get('grounding_text') == question, '질문과 계획 불일치')
         c = plan.get('resolved_constraints') or {}
         require(c.get('unified_plan_validated'), '미검증 계획')
@@ -25,9 +30,11 @@ def validate_execution_contract(question, plan):
         check_effort_task(question, plan.get('report_kind'), interpretation.get('followup'))
         check_notice_task(question, plan.get('source'), plan.get('operation'), plan.get('report_kind'))
         check_status(question, interpretation.get('status'), interpretation.get('followup'), plan.get('source'), plan.get('operation'), plan.get('report_kind'))
+        from backend.intent.display_contract import validate_display_limit
+        validate_display_limit(question, plan.get('source'), plan.get('operation'), plan.get('limit'))
+        from backend.intent.aggregation_spec import check_target
+        check_target(plan.get('operation'), plan.get('group_by'), plan.get('aggregation'))
         if plan.get('aggregation'):
-            from backend.intent.aggregation_spec import check_shape
-            check_shape(plan['aggregation'])
             require(plan.get('source') == 'mantis' and plan.get('operation') == 'aggregate', '집계 작업 불일치')
         else:
             check_query_period(question, plan.get('source'), plan.get('operation'), c.get('filter_clauses') or [], plan.get('report_kind'))

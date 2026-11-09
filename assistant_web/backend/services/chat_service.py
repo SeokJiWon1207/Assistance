@@ -172,6 +172,8 @@ from backend.services.chat.generate import (
     _read_model_response as _read_model_response,
 )
 from backend.services.chat.prepare import prepare_chat_pipeline as prepare_chat_pipeline
+from backend.services.agent.policy import request_transfer_scope as request_transfer_scope
+from backend.services.agent.route import run_agent_if_eligible as run_agent_if_eligible
 from backend.services.chat.planning import (
     plan_chat_query as plan_chat_query,
     _resolve_chat_plan as _resolve_chat_plan,
@@ -189,6 +191,9 @@ from backend.services.chat.retrieve import (
 
 
 def attach_status_resolution(response: Dict[str, Any], context: ChatPipelineContext) -> Dict[str, Any]:
+    if "retrieval" in response and response["retrieval"] is None:
+        # 원문 재검증에서 폐기한 근거·상속 계획을 복구하지 않는다.
+        return response
     if (context.intent_plan or {}).get("source") == "general":
         return response
     if (context.intent_plan or {}).get("planner") == "unified_llm":
@@ -276,13 +281,19 @@ class ChatService:
                 }
             )
 
-        context = prepare_chat_pipeline(request, latest_user_text, user)
-        if (context.intent_plan or {}).get("planner") == "unified_llm":
-            # 사용자에게 묶인 서버 기록에서 복원한 계획 입력을 검증에도 사용한다.
-            # 응답/모델이 반환한 query나 grounding_text를 검증 근거로 채택하지 않는다.
-            verification_question = context.retrieval_text
-        with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
-            return self._complete_response(request, context, user, finalize_chat_response)
+        # 도구 호출 가능 여부와 별개로 플래너부터 전송 정책을 적용한다.
+        with request_transfer_scope(request.modelId) as agent_policy:
+            from backend.services.agent.query_shadow import QUERY_SHADOW
+            if QUERY_SHADOW.get() and agent_policy is None:
+                from backend.services.agent.route import shadow_skipped
+                return finalize_chat_response(shadow_skipped(request, "승인되고 도구 호출이 검증된 모델이 필요합니다."))
+            context = prepare_chat_pipeline(request, latest_user_text, user)
+            if (context.intent_plan or {}).get("planner") == "unified_llm":
+                # 사용자에게 묶인 서버 기록에서 복원한 계획 입력을 검증에도 사용한다.
+                # 응답/모델이 반환한 query나 grounding_text를 검증 근거로 채택하지 않는다.
+                verification_question = context.retrieval_text
+            with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
+                return self._complete_response(request, context, user, finalize_chat_response)
 
     def _complete_response(
         self,
@@ -291,6 +302,20 @@ class ChatService:
         user: Optional[Dict[str, Any]],
         finalize_chat_response: Callable[[Dict[str, Any]], Dict[str, Any]],
     ) -> Dict[str, Any]:
+        from backend.services.agent.route import run_query_shadow_if_requested
+        shadow = run_query_shadow_if_requested(request, context)
+        if shadow is not None:
+            return finalize_chat_response(attach_status_resolution(shadow, context))
+        # 진입한 뒤에는 실패해도 아래 기존 생성 경로로 돌아오지 않고 에이전트가 근거 안내로 끝낸다.
+        agent_response = measured("agent")(run_agent_if_eligible)(request, context)
+        if agent_response is not None:
+            return finalize_chat_response(attach_status_resolution(agent_response, context))
+
+        # 조건 준비를 에이전트가 맡은 경우에도 기존 실행기는 갱신된 확정 조건을 사용한다.
+        with confirmed_constraints_scope(context.retrieval_text, context.query_constraints):
+            return self._complete_legacy_response(request, context, user, finalize_chat_response)
+
+    def _complete_legacy_response(self, request, context, user, finalize_chat_response):
         planned = plan_chat_query(request, context, user)
         if planned.response is not None:
             return finalize_chat_response(attach_status_resolution(planned.response, context))

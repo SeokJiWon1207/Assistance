@@ -1,6 +1,6 @@
 """채팅 실행 단계가 공유하는 문맥과 명시적인 완료 상태."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Dict, List, Optional
 
@@ -62,3 +62,8 @@ class ChatPipelineContext:
     intent_plan: Optional[Dict[str, Any]] = None
     retrieval_result: Optional[Dict[str, Any]] = None
     status_resolution: Optional[Dict[str, Any]] = None
+    ordinal_source_id: Optional[int] = None
+    conversation_context: Dict[str, Any] = field(default_factory=dict)
+    structured_tool_conditions: bool = False
+    # 인증된 서버 문맥만 보관한다. 모델이 만든 계획이나 클라이언트 조건이 아니다.
+    agent_planning_context: Dict[str, Any] = field(default_factory=dict)

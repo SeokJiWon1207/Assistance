@@ -34,6 +34,9 @@ class AdminUserLifecycleTests(unittest.TestCase):
                 db.execute("INSERT INTO conversation_messages VALUES (?, 'same', 0, '{}', 2)", (uid,))
                 db.execute("INSERT INTO conversation_trash VALUES (?, 'trash', '휴지통', 0, 'now', 'now', 'now')", (uid,))
                 db.execute("INSERT INTO conversation_messages VALUES (?, 'trash', 0, '{}', 2)", (uid,))
+                db.execute("INSERT INTO suggestion_cache VALUES (?, 'scope', '{}', 9999999999)", (uid,))
+                db.execute("INSERT INTO suggestion_dismissals VALUES (?, 'scope', 'key', 'rev', 1)", (uid,))
+                db.execute("INSERT INTO suggestion_jobs VALUES (?, 'scope', 'token', 9999999999, 1)", (uid,))
                 db.execute("INSERT INTO notification_reads VALUES (?, 'notice', 'now')", (uid,))
                 db.execute("INSERT INTO weekly_team_brief_reads VALUES (?, 'week', 'now')", (uid,))
                 db.execute("INSERT INTO workspace_observations VALUES (?, 'scope', 'now', '{}')", (uid,))
@@ -61,7 +64,8 @@ class AdminUserLifecycleTests(unittest.TestCase):
         self.firebase.delete_user.assert_called_once_with('target')
         with closing(sqlite3.connect(self.workspace)) as db:
             for table in ('conversations', 'conversation_messages', 'conversation_trash', 'notification_reads',
-                          'weekly_team_brief_reads', 'workspace_observations', 'workspace_events'):
+                          'weekly_team_brief_reads', 'workspace_observations', 'workspace_events',
+                          'suggestion_cache', 'suggestion_dismissals', 'suggestion_jobs'):
                 self.assertEqual(db.execute(f'SELECT DISTINCT user_uid FROM {table}').fetchall(), [('other',)], table)
             self.assertEqual(db.execute('SELECT created_by_uid FROM resolution_playbooks').fetchall(), [('other',)])
             self.assertEqual(db.execute('SELECT COUNT(*) FROM weekly_team_briefs').fetchone()[0], 1)

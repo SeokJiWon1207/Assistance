@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from backend.auth import users_db_path
 from backend.config import AUDIT_DB_PATH, CHROMA_DB_PATH, MANTIS_INDEX_DB_PATH, STATIC_DIR
 from backend.llm import model_circuit_status
+from backend.notion.complete_snapshot import get_notion_catalog_freshness
 from backend.sources.mantis import get_mantis_snapshot_freshness_status
 from backend.startup_validation import get_model_transport_security_status
 
@@ -87,7 +88,7 @@ def readiness() -> JSONResponse:
     payload = {
         "status": "ready" if ready else "not_ready",
         "checks": checks,
-        "freshness": {"mantis": get_mantis_snapshot_freshness_status()},
+        "freshness": {"mantis": get_mantis_snapshot_freshness_status(), "notion": get_notion_catalog_freshness()},
         "security": {"modelTransport": model_transport},
         # 대체 모델과 규칙 기반 폴백이 있으므로 차단 상태는 readiness를 막지 않고 알리기만 한다.
         "models": model_circuit_status(),

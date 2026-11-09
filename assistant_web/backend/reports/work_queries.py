@@ -117,8 +117,13 @@ def _open(constraints: dict) -> None:
 def _due(row: dict) -> str:
     # 완료 실적일은 기한이 아니다.
     fields = row.get("date_fields") or {}
-    return next((str(fields[k])[:10] for k in ("고객사전달 목표일", "개발완료 목표일", "QC 완료 목표일", "완료예정일", "수정예정일", "처리예정일", "마감일", "배포예정일")
-                 if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(fields.get(k) or "")[:10])), "")
+    from backend.tools.report_contracts import DUE_FIELDS
+    for key in DUE_FIELDS:
+        try:
+            return date.fromisoformat(str(fields.get(key) or '')[:10]).isoformat()
+        except ValueError:
+            continue
+    return ''
 
 
 def _line(row: dict) -> str:
@@ -127,7 +132,8 @@ def _line(row: dict) -> str:
 
 
 @with_store_scope
-def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10, operation: str | None = None) -> dict | None:
+def build_work_query_report(question: str, constraints: dict, *, today: date | None = None, limit: int = 10,
+                            operation: str | None = None, report_options: dict | None = None) -> dict | None:
     operation = operation or work_operation(question, constraints)
     if not operation:
         return None
@@ -137,11 +143,12 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
     if show_all:
         limit = max(limit, 50)
     c = deepcopy(constraints)
+    structured = report_options is not None
     notice = []
     # 날짜 없는 운영 질문의 '오늘'은 등록일 필터가 아니다.
-    if operation in {"priority", "due", "completed", "comparison"}:
+    if not structured and operation in {"priority", "due", "completed", "comparison"}:
         _clear(c, "created_at", "created_at")
-    if operation in {"priority", "aging", "due", "workload"}:
+    if not structured and operation in {"priority", "aging", "due", "workload"}:
         if not (c.get("customer_key") or c.get("people", {}).get("names") or c.get("mantis_team_members")):
             c.update(mantis_team_members=list(TEAM_MEMBERS), mantis_team_label=TEAM_SCOPE_LABEL)
             notice.append("범위를 지정하지 않아 팀 대시보드 명단 기준으로 조회했습니다.")
@@ -159,7 +166,8 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         c["unassigned_people"] = True
         notice.append("담당자 미지정은 담당자 명단만으로 팀 소속을 알 수 없습니다.")
     if operation == "customers" and not c.get("created_at"):
-        period = {"from": (today - timedelta(days=29)).isoformat(), "to": today.isoformat()}
+        period = ((report_options or {}).get('default_created_period')
+                  or {"from": (today - timedelta(days=29)).isoformat(), "to": today.isoformat()})
         c["created_at"] = period
         notice.append("‘요즘/계속’은 최근 30일 등록 건수로 해석했습니다. 건수만으로 재발 원인을 단정하지 않습니다.")
     if operation == "candidates" and not c.get("work_lookup"):
@@ -181,12 +189,16 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
     if not meta.get("search_complete"):
         notice.append("갱신이 지연된 저장 데이터입니다. 아래는 저장 시점의 결과이며 현재 건수로 확정할 수 없습니다.")
     rows = [normalize_issue(row) for row in stored if issue_matches_constraints(row, c)]
+    if structured and operation in {'priority', 'aging', 'due'}:
+        # 보고서의 미종료 지표다. 사용자가 지정한 상태·기간·범위와 교집합하며 필터를 삭제하지 않는다.
+        rows = [r for r in rows if mantis_status_bucket(r['status']) == 'open']
+        notice.append('입력 조건을 유지한 뒤 해결·종료를 제외한 업무를 정리했습니다.')
     lookup = c.get("work_lookup") or {}
     subject = "아이폰" if IOS.search(question) else "VWAP" if re.search("vwap", question, re.I) else "차트" if "차트" in question else lookup.get("subject", "")
     crash_requested = bool((IOS.search(question) and CRASH.search(question)) or lookup.get("crash"))
     if operation == "candidates":
         c["work_lookup"] = {"subject": subject, "crash": crash_requested}
-    if subject:
+    if subject and not structured:
         if subject == "아이폰":
             rows = [r for r in rows if IOS.search(r["summary"] + "\n" + r["description"])
                     and (not crash_requested or crash_issue(r))]
@@ -194,7 +206,7 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
             rows = [r for r in rows if subject.casefold() in (r["summary"] + r["description"]).casefold()]
         notice.append(f"검색어: {subject}" + (" · 비정상 종료/크래시. 일반 앱 종료·다운로드는 제외했습니다." if crash_requested else "."))
     # 후보 검색어도 확정 조건으로 보존한다. 문장 조사/구어체는 상속하지 않는다.
-    if subject in {"VWAP", "차트"}:
+    if subject in {"VWAP", "차트"} and not structured:
         clause = {"field": "keyword", "operator": "contains", "value": subject}
         clauses = c.setdefault("filter_clauses", [])
         if clause not in clauses:
@@ -217,15 +229,18 @@ def build_work_query_report(question: str, constraints: dict, *, today: date | N
         if historical:
             notice.append(f"‘예전’은 기준 이슈 등록일({seed['created_at'] or '미상'}) 이전 사례로 해석했습니다.")
     if operation == "due":
-        period = extract_relative_created_at_range(question, today) or extract_created_at_range(question) or {"from": today.isoformat(), "to": (today + timedelta(days=6-today.weekday())).isoformat()}
+        period = ((report_options or {}).get('due_period') or extract_relative_created_at_range(question, today)
+                  or extract_created_at_range(question) or {"from": today.isoformat(), "to": (today + timedelta(days=6-today.weekday())).isoformat()})
         missing = sum(not _due(r) for r in rows)
         rows = [r for r in rows if _due(r) and period["from"] <= _due(r) <= period["to"]]
         c["work_due_range"] = period
         notice.append(f"목표일 {_day_range(period['from'], period['to'], today)} 기준이며 고객사전달 → 개발완료 → QC 완료 목표일 순으로 봤습니다. 목표일이 비어 있는 {missing}건은 포함 여부를 알 수 없습니다.")
     if operation == "aging":
-        rows = [r for r in rows if r["created_at"] and r["created_at"] <= (today-timedelta(days=30)).isoformat()]
+        days = (report_options or {}).get('aging_days', 30)
+        from backend.reports.sla import _parse_date
+        rows = [r for r in rows if (created := _parse_date(r['created_at'])) and (today-created).days >= days]
         rows.sort(key=lambda r: (r["created_at"], r["id"]))
-        notice.append("오래 묵은 업무는 등록 후 30일 이상 지난 미종료로 해석했습니다.")
+        notice.append(f"오래 묵은 업무는 등록 후 {days}일 이상 지난 미종료로 해석했습니다.")
     elif operation == "priority":
         if re.search(r"급한|중요한", question):
             rows = [r for r in rows if (_due(r) and _due(r) <= today.isoformat())
@@ -298,7 +313,7 @@ def _response(question, constraints, operation, body, shown, meta, rows, notice)
     plan = build_query_plan(question, {"source": "mantis", "operation": "search"}, constraints)
     plan.update(source="mantis", resolved_constraints=deepcopy(constraints), terms=[], work_operation=operation)
     sources = build_sources_from_issue_rows(shown)
-    stage = {"source": "mantis_work", "status": "ok" if meta else "skipped",
+    stage = {"source": "mantis_work", "status": "ok" if meta else "skipped", 'issues_list': shown,
              "meta": {**(meta or {}), "operation": "aggregate", "matched_count": len(rows),
                       "matched_ids": [r["id"] for r in rows], "work_operation": operation}}
     return {"content": content, "sources": sources, "raw": {"mode": "deterministic_work_report"},

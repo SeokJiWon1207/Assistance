@@ -94,11 +94,11 @@ def _needs_review(issue):
     return False
 
 
-def review_comparison_facts(issues, model, api_key):
+def review_comparison_facts(issues, model, api_key, *, chat=None):
     from backend.reports.comparison_common import _NON_TECHNICAL_CHANGE, _is_consequence
     started = perf_counter()
     meta: dict[str, Any] = {'status': 'not_needed', 'cache_hits': 0, 'requested_issue_ids': [], 'reviewed_issue_ids': []}
-    if not model or not api_key:
+    if chat is None and (not model or not api_key):
         return meta
     pending = []; catalog = {}; keys = {}
     for issue in issues:
@@ -106,11 +106,11 @@ def review_comparison_facts(issues, model, api_key):
             continue
         rows = _catalog(issue)
         source = {field: issue.get(field) for field in ('summary', 'description', 'notes', 'matching_evidence', 'answer_evidence', 'resolution_fields')}
-        key = (model.get('id'), model.get('endpoint'), issue['id'],
+        key = ((model or {}).get('id'), (model or {}).get('endpoint'), issue['id'],
                hashlib.sha256(json.dumps(source, sort_keys=True, ensure_ascii=False).encode()).hexdigest())
         with _LOCK:
             cached = _CACHE.get(key)
-            if cached and monotonic() - cached[0] < 300:
+            if chat is None and cached and monotonic() - cached[0] < 300:
                 issue['comparison_facts'] = deepcopy(cached[1]); meta['cache_hits'] += 1
                 continue
         pending.append(issue); keys[issue['id']] = key
@@ -120,13 +120,17 @@ def review_comparison_facts(issues, model, api_key):
             meta['status'] = 'cached'
         return meta
     meta['requested_issue_ids'] = [i['id'] for i in pending]
-    payload = {'model': model.get('model', model['id']), 'temperature': 0, 'seed': 42, 'max_tokens': 450,
+    data = {'issue_ids': meta['requested_issue_ids'], 'passages': list(catalog.values())}
+    payload = {'model': (model or {}).get('model', (model or {}).get('id')), 'temperature': 0, 'seed': 42, 'max_tokens': 450,
                'stream': False, 'messages': [{'role': 'system', 'content': _PROMPT},
-               {'role': 'user', 'content': json.dumps({'issue_ids': meta['requested_issue_ids'], 'passages': list(catalog.values())}, ensure_ascii=False)}]}
+               {'role': 'user', 'content': json.dumps(data, ensure_ascii=False)}]}
     try:
-        response = measured('comparison_facts_model')(post_model_chat)(model, api_key, payload, timeout=4, think=False)
-        response.raise_for_status()
-        parsed = extract_json_object(extract_model_content(response.json()))
+        if chat is not None:
+            parsed = measured('comparison_facts_model')(chat)(model, api_key, _PROMPT, data, max_tokens=450, timeout=4)
+        else:
+            response = measured('comparison_facts_model')(post_model_chat)(model, api_key, payload, timeout=4, think=False)
+            response.raise_for_status()
+            parsed = extract_json_object(extract_model_content(response.json()))
         if not isinstance(parsed, dict):
             raise ValueError('invalid comparison response')
         proposals = parsed.get('issues')
@@ -166,16 +170,17 @@ def review_comparison_facts(issues, model, api_key):
                     continue
                 facts['action'].append({**action, 'completion_evidence': done})
             issue['comparison_facts'] = facts
-            with _LOCK:
-                _CACHE[keys[issue['id']]] = (monotonic(), deepcopy(facts))
-                while len(_CACHE) > 64:
-                    _CACHE.popitem(last=False)
+            if chat is None:
+                with _LOCK:
+                    _CACHE[keys[issue['id']]] = (monotonic(), deepcopy(facts))
+                    while len(_CACHE) > 64:
+                        _CACHE.popitem(last=False)
             meta['reviewed_issue_ids'].append(issue['id'])
         meta['status'] = 'reviewed'
     except RequestStopped:
         raise
     except (requests.RequestException, ValueError, TypeError, KeyError):
-        meta['status'] = 'rejected' if 'response' in locals() else 'unavailable'
+        meta['status'] = 'rejected' if 'parsed' in locals() or 'response' in locals() else 'unavailable'
     meta['elapsed_ms'] = round((perf_counter() - started) * 1000, 1)
     return meta
 

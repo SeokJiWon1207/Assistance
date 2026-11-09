@@ -654,6 +654,12 @@ def format_deterministic_issue_answer(
         intro = build_issue_intro_line(display_constraints, issues, len(issues))
 
     if display_constraints.get("issue_ids"):
+        from backend.intent.literal_plans import customer_field_issue
+        field = customer_field_issue(query_text)
+        if field and len(issues) == 1 and int(field['id']) == int(issues[0]['id']):
+            issue = issues[0]
+            answer = f"#{issue['id']}의 고객사는 **{customer_name(issue['project'])}**입니다."
+            return "\n\n".join(filter(None, [answer, snapshot_note, dependency_note, unapplied_note]))
         if (len(issues) == 1 and re.search(r'현재\s*상태만|상태만\s*(?:조회|알려|보여|확인)', query_text)
                 and not re.search(r'원인|본문|조치|노트|이력', query_text)):
             issue = issues[0]

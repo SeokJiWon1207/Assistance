@@ -12,6 +12,7 @@ latest_issue(notes/history 포함)를 채워주므로, 여기서는 추가 조�
 """
 
 import re
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from backend.display import customer_name, status_name
@@ -177,9 +178,10 @@ def _build_playbook_candidate(
     }
 
 
-def build_similar_resolution_report(text: str, *, validated_plan: bool = False, model=None, api_key=None, topic_terms=None) -> Optional[Dict[str, Any]]:
+def build_similar_resolution_report(text: str, *, validated_plan: bool = False, model=None, api_key=None,
+                                     topic_terms=None, constraints: Optional[dict] = None, chat=None) -> Optional[Dict[str, Any]]:
     """'#12345랑 비슷한 이슈 어떻게 해결했어?'류 질문에 사례+조치로 답한다."""
-    constraints = extract_query_constraints(text)
+    constraints = deepcopy(constraints) if constraints is not None else extract_query_constraints(text)
     confirmed=validated_plan and constraints.get('unified_plan_validated') is True
     if not confirmed and not wants_similar_issue_search(text, constraints):
         return None
@@ -297,9 +299,9 @@ def build_similar_resolution_report(text: str, *, validated_plan: bool = False, 
         ])
 
     from backend.reports.comparison_facts import review_comparison_facts
-    comparison_review = review_comparison_facts([base_issue, *example_rows], model, api_key)
+    comparison_review = review_comparison_facts([base_issue, *example_rows], model, api_key, **({'chat': chat} if chat else {}))
     from backend.reports.comparison_narrative import summarize_comparison
-    narrative, summary_meta = summarize_comparison(text, [base_issue, *example_rows], model, api_key)
+    narrative, summary_meta = summarize_comparison(text, [base_issue, *example_rows], model, api_key, **({'chat': chat} if chat else {}))
     if narrative:
         lines[2:2] = [narrative, '']
     elif summary_meta['status'] in {'unavailable', 'rejected'}:

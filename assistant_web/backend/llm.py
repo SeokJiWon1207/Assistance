@@ -12,10 +12,11 @@ import math
 import os
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date
 from threading import Lock
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import requests
 from fastapi import HTTPException
@@ -143,12 +144,38 @@ def is_ollama_model(model: Dict[str, Any]) -> bool:
     return str(model.get("provider", "")).strip().lower() == "ollama"
 
 
+class ModelTransferBlocked(requests.RequestException):
+    """요청에 적용된 데이터 전송 정책이 허용하지 않는 모델로는 보내지 않는다."""
+
+
+# 요청 단위 전송 정책. 정책이 없으면 기존 호출 규칙을 그대로 따른다.
+_TRANSFER_POLICY: ContextVar[Optional[Callable[[Dict[str, Any]], bool]]] = ContextVar(
+    "model_transfer_policy", default=None,
+)
+
+
+@contextmanager
+def model_transfer_scope(allows: Callable[[Dict[str, Any]], bool]) -> Iterator[None]:
+    """범위 안의 모든 모델 전송과 대체 후보를 허용 판정 함수로 제한한다."""
+    token = _TRANSFER_POLICY.set(allows)
+    try:
+        yield
+    finally:
+        _TRANSFER_POLICY.reset(token)
+
+
+def model_transfer_allowed(model: Dict[str, Any]) -> bool:
+    policy = _TRANSFER_POLICY.get()
+    return policy is None or bool(policy(model))
+
+
 def get_fallback_models(
     model: Dict[str, Any], registry: List[Dict[str, Any]], *, default_local_only: bool = False,
 ) -> List[Dict[str, Any]]:
     """명시한 대체 목록을 우선하며, 미설정 모델은 호출 단계의 기존 정책을 따른다."""
     available = {candidate["id"]: candidate for candidate in registry
-                 if candidate["id"] != model["id"] and candidate.get("status") == "active"}
+                 if candidate["id"] != model["id"] and candidate.get("status") == "active"
+                 and model_transfer_allowed(candidate)}
     if "fallbackModelIds" in model:
         identifiers = model["fallbackModelIds"]
         if not isinstance(identifiers, list):
@@ -156,6 +183,9 @@ def get_fallback_models(
         return [available[identifier] for identifier in dict.fromkeys(
             identifier for identifier in identifiers if isinstance(identifier, str)
         ) if identifier in available]
+    if _TRANSFER_POLICY.get() is not None:
+        # 허용 목록은 전송 경계이며 대체 모델 선택 목록이 아니다.
+        return []
     return [candidate for candidate in available.values()
             if not default_local_only or is_ollama_model(candidate)]
 
@@ -239,7 +269,7 @@ def _enter_model_circuit(key: str) -> _ModelCircuitCall:
         return key, state, state.generation
 
 
-def _record_model_result(call: _ModelCircuitCall, available: Optional[bool]) -> None:
+def _record_model_result(call: _ModelCircuitCall, available: Optional[bool], *, renew_cooldown: bool = True) -> None:
     key, state, generation = call
     with _model_circuit_lock:
         # 차단 전에 시작한 느린 요청이 새 차단이나 복구 확인 상태를 덮어쓰지 않는다.
@@ -255,10 +285,9 @@ def _record_model_result(call: _ModelCircuitCall, available: Optional[bool]) -> 
             if was_probe:
                 state.generation += 1
             return
-        # 파싱 오류·취소는 장애 횟수에 넣지 않되 복구 확인 잠금은 반드시 해제한다.
         if available is False:
             state.failures += 1
-        if state.failures >= _model_circuit_threshold():
+        if renew_cooldown and state.failures >= _model_circuit_threshold():
             if state.failures == _model_circuit_threshold() and available is False:
                 LOGGER.warning("모델 엔드포인트가 연속 %d회 응답하지 않아 호출을 차단합니다.", state.failures)
             state.open_until = time.monotonic() + _model_circuit_cooldown()
@@ -322,12 +351,17 @@ def post_model_chat(
     호출부의 기존 규칙 기반·대체 모델 폴백이 그대로 적용된다.
     """
     checkpoint()
+    if not model_transfer_allowed(model):
+        # 서킷 장애 횟수와 무관하게 정책 위반 전송은 네트워크에 닿기 전에 막는다.
+        raise ModelTransferBlocked("요청의 데이터 전송 정책이 허용하지 않는 모델입니다.")
     call = _enter_model_circuit(_model_circuit_key(model))
     try:
         response = _send_model_chat(model, api_key, payload, timeout, stream, think)
         try:
             checkpoint()
-        except RequestStopped:
+            if _TRANSFER_POLICY.get() is not None and 300 <= response.status_code < 400:
+                raise ModelTransferBlocked("모델 전송 정책에 따라 리디렉션을 차단했습니다.")
+        except (RequestStopped, ModelTransferBlocked):
             response.close()
             raise
     except (requests.Timeout, requests.ConnectionError):
@@ -337,6 +371,10 @@ def post_model_chat(
             _record_model_result(call, available=None)
             raise
         _record_model_result(call, available=False)
+        raise
+    except ModelTransferBlocked:
+        # 정책 차단은 복구 확인 잠금만 풀고 기존 장애 수와 재시도 시각을 보존한다.
+        _record_model_result(call, available=None, renew_cooldown=False)
         raise
     except BaseException:
         _record_model_result(call, available=None)
@@ -395,6 +433,7 @@ def _send_model_chat(
             json=remote_payload,
             timeout=bounded_timeout(timeout),
             stream=stream,
+            allow_redirects=_TRANSFER_POLICY.get() is None,
         )
 
         if str(model.get("provider", "")).strip().lower() in {"gemini", "openai"}:
@@ -435,6 +474,7 @@ def _send_model_chat(
         json=native_payload,
         timeout=bounded_timeout(timeout),
         stream=stream,
+        allow_redirects=_TRANSFER_POLICY.get() is None,
     )
 
 

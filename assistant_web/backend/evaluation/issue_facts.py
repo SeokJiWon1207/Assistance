@@ -205,6 +205,14 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                     )
                 claims.append((current_id, field, value))
         if len(line_ids) == 1:
+            # 제목을 인용해도 이슈 소속을 단정한 문장은 같은 번호의 프로젝트와 대조한다.
+            project = re.search(
+                r"^(?:[-*]\s*)?(?:(?:어느\s+)?고객사(?:\s+건)?\s*:\s*)?"
+                r"(?:(?:#\d+|(?:이|그|해당)\s*이슈)의\s*고객사는\s*"
+                r"(?P<project>[\w·()/-]+?)|(?:이|그|해당)\s*이슈는\s*"
+                r"(?P<customer>[\w·()/-]+)\s*고객사\s*건)(?:입니다|이에요|예요)(?=[.\s]|$)", line)
+            if project:
+                claims.append((current_id, "project", project["project"] or project["customer"]))
             handler = re.search(r"담당자(?:는|가)\s+(.+?)(?:입니다|이에요|예요|이며|이고)(?:[.\s]|$)", line)
             if handler:
                 claims.append((current_id, "handler", handler[1]))

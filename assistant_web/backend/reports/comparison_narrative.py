@@ -184,16 +184,16 @@ def _normalize_markers(claim: Any, catalog: dict[str, dict]) -> Any:
     return {**claim, 'text': claim['text'][:match.start()].rstrip()}
 
 
-def summarize_comparison(question: str, issues: list[dict], model, api_key) -> tuple[str, dict]:
+def summarize_comparison(question: str, issues: list[dict], model, api_key, *, chat=None) -> tuple[str, dict]:
     meta: dict[str, Any] = {'status': 'not_requested', 'calls': 0}
-    if not isinstance(model, dict) or not model.get('id') or not api_key or len(issues) < 2:
+    if len(issues) < 2 or chat is None and (not isinstance(model, dict) or not model.get('id') or not api_key):
         return '', meta
     started = perf_counter()
     facts = comparison_facts(issues)
     catalog = {f['id']: f for f in facts}
     try:
         meta['calls'] += 1
-        draft = measured('comparison_draft_model')(_chat)(
+        draft = measured('comparison_draft_model')(chat or _chat)(
             model, api_key, _WRITE, {'question': question, 'base_issue_id': issues[0]['id'], 'facts': facts},
             max_tokens=360, timeout=6)
         claims = draft.get('claims') if isinstance(draft, dict) else None
@@ -220,7 +220,7 @@ def summarize_comparison(question: str, issues: list[dict], model, api_key) -> t
         meta['calls'] += 1
         # 주장한 이슈의 미선택 원인·조치·후속 정정도 전부 대조한다. 다른 후보만 제외한다.
         review_facts = [fact for fact in facts if fact['issue_id'] in mentioned]
-        review = measured('comparison_review_model')(_chat)(
+        review = measured('comparison_review_model')(chat or _chat)(
             model, api_key, _REVIEW, {'question': question, 'claims': claims, 'facts': review_facts},
             max_tokens=80, timeout=3)
         if (not isinstance(review, dict) or set(review) != {'supported'}

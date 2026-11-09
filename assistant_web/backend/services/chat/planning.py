@@ -36,6 +36,8 @@ def plan_chat_query(request: ChatRequest, context: ChatPipelineContext, user: Op
 
 
 def _resolve_chat_plan(request: ChatRequest, context: ChatPipelineContext, user: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if (context.intent_plan or {}).get('planner') == 'explicit_references':
+        return None
     if (context.intent_plan or {}).get("planner") == "unified_llm":
         from backend.services.unified_planning import execute_plan
         return execute_plan(request, context, user)

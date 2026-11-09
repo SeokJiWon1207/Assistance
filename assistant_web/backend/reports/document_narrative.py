@@ -79,6 +79,20 @@ def _internal_names(raw: dict[str, Any]) -> set[str]:
             for value in (person.get('name'), person.get('real_name')) if str(value or '').strip()}
 
 
+def customer_wording_rules() -> dict[str, Any]:
+    """판정은 바꾸지 않고 작성기가 지켜야 할 기존 고객용 표현 계약을 노출한다."""
+    return {'allowed_latin_tokens': sorted(_CUSTOMER_LATIN),
+            'forbidden': ['내부 번호·화면 코드', '담당자·요청자 이름', '파일 경로·코드명·함수명',
+                          '노트·출처 표기', '허용 목록 밖의 모든 영문 토큰']}
+
+
+def customer_blocked_tokens(text: str, raw: dict[str, Any]) -> list[str]:
+    """거절된 문장 안의 용어만 보정에 알려준다. 새 사실이나 허용 예외는 만들지 않는다."""
+    return sorted({word for word in re.findall(r'[A-Za-z][A-Za-z0-9_]*', text)
+                   if word.casefold() not in _CUSTOMER_LATIN}
+                  | {name for name in _internal_names(raw) if len(name) >= 2 and name in text})
+
+
 def customer_safe(text: str, raw: dict[str, Any]) -> bool:
     """고객용 문장에 내부 번호·담당자·경로·코드명이 섞였는지 판정한다."""
     if re.search(r'#|노트|\[|[A-Za-z]:[\\/]|https?://|\\', text):
@@ -102,38 +116,56 @@ def _stage_text(passage: dict[str, Any]) -> str:
     return re.sub(r'(전달|송부|발송)\s*드리오니\s*,?\s*', r'\1드렸습니다.\n', text)
 
 
-def validate_claim(claim: Any, slot: str, catalog: dict[str, dict[str, Any]], *, kind: str,
-                   raw: dict[str, Any]) -> bool:
+def completion_evidence(catalog: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    """작성 전에 기존 완료 검사의 근거 후보를 알려준다. 판정 규칙은 재사용한다."""
+    result: dict[str, list[str]] = {stage: [] for stage in STAGES}
+    for ref, passage in catalog.items():
+        rows = [{'issue_id': passage['issue_id'], 'kind': 'action', 'text': _stage_text(passage)}]
+        for stage, (label, _, _) in STAGES.items():
+            probe = label + ' 완료'
+            if completed_stage(stage, probe) and _completed_stages_supported(probe, rows):
+                result[stage].append(ref)
+    return result
+
+
+def claim_rejection_reason(claim: Any, slot: str, catalog: dict[str, dict[str, Any]], *, kind: str,
+                           raw: dict[str, Any]) -> str:
+    """기존 문장 검사의 판정을 바꾸지 않고 재작성에 필요한 실패 단계도 반환한다."""
     if not isinstance(claim, dict) or set(claim) != {'text', 'evidence_ids'}:
-        return False
+        return 'invalid_claim'
     text, refs = claim['text'], claim['evidence_ids']
     if not isinstance(text, str) or not 1 <= len(text.strip()) <= _MAX_CHARS or '\n' in text:
-        return False
-    if (not isinstance(refs, list) or not 1 <= len(refs) <= 6 or len(set(refs)) != len(refs)
-            or any(not isinstance(ref, str) or ref not in catalog for ref in refs)):
-        return False
+        return 'invalid_text'
+    if (not isinstance(refs, list) or not 1 <= len(refs) <= 6
+            or any(not isinstance(ref, str) or ref not in catalog for ref in refs) or len(set(refs)) != len(refs)):
+        return 'invalid_evidence'
     if re.search(r'[|*`<>]|\bp\d+\b|\[\s*노트', text):
-        return False
+        return 'forbidden_markup'
     rows = [{'issue_id': catalog[ref]['issue_id'], 'kind': 'action' if slot == 'actions' else slot,
              'text': _stage_text(catalog[ref])} for ref in refs]
     source = '\n'.join(row['text'] for row in rows)
     title = str(raw.get('summary') or '')
     if not _valid_literals(text, [{**row, 'text': row['text'] + '\n' + title} for row in rows]):
-        return False
+        return 'unsupported_literal'
     # 남은 일은 '고객사가 재확인을 요청했다'처럼 요청을 서술한다. 단계 완료 판정이
     # 요청 동사를 완료로 읽지 않도록, 요청·대기 문장은 독립 검토에서 대조한다.
     pending = slot == 'open_items' and re.search(r'요청|문의|예정|대기|필요|남아|미확인|않았|못했', text)
     if not pending and not _completed_stages_supported(text, rows):
-        return False
+        return 'unsupported_completion'
     if _OVERCLAIM.search(text) and not _OVERCLAIM.search(source):
-        return False
+        return 'unsupported_resolution'
     if slot == 'cause' and _HEDGED_SOURCE.search(source) and not _UNCERTAIN.search(text):
-        return False
+        return 'lost_uncertainty'
     if slot == 'next_steps' and any(completed_stage(stage, text) for stage in STAGES):
-        return False
+        return 'completed_next_step'
     if (slot == 'customer_summary' or (kind == 'notice' and slot in CUSTOMER_SLOTS)) and not customer_safe(text, raw):
-        return False
-    return True
+        return 'internal_customer_info'
+    return ''
+
+
+def validate_claim(claim: Any, slot: str, catalog: dict[str, dict[str, Any]], *, kind: str,
+                   raw: dict[str, Any]) -> bool:
+    return not claim_rejection_reason(claim, slot, catalog, kind=kind, raw=raw)
 
 
 def _normalized(payload: Any, kind: str) -> dict[str, list[dict[str, Any]]]:

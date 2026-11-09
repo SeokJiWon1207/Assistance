@@ -84,6 +84,8 @@ def main() -> int:
                 "UNIFIED_QUERY_PLANNER_ENABLED": "false",
                 "ANONYMIZED_TELEMETRY": "False",
                 "NOTION_MIN_REQUEST_INTERVAL_SECONDS": "0",
+                "NOTION_SHARED_RATE_LIMIT_ENABLED": "false",
+                "NOTION_CACHE_WARM_ENABLED": "false",
                 "PYTHONDONTWRITEBYTECODE": "1",
             }
         )
