@@ -61,6 +61,14 @@ class StatusDefinitionTests(unittest.TestCase):
             self.assertEqual(mantis_status_bucket(unknown), "unknown")
             self.assertFalse(workspace._is_open(unknown))
 
+    def test_status_planner_defaults_to_the_preferred_answer_model(self):
+        config = Path(__file__).resolve().parents[1] / "config"
+        planner = json.loads((config / "status_planner.json").read_text(encoding="utf-8"))
+        models = json.loads((config / "models.json").read_text(encoding="utf-8"))
+        preferred = [model["id"] for model in models if model.get("preferred") is True]
+        self.assertEqual(preferred, ["gpt-6-luna"])
+        self.assertEqual(planner["modelId"], preferred[0])
+
 
 class StatusSemanticTests(unittest.TestCase):
     def setUp(self):
