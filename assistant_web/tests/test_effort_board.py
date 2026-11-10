@@ -61,6 +61,16 @@ class EffortBoardTests(unittest.TestCase):
         self.assertEqual(summary["p90HandlingDays"], 85)
         self.assertEqual([row["count"] for row in result["distribution"]], [1, 1, 0, 1, 1, 1])
 
+    def test_shared_accounts_are_counted_in_effort_and_handling_time(self):
+        self.issues = [_issue(1, handler="cs이슈", date_fields={"고객사전달일": "2026-08-20"},
+                              effort_fields={"1문의공수": "석지원(2)"}),
+                       _issue(2, handler="csissue", created_at="2026-08-18"),
+                       _issue(3, handler="다른팀")]
+        result = self._build()
+        self.assertEqual(result["summary"]["closedCount"], 2)
+        self.assertEqual(result["summary"]["medianHandlingDays"], 1.0)
+        self.assertEqual(result["effort"]["total"], 2.0)
+
     def test_aging_counts_and_watch_list_include_issues_about_to_cross(self):
         result = self._build()
         self.assertEqual(result["summary"]["agingOpen"], 1)

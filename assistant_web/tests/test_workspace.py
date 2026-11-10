@@ -373,6 +373,17 @@ class PersonalWorkspaceTests(unittest.TestCase):
 
 
 class TeamDashboardTests(unittest.TestCase):
+    def test_shared_accounts_are_counted_without_increasing_team_headcount(self):
+        issues = [{"id": i, "handler": handler, "status": "assigned", "created_at": "2026-08-01"}
+                  for i, handler in enumerate(("cs이슈", " CSISSUE ", "다른팀"), 1)]
+        with patch.object(workspace, "load_complete_workspace", return_value=(issues, {"search_complete": True})):
+            result = workspace.build_team_dashboard([])
+        self.assertEqual(result["summary"]["members"], 13)
+        self.assertEqual(result["summary"]["recentIssues"], 2)
+        self.assertEqual(result["summary"]["open"], 2)
+        self.assertEqual({row["mantisUsername"]: row["open"] for row in result["sharedAccounts"]},
+                         {"cs이슈": 1, "csissue": 1})
+
     @patch.object(workspace, "fetch_workspace_recent_issues")
     def test_team_dashboard_groups_by_approved_user_mapping(self, fetch_issues):
         fetch_issues.return_value = [

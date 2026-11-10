@@ -62,6 +62,13 @@ class CustomerDetailTests(unittest.TestCase):
         self.assertEqual(result["openIssuesTotal"], 3)
         self.assertEqual([row["id"] for row in result["openIssues"]], [101, 102, 104])
 
+    def test_shared_accounts_are_counted_and_listed_in_customer_detail(self):
+        self.issues.extend([_issue(201, handler="cs이슈"), _issue(202, handler="csissue")])
+        result = self._build()
+        self.assertEqual(result["summary"]["newIssues"], 4)
+        self.assertEqual(result["summary"]["totalIssues"], 6)
+        self.assertEqual({row["id"] for row in result["openIssues"]}, {101, 102, 104, 201, 202})
+
     def test_period_breakdowns_use_new_issues_inside_period(self):
         result = self._build()
         self.assertEqual(result["summary"]["newIssues"], 2)

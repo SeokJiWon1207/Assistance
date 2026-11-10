@@ -23,7 +23,7 @@ from backend.storage.workspace_repository import (
 )
 from backend.utils.dates import local_timestamp as _now
 from backend.workspace_data import load_workspace_snapshot
-from backend.domain.team import TEAM_MEMBERS, filter_team_issues
+from backend.domain.team import TEAM_ISSUE_OWNERS, filter_team_issues
 
 
 TEAM_BRIEF_FETCH_LIMIT = 1000
@@ -288,7 +288,7 @@ def _generate_team_brief(today: date, *, force_refresh: bool = False) -> Dict[st
     }
     return {
         "contentVersion": TEAM_BRIEF_CONTENT_VERSION,
-        "scopeMembers": list(TEAM_MEMBERS),
+        "scopeMembers": list(TEAM_ISSUE_OWNERS),
         "weekStart": current_start.isoformat(),
         "title": f"{current_start.month}월 {current_start.day}일 주간 팀 브리핑",
         "summaryPeriod": f"{previous_start.isoformat()} ~ {previous_end.isoformat()}",
@@ -311,7 +311,7 @@ def get_weekly_team_brief(user_uid: str, *, refresh: bool = False, today: date |
     row = read_team_brief(week_start, refresh=refresh)
     stored_payload = json.loads(row["payload_json"]) if row else None
     if (stored_payload and stored_payload.get("contentVersion") == TEAM_BRIEF_CONTENT_VERSION
-            and stored_payload.get("scopeMembers") == list(TEAM_MEMBERS)):
+            and stored_payload.get("scopeMembers") == list(TEAM_ISSUE_OWNERS)):
         payload = stored_payload
     else:
         generated = _generate_team_brief(base, force_refresh=refresh)

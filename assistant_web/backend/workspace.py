@@ -36,7 +36,7 @@ from backend import conversation_history
 from backend.conversation_history import ConversationConflictError, ConversationDeletedError, ConversationQuotaError  # noqa: F401
 from backend.sources.mantis_snapshot_query import scan_mantis_documents
 from backend.workspace_data import load_workspace_snapshot
-from backend.domain.team import filter_team_issues, team_member_profiles
+from backend.domain.team import filter_team_issues, team_member_profiles, team_shared_account_profiles
 
 from backend.storage.sqlite import open_sqlite
 from backend.storage.profiles import WORKSPACE
@@ -437,12 +437,14 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
         source_reason = str(snapshot.get("reason") or type(exc).__name__)
     issues = filter_team_issues(issues)
     representative_users = team_member_profiles(users)
-    members = []
-    for user in representative_users:
+    members: List[Dict[str, Any]] = []
+    shared_accounts: List[Dict[str, Any]] = []
+    for user in [*representative_users, *team_shared_account_profiles()]:
         person = user_mantis_name(user)
         assigned = [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) == normalize_for_match(person)]
         open_items = [_issue_summary(issue) for issue in assigned if _is_open(issue.get("status", ""))]
-        members.append(
+        rows = shared_accounts if user.get("role") == "shared" else members
+        rows.append(
             {
                 "uid": user.get("uid"),
                 "displayName": user.get("displayName") or user.get("email"),
@@ -471,6 +473,7 @@ def build_team_dashboard(users: List[Dict[str, Any]]) -> Dict[str, Any]:
             "aging": len(aging),
         },
         "members": members,
+        "sharedAccounts": shared_accounts,
         "agingIssues": aging[:20],
         "source": {"status": source_status, "reason": source_reason, **source_meta},
         "generatedAt": _now(),

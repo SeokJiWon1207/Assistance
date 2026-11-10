@@ -174,6 +174,7 @@ test('distribution charts retain real counts, age exclusions and zero-load membe
   const payload = filterableDashboard();
   payload.openIssues = [...payload.priorities, {id:4, project:'<img src=x>', title:'등록일 미상', ageDays:null}];
   payload.members = [{mantisUsername:'busy',displayName:'담당자',open:5,overdue:1,agingOnly:2}, {mantisUsername:'zero',displayName:'미배정',open:0,overdue:0,agingOnly:0}];
+  payload.sharedAccounts = [{mantisUsername:'cs이슈',displayName:'cs이슈',role:'shared',open:1}];
   const h = await harness('member', undefined, async () => ({ok:true,payload}));
   await h.api.loadDashboard();
   const charts = distributionSpecs(h.els.dashboardBody.innerHTML);
@@ -186,11 +187,14 @@ test('distribution charts retain real counts, age exclusions and zero-load membe
   assert.deepEqual(age.rows.map(r=>r.count), [1,0,2,0]);
   assert.equal(age.unknown, 1);
   assert.equal(age.action, 'data-dashboard-age');
-  const members = charts.find(s=>s.title==='팀원별 부하');
+  const members = charts.find(s=>s.title==='담당자별 부하');
   assert.equal(members.kind, 'member-heatmap');
-  assert.equal(members.rows.length, 2);
+  assert.deepEqual(members.rows.map(row=>row.id), ['busy','cs이슈','zero']);
+  assert.deepEqual(charts.find(s=>s.title==='담당자별 미종료').rows.map(row=>row.name), ['담당자','cs이슈','미배정']);
   assert.equal(members.rows[0].rest, 2);
-  assert.equal(members.rows[1].rest, 0);
+  assert.equal(members.rows[1].rest, 1);
+  assert.equal(members.rows[2].rest, 0);
+  assert.match(h.els.dashboardBody.innerHTML, /팀원 2명 · 공용 계정 1개/);
   assert.doesNotMatch(h.els.dashboardBody.innerHTML, /<img src=x>/);
   h.els.dashboardBody.handlers.click({target:clickTarget('[data-dashboard-age]',{dashboardAge:'30-59'})});
   assert.match(h.els.dashboardBody.innerHTML, /2 \/ 4건/);
@@ -858,7 +862,7 @@ test('team overview splits into a summary pane and an issues tab that filters ju
   assert.match(summary, /class="workspace-kpis snow-kpis"/);
   assert.match(summary, /class="workspace-kpi snow-kpi" data-dashboard-metric="open"/);
   assert.match(summary, /미종료 구성/);
-  assert.match(summary, /팀원별 미종료/);
+  assert.match(summary, /담당자별 미종료/);
   assert.match(summary, /우선 확인 이슈 상위 5건/);
   assert.match(summary, /class="ops-side"/);
   assert.match(summary, /<small>팀장<\/small>/);

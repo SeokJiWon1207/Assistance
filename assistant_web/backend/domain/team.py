@@ -11,8 +11,10 @@ _config = json.loads((CONFIG_DIR / "team_dashboard.json").read_text(encoding="ut
 TEAM_SCOPE_LABEL = _config["label"]
 TEAM_MEMBERS = tuple(_config["members"])
 TEAM_SHARED_ACCOUNTS = tuple(_config.get("shared_accounts", []))
+TEAM_ISSUE_OWNERS = (*TEAM_MEMBERS, *TEAM_SHARED_ACCOUNTS)
+TEAM_ISSUE_SCOPE_LABEL = f"{TEAM_SCOPE_LABEL} + 공용 계정" if TEAM_SHARED_ACCOUNTS else TEAM_SCOPE_LABEL
 _member_keys = {normalize_for_match(name) for name in TEAM_MEMBERS}
-_shared_keys = {normalize_for_match(name) for name in TEAM_SHARED_ACCOUNTS}
+_issue_owner_keys = {normalize_for_match(name) for name in TEAM_ISSUE_OWNERS}
 if not TEAM_MEMBERS or "" in _member_keys or len(_member_keys) != len(TEAM_MEMBERS):
     raise ValueError("팀 대시보드 담당자 명단이 비어 있거나 중복되어 있습니다.")
 
@@ -48,10 +50,13 @@ def matches_team_constraint(handler: str, constraints: dict) -> bool:
     return not members or normalize_for_match(handler) in {normalize_for_match(name) for name in members}
 
 
-def filter_team_issues(issues, *, include_shared: bool = False):
-    """정확한 담당자 명단을 적용하고, 지정한 집계에서만 팀 공용 계정을 포함한다."""
-    allowed = _member_keys | _shared_keys if include_shared else _member_keys
-    return [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) in allowed]
+def filter_team_issues(issues):
+    """팀 집계에는 팀원과 설정된 공용 계정의 담당 이슈를 포함한다."""
+    return [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) in _issue_owner_keys]
+
+
+def team_shared_account_profiles():
+    return [{"displayName": name, "mantisUsername": name, "role": "shared"} for name in TEAM_SHARED_ACCOUNTS]
 
 
 def team_member_profiles(users):

@@ -30,7 +30,6 @@ def _grouped(issues: list[dict[str, Any]], missing: int) -> dict[str, Any]:
 
 def weekly_issue_summary(
     issues: list[dict[str, Any]], today: date, *, complete: bool,
-    remaining_issues: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     start = WEEK_ANCHOR + timedelta(weeks=(today - WEEK_ANCHOR).days // 7)
     end = start + timedelta(days=6)
@@ -50,8 +49,6 @@ def weekly_issue_summary(
                 missing_delivery += 1
             elif start.isoformat() <= delivered <= end.isoformat():
                 completed.append(issue)
-    # 잔여만 공용 계정을 포함할 수 있으며 접수·완료의 담당 범위는 유지한다.
-    for issue in (issues if remaining_issues is None else remaining_issues):
         status = canonical_mantis_status(str(issue.get("status") or ""))
         status = status or canonical_mantis_status(str(issue.get("status_label") or ""))
         if status not in REMAINING_EXCLUDED:

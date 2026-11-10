@@ -48,12 +48,12 @@ export function renderWeeklyIssues(weekly) {
   if (!weekly) return "";
   const complete = weekly.complete === true;
   return `<section class="dashboard-weekly" aria-label="금주 이슈 현황">
-    <div class="dashboard-weekly-heading"><div><h3>금주 이슈 현황</h3><p>${escape(weekRange(weekly.from, weekly.to))} · 한국 시간 · 선택 기간과 별도 집계</p></div><span>토요일부터 금요일까지</span></div>
+    <div class="dashboard-weekly-heading"><div><h3>금주 이슈 현황</h3><p>${escape(weekRange(weekly.from, weekly.to))} · 한국 시간 · 선택 기간과 별도 집계 · 공용 계정 포함</p></div><span>토요일부터 금요일까지</span></div>
     ${!complete ? '<p class="dashboard-chart-note">확인한 범위 기준 · 일부 데이터만 조회되어 전체 건수와 비율은 미확정이에요.</p>' : ""}
     <div class="dashboard-weekly-grid">
       ${card(weekly.received, "금주 접수현황", "고객사요청일 기준", complete, true)}
       ${card(weekly.completed, "금주 완료현황", "고객사전달일 기준 · 제목의 정기점검 제외", complete, true)}
-      ${card(weekly.remaining, "잔여현황", "전체 기간 · 공용 계정 포함 · 매체별 잔여 이슈", complete, false)}
+      ${card(weekly.remaining, "잔여현황", "전체 기간 · 매체별 잔여 이슈", complete, false)}
     </div>
     <p class="dashboard-chart-note">잔여현황은 종료된이슈·정보부족·개발완료·해결된이슈를 제외해요. 금주 완료는 입력한 고객사전달일로 집계해요.</p>
   </section>`;

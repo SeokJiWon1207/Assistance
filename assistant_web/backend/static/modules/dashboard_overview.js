@@ -285,19 +285,19 @@ function opsKpiTiles({ summary = {}, complete = true, metric = "" } = {}) {
   </section>`;
 }
 
-// 팀원별 미종료: 지연 · 장기(지연 제외) · 그 외를 쌓은 세로 막대(bklit). 수치 표는 차트 아래 펼침에 남는다.
-function memberBarsCard({ members = [], complete = true } = {}) {
-  if (!members.length) return "";
-  const rows = [...members]
+// 담당자별 미종료: 지연 · 장기(지연 제외) · 그 외를 쌓은 세로 막대(bklit).
+function memberBarsCard({ members = [], sharedAccounts = [], complete = true } = {}) {
+  if (!members.length && !sharedAccounts.length) return "";
+  const rows = [...members, ...sharedAccounts]
     .map((member) => ({ name: member.displayName || member.mantisUsername || "이름 미등록", ...memberSegments(member) }))
     .sort((a, b) => b.open - a.open);
-  // 막대 이름이 겹치지 않게 미종료 많은 8명까지. 전체 팀원은 오른쪽 레일 목록에 있다.
+  // 막대 이름이 겹치지 않게 미종료가 많은 담당자부터 표시한다.
   const shown = rows.slice(0, MEMBER_BAR_LIMIT);
   const fallback = `<ul class="ops-side-list">${rows.map((row) => `<li>${escapeText(row.name)} · 미종료 ${escapeText(countText(row.open, complete))} (지연 ${number(row.overdue)} · 장기 ${number(row.aging)})</li>`).join("")}</ul>`;
   return `
-    <section class="workspace-section ops-card ops-members" aria-label="팀원별 미종료">
-      <header class="ops-card-head"><div><h3>팀원별 미종료</h3><p>${complete ? "담당 미종료 · 지연과 장기 구성" : "확인한 범위 기준"}${rows.length > shown.length ? ` · 많은 순 ${shown.length}명` : ""}</p></div></header>
-      ${chartHost({ kind: "bar", title: "팀원별 미종료", complete, orientation: "vertical",
+    <section class="workspace-section ops-card ops-members" aria-label="담당자별 미종료">
+      <header class="ops-card-head"><div><h3>담당자별 미종료</h3><p>${complete ? "담당 미종료 · 지연과 장기 구성" : "확인한 범위 기준"}${sharedAccounts.length ? " · 공용 계정 포함" : ""}${rows.length > shown.length ? ` · 상위 ${shown.length}개 표시` : ""}</p></div></header>
+      ${chartHost({ kind: "bar", title: "담당자별 미종료", complete, orientation: "vertical",
         rows: shown.map((row) => ({ name: row.name, overdue: row.overdue, aging: row.aging, rest: row.rest })),
         series: [
           { key: "overdue", label: "일정 지연", color: "var(--snow-rose, var(--danger))" },

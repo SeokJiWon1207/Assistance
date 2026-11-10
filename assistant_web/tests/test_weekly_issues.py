@@ -55,12 +55,12 @@ class WeeklyIssuesTests(unittest.TestCase):
         self.assertEqual(result["remaining"]["total"], 6)
         self.assertEqual(result["remaining"]["rows"], [{"name": "HTS", "count": 6}])
 
-    def test_shared_accounts_expand_only_remaining_without_changing_team_metrics(self):
+    def test_shared_accounts_are_included_in_all_weekly_and_dashboard_metrics(self):
         dates = {"고객사요청일": "2026-10-29", "고객사전달일": "2026-10-29"}
         issues = [
             self.issue(id=1, project="팀고객", created_at="2026-10-29", date_fields=dates),
-            self.issue(id=2, handler="cs이슈", project="공용고객", media_type="MTS", date_fields=dates),
-            self.issue(id=3, handler=" CSISSUE ", project="공용고객", date_fields=dates),
+            self.issue(id=2, handler="cs이슈", project="공용고객", media_type="MTS", created_at="2026-10-29", date_fields=dates),
+            self.issue(id=3, handler=" CSISSUE ", project="공용고객", created_at="2026-10-29", date_fields=dates),
             self.issue(id=4, handler="drfnnext", project="외부고객", date_fields=dates),
             self.issue(id=5, handler="외부담당", project="외부고객", date_fields=dates),
             self.issue(id=6, handler="", project="미지정고객", date_fields=dates),
@@ -73,14 +73,16 @@ class WeeklyIssuesTests(unittest.TestCase):
         self.assertEqual(weekly["remaining"], {
             "total": 3, "rows": [{"name": "HTS", "count": 2}, {"name": "MTS", "count": 1}],
         })
-        self.assertEqual(weekly["received"]["total"], 1)
-        self.assertEqual(weekly["completed"]["total"], 1)
-        self.assertEqual(result["summary"]["open"], 1)
-        self.assertEqual(result["summary"]["newIssues"], 1)
-        self.assertEqual(result["meta"]["loadedIssues"], 1)
+        self.assertEqual(weekly["received"]["total"], 3)
+        self.assertEqual(weekly["completed"]["total"], 3)
+        self.assertEqual(result["summary"]["open"], 3)
+        self.assertEqual(result["summary"]["newIssues"], 3)
+        self.assertEqual(result["meta"]["loadedIssues"], 3)
         self.assertEqual(sum(row["open"] for row in result["members"]), 1)
-        self.assertEqual({row["id"] for row in result["openIssues"]}, {1})
-        self.assertEqual({row["customer"] for row in result["customerHealth"]}, {"팀고객"})
+        self.assertEqual({row["mantisUsername"]: row["open"] for row in result["sharedAccounts"]},
+                         {"cs이슈": 1, "csissue": 1})
+        self.assertEqual({row["id"] for row in result["openIssues"]}, {1, 2, 3})
+        self.assertEqual({row["customer"] for row in result["customerHealth"]}, {"팀고객", "공용고객"})
 
     def test_shared_accounts_preserve_remaining_status_exclusions_and_partial_coverage(self):
         excluded = ["closed", "feedback", "developed", "resolved", "종료된이슈", "정보부족", "개발완료", "해결된이슈"]

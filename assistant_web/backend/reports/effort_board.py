@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from backend.display import customer_name
-from backend.domain.team import TEAM_SCOPE_LABEL, filter_team_issues
+from backend.domain.team import TEAM_ISSUE_SCOPE_LABEL, filter_team_issues
 from backend.effort_fields import EFFORT_FIELD_LABELS, issue_effort_fields, parse_effort_field_value
 from backend.reports.customer import _is_closed
 from backend.reports.dashboard import DASHBOARD_PERIOD_OPTIONS, _period_bounds, _summary_rows
@@ -178,7 +178,7 @@ def build_effort_board(
             "periodTo": current_end.isoformat(),
             "comparisonFrom": previous_start.isoformat(),
             "comparisonTo": previous_end.isoformat(),
-            "scopeLabel": TEAM_SCOPE_LABEL,
+            "scopeLabel": TEAM_ISSUE_SCOPE_LABEL,
             "agingDays": TEAM_BRIEF_AGING_DAYS,
         },
         "summary": {

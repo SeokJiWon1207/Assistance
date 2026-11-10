@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.domain.team import TEAM_MEMBERS, TEAM_SHARED_ACCOUNTS
 from backend.reports import team_brief
 
 
@@ -67,7 +68,7 @@ class TeamBriefTests(unittest.TestCase):
     def test_weekly_snapshot_is_reused_and_read_state_is_per_user(self):
         generated = {
             "contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
-            "scopeMembers": list(team_brief.TEAM_MEMBERS),
+            "scopeMembers": [*TEAM_MEMBERS, *TEAM_SHARED_ACCOUNTS],
             "weekStart": "2026-08-10",
             "title": "브리핑",
             "summaryPeriod": "2026-08-03 ~ 2026-08-09",
@@ -119,26 +120,30 @@ class TeamBriefTests(unittest.TestCase):
         self.assertEqual(result["contentVersion"], team_brief.TEAM_BRIEF_CONTENT_VERSION)
         self.assertEqual(result["title"], "판단 콘텐츠가 포함된 브리핑")
 
-    def test_weekly_brief_excludes_outsiders_and_shared_accounts(self):
+    def test_weekly_brief_counts_shared_accounts_and_excludes_outsiders(self):
         issues = [
             {"id": index, "handler": name, "status": "assigned", "project": name,
              "created_at": "2026-08-05", "updated_at": "2026-08-05", "priority": "high"}
-            for index, name in enumerate(["하영훈", "이상신", "강민성", "cs이슈", "담당자 미지정"], 1)
+            for index, name in enumerate(["하영훈", "이상신", "강민성", "cs이슈", "csissue", "담당자 미지정"], 1)
         ]
         with patch.object(team_brief, "_load_issues", return_value=(issues, {"status": "live"})):
             result = team_brief._generate_team_brief(date(2026, 8, 10))
-        self.assertEqual(result["summary"]["newIssues"], 2)
-        self.assertEqual(result["summary"]["carriedOpen"], 2)
-        self.assertEqual({row["handler"] for row in result["priorities"]}, {"하영훈", "이상신"})
+        self.assertEqual(result["summary"]["newIssues"], 4)
+        self.assertEqual(result["summary"]["carriedOpen"], 4)
+        self.assertEqual({row["handler"] for row in result["priorities"]}, {"하영훈", "이상신", "cs이슈", "csissue"})
 
-    def test_roster_change_invalidates_saved_brief(self):
+    def test_saved_brief_from_before_shared_accounts_is_regenerated(self):
         generated = {"contentVersion": team_brief.TEAM_BRIEF_CONTENT_VERSION,
-                     "scopeMembers": list(team_brief.TEAM_MEMBERS), "weekStart": "2026-08-10",
+                     "scopeMembers": [*TEAM_MEMBERS, *TEAM_SHARED_ACCOUNTS], "weekStart": "2026-08-10",
                      "generatedAt": "2026-08-10T09:00:00+09:00"}
+        old = {**generated, "scopeMembers": list(TEAM_MEMBERS)}
         with tempfile.TemporaryDirectory() as directory, patch.dict(
             os.environ, {"WORKSPACE_DB_PATH": str(Path(directory) / "workspace.sqlite3")}
-        ), patch.object(team_brief, "_generate_team_brief", return_value=generated) as generate:
-            team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
-            with patch.object(team_brief, "TEAM_MEMBERS", (*team_brief.TEAM_MEMBERS, "변경된담당자")):
-                team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+        ), patch.object(team_brief, "_generate_team_brief", side_effect=[old, generated]) as generate:
+            first = team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+            second = team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+            third = team_brief.get_weekly_team_brief("user-a", today=date(2026, 8, 10))
+        self.assertEqual(first["scopeMembers"], list(TEAM_MEMBERS))
+        self.assertEqual(second["scopeMembers"], generated["scopeMembers"])
+        self.assertEqual(third["scopeMembers"], generated["scopeMembers"])
         self.assertEqual(generate.call_count, 2)

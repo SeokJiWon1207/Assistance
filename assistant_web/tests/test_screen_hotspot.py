@@ -67,6 +67,14 @@ class ScreenHotspotTests(unittest.TestCase):
         self.assertIsNone(spikes[1]["ratio"])
         self.assertEqual(self._build(complete=False)["spikes"], [])
 
+    def test_shared_accounts_are_counted_under_their_screen(self):
+        self.issues = [_issue(1, "2026-08-25", handler="cs이슈"), _issue(2, "2026-08-26", handler="csissue"),
+                       _issue(3, "2026-08-27", handler="다른팀")]
+        result = self._build(media="HTS", customer="신한")
+        self.assertEqual(result["summary"]["issueCount"], 2)
+        self.assertEqual(result["rows"][0]["weeks"][-1], 2)
+        self.assertEqual([item["id"] for item in result["rows"][0]["recentIssues"]], [2, 1])
+
     def test_media_and_customer_filters_narrow_rows_but_keep_customer_options(self):
         mts = self._build(media="mts")
         self.assertEqual(mts["meta"]["media"], "MTS")

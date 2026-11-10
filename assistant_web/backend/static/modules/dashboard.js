@@ -15,7 +15,7 @@ import { registerDashboardTab, selectDashboardTab, currentDashboardTab } from ".
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 let issueDetailContext = null;
-const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자" };
+const roleLabels = { member: "팀원", manager: "팀장", admin: "관리자", shared: "공용 계정" };
 const metricFilterLabels = { overdue: "일정 지연", aging: "장기 미종료", highRisk: "고위험" };
 // 장기 미종료 지표(30일 이상)와 같은 경계로 나눠 차트와 지표 카드의 숫자가 맞게 한다.
 const AGING_DAYS = 30;
@@ -202,9 +202,10 @@ function renderAgeChart(openIssues) {
     </section>`;
 }
 
-function renderMemberChart(members) {
-  if (!members.length) return "";
-  const rows = members.map((member) => {
+function renderMemberChart(members, sharedAccounts) {
+  const assignees = [...members, ...sharedAccounts];
+  if (!assignees.length) return "";
+  const rows = assignees.map((member) => {
     const overdue = Number(member.overdue || 0);
     const aging = Number(member.agingOnly || 0);
     return { ...member, counts: { overdue, aging, rest: Math.max(0, Number(member.open || 0) - overdue - aging) } };
@@ -221,9 +222,9 @@ function renderMemberChart(members) {
       </div>`;
   }).join("");
   return `
-    <section class="workspace-section dashboard-chart dashboard-members-chart" aria-label="팀원별 업무 부하">
-      ${sectionHeader("팀원별 부하", `미종료 기준 · ${members.length}명`)}
-      <div class="dashboard-chart-body">${chartHost({kind: "member-heatmap", showValues: true, title: "팀원별 부하", complete: dashboardState.data?.meta?.search_complete === true, rows: rows.map(row => ({id: row.mantisUsername, name: row.displayName, ...row.counts})), series: BKLIT_SEGMENTS}, `<div class="dashboard-bars">${bars}</div>`)}</div>
+    <section class="workspace-section dashboard-chart dashboard-members-chart" aria-label="담당자별 업무 부하">
+      ${sectionHeader("담당자별 부하", `미종료 기준 · 팀원 ${members.length}명${sharedAccounts.length ? ` · 공용 계정 ${sharedAccounts.length}개` : ""}`)}
+      <div class="dashboard-chart-body">${chartHost({kind: "member-heatmap", showValues: true, title: "담당자별 부하", complete: dashboardState.data?.meta?.search_complete === true, rows: rows.map(row => ({id: row.mantisUsername, name: row.displayName, ...row.counts})), series: BKLIT_SEGMENTS}, `<div class="dashboard-bars">${bars}</div>`)}</div>
     </section>`;
 }
 
@@ -421,7 +422,7 @@ function renderDashboard() {
   renderFilterbar(filtered.length);
   // 지표 → 우선 확인 이슈 → 추이와 분포. 차트·지표 선택은 같은 목록을 필터링한다.
   // 지연·장기·그 외 범례는 차트마다 반복하지 않고 분포 제목 옆에 한 번만 둔다.
-  const memberChart = renderMemberChart(data.members || []);
+  const memberChart = renderMemberChart(data.members || [], data.sharedAccounts || []);
   els.dashboardBody.innerHTML = `
     ${dashboardState.error
         ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시해요.</strong><span>${escapeHtml(formatDateTime(data.meta.fetchedAt))} 기준</span><button type="button" class="secondary-button" data-dashboard-retry>다시 시도</button></div>`
@@ -437,7 +438,7 @@ function renderDashboard() {
             ${customerIntakeCard({ rows: data.customerIntake || [], complete, periodDays })}
           </div>
           <div class="ops-row">
-            ${memberBarsCard({ members: data.members || [], complete })}
+            ${memberBarsCard({ members: data.members || [], sharedAccounts: data.sharedAccounts || [], complete })}
             ${opsSummaryCard({ summary: data.summary, complete, metric: dashboardState.metric })}
           </div>
         </div>

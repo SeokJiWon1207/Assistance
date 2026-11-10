@@ -10,7 +10,9 @@ from zoneinfo import ZoneInfo
 from backend.chart_data import daily_registrations
 from backend.utils.text import normalize_for_match
 from backend.mantis_status import mantis_status_bucket
-from backend.domain.team import TEAM_MEMBERS, TEAM_SCOPE_LABEL, filter_team_issues, team_member_profiles
+from backend.domain.team import (
+    TEAM_ISSUE_OWNERS, TEAM_ISSUE_SCOPE_LABEL, filter_team_issues, team_member_profiles, team_shared_account_profiles,
+)
 from backend.reports.customer import _health_content, _is_closed
 from backend.reports.weekly_issues import weekly_issue_summary
 from backend.reports.team_brief import (
@@ -196,9 +198,9 @@ def _customer_health(
     return rows
 
 
-def _member_rows(users: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
+def _member_rows(profiles: List[Dict[str, Any]], issues: List[Dict[str, Any]], today: date) -> List[Dict[str, Any]]:
     members: List[Dict[str, Any]] = []
-    for user in team_member_profiles(users):
+    for user in profiles:
         person = user_mantis_name(user)
         assigned = [issue for issue in issues if normalize_for_match(str(issue.get("handler") or "")) == normalize_for_match(person)]
         open_rows = [row for row in _summary_rows(assigned, today) if _is_open(str(row.get("status") or ""))]
@@ -319,7 +321,6 @@ def build_operations_dashboard(
         prefer_snapshot=not (refresh or live), force_refresh=refresh, refresh_wait_seconds=8 if refresh else 0,
     )
     complete = source.get("search_complete") is True
-    remaining_issues = filter_team_issues(issues, include_shared=True)
     issues = filter_team_issues(issues)
     scope, person, scoped_issues = _scope_issues(user, issues)
     scoped_open = [row for row in _summary_rows(scoped_issues, base) if _is_open(str(row.get("status") or ""))]
@@ -353,7 +354,8 @@ def build_operations_dashboard(
     }
     decision = _period_decision_summary(summary, customer_spikes, screen_spikes, priorities, days, complete=complete)
     role = str(user.get("role") or "member")
-    member_rows = _member_rows(users or [], issues, base)
+    member_rows = _member_rows(team_member_profiles(users or []), issues, base)
+    shared_rows = _member_rows(team_shared_account_profiles(), issues, base)
     health = _customer_health(issues, base, current_start, previous_start, previous_end)
     if not complete:
         # 고객사 건강도도 전체 추세/비율을 전제로 하므로 일부 표본으로 확정하지 않는다.
@@ -378,8 +380,8 @@ def build_operations_dashboard(
             "comparisonFrom": previous_start.isoformat(),
             "comparisonTo": previous_end.isoformat(),
             "scope": scope,
-            "scopeLabel": TEAM_SCOPE_LABEL,
-            "scopeMembers": list(TEAM_MEMBERS),
+            "scopeLabel": TEAM_ISSUE_SCOPE_LABEL,
+            "scopeMembers": list(TEAM_ISSUE_OWNERS),
             "loadedIssues": len(issues),
         },
         "user": {
@@ -389,9 +391,7 @@ def build_operations_dashboard(
             "linked": bool(person),
         },
         "summary": summary,
-        "weeklyIssues": weekly_issue_summary(
-            scoped_issues, base, complete=complete, remaining_issues=remaining_issues,
-        ),
+        "weeklyIssues": weekly_issue_summary(scoped_issues, base, complete=complete),
         "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
         # '이번 기간 vs 직전 기간' 비교 차트용. 같은 길이의 직전 기간을 같은 등록일 기준으로 센다.
         "previousIntakeTrend": daily_registrations(scoped_issues, previous_start, previous_end),
@@ -416,4 +416,5 @@ def build_operations_dashboard(
             "unknown": health_counts.get("unknown", 0),
         },
         "members": member_rows,
+        "sharedAccounts": shared_rows,
     }

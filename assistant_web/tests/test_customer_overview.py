@@ -17,10 +17,24 @@ def _issue(issue_id, created_at, project="147MiraeAsset(미래에셋증권)", **
 
 
 class CustomerOverviewTests(unittest.TestCase):
-    def _build(self, issues, *, complete=True):
+    def _build(self, issues, *, complete=True, today=TODAY):
         source = {"status": "snapshot", "search_complete": complete, "fetchedAt": "2026-08-27T09:00:00+09:00"}
         with patch.object(customer_overview, "_load_issues", return_value=(issues, source)):
-            return customer_overview.build_customer_overview(today=TODAY)
+            return customer_overview.build_customer_overview(today=today)
+
+    def test_shared_accounts_update_woori_latest_registration_and_weekly_counts(self):
+        project = "129WooriSec(우리투자)"
+        issues = [
+            _issue(1, "2026-10-07", project, status="closed"),
+            _issue(2, "2026-11-10", project, handler="cs이슈"),
+            _issue(3, "2026-11-09", project, handler=" CSISSUE "),
+            _issue(4, "2026-11-10", project, handler="다른팀"),
+        ]
+        result = self._build(issues, today=date(2026, 11, 10))
+        woori = next(row for row in result["customers"] if row["name"] == "우리투자증권")
+        self.assertEqual((woori["open"], woori["recent"], woori["lastCreatedAt"]), (2, 3, "2026-11-10"))
+        self.assertEqual(woori["weekly"][-1], 2)
+        self.assertIn("공용 계정", result["meta"]["scopeLabel"])
 
     def test_every_picker_customer_is_listed_in_order_with_weekly_counts(self):
         issues = [

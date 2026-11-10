@@ -163,7 +163,7 @@ class OperationsDashboardTests(unittest.TestCase):
             {**template, "id": 201, "handler": "하영훈", "project": "추가담당", "work_subject": "고객사"},
             {**template, "id": 202, "handler": "이상신", "project": "추가담당"},
         ]
-        for index, name in enumerate(["강민성", "cs이슈", "DRFN_NEXT", "석지원외부"]):
+        for index, name in enumerate(["강민성", "DRFN_NEXT", "석지원외부"]):
             self.issues.append({**template, "id": 300 + index, "handler": name, "project": "외부고객",
                                 "screen_number": "9999", "created_at": "2026-08-20", "work_subject": "CS팀"})
         users = [

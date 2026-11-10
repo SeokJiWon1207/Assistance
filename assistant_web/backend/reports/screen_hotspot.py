@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from backend.display import customer_name
-from backend.domain.team import TEAM_SCOPE_LABEL, filter_team_issues
+from backend.domain.team import TEAM_ISSUE_SCOPE_LABEL, filter_team_issues
 from backend.playbooks import list_playbooks
 from backend.settings.catalogs import get_customer_picker
 from backend.team_templates import customer_option_for_project
@@ -157,7 +157,7 @@ def build_screen_hotspot(
             "cacheUntil": source.get("cacheUntil"),
             "search_complete": source.get("search_complete", False),
             "refreshPending": source.get("refreshPending", False),
-            "scopeLabel": TEAM_SCOPE_LABEL,
+            "scopeLabel": TEAM_ISSUE_SCOPE_LABEL,
             "media": media,
             "customer": customer,
             "customerName": (customer if customer in picker else customer_name(customer)) if customer else "",

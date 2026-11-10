@@ -7,7 +7,7 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
-from backend.domain.team import TEAM_SCOPE_LABEL, filter_team_issues
+from backend.domain.team import TEAM_ISSUE_SCOPE_LABEL, filter_team_issues
 from backend.reports.dashboard import _summary_rows
 from backend.reports.screen_hotspot import SCREEN_HOTSPOT_WEEKS, _spike, _week_index, _week_starts
 from backend.reports.team_brief import TEAM_BRIEF_AGING_DAYS, _load_issues, _parse_issue_date
@@ -67,7 +67,7 @@ def build_customer_overview(*, today: Optional[date] = None, refresh: bool = Fal
             "cacheUntil": source.get("cacheUntil"),
             "search_complete": source.get("search_complete", False),
             "refreshPending": source.get("refreshPending", False),
-            "scopeLabel": TEAM_SCOPE_LABEL,
+            "scopeLabel": TEAM_ISSUE_SCOPE_LABEL,
             "dateBasis": "등록일",
         },
         "weeks": [

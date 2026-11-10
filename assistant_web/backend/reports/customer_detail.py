@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
 
 from backend.display import customer_name
-from backend.domain.team import TEAM_SCOPE_LABEL, filter_team_issues
+from backend.domain.team import TEAM_ISSUE_SCOPE_LABEL, filter_team_issues
 from backend.playbooks import list_playbooks
 from backend.reports.customer import _is_closed
 from backend.reports.dashboard import (
@@ -156,7 +156,7 @@ def build_customer_detail(
             "periodTo": current_end.isoformat(),
             "comparisonFrom": previous_start.isoformat(),
             "comparisonTo": previous_end.isoformat(),
-            "scopeLabel": TEAM_SCOPE_LABEL,
+            "scopeLabel": TEAM_ISSUE_SCOPE_LABEL,
         },
         "customer": {"id": name, "name": customer_name(name)},
         "health": {
