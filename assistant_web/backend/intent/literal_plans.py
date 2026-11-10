@@ -28,6 +28,31 @@ def customer_field_issue(text):
         text.strip(), re.I)
 
 
+def short_handler_plan(question, lookup, user, stored_list):
+    """확정 목록이 있으면 담당자만 바꿔 같은 모집단을 다시 조회한다."""
+    from backend.intent.unified_validation import validate_plan
+
+    previous = stored_list.get('plan') or {}
+    followup = bool(previous.get('resolved_constraints'))
+    if lookup['followup'] and not followup:
+        return {'planner': 'unified_llm', 'operation': 'clarify',
+                'reason': '이어서 조회할 이전 Mantis 목록을 확인하지 못했습니다. 원래 조회 조건을 함께 입력해 주세요.'}
+    owner = lookup['name']
+    proposal = _proposal('mantis', followup,
+                         [{'field': 'owner', 'operator': 'equals', 'value': owner, 'evidence': owner}],
+                         {'mode': 'inherit' if followup else 'unspecified', 'values': [], 'evidence': ''})
+    if followup:
+        proposal.update(followup_context='list', limit=previous.get('limit'))
+    else:
+        proposal['scope'] = 'target'
+    try:
+        plan = validate_plan(question, proposal, user or {}, {'list_context': stored_list} if followup else {})
+    except ValueError as exc:
+        return {'planner': 'unified_llm', 'operation': 'clarify', 'reason': str(exc)}
+    plan['planner_rule'] = 'short_handler_lookup'
+    return plan
+
+
 def literal_plan(question, previous):
     text = question.strip()
     field = customer_field_issue(text)

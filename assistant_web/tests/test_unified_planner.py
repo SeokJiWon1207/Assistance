@@ -184,6 +184,27 @@ class UnifiedPlannerTests(unittest.TestCase):
 
 
 class UnifiedIntegrationTests(unittest.TestCase):
+    def test_short_handler_lookup_builds_exact_filter_without_planner_model(self):
+        from backend.schemas import ChatRequest
+
+        question = '담당자가 cs이슈인건?'
+        request = ChatRequest(modelId='test', messages=[{'role': 'user', 'content': question}])
+        for enabled, policy in [('false', None), ('true', None), ('true', object())]:
+            with (self.subTest(enabled=enabled, agent=bool(policy)),
+                  patch.dict('os.environ', {'UNIFIED_QUERY_PLANNER_ENABLED': enabled}),
+                  patch.object(chat_prepare, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
+                  patch.object(chat_llm, 'get_model_api_key', return_value=None),
+                  patch('backend.services.agent.policy.active_agent_policy', return_value=policy)):
+                context = chat_prepare.prepare_chat_pipeline(request, question, {'uid': 'u'})
+                self.assertEqual(context.intent_plan['source'], 'mantis')
+                self.assertEqual(context.intent_plan['operation'], 'search')
+                self.assertEqual(context.intent_plan['terms'], [])
+                self.assertEqual(context.intent_plan['sort'], {'field': 'created_at', 'direction': 'desc'})
+                self.assertFalse(context.agent_planning_context)
+                for handler, expected in [('CS이슈', True), ('csissue', False), ('다른담당자', False)]:
+                    issue = {'id': 12345, 'handler': {'real_name': handler}, 'summary': 'cs이슈 관련 문의'}
+                    self.assertEqual(issue_matches_constraints(issue, context.query_constraints), expected)
+
     def test_default_is_unified_and_explicit_rollback_exists(self):
         from backend.intent.unified import enabled
         with patch.dict('os.environ', {}, clear=True):

@@ -402,7 +402,26 @@ _EXPLICIT_HANDLER_PATTERN = re.compile(
 )
 
 
+_SHORT_HANDLER_LOOKUP = re.compile(
+    r"(?:(?P<followup>그\s*중(?:에서)?|(?:같은|그)\s*조건에서)\s*)?"
+    r"담당자(?:가|는)?\s+(?P<name>[가-힣]{2,4}|[A-Za-z][A-Za-z0-9_.-]{1,31}|"
+    r"[A-Za-z][A-Za-z0-9_.-]*[가-힣]{1,8}?)\s*인\s*(?:건|것|이슈)(?:은|만)?[?.!]*",
+    re.IGNORECASE,
+)
+
+
+def short_handler_lookup(text: str) -> re.Match[str] | None:
+    """담당자 값과 조회 대상만 있는 짧은 목록 질문을 인식한다."""
+    match = _SHORT_HANDLER_LOOKUP.fullmatch(text.strip())
+    if match and (plausible_explicit_person_name(match['name']) or re.fullmatch(
+            r'[A-Za-z][A-Za-z0-9_.-]*[가-힣]+', match['name'])):
+        return match
+    return None
+
+
 def extract_people_constraints(text: str) -> Dict[str, Any]:
+    if lookup := short_handler_lookup(text):
+        return build_people([(lookup['name'], 'explicit_unverified')], 'handler')
     # ``담당자별로`` and similar phrases specify result presentation, not a
     # person named "별로" nor the preceding object (for example ``항목을``).
     # Remove those phrases before applying person-name patterns.

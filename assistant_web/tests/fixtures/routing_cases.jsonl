@@ -87,6 +87,8 @@
 {"q":"노션 운영팀의 업무 문서 찾아줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"owner":""}}
 {"q":"900DRFN(공용)에서 상태가 closed인 최근 이슈 2개 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"screen_numbers":[],"customer_exact":"900DRFN(공용)"}
 {"q":"담당자 cs이슈의 최근 이슈 2개 보여줘","source":"mantis","authority":"authoritative","people":["cs이슈"],"candidate_people":[]}
+{"q":"담당자가 cs이슈인건?","source":"mantis","authority":"authoritative","people":["cs이슈"],"candidate_people":[]}
+{"q":"그중 담당자가 cs이슈인 건?","source":"mantis","authority":"authoritative","people":["cs이슈"],"candidate_people":[]}
 {"q":"삼성증권 최근 이슈 3개 보여줘","source":"mantis","authority":"authoritative","people":[],"candidate_people":[],"customer_forbidden_aliases":["삼성선물","SamsungFutures"]}
 {"q":"노션 이슈리스트 담당자별로 정리해줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_constraints":{"group_by":"owner","owner":""},"notion_deterministic":true,"notion_terms":[]}
 {"q":"노션 배포 방법 문서 목록 보여줘","source":"notion","authority":"authoritative","people":[],"candidate_people":[],"notion_deterministic":true,"notion_terms":["배포","방법"]}

@@ -15,7 +15,7 @@ from backend.intent.constants import (
     RETRIEVAL_INTENT_KEYWORDS,
     TRIAGE_REQUEST_PATTERN,
 )
-from backend.intent.entities import is_simple_greeting
+from backend.intent.entities import is_simple_greeting, short_handler_lookup
 from backend.intent.general import is_general_question
 from backend.query.operations import extract_group_by
 
@@ -115,7 +115,8 @@ def rule_based_search_intent(text: str, constraints: Dict[str, Any]) -> Dict[str
     elif notion_target:
         source, authority, reason = "notion", SourceAuthority.AUTHORITATIVE, "문서 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "notion"})
-    elif mantis_target or issue_request or issue_list_request or platform_group or grouped_issue_analysis or scoped_issue:
+    elif (mantis_target or issue_request or issue_list_request or platform_group
+          or grouped_issue_analysis or scoped_issue or short_handler_lookup(text)):
         source, authority, reason = "mantis", SourceAuthority.AUTHORITATIVE, "이슈 대상 표현을 인식"
         evidence.append({"kind": "target_object", "source": "mantis"})
     elif document_hint:

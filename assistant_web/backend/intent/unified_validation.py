@@ -6,6 +6,7 @@ import re
 
 from backend.settings.catalogs import get_customer_aliases
 from backend.settings.values import PLATFORM_ALIASES as PLATFORM_ALIASES, STATUS_ALIASES as STATUS_ALIASES, MANTIS_STATUS_NAMES as MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES as MANTIS_OPEN_STATUSES
+from backend.intent.entities import short_handler_lookup
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.query_filters import normalize_filter_clause as normalize_filter_clause, clause_supported as clause_supported, SUPPORTED_FIELDS as SUPPORTED_FIELDS, values_for_clause as values_for_clause
 from backend.query.dates import extract_relative_created_at_range as extract_relative_created_at_range
@@ -277,10 +278,14 @@ def validate_plan(question, parsed, user, previous):
         require(not named_customer or explicit_removal or any(f['field']=='customer' for f in incoming),
                 '고객사로 범위를 좁히는 질문에서 고객사 조건을 해제했습니다. 명시된 고객사와 플랫폼을 모두 필터에 넣고 기준 이슈는 유지하세요.')
     replaced = {f['field'] for f in incoming} | set(clear) | {'status'}
-    if replaced & (PERSON_FIELDS - {'effort_person'}):
+    handler_lookup = source == 'mantis' and operation == 'search' and short_handler_lookup(question)
+    if replaced & (PERSON_FIELDS - {'effort_person'}) and not handler_lookup:
         replaced |= PERSON_FIELDS - {'effort_person'}
     clauses = [f for f in base.get('filter_clauses', []) if f['field'] not in replaced]
     clauses.extend(incoming)
+    if handler_lookup:
+        # 등록자/요청자 조건은 함께 유지하고, 응답에 표시할 인물 범위는 담당자로 둔다.
+        clauses.sort(key=lambda clause: clause['field'] != 'owner')
     self_field = 'effort_person' if (operation == 'report' and report in {'effort', 'effort_sla'}
                                     or aggregation and aggregation['metrics'] == ['effort']) else 'owner'
     if scope == 'self':

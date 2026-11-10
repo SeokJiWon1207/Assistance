@@ -5,6 +5,8 @@ from typing import Any
 from backend.audit import load_audit_query_plan
 from backend.intent.context import parse_ordinal_reference, resolve_reference_from_context, starts_independent_question
 from backend.intent.constraints import extract_query_constraints, has_targeting_constraint
+from backend.intent.entities import short_handler_lookup
+from backend.intent.literal_plans import short_handler_plan
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.intent.conversation_scope import list_context, preserve_list_context
 from backend.intent.unified import plan_question
@@ -29,6 +31,7 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
     previous = {}
     conversation = {}
     previous_question = ''
+    handler_lookup = short_handler_lookup(question)
     # 클라이언트가 보낸 답변/조건은 신뢰하지 않고 사용자·질문에 묶인 서버 기록만 사용한다.
     if request.contextAuditId and user and (contextual or not starts_independent_question(question)):
         for message in reversed(request.messages[:-1]):
@@ -40,7 +43,7 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
                 previous = {**previous, 'audit_id': request.contextAuditId}
                 previous_question = message.content
                 break
-    if previous and contextual:
+    if previous and (contextual or handler_lookup):
         conversation = build_conversation_context(
             request.contextAuditId, str((user or {}).get('uid') or ''), previous_question,
             variant=request.contextVariant, enabled_tools=request.tools,
@@ -63,7 +66,9 @@ def prepare_context(request, question, user, model, api_key, messages, system_no
     retrieval_text = resolved or question
     plan: dict[str, Any]
     ordinal = parse_ordinal_reference(question)
-    if ambiguous_comparison:
+    if handler_lookup:
+        plan = short_handler_plan(question, handler_lookup, user, stored_list)
+    elif ambiguous_comparison:
         plan = {'planner': 'unified_llm', 'operation': 'clarify',
                 'reason': '비교 결과에는 범위별 목록이 있습니다. 확인할 이슈 번호를 지정해 주세요.'}
     elif (not resolved and ordinal is not None

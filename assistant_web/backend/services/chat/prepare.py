@@ -77,7 +77,8 @@ def prepare_chat_pipeline(
         )
 
     from backend.intent.unified import enabled as unified_enabled
-    if unified_enabled():
+    from backend.intent.entities import short_handler_lookup
+    if unified_enabled() or short_handler_lookup(latest_user_text):
         from backend.services.unified_planning import prepare_context
         return prepare_context(request, latest_user_text, user, model, api_key, messages, [
             answer_style_instruction(request.answerStyle), CONVERSATION_TONE_NOTE, build_current_date_note(),
