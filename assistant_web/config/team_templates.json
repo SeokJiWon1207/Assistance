@@ -19,10 +19,10 @@
       "title": "고객사별 이슈 분석",
       "description": "고객사·기간·플랫폼·상태를 조합해 원하는 형태로 조회합니다.",
       "icon": "customer",
-      "questionTemplate": "{period|이번 달} {customer|전체 고객사} {platform?전체} {status?전체} 이슈를 {format|표}(으)로 모두 보여줘",
+      "questionTemplate": "{period|최근 3개월} {customer} {platform?전체} {status?전체} 이슈를 {format|표}(으)로 모두 보여줘",
       "fields": [
         { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
-        { "name": "period", "label": "기간", "type": "select", "value": "이번 달", "options": ["이번 주", "이번 달", "지난달", "올해"] },
+        { "name": "period", "label": "기간", "type": "select", "value": "최근 3개월", "options": ["이번 달", "지난달", "최근 3개월", "올해"] },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
         { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] },
         { "name": "format", "label": "결과 형태", "type": "select", "value": "표", "options": ["표", "목록", "요약"] }
@@ -34,12 +34,11 @@
       "title": "고객사 프로필",
       "description": "이슈 추이, 미종료·장기 이슈, 담당자와 처리시간을 한 번에 확인합니다.",
       "icon": "profile",
-      "questionTemplate": "{period|최근 3개월} {customer} {platform?전체} {status?전체} 고객사 프로필을 만들어줘",
+      "questionTemplate": "{period|최근 3개월} {customer} {platform?전체} 고객사 프로필을 만들어줘",
       "fields": [
         { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
         { "name": "period", "label": "조회 기간", "type": "select", "value": "최근 3개월", "options": ["최근 3개월", "최근 6개월", "올해"] },
-        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] },
-        { "name": "status", "label": "상태", "type": "select", "value": "전체", "options": ["전체", "미종료", "종료"] }
+        { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
       ]
     },
     {
@@ -64,7 +63,7 @@
       "questionTemplate": "{month} {customer} {platform?전체} 월간 고객사 리포트를 만들어줘",
       "fields": [
         { "name": "customer", "label": "고객사", "type": "customer", "required": true, "placeholder": "고객사를 검색해 선택" },
-        { "name": "month", "label": "보고 월", "type": "month", "required": true, "dynamicValue": "current-month", "normalize": "month-korean" },
+        { "name": "month", "label": "보고 월", "type": "month", "required": true, "dynamicValue": "previous-month", "normalize": "month-korean" },
         { "name": "platform", "label": "플랫폼", "type": "select", "value": "전체", "options": ["전체", "HTS", "MTS"] }
       ]
     },
@@ -148,10 +147,10 @@
       "title": "고객 안내문 작성",
       "description": "내부 기술 내용을 제거하고 고객에게 전달할 진행 상황과 안내 문구를 작성합니다.",
       "icon": "customer",
-      "questionTemplate": "#{issueId} 이슈를 바탕으로 내부 식별자와 불확실한 원인 추정을 제외하고, 현재 확인된 사실, 고객 영향, 진행 상황과 다음 안내 시점을 담아 {tone|정중한} 말투의 {channel|고객 안내 메일} 형식으로 작성해줘",
+      "questionTemplate": "#{issueId} 이슈를 바탕으로 내부 식별자를 제외하고 이슈에 기록된 사실과 진행 상황만으로 {tone|정중한} 말투의 {channel|고객 안내 메일} 형식으로 작성해줘. 이슈에 없는 원인·일정·고객 영향은 추정하지 말고 '확인 중'으로 써줘",
       "fields": [
         { "name": "issueId", "label": "이슈 ID", "type": "text", "required": true, "placeholder": "예: #30225", "normalize": "issue-id" },
-        { "name": "channel", "label": "전달 형식", "type": "select", "value": "고객 안내 메일", "options": ["고객 안내 메일", "메신저 답변", "점검 공지", "회의 공유문"] },
+        { "name": "channel", "label": "전달 형식", "type": "select", "value": "고객 안내 메일", "options": ["고객 안내 메일", "메신저 답변", "회의 공유문"] },
         { "name": "tone", "label": "말투", "type": "select", "value": "정중한", "options": ["정중한", "간결한", "상세한"] }
       ]
     }

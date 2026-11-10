@@ -320,9 +320,11 @@ function renderTemplateFields(template) {
     const required = field.required ? "required" : "";
     const requiredLabel = field.required ? '<small class="required-mark">필수</small>' : "";
     const today = new Date();
-    const dynamicValue = field.dynamicValue === "current-month"
-      ? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-      : "";
+    const month = { "current-month": 0, "previous-month": -1 }[field.dynamicValue];
+    const base = new Date(today.getFullYear(), today.getMonth() + (month || 0), 1);
+    const dynamicValue = month === undefined
+      ? ""
+      : `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
     if (field.type === "select" && field.options.length <= CHIP_OPTION_LIMIT) {
       return templateChipGroupHtml(field, inputId, field.value || "", requiredLabel);
     }

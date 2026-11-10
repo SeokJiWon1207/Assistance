@@ -19,7 +19,7 @@ FIELD_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 PLACEHOLDER_PATTERN = re.compile(r"\{([A-Za-z][A-Za-z0-9_]*)(?:([|?])([^{}]*))?\}")
 ALLOWED_FIELD_TYPES = {"text", "select", "customer", "number", "month"}
 ALLOWED_NORMALIZERS = {"issue-id", "month-korean"}
-ALLOWED_DYNAMIC_VALUES = {"current-month"}
+ALLOWED_DYNAMIC_VALUES = {"current-month", "previous-month"}
 ALLOWED_ICONS = {"today", "customer", "profile", "spike", "aging", "similar", "effort", "report"}
 # 고객사 선택 목록은 이 기간 안에 등록된 이슈가 많은 순으로 위에 올린다.
 RECENT_CUSTOMER_DAYS = 90

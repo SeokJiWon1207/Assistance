@@ -63,9 +63,9 @@ def raw_issues():
 
 
 class TemplateContractTests(unittest.TestCase):
-    def test_all_279_template_variants_keep_scope_and_answer_mode(self):
+    def test_all_258_template_variants_keep_scope_and_answer_mode(self):
         cases = list(template_variants())
-        self.assertEqual(len(cases), 279)
+        self.assertEqual(len(cases), 258)
         self.assertEqual(len({item[0] for item in cases}), 12)
         raw = raw_issues()
         sample = normalize_issue(raw[0])
