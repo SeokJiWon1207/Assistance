@@ -1325,7 +1325,7 @@ class ExplanationQuoteTests(unittest.TestCase):
         }]}]}
         conclusion = self.render(self.validate(payload, grounding), grounding).split('### 핵심 근거')[0]
         for expected in ('체결량', '구분자(568)', '계획', 'QC 완료', '파일 전달',
-                         '매매구분으로 실시간 처리 여부를 가르는 로직 추가', '필드 조치 및 개선', '운영 반영 완료는'):
+                         '매매구분으로 실시간 처리 여부를 가르는 로직 추가', '· 조치 및 개선)', '운영 반영 완료는'):
             self.assertIn(expected, conclusion)
         self.assertLess(conclusion.index('체결량'), conclusion.index('구분자(568)'))
         self.assertLess(conclusion.index('구분자(568)'), conclusion.index('로직 추가'))

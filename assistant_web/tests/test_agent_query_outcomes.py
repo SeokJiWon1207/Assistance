@@ -52,6 +52,22 @@ class AgentQueryOutcomeTests(unittest.TestCase):
             agent_registry().execute('get_notion_page_content', {'page_ref': 'N1'}, '', context)
             self.assertEqual(invoke.call_args.args[0], 90)
 
+    def test_structured_notion_queries_use_the_search_investigation_budget(self):
+        import time
+        from backend.execution import CURRENT_BUDGET, ExecutionBudget
+        from backend.tools.registry import ToolContext
+        from backend.tools.catalog import agent_registry
+        from backend.tools.ledger import EvidenceLedger
+        token = CURRENT_BUDGET.set(ExecutionBudget(time.monotonic() + 140))
+        self.addCleanup(CURRENT_BUDGET.reset, token)
+        for tool in ('list_notion_pages', 'count_notion_pages'):
+            context = ToolContext("노션 목록", "노션 목록", {'notion': True}, {}, frozenset(), EvidenceLedger(),
+                                  lambda: None, lambda seconds: min(seconds, 90), 20, 6000)
+            with patch('backend.tools.registry.run_with_deadline', return_value={'ok': True}) as invoke:
+                agent_registry(query_tools=True).execute(tool, {}, '', context)
+            # 조사 예산 90초에서 다음 원문 읽기 한 번(20초)을 남긴다.
+            self.assertEqual(invoke.call_args.args[0], 70, tool)
+
     def test_compound_repair_receives_the_rejected_plan_and_keeps_sort_out_of_filters(self):
         from backend.intent import unified
         import json

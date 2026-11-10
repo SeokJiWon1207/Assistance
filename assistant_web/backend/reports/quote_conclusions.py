@@ -2,7 +2,7 @@
 import re
 from typing import Any
 from backend.evidence.excerpts import safe_excerpts, _NOTE_BOILERPLATE
-from backend.evidence.references import _label
+from backend.evidence.references import _label, _reference
 from backend.evidence.stages import _QC_DONE
 from backend.evidence.quote_context import TOPIC_TITLES
 from backend.reports.quote_selection import _core_choice
@@ -407,9 +407,7 @@ def _render_entries(rows, plans, selected_ids, issues, entries, all_text):
         return []
     lines = ['### 핵심 결론', '']
     for row, sentence, _kind in entries[:12]:
-        date = str(row.get('created_at') or '')[:10]
-        source = f"노트 {_label(row['note_id'])}" if row.get('note_id') else f"필드 {_label(row['field'])}"
-        lines.extend([f"- {sentence} (#{row['issue_id']} · {source}" + (f' · {_label(date)}' if date else '') + ')', ''])
+        lines.extend([f'- {sentence} {_reference(row)}', ''])
     _append_confirmation_limits(rows, plans, selected_ids, issues, entries, all_text, lines)
     return lines
 

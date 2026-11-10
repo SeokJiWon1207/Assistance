@@ -202,8 +202,10 @@ def build_query_contract(question: str, plan: dict, conditions: SourceConditions
     report = report_contract(question, plan)
     # count의 limit=null은 전체 집계를 자르지 말라는 뜻이다. 함께 요청한
     # 목록의 표시 개수는 별도 도구 계약이며, 기본 5건으로 덮어쓰지 않는다.
+    # 최종 검사(expected_display_limit)는 작업 종류와 무관하게 질문의 개수를 기대한다. '가장 최근
+    # 하나만 자세히'를 get으로 계획해도 같은 개수를 써야 기본 5건 목록이 차단되지 않는다.
     display_limit = (requested_display_limit(question)
-                     if conditions.source == 'mantis' and plan.get('operation') in {'count', 'search', 'explain'} else None)
+                     if conditions.source == 'mantis' and plan.get('operation') in {'count', 'search', 'explain', 'get'} else None)
     return QueryContract(conditions, filters, origins,
                          conditions.constraints.get('mantis_team_scope') if conditions.source == 'mantis' else None,
                          deepcopy(plan.get('sort') or {'field': 'created_at', 'direction': 'desc'}),

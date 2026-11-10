@@ -29,6 +29,12 @@ def render_notion_results(question: str, retrieval: dict, limit: int) -> str:
         lines.extend(f"- {PROPERTY_LABELS[field]}: {escape(str(value), quote=False) if value else '미기재'}"
                      for field, value in result['values'].items())
         parts.append('\n'.join(lines))
+    if not parts:
+        # 목록·속성 도구 없이 검색만 한 단건 조회다. retrieval에는 조건을 적용해 확인한 문서만 남아 있으며,
+        # 전체 조회가 아니므로 총건수는 말하지 않는다.
+        found = [s for s in stages if s.get('source') == 'notion' and s.get('notion_pages')]
+        if found:
+            parts.append(format_deterministic_notion_answer(question, {'stages': found}, limit))
     return '\n\n'.join(parts)
 
 

@@ -283,8 +283,9 @@ class ToolRegistry:
                 # 보고서는 조회+사실 선택+초안+독립 검토를 포함한다. 요청의 최종 예약을 뺀
                 # 조사 예산 안에서 실행하며 내부 모델 호출마다 더 짧은 단계 마감을 적용한다.
                 seconds = context.step_seconds(parent.remaining())
-            if name in {"search_notion_pages", "search_notion_body"} and parent is not None:
+            if name in {"search_notion_pages", "search_notion_body", "list_notion_pages", "count_notion_pages"} and parent is not None:
                 # 최종 답변 예약분을 뺀 조사 시간에서 다음 원문 읽기 한 번의 시간을 남긴다.
+                # 구조화 목록·건수도 카탈로그가 실패하면 검색과 같은 실시간 전체 조회로 넘어간다.
                 investigation = context.step_seconds(parent.remaining())
                 seconds = max(seconds, investigation - context.tool_timeout_seconds)
             if name in {"get_notion_page_content", "list_notion_page_links"} and (context.related_ordinal is not None or context.investigative_notion) and parent is not None:

@@ -30,6 +30,9 @@ def followup_previous(proposal: dict, previous: dict) -> tuple[dict, str]:
         if basis == 'list':
             raise ValueError('목록 조건 상속은 followup=true인 후속 질문에서만 가능합니다')
         return previous, basis
+    # 최초 목록 직후에는 previous 자체가 목록 계획이다. 모델의 list 선택을 그 계획의 상속으로 받는다.
+    if basis == 'list' and not stored and list_context(previous, audit_id='', question='', variant=''):
+        basis = 'current'
     if basis == 'current':
         if stored and proposal.get('operation') in LIST_OPERATIONS:
             raise ValueError('건수·목록·집계 후속은 followup_context=list로 목록 조건을 사용하세요. 상세 선택 ID는 목록 조건이 아닙니다')

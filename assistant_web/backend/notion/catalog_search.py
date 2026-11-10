@@ -5,6 +5,7 @@ from backend.notion import schema as notion_schema
 from backend.notion import transport
 from datetime import datetime, timezone
 import json
+import logging
 import time
 from typing import Any
 
@@ -15,6 +16,8 @@ from backend.utils.text import normalize_for_match
 from backend.notion.snapshot_state import _time, catalog_max_age_seconds
 from backend.notion.values import notion_title
 from backend.notion.property_snapshot import pending_properties, read_full_properties
+
+LOGGER = logging.getLogger("backend.notion.client")
 
 
 def _catalog_candidates(index, database_ids, title, *, topic_terms=(), hints_only=False):
@@ -218,7 +221,9 @@ def search_catalog_snapshot(index, database_ids, *, read_scope, constraints, ter
     verification_complete = True
     try:
         collect(prioritize(candidates)[:limit] if hints_only else candidates, individual=hints_only)
-    except (_ReadFailure, HTTPException, requests.RequestException):
+    except (_ReadFailure, HTTPException, requests.RequestException) as exc:
+        # 오류 문구에는 접속 정보나 원문이 섞일 수 있어 종류만 남긴다.
+        LOGGER.warning("Notion 카탈로그 원문 확인 실패, 실시간 조회로 전환: %s", type(exc).__name__)
         if not topic_terms:
             return None
         verification_complete = False
@@ -228,8 +233,9 @@ def search_catalog_snapshot(index, database_ids, *, read_scope, constraints, ter
             try:
                 collect(prioritize(remaining), individual=True)
                 verification_complete = True
-            except (_ReadFailure, HTTPException, requests.RequestException):
-                pass  # 확인을 마친 원문은 이후 실시간 조회에도 전달한다.
+            except (_ReadFailure, HTTPException, requests.RequestException) as exc:
+                # 확인을 마친 원문은 이후 실시간 조회에도 전달한다.
+                LOGGER.warning("Notion 카탈로그 개별 원문 확인 실패: %s", type(exc).__name__)
     matched = list(matches.values())
     if topic_terms and not matched:
         return None

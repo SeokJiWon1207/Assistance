@@ -19,7 +19,7 @@ from backend.reports.effort import EFFORT_FIELD_LABELS, parse_effort_field_value
 from backend.evidence.model_context import build_model_retrieval_context, build_model_evidence_sources
 from backend.evidence.retrieval_rows import count_retrieved_issues
 from backend.retrieval import retrieval_trace, similar_base_issue_ids_from_retrieval
-from backend.evaluation.issue_facts import check_issue_fields, extract_issue_claims, has_definite_scope_mismatch, plain_text
+from backend.evaluation.issue_facts import EXPLICIT_ID, check_issue_fields, extract_issue_claims, has_definite_scope_mismatch, plain_text
 from backend.evaluation.report_scopes import report_evidence_constraints
 from backend.understanding import (
     extract_query_constraints,
@@ -275,7 +275,11 @@ def build_verification_report(
     )
     source_ids = {int(source["issue_id"]) for source in sources if source.get("issue_id")}
     similar_base_issue_ids = set(similar_base_issue_ids_from_retrieval(retrieval_result or {}))
-    unsupported_ids = sorted(answer_ids - source_ids)
+    # Notion 페이지의 이슈번호 속성은 답변이 새로 만든 ID가 아니다. 제목 속 화면번호는
+    # EXPLICIT_ID가 순번 지칭('두 번째 이슈:') 뒤에서 읽지 않으므로 여기서 면제하지 않는다.
+    quoted_ids = {int(number) for source in sources if source.get("type") == "notion"
+                  for number in EXPLICIT_ID.findall(str((source.get("detail") or {}).get("properties_text") or ""))}
+    unsupported_ids = sorted(answer_ids - source_ids - quoted_ids)
     unsupported_ids = [issue_id for issue_id in unsupported_ids if issue_id not in similar_base_issue_ids]
     if completed_empty_search and not sources:
         # 조회 실패 안내에서 사용자가 요청한 ID를 반복하는 것은 사실 생성이 아니다.

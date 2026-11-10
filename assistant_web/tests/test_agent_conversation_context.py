@@ -414,6 +414,22 @@ class AgentConversationContextTests(unittest.TestCase):
                 ctx, _ = self.detail_then_change(customer=case['agent_customer_after_detail'])
                 self.assertEqual(ctx.query_constraints['issue_ids'], [])
                 self.assertEqual(ctx.query_constraints['statuses'], ['closed'])
+            if 'agent_customer_after_list' in case:
+                # 상세를 거치지 않은 최초 목록 직후에도 모델의 list 선택이 이전 조건을 상속한다.
+                customer = case['agent_customer_after_list']
+                plan = validate_plan(case['q'], {
+                    **deepcopy(PROPOSAL), 'followup': True, 'scope': 'inherit', 'followup_context': 'list',
+                    'filters': [{'field': 'customer', 'operator': 'equals', 'value': customer, 'evidence': customer}],
+                    'status': {'mode': 'inherit', 'values': [], 'evidence': ''}}, {}, self.payload['queryPlan'])
+                self.assertEqual(plan['resolved_constraints']['statuses'], ['closed'])
+                self.assertEqual(plan['resolved_constraints']['customer_key'], customer.lower())
+                self.assertEqual(plan['resolved_constraints']['created_at'], {'from': '2026-10-01', 'to': '2026-10-31'})
+
+    def test_list_basis_without_any_list_plan_is_still_rejected(self):
+        from backend.intent.conversation_scope import followup_previous
+        detail = {'source': 'mantis', 'operation': 'get', 'resolved_constraints': {'issue_ids': [31701]}}
+        with self.assertRaisesRegex(ValueError, '상속할 서버 목록 기록이 없습니다'):
+            followup_previous({'followup': True, 'followup_context': 'list', 'operation': 'search'}, detail)
 
     def test_count_plan_keeps_requested_list_size_in_tool_contract(self):
         from backend.tools.conditions import project_conditions

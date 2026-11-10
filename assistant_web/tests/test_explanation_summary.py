@@ -1,5 +1,6 @@
 """짧은 답변의 문장마다 원문 근거를 유지하며 새 수치·완료 사실을 막는다."""
 import unittest
+from backend.evaluation.explanation_quotes import render_quote_answer, validate_quote_answer
 from backend.evaluation.explanation_summary import summary_items, render_summary
 
 
@@ -38,6 +39,28 @@ class ExplanationSummaryTests(unittest.TestCase):
         self.assertIn('노트 11',text)
         self.assertIn('### 원문 근거와 전체 이력',text)
         self.assertNotIn('옛 결론',text)
+
+    def test_reproduction_evidence_uses_a_readable_source_label(self):
+        issue_id = 31746
+        field = 'steps_to_reproduce'
+        original = '변경 후 확인 항목을 점검해 주세요.'
+        question = '추가 확인이 필요한 사항을 정리해줘'
+        answer = '원문에는 변경 후 확인 항목만 있고 실제 확인 결과와 운영 적용 여부는 확인할 수 없습니다.'
+        grounding = {'issues': [{'id': issue_id, 'answer_evidence': {'excerpts': [
+            {'field': field, 'text': original},
+        ]}}]}
+        evidence = [{'issue_id': issue_id, 'field': field, 'quote': original}]
+        validated = validate_quote_answer({'selected_issue_ids': [issue_id],
+            'sections': [{'topic': 'conditions', 'unanswered': False, 'evidence': evidence}],
+            'answer_items': [{'question_part': '추가 확인이 필요한 사항', 'unanswered': True,
+                              'answer': answer, 'evidence': evidence}],
+        }, grounding)
+        quotes = render_quote_answer(validated, grounding, question=question)
+        text = render_summary(summary_items(validated, grounding, question), quotes)
+
+        self.assertIn(f'{answer} (#31746 · 재현 단계)', text)
+        self.assertIn(f'\n재현 단계\n\n> ```text\n> {original}', text)
+        self.assertNotIn(r'steps\_to\_reproduce', text)
 
     def test_unsupported_numbers_identifiers_links_and_madeup_labels_are_not_summaries(self):
         for answer,updates in [('100건을 수정했습니다.',{}),('UpdateCacheNew 함수를 고쳤습니다.',{}),

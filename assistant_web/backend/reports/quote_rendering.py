@@ -2,7 +2,7 @@
 import re
 from typing import Any
 from backend.evidence.excerpts import safe_excerpts, _MAX_CORE_CHARS, _NOTE_BOILERPLATE
-from backend.evidence.references import _label
+from backend.evidence.references import _label, source_label
 from backend.evidence.stages import _QC_DONE, _confirmed_qc_done
 from backend.evidence.quote_context import _issues, TOPIC_TITLES, UNANSWERED_TEXT
 from backend.reports.quote_conclusions import _conclusion_lines
@@ -73,10 +73,7 @@ def _append_evidence(lines: list[str], title: str, evidence_rows: list[dict[str,
         metadata = []
         if initial_sources and (issue_id, evidence["field"]) in initial_sources:
             metadata.append("초기 기록")
-        if evidence.get("note_id") is not None:
-            metadata.append(f"노트 {_label(evidence['note_id'])}")
-        else:
-            metadata.append(f"필드: {_label(evidence['field'])}")
+        metadata.append(source_label(evidence))
         if evidence.get("created_at"):
             metadata.append(f"기록 시각: {_label(evidence['created_at'])}")
         if evidence.get("reporter"):

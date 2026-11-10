@@ -64,7 +64,7 @@ class EvidenceArchitectureTests(unittest.TestCase):
         for old, owner in pairs:
             self.assertIs(old, owner)
 
-    def test_pre_migration_conclusions_and_quotes_are_unchanged(self):
+    def test_evidence_rendering_matches_the_golden_cases(self):
         from backend.reports.quote_conclusions import _conclusion_lines
         from backend.reports.direct_conclusion import direct_conclusion
         from backend.reports.quote_rendering import render_quote_answer

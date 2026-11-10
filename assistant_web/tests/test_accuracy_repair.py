@@ -212,3 +212,22 @@ class AccuracyRepairTests(unittest.TestCase):
         self.assertEqual(extract_issue_claims(answer,source_sections=True,source_quotes=(source,))[0],{31519})
         forged=answer.replace('#6.','#8.')
         self.assertIn(8,extract_issue_claims(forged,source_sections=True,source_quotes=(source,))[0])
+
+    def test_quoted_screen_number_and_notion_issue_property_are_not_unsupported_ids(self):
+        from backend.evaluation.verification import build_verification_report
+        def status(content,sources):
+            report=build_verification_report('두 번째 이슈 알려줘',content,sources,{},'agent_model')
+            return next(c['status'] for d in report['dimensions'] for c in d['checks'] if c['id']=='issue_ids')
+        mantis=[{'type':'mantis','issue_id':31741,'title':'1892 조건검색의 오류'}]
+        self.assertEqual(status('두 번째 이슈: 1892 조건검색의 오류 (#31741)',mantis),'pass')
+        self.assertEqual(status('관련 이슈 1893도 같은 조건검색의 오류입니다. (#31741)',mantis),'fail')
+        # 제목에 같은 숫자가 있어도 #·이슈 번호로 명시한 주장은 근거 없는 ID다.
+        self.assertEqual(status('관련 이슈는 #1892입니다. (#31741)',mantis),'fail')
+        self.assertEqual(status('두 번째 이슈: 1892 조건검색의 오류, 이슈 번호: 1892',mantis),'fail')
+        self.assertEqual(status('두 번째이슈: 1892 조건검색의 오류 (#31741)',mantis),'pass')
+        notion=[{'type':'notion','page_id':'p','title':'[MTS] 역시계곡선','detail':{'properties_text':'이슈번호: 31557\n상태: 시작전'}}]
+        self.assertEqual(status('- 제목: [MTS] 역시계곡선 | 이슈번호: 31557',notion),'pass')
+        self.assertEqual(status('- 제목: [MTS] 역시계곡선 | 이슈번호: 31558',notion),'fail')
+        from backend.evaluation.issue_facts import extract_issue_claims
+        self.assertEqual(extract_issue_claims('- 그중 두 번째 이슈: 1. [1350] 섹터종합 화면 오픈 (#31652 · 필드 steps)')[0],{31652})
+        self.assertEqual(extract_issue_claims('두 번째 이슈 번호: 31653, 관련 이슈 31654')[0],{31653,31654})

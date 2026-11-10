@@ -1,6 +1,7 @@
 """Notion 문서 검색·본문 조회 도구. 기존 읽기 범위와 승인된 클라이언트만 사용한다."""
 
 import json
+import os
 import re
 import time
 from typing import Any, Dict, Literal
@@ -68,6 +69,14 @@ def _revoke(context: ToolContext, page_id: str) -> None:
         item.stage['notion_pages'] = [p for p in item.stage.get('notion_pages', []) if str(p.get('id')) != page_id]
         item.stage.setdefault('meta', {}).update(search_complete=False, incomplete_reasons=['page_access_revoked'])
     context.ledger.related_pages.pop(page_id, None)
+
+
+def _unconfirmed(context: ToolContext, page_id: str, tool: str, message: str) -> dict:
+    if os.getenv('NOTION_FETCH_PAGE_BLOCKS', 'true').lower() in {'false', '0', 'no', 'off'}:
+        # 설정상 본문을 읽지 않은 것은 접근 철회의 증거가 아니다. 확인한 제목·속성 근거를 유지한다.
+        return error_result(tool, 'body_disabled', '이 환경에서는 본문 조회가 꺼져 있습니다. 이미 확인한 제목·속성만 근거로 사용하세요.')
+    _revoke(context, page_id)
+    return error_result(tool, 'not_in_scope', message)
 
 
 def _page_view(context: ToolContext, page: Dict[str, Any]) -> Dict[str, Any]:
@@ -184,8 +193,7 @@ def list_notion_page_links(args: NotionLinksArgs, context: ToolContext) -> Dict[
         except CurrentPageUnavailable as exc:
             return _temporarily_unavailable(context, identifier, 'list_notion_page_links', exc)
         if current is None:
-            _revoke(context, identifier)
-            return error_result('list_notion_page_links', 'not_in_scope', '페이지의 현재 접근·소속·조건을 확인하지 못했습니다.')
+            return _unconfirmed(context, identifier, 'list_notion_page_links', '페이지의 현재 접근·소속·조건을 확인하지 못했습니다.')
         page.update(current)
         page.pop('_body_read_failure', None)
     pages, meta = follow_page_links(page, scope, conditions.constraints, deadline=_deadline(), limit=args.limit,
@@ -317,8 +325,7 @@ def get_notion_page_content(args: NotionContentArgs, context: ToolContext) -> Di
             except CurrentPageUnavailable as exc:
                 return _temporarily_unavailable(context, page_id, 'get_notion_page_content', exc)
             if current is None:
-                _revoke(context, page_id)
-                return error_result('get_notion_page_content', 'not_in_scope', '문서의 현재 접근·소속·조건을 확인하지 못했습니다.')
+                return _unconfirmed(context, page_id, 'get_notion_page_content', '문서의 현재 접근·소속·조건을 확인하지 못했습니다.')
             page.update(current)
             page.pop('_body_read_failure', None)
             context.notion_read_cache[page_id.replace('-', '')] = page

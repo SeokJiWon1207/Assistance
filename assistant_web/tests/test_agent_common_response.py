@@ -119,6 +119,20 @@ class CommonResponseTests(unittest.TestCase):
              patch.object(agent, '_finish_explanation', return_value=revoked):
             self.assertEqual(agent._finish(run, None), revoked)
 
+    def test_single_lookup_with_a_detail_read_needs_an_explanation_beyond_the_id_title_list(self):
+        from types import SimpleNamespace
+        from backend.services.agent import orchestrator as agent
+        from backend.tools.ledger import EvidenceLedger
+        read, listed = EvidenceLedger(), EvidenceLedger()
+        for ledger, meta in ((read, {'detail_read_id': 31699}), (listed, {})):
+            ledger.add('mantis', {'source': 'mantis_snapshot', 'status': 'ok', 'issues_list': [], 'meta': meta},
+                       grade='scoped', unapplied=(), call_id='call')
+        run = lambda operation, ledger: SimpleNamespace(plan={'operation': operation, 'answer_sections': ['results']}, ledger=ledger)
+        # '이 이슈는 어느 고객사 건이야?'처럼 상세를 읽은 단건 조회만 설명을 덧붙인다.
+        self.assertTrue(agent._requires_explanation(run('get', read)))
+        self.assertFalse(agent._requires_explanation(run('get', listed)))
+        self.assertFalse(agent._requires_explanation(run('search', read)))
+
     def test_composition_verifier_rejects_missing_parts_and_recursive_modes(self):
         for retrieval in ({}, {'answer_parts': [{'mode': 'agent_composed', 'content': '임의 답변'}]}):
             report = build_verification_report('몇 건이야?', '0건입니다.', [], retrieval, 'agent_composed')

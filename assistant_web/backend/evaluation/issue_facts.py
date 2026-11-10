@@ -5,6 +5,7 @@ import json
 import re
 from typing import Any
 
+from backend.evidence.references import SOURCE_LABEL_PATTERN
 from backend.mantis_status import display_mantis_status_label
 from backend.utils.text import normalize_for_match, text_matches_any_alias
 from backend.customer_identity import text_matches_customer_aliases
@@ -24,7 +25,8 @@ FIELD_LABELS = {
 }
 FIELD_LABELS.update({field: field for field in FIELD_LABELS.values()})
 FIELD_LABELS.update({"issue_id": "id", "summary": "title"})
-EXPLICIT_ID = re.compile(r"(?:#|(?:이슈\s*(?:번호|ID)?|\bID)\s*[:：]?\s*)0*(\d{1,7})(?!\d|년|월|일|건)", re.I)
+# '두 번째 이슈: 1. [1350] …'의 '이슈:'는 순번 지칭이며 뒤의 숫자는 인용한 내용이다. '이슈 번호:'는 그대로 검사한다.
+EXPLICIT_ID = re.compile(r"(?:#|(?:(?<!번째)(?<!번째\s)이슈|이슈\s*(?:번호|ID)|\bID)\s*[:：]?\s*)0*(\d{1,7})(?!\d|년|월|일|건)", re.I)
 LABELLED_FIELD = re.compile(
     r"(?P<label>최종수정일|현재상태|프로젝트|이슈\s*(?:번호|ID)|담당자|매체구분|우선순위|"
     r"플랫폼|등록일|접수일|고객사|심각도|제목|상태|\bID)\s*[:：]\s*"
@@ -200,7 +202,7 @@ def extract_issue_claims(content: str, *, source_sections: bool = False,
                 # 인용 형식만 벗기며 상태 뒤의 임의 서술·완료 주장은 그대로 검사한다.
                 if field == "status":
                     value = re.sub(
-                        rf"\s+\(#0*{current_id}\s*·\s*(?:필드\s+[\w가-힣 :.-]+|노트\s+\d+)"
+                        rf"\s+\(#0*{current_id}\s*·\s*(?:{SOURCE_LABEL_PATTERN}|필드\s+[\w가-힣 :.-]+)"
                         r"(?:\s*·\s*\d{4}-\d{2}-\d{2})?\)$", "", value,
                     )
                 claims.append((current_id, field, value))

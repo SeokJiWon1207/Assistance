@@ -119,6 +119,17 @@ class AgentDisplayLimitTests(unittest.TestCase):
                 self.assertEqual(build_query_contract(question, plan, conditions, 5, {}).list_limit, 3)
                 self.assertIsNone(plan['limit'])
 
+    def test_single_item_request_planned_as_get_uses_the_same_display_size_as_verification(self):
+        from backend.intent.display_contract import expected_display_limit
+        question = '전사 한투 미해결 이슈 중 가장 최근 이슈 하나만 자세히 알려줘.'
+        for operation in ('get', 'explain', 'search'):
+            with self.subTest(operation=operation):
+                plan = validate_plan(question, {**deepcopy(PROPOSAL), 'operation': operation, 'limit': None}, {}, {})
+                conditions = project_conditions(plan, plan['resolved_constraints'], 'mantis')
+                contract = build_query_contract(question, plan, conditions, 5, {})
+                self.assertEqual(contract.list_limit, 1)
+                self.assertEqual(contract.list_limit, expected_display_limit(question, plan))
+
     def test_display_is_not_capped_at_twenty_or_confused_with_population_or_notion(self):
         cases = [('전사 한투 미해결 이슈 최근 50건을 보여줘.', 50, None),
                  ('전사 한투 미해결 이슈 최신 150건 기준으로 최근 3건을 보여줘.', 3, 150),

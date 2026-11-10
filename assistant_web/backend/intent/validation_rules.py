@@ -59,6 +59,10 @@ def check_status(question, status, followup, source, operation=None, report_kind
     require(isinstance(status, dict), '상태 계획이 없습니다')
     mode, values, evidence = status.get('mode'), status.get('values'), status.get('evidence')
     require(mode in {'unspecified', 'all', 'open', 'include', 'exclude', 'inherit', 'unclear'}, '지원하지 않는 상태 의도')
+    # status 계획은 Mantis 상태 전용이다. Notion 상태값('보관됨' 등)으로 거부만 하면 모델이 조건을 버린다.
+    require(source in {'mantis', 'both'} or mode in {'unspecified', 'inherit'},
+            'status 계획은 Mantis 전용입니다. Notion 상태는 status를 unspecified로 두고 '
+            'filters에 {field: status, operator: equals 또는 not_equals, value, evidence}로 지정하세요')
     require(isinstance(values, list) and all(isinstance(v, str) and v in STATUS_VALUES for v in values), '지원하지 않는 상태값')
     require(isinstance(evidence, str) and (mode == 'inherit' or not evidence or evidence_is_grounded(evidence, question)), '상태 근거 불일치')
     require(mode != 'unclear', '조회할 상태를 확정하지 못했습니다')
@@ -71,7 +75,6 @@ def check_status(question, status, followup, source, operation=None, report_kind
     require(not followup or mode != 'exclude' or change == 'remove',
             '후속 상태 제외는 change=remove로 기존 범위에서 제거해야 합니다. 상태 전체 교체는 include+replace에 원하는 최종 상태 집합을 명시하세요')
     if source not in {'mantis', 'both'}:
-        require(mode in {'unspecified', 'inherit'}, 'Mantis 상태를 다른 원천에 적용할 수 없습니다')
         return
     text = unquoted(question)
     if operation == 'report' and report_kind == 'weekly':
@@ -203,6 +206,16 @@ def normalize_status_clauses(parsed, previous=None, question=''):
     return parsed
 
 
+ORDERING_WORDS = {'가장', '제일', '최근', '최신', '마지막', '이슈', '건', '항목', '문서', '목록',
+                  '하나', '하나만', '한', '두', '세', '개', '만'}
+
+
+def is_ordering_phrase(text) -> bool:
+    """'가장 최근 이슈', '최신 3건'처럼 정렬·개수 단어만으로 된 문구다. 검색 주제가 아니다."""
+    words = re.findall(r'[가-힣A-Za-z0-9]+', str(text))
+    return bool(words) and all(w in ORDERING_WORDS or re.fullmatch(r'\d+(?:건|개)', w) for w in words)
+
+
 def check_clause(item, question, source):
     require(isinstance(item, dict), '필터 형식 오류')
     evidence = item.get('evidence')
@@ -217,6 +230,21 @@ def check_clause(item, question, source):
     require(all(clause_supported(f, clause) for f in families),
             f"원천이 지원하지 않는 필터: {field} {clause['operator']}" + hint)
     values = values_for_clause(clause.get('value'))
+    require(field != 'keyword' or not any(is_ordering_phrase(v) for v in values),
+            '정렬·개수 표현은 키워드 조건이 아닙니다. sort·limit으로 표현하세요')
+    if field == 'status':
+        # 근거 문구가 질문에 있어도 포함·제외 방향은 보장되지 않는다. 기존 Notion 상태 파서가
+        # 같은 상태값을 반대 방향으로 읽은 경우만 거부하고, 파서가 모르는 표현은 그대로 둔다.
+        from backend.intent.notion_constraints import extract_notion_constraints
+        native = extract_notion_constraints(unquoted(question))
+        included = {re.sub(r'\s+', '', str(native.get('status') or ''))} - {''}
+        excluded = {re.sub(r'\s+', '', str(v)) for v in native.get('excluded_statuses') or []}
+        negative = clause['operator'] in {'not_equals', 'not_in'}
+        opposite, same = (included, excluded) if negative else (excluded, included)
+        for value in (re.sub(r'\s+', '', str(v)) for v in values):
+            require(value not in opposite or value in same,
+                    f"질문은 상태 '{value}'을(를) {'포함' if negative else '제외'} 조건으로 말합니다. "
+                    f"{'equals/in' if negative else 'not_equals/not_in'}을 사용하세요")
     if field in PERSON_FIELDS | {'title', 'keyword', 'screen_number', 'issue_id', 'database'}:
         require(all(str(v).lstrip('#') in question for v in values), '질문에 없는 필터값')
     if field == 'issue_id':

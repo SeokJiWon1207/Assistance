@@ -92,5 +92,20 @@ class NotionSemanticToolTests(unittest.TestCase):
         self.assertFalse(result['ok']);self.assertEqual(ctx.ledger.notion_pages(),[])
         self.assertNotIn('N1',ctx.ledger.refs())
 
+    def test_disabled_body_reading_keeps_title_and_property_evidence(self):
+        from backend.tools.catalog import agent_registry
+        from backend.tools import notion_tools
+        ctx=context_for();registry=agent_registry(query_tools=True)
+        ctx.ledger.add('notion',{'source':'notion','status':'ok','notion_pages':[
+            {'id':'page','database_id':'db','title':'찾은 문서','properties_text':'상태: 시작전'}],
+            'meta':{'search_complete':True}},grade='scoped',unapplied=(),call_id='search')
+        with (patch.dict('os.environ',{'NOTION_FETCH_PAGE_BLOCKS':'false'}),
+              patch.object(notion_tools,'notion_scope',return_value={'db':'db'})):
+            for tool in ('get_notion_page_content','list_notion_page_links'):
+                result=registry.execute(tool,{'page_ref':'N1'},'',ctx)
+                self.assertEqual(result['error']['code'],'body_disabled',result)
+        self.assertEqual([p['title'] for p in ctx.ledger.notion_pages()],['찾은 문서'])
+        self.assertTrue(ctx.ledger.stages[0].stage['meta']['search_complete'])
+
 
 if __name__=='__main__':unittest.main()

@@ -154,6 +154,36 @@ class RemainingToolTests(unittest.TestCase):
         self.assertNotIn('999', result['content'])
         self.assertEqual(next(c for c in result['agentChecks'] if c['id'] == 'agent_step_conditions')['status'], 'pass')
 
+    def test_notion_single_lookup_answers_from_searched_title_without_body(self):
+        from backend.services.agent.route import run_agent_if_eligible
+        from backend.services.agent.policy import request_transfer_scope
+        ctx = notion_context()
+        page = {'id': 'p1', 'database_id': 'db', 'title': '조건검색 서버', 'database_label': '기술 문서', 'status': '진행',
+                'owner': '', 'content': '', 'properties_text': '상태: 진행', 'url': 'https://www.notion.so/p1',
+                'last_edited_time': '2026-05-05T00:00:00Z'}
+        stage = {'source': 'notion', 'status': 'ok', 'notion_pages': [page],
+                 'meta': {'search_complete': True, 'displayed_count': 1, 'constraints': {}}}
+        model = FakeModel([turn(tool_call('search_notion_pages', {'query': '조건검색 서버'})), final('본문 근거가 없습니다')])
+        proposal = {**deepcopy(PROPOSAL), 'source': 'notion', 'operation': 'get', 'limit': None,
+                    'filters': [{'field': 'title', 'operator': 'equals', 'value': '조건검색 서버', 'evidence': '조건검색 서버'}],
+                    'status': {'mode': 'unspecified', 'values': [], 'evidence': ''}}
+        plan = validate_plan(ctx.question, proposal, {'uid': 'u'}, {})
+        with agent_environment(model=model, sources=FakeSources()), request_transfer_scope('company-test'), \
+             patch('backend.tools.notion_tools.execute_notion_search', return_value=stage):
+            chat = explain_context(ctx.question, source='notion', constraints=plan['resolved_constraints'])
+            chat.intent_plan = plan
+            chat.structured_tool_conditions = True
+            result = run_agent_if_eligible(chat_request(ctx.question), chat)
+        # 본문을 읽지 않아도 조건을 적용해 찾은 문서의 제목·속성으로 답한다.
+        self.assertEqual(result['raw']['mode'], 'agent_notion_results', result['content'])
+        self.assertIn('조건검색 서버', result['content'])
+        self.assertNotIn('적용 조건에 맞는 Notion 항목은', result['content'])
+        from backend.evaluation.delivery import decide_delivery
+        from backend.evaluation.verification import build_verification_report
+        report = build_verification_report(ctx.question, result['content'], result['sourcesForFollowUps'],
+                                           result['retrieval'], 'agent_notion_results')
+        self.assertTrue(decide_delivery(report).allowed, [c for c in report['checks'] if c['status'] == 'fail'])
+
     def test_notion_count_distinguishes_complete_zero_from_incomplete_window(self):
         for complete in (True, False):
             ctx = notion_context()

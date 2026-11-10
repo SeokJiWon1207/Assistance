@@ -254,6 +254,13 @@ def validate_plan(question, parsed, user, previous):
         incoming.append(checked)
         grounded_raw.append(item)
     raw = grounded_raw
+    planned_status = [*incoming, *(base.get('filter_clauses', []) if followup else [])]
+    if source == 'notion' and operation in {'search', 'count'} and not any(c['field'] == 'status' for c in planned_status):
+        # Mantis의 '명시된 상태 조건 누락' 검사와 같은 원칙이다. 파서가 읽은 상태를 계획이 버리지 못하게 한다.
+        from backend.intent.notion_constraints import extract_notion_constraints
+        native = extract_notion_constraints(unquoted(question))
+        require(not (native.get('status') or native.get('excluded_statuses')),
+                '질문의 Notion 상태 조건이 계획에 없습니다. filters에 status equals/not_equals로 지정하세요')
     # 검증된 새 값으로 같은 필드를 교체하면 별도 해제가 필요 없다. 모델이
     # 중복 선언한 해제만 제거하며, 새 값은 위의 원문 근거 검사를 통과해야 한다.
     clear = [field for field in clear if field not in {clause['field'] for clause in incoming}]
@@ -372,6 +379,10 @@ def validate_plan(question, parsed, user, previous):
         c['list_scope_edit'] = True
     terms = parsed['terms']
     require(isinstance(terms, list) and len(terms) <= 6 and all(isinstance(t, str) and 0 < len(t) <= 100 for t in terms), '검색어 형식 오류')
+    # '가장 최근 이슈'는 정렬·개수 표현이다. 검색어로 쓰면 제목·본문 포함 조건이 되어 결과가 0건이 된다.
+    from backend.intent.validation_rules import is_ordering_phrase
+    ordering = [t for t in terms if is_ordering_phrase(t)]
+    require(not ordering, f"정렬·개수 표현은 검색어가 아닙니다: {', '.join(ordering)}. terms에서 빼고 sort·limit으로 표현하세요")
     if operation == 'report' and report in {'handoff', 'postmortem', 'notice'}:
         require(not terms, '이슈 문서의 출력 항목은 검색어가 아닙니다. terms=[]로 두고 실제 조회 주제만 keyword/title 등 filters에 원문 근거와 함께 지정하세요')
     if followup and not terms and 'terms' not in clear and not (replaced & {'keyword', 'title'}):

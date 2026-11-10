@@ -71,8 +71,8 @@ class DirectExplanationTests(unittest.TestCase):
                        ['수정본 확인 부탁드립니다.'],cause='잘못된 인덱스 참조',action='범위 검사 추가')
         self.assertIn('**원인**: 잘못된 인덱스 참조',core)
         self.assertIn('**조치**: 범위 검사 추가',core)
-        self.assertIn('필드 사유 및 원인',core)
-        self.assertIn('필드 조치 및 개선',core)
+        self.assertIn('· 사유 및 원인)',core)
+        self.assertIn('· 조치 및 개선)',core)
         self.assertLess(core.index('**원인**'),core.index('고객 검증'))
 
     def test_partial_evidence_does_not_assert_absence_in_full_history(self):

@@ -57,9 +57,11 @@ class CurrentIssueStatusAnswerTests(TestCase):
         self.assertEqual(check_issue_fields(claims, [{"issue_id": 91, "status": "assigned"}])["status"], "fail")
 
     def test_matching_status_with_citation_is_not_a_false_mismatch(self):
-        text = "- **현재 상태**: 확인된 이슈 (#31631 · 필드 summary)"
-        _ids, claims = extract_issue_claims(text)
-        self.assertEqual(check_issue_fields(claims, [{"issue_id": 31631, "status": "confirmed"}])["status"], "pass")
+        for citation in ["#31631 · 필드 summary", "#31631 · 제목", "#31631 · 재현 단계 · 2026-11-10"]:
+            with self.subTest(citation=citation):
+                text = f"- **현재 상태**: 확인된 이슈 ({citation})"
+                _ids, claims = extract_issue_claims(text)
+                self.assertEqual(check_issue_fields(claims, [{"issue_id": 31631, "status": "confirmed"}])["status"], "pass")
 
     def test_citation_does_not_hide_false_status_or_extra_claim(self):
         for value in ["종료된 이슈", "확인된 이슈이며 운영 반영 완료"]:

@@ -1228,8 +1228,11 @@ def _result_parts(run: AgentRun) -> list[tuple[str, dict]]:
         response['sourcesForFollowUps'] = report.get('sourcesForFollowUps') or report.get('sources', [])
         response['sources'] = response['sourcesForFollowUps'] if run.request.showSources else []
         parts.append(('report', response))
+    # 제목만 다시 묻는 단건 조회는 검색으로 찾은 문서의 제목·속성이 답이다. 본문 근거를 요구하지 않는다.
     if run.plan.get('source') == 'notion' and (run.ledger.notion_query_results() or any(
-            s.stage.get('meta', {}).get('property_result') for s in run.ledger.stages)):
+            s.stage.get('meta', {}).get('property_result') for s in run.ledger.stages)
+            or run.plan.get('operation') == 'get' and 'explanation' not in run.plan.get('answer_sections', [])
+            and run.ledger.notion_evidence_pages(('scoped',))):
         from backend.services.agent.deterministic_answers import render_notion_results
         retrieval = _retrieval(run)
         retrieval['limit'] = run.plan.get('limit') or run.context.active_limit
@@ -1272,7 +1275,9 @@ def _result_parts(run: AgentRun) -> list[tuple[str, dict]]:
 def _requires_explanation(run: AgentRun) -> bool:
     plan = getattr(run, 'plan', {})
     if 'explanation' not in plan.get('answer_sections', []):
-        return False
+        # 단건 조회에서 상세를 읽었다면 고객사·담당자 같은 속성 질문이다. ID·제목 목록만으로는 답이 되지 않는다.
+        return plan.get('operation') == 'get' and any(
+            s.stage.get('meta', {}).get('detail_read_id') for s in run.ledger.stages)
     # 조건을 적용할 수 없는 문서의 검증된 발췌는 공통 참고 부분에서 이미 설명한다.
     reference_ready = (plan.get('explanation_sources') == ['notion'] and run.tools.has_related_guide()
                        and any(p.get('guide') and p.get('body_checked') and p.get('content_complete')
