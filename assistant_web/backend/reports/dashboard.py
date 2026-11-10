@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
 
 from backend.chart_data import daily_registrations
+from backend.reports.dashboard_analytics import build_dashboard_analytics
 from backend.utils.text import normalize_for_match
 from backend.mantis_status import mantis_status_bucket
 from backend.domain.team import (
@@ -391,6 +392,7 @@ def build_operations_dashboard(
             "linked": bool(person),
         },
         "summary": summary,
+        "analytics": build_dashboard_analytics(scoped_issues, today=base, days=days, complete=complete),
         "weeklyIssues": weekly_issue_summary(scoped_issues, base, complete=complete),
         "intakeTrend": daily_registrations(scoped_issues, current_start, current_end),
         # '이번 기간 vs 직전 기간' 비교 차트용. 같은 길이의 직전 기간을 같은 등록일 기준으로 센다.

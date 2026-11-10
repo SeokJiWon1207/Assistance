@@ -560,11 +560,11 @@ test('partial team brief does not assert no spikes or no priority issues', async
   assert.match(html, /비교 미확정/);
 });
 
-test('expanded personal list and sorting cover more than thirty issues', async () => {
+test('kanban includes all open items and sorting covers more than thirty issues', async () => {
   const h = await harness(async () => ({ok: true}));
   const data = {user: {mantisUsername:'석지원'}, summary: {open:35}, mantis: {search_complete:true,
     issues:Array.from({length:35}, (_, i) => ({id:i+1, title:`업무 ${i+1}`, status:'assigned', ageDays:i+1}))}};
-  assert.equal((h.api.renderPersonalOverview(data).match(/class="workspace-item-id"/g) || []).length, 8);
+  assert.equal((h.api.renderPersonalOverview(data).match(/class="workspace-item-id"/g) || []).length, 35);
   h.state.workspaceIssuesExpanded = true;
   h.state.workspaceSort = 'oldest';
   const html = h.api.renderPersonalOverview(data);
@@ -695,13 +695,12 @@ test('work tab shows due chips that filter and sort by due date, and a recent ac
   assert.match(html, /data-workspace-due-filter="week" aria-pressed="false">7일 안 마감 <b>1<\/b>/);
   assert.match(html, /data-workspace-due-filter="none" aria-pressed="false">목표일 없음 <b>1<\/b>/);
   assert.match(html, /<option value="due" >목표일 임박순/);
-  // 최근 활동은 배정·노트만(작성자는 따로, 제목은 이스케이프), 기한 경고는 오른쪽 레일 맨 위 '알림'에 둔다.
+  // 최근 활동은 배정·노트를 보여 주고, 오른쪽 레일을 없앤 보드에서는 기한 필터로 지연 업무를 확인한다.
   const feed = html.slice(html.indexOf('workspace-activity-list'));
   assert.ok(feed.indexOf('허영교님이 #3에 노트를 남겼어요') < feed.indexOf('#4 이슈가 나에게 배정됐어요'));
   assert.doesNotMatch(feed, /#2 목표일이 지났어요/);
-  const notice = html.slice(html.indexOf('workspaceSideNoticeTitle'), html.indexOf('workspace-activity-list'));
-  assert.match(notice, /#2 일정이 지났습니다/);
-  assert.doesNotMatch(notice, /새 노트가 확인되었습니다/);
+  assert.doesNotMatch(html, /workspaceSideNoticeTitle/);
+  assert.match(html, /data-workspace-due-filter="overdue"/);
   // 추이 차트 옆 '고객사별 담당'
   assert.match(html, /<h3>고객사별 담당<\/h3>/);
   assert.match(feed, /data-workspace-issue="3"/);
@@ -709,10 +708,11 @@ test('work tab shows due chips that filter and sort by due date, and a recent ac
   assert.match(feed, /새 활동/);
   h.state.workspaceDueFilter = 'week';
   html = h.api.renderPersonalOverview(data);
-  const list = html.slice(html.indexOf('workspace-issue-list'), html.indexOf('</section>', html.indexOf('workspace-issue-list')));
+  const list = html.slice(html.indexOf('class="workspace-kanban"'), html.indexOf('workspace-board-activity'));
+
   assert.match(list, /이번 주 업무/);
   assert.doesNotMatch(list, /지난 업무|목표일 없음|다음 달 업무/);
-  assert.match(html, /건 표시 · 전체 4건 중/);
+  assert.match(html, /건 · 전체 4건 중/);
   h.state.workspaceDueFilter = 'all';
   h.state.workspaceSort = 'due';
   html = h.api.renderPersonalOverview(data);
@@ -772,4 +772,28 @@ test('a due filter with no matches keeps existing work and filter controls reach
   assert.match(html, /data-workspace-due-filter="all"/);
   assert.match(html, /data-workspace-sort/);
   assert.doesNotMatch(html, /진행 중인 담당 업무가 없어요|workspace-empty-overview/);
+});
+
+test('kanban keeps developed work open, separates recent closed work and preserves unknown states once', async () => {
+  const h = await harness(async () => ({ok:true}));
+  const data = {user:{mantisUsername:'석지원'},summary:{open:3},mantis:{search_complete:true,issues:[
+    {id:1,title:'접수 업무',status:'new',isOpen:true},
+    {id:2,title:'검증할 업무',status:'developed',isOpen:true},
+    {id:3,title:'미상 업무',status:'미정'},
+  ],recentClosed:[{id:4,title:'종료 업무',status:'resolved',isOpen:false},{id:4,title:'중복 항목',status:'resolved',isOpen:false}],recentClosedTotal:1}};
+  const html = h.api.renderPersonalOverview(data);
+  const lane = key => html.split(`data-kanban-lane="${key}"`)[1].split('</section>')[0];
+  assert.match(lane('review'),/data-workspace-issue="1"/);
+  assert.match(lane('validation'),/data-workspace-issue="2"/);
+  assert.match(lane('done'),/data-workspace-issue="4"/);
+  assert.match(lane('unknown'),/data-workspace-issue="3"/);
+  assert.equal((html.match(/data-workspace-row-issue="4"/g)||[]).length,1);
+  assert.match(html,/실제 완료일 기준의 실적은 아니에요/);
+  h.state.myWorkspace=data;
+  const items = h.api.workspaceIssueContext().items;
+  assert.ok(items.some(i=>i.id===4));
+  h.state.workspaceDueFilter='overdue';
+  assert.ok(!h.api.workspaceIssueContext().items.some(i=>i.id===4));
+  const filtered=h.api.renderPersonalOverview(data);
+  assert.doesNotMatch(filtered,/data-workspace-row-issue="4"/);
 });

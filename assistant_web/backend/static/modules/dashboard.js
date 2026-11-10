@@ -10,8 +10,10 @@ import { ensureMyWorkspaceFresh, showTeamBrief, workspaceStatusLabel, workspaceI
 import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
 import { revealOnScroll } from "./motion.js?v=20260911-6";
 import { recordIssueView } from "./recent_items.js?v=20261105-1";
-import { opsSummaryCard, intakeCompareCard, recentOpenCard, customerIntakeCard, opsKpiTiles, memberBarsCard, priorityTable, opsSideRail } from "./dashboard_overview.js?v=20261105-1";
+import { recentOpenCard, opsKpiTiles, priorityTable } from "./dashboard_overview.js?v=20261105-1";
 import { registerDashboardTab, selectDashboardTab, currentDashboardTab } from "./dashboard_tabs.js?v=20261110-1";
+
+import { analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261110-3";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 let issueDetailContext = null;
@@ -41,6 +43,7 @@ const dashboardState = {
   prioritiesExpanded: false,
   selectedIssueId: "",
   intakeMedia: "",
+  comparisonDimension: "customer",
   initialized: false,
 };
 let dashboardLoadPromise = null;
@@ -402,8 +405,9 @@ function renderDashboard() {
     updateSourceMeta({ source: "error" });
     return;
   }
-  const data = dashboardState.data;
-  if (!data) return;
+  const rootData = dashboardState.data;
+  if (!rootData) return;
+  const data = analyticsScope(rootData, dashboardState.customer);
   updateSourceMeta(data.meta, { loading, liveFailed: Boolean(dashboardState.error) });
   if (data.meta?.source === "error") {
     hideFilterbar();
@@ -420,31 +424,18 @@ function renderDashboard() {
   const priorities = data.openIssues || data.priorities || [];
   const filtered = filteredPriorities(priorities);
   renderFilterbar(filtered.length);
-  // 지표 → 우선 확인 이슈 → 추이와 분포. 차트·지표 선택은 같은 목록을 필터링한다.
+  // 전체 현황은 지표 → 큰 추이 → 분포 → 관련 이슈. 고객사 범위는 모든 분석에 적용한다.
   // 지연·장기·그 외 범례는 차트마다 반복하지 않고 분포 제목 옆에 한 번만 둔다.
-  const memberChart = renderMemberChart(data.members || [], data.sharedAccounts || []);
+  const memberChart = dashboardState.customer ? "" : renderMemberChart(data.members || [], data.sharedAccounts || []);
   els.dashboardBody.innerHTML = `
     ${dashboardState.error
         ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시해요.</strong><span>${escapeHtml(formatDateTime(data.meta.fetchedAt))} 기준</span><button type="button" class="secondary-button" data-dashboard-retry>다시 시도</button></div>`
         : ""}
     ${!complete ? '<div class="dashboard-refresh-status is-warning" role="status"><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>' : ""}
-    <div class="ops-pane" data-ops-pane="summary">
-      <div class="ops-summary-layout">
-        <div class="ops-summary-main">
-          ${opsKpiTiles({ summary: data.summary, complete, metric: dashboardState.metric })}
-          ${priorityTable({ rows: data.priorities || [], complete })}
-          <div class="ops-row is-wide-first">
-            ${intakeCompareCard({ summary: data.summary, complete, points: data.intakeTrend || [], previousPoints: data.previousIntakeTrend || [], periodDays, media: dashboardState.intakeMedia, byMedia: data.intakeByMedia || null })}
-            ${customerIntakeCard({ rows: data.customerIntake || [], complete, periodDays })}
-          </div>
-          <div class="ops-row">
-            ${memberBarsCard({ members: data.members || [], sharedAccounts: data.sharedAccounts || [], complete })}
-            ${opsSummaryCard({ summary: data.summary, complete, metric: dashboardState.metric })}
-          </div>
-        </div>
-        ${opsSideRail({ data, complete, recentIssues: filtered })}
-      </div>
-    </div>
+    ${renderAnalyticsControls(rootData, dashboardState.customer)}
+    <div class="ops-pane analytics-pane" data-ops-pane="summary">${renderOverview(data, priorityTable({ rows: filtered.slice(0, 8), complete }))}</div>
+    <div class="ops-pane analytics-pane" data-ops-pane="comparison">${renderComparison(data, dashboardState.comparisonDimension)}</div>
+    <div class="ops-pane analytics-pane" data-ops-pane="flow">${renderFlow(data)}</div>
     <div class="ops-pane" data-ops-pane="issues">
     ${opsKpiTiles({ summary: data.summary, complete, metric: dashboardState.metric })}
     ${renderPriorities(priorities, filtered)}
@@ -723,6 +714,13 @@ function refocusDashboard(selector) {
 }
 
 function handleDashboardAction(target) {
+  const dimension = target.closest("[data-analytics-dimension]");
+  if (dimension && ["customer", "screen", "member"].includes(dimension.dataset.analyticsDimension)) {
+    dashboardState.comparisonDimension = dimension.dataset.analyticsDimension;
+    renderDashboard();
+    els.dashboardBody.querySelector(`[data-analytics-dimension="${dashboardState.comparisonDimension}"]`)?.focus();
+    return;
+  }
   const source = target.closest("[data-dashboard-source]");
   if (source) return import("./chat_source_detail.js?v=20260911-6").then(({ openSourceDetail }) => openSourceDetail({ type: "chroma", issue_id: source.dataset.dashboardSource }));
   // 주간 브리핑은 내 업무 › 주간 보고 한 곳에서만 보여 준다.
@@ -822,8 +820,10 @@ function handleDashboardAction(target) {
 function initDashboard() {
   if (dashboardState.initialized || !els.dashboardPanel) return;
   dashboardState.initialized = true;
-  // '이슈·분포'는 같은 본문(#dashboardBody)의 아래 절반이다. 탭 전환은 패널의 data-subview로 CSS가 나눠 보여 준다.
-  registerDashboardTab("issues", { view: () => null });
+  // 분석 세 탭과 이슈 목록은 같은 본문을 공유하며 data-subview로 현재 화면을 고른다.
+  for (const tab of ["overview", "comparison", "flow", "issues"]) {
+    registerDashboardTab(tab, { view: () => null, onShow: () => { renderDashboard(); els.dashboardBody.scrollTop = 0; } });
+  }
   els.viewDashboardBtn.addEventListener("click", () => showDashboardView());
   els.viewPersonalBtn.addEventListener("click", () => showPersonalView());
   els.viewChatBtn.addEventListener("click", () => showChatView());
@@ -840,6 +840,12 @@ function initDashboard() {
   syncPeriodButtons();
   els.dashboardRefreshBtn.addEventListener("click", () => loadDashboard(true));
   els.dashboardBody.addEventListener("click", (event) => handleDashboardAction(event.target));
+  els.dashboardBody.addEventListener("change", (event) => {
+    if (!event.target.matches?.("[data-analytics-customer]")) return;
+    dashboardState.customer = event.target.value;
+    renderDashboard();
+    els.dashboardBody.querySelector("[data-analytics-customer]")?.focus();
+  });
   els.dashboardFilterbar?.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetail.addEventListener("click", (event) => handleDashboardAction(event.target));
   els.dashboardDetailClose.addEventListener("click", closeIssueDetail);

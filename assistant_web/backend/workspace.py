@@ -11,6 +11,7 @@ from pathlib import Path as Path
 from typing import Any, Dict, List, Optional as Optional
 
 from backend.chart_data import daily_registrations
+from backend.mantis_status import mantis_status_bucket
 
 # 내 업무 첫 화면의 신규 등록 추이 기간(오늘 포함).
 ACTIVITY_DAYS = 30
@@ -341,6 +342,12 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
         )
     )
     open_issues = [item for item in issues if _is_open(item["status"])]
+    # 최근 변경된 종료 항목을 보드에서 따로 제공한다. 수정일은 완료일이 아니다.
+    recent_closed = sorted(
+        (item for item in issues if mantis_status_bucket(item["status"]) == "done"
+         and today - timedelta(days=29) <= (_parse_date(item["updatedAt"]) or date.min) <= today),
+        key=lambda item: str(item["updatedAt"]), reverse=True,
+    )
     week_start = today - timedelta(days=6)
     activity_start = today - timedelta(days=ACTIVITY_DAYS - 1)
     previous_week = (week_start - timedelta(days=7), week_start - timedelta(days=1))
@@ -374,6 +381,9 @@ def build_my_workspace(user: Dict[str, Any], *, refresh: bool = False, live: boo
             # 내려보내면 상단의 '미종료' 수와 목록 건수가 어긋나고 종료된 이슈가
             # 할 일처럼 보이므로 미종료 이슈만 표시한다.
             "issues": open_issues,
+            "recentClosed": recent_closed[:30],
+            "recentClosedTotal": len(recent_closed),
+            "recentClosedDateBasis": "최종수정일",
         },
         "notion": {
             "status": "hidden",

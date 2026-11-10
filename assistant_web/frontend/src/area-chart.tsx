@@ -1,7 +1,7 @@
 // bklit Area Chart(https://bklit.com/docs/components/area-chart)의 Area와 같은 속성을 가진 영역 채우기.
 // 원본 vendor에는 AreaChart가 없어 LineChart 안에서 같은 축척으로 그라디언트 영역만 그리는 래퍼를 둔다.
 // LineChart는 Line 외의 자식을 Line보다 먼저 받은 순서대로 그리므로 <AreaFill>을 <Line> 앞에 둔다.
-import { area as d3Area, curveMonotoneX, curveStepAfter, type CurveFactory } from 'd3-shape';
+import { area as d3Area, curveMonotoneX, curveStepAfter, curveLinear, type CurveFactory } from 'd3-shape';
 import { useId, useMemo } from 'react';
 import { useReducedMotion } from 'motion/react';
 import { LineChart, Line } from '../vendor/bklit/charts/line-chart';
@@ -67,7 +67,7 @@ export function AreaTrend({ spec }: { spec: Spec }) {
   const color = spec.series?.[0]?.color || 'var(--chart-1)';
   return <div className="bklit-area-trend">
     <LineChart data={rows} animationDuration={reduced || spec.animated === false ? 0 : 700}
-      style={{ height: 220, aspectRatio: 'auto' }} margin={{ top: 12, left: 32, right: 16, bottom: 32 }}>
+      style={{ height: spec.height || 220, aspectRatio: 'auto' }} margin={{ top: 12, left: 32, right: 16, bottom: 32 }}>
       <Grid horizontal numTicksRows={max <= 4 ? Math.max(1, max) : 4} />
       <AreaFill dataKey={key} fill={color} fillOpacity={0.4} curve={curve} />
       <Line dataKey={key} stroke={color} strokeWidth={2} curve={curve} animate={!reduced} fadeEdges={false} />
@@ -105,7 +105,7 @@ export function CompareArea({ spec }: { spec: Spec }) {
   const snow = spec.lineStyle === 'snow';
   return <div className={`bklit-compare-area${snow ? ' is-snow' : ''}`}>
     <LineChart data={rows} animationDuration={reduced || spec.animated === false ? 0 : 700}
-      style={{ height: 220, aspectRatio: 'auto' }} margin={{ top: 12, left: 36, right: 16, bottom: 32 }}>
+      style={{ height: spec.height || 220, aspectRatio: 'auto' }} margin={{ top: 12, left: 36, right: 16, bottom: 32 }}>
       <Grid horizontal numTicksRows={4} />
       {/* snow: 채움 없는 부드러운 곡선, 직전 기간은 처음부터 점선(Snow 대시보드의 이번 주·지난주 비교 모양). */}
       {!snow && <AreaFill dataKey="total" fill={color} fillOpacity={0.32} curve={curveStepAfter} />}
@@ -121,4 +121,25 @@ export function CompareArea({ spec }: { spec: Spec }) {
       </div>} />
     </LineChart>
   </div>;
+}
+
+// 등록일과 고객사전달일 각각의 일별 건수. 수정일을 완료일로 추정하지 않는다.
+export function ActivityTrend({ spec }: { spec: Spec }) {
+  const reduced = useReducedMotion();
+  const delivered = new Map((spec.secondaryPoints || []).map(p => [p.date, p.count]));
+  const rows = (spec.points || []).map(p => ({ date: toDate(p.date), intake: p.count, delivered: delivered.get(p.date) || 0 }));
+  if (!rows.length) return <p className="bklit-empty">선택 기간의 기록을 확인하지 못했어요.</p>;
+  return <div className="bklit-activity"><LineChart data={rows} animationDuration={reduced ? 0 : 600}
+    style={{height:spec.height || 320,aspectRatio:'auto'}} margin={{top:12,left:36,right:18,bottom:32}}>
+    <Grid horizontal numTicksRows={4}/>
+    <Line dataKey="intake" curve={curveLinear} stroke="var(--chart-1)" strokeWidth={2.5} animate={!reduced} fadeEdges={false}/>
+    <Line dataKey="delivered" curve={curveLinear} stroke="var(--analytics-secondary)" strokeWidth={2.5} animate={!reduced} fadeEdges={false}/>
+    <YAxis formatValue={value => Number.isInteger(value) ? String(value) : ''}/>
+    <XAxis numTicks={5} labels={rows.map(r=>dayLabel(r.date))}/>
+    <ChartTooltip className="bklit-hover-panel" showDatePill={false} content={({point})=><div className="bklit-tooltip">
+      <strong>{dayLabel(point.date as Date)}</strong>
+      <div><i style={{background:'var(--chart-1)'}}/>신규 등록<b>{countLabel(point.intake,spec.complete)}</b></div>
+      <div><i style={{background:'var(--analytics-secondary)'}}/>고객사 전달<b>{countLabel(point.delivered,spec.complete)}</b></div>
+    </div>}/>
+  </LineChart></div>;
 }

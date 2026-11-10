@@ -1,9 +1,9 @@
-// 팀 대시보드 › 고객사 탭. 선택 목록 고객사마다 로고·미종료·최근 8주 주별 신규를 카드로 보여 준다.
+// 팀 대시보드 › 고객사 탭. 고객사를 미종료 비교표와 최근 8주 등록 히트맵으로 보여 준다.
 import { els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { customerMark } from "./ui_format.js?v=20260911-6";
-import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
+import { mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { focusKey, restoreFocus } from "./view_focus.js?v=20261103-1";
 import { showChatView } from "./dashboard.js?v=20260911-6";
@@ -66,42 +66,16 @@ function visibleRows() {
   return filtered;
 }
 
-function statusChips(row, complete) {
-  const chips = [];
-  if (row.overdue > 0) chips.push(`<span class="customer-card-chip is-overdue">기한 지남 ${Number(row.overdue)}${complete ? "" : "+"}</span>`);
-  if (complete && row.spike) chips.push('<span class="customer-card-chip is-spike">지난주 급증</span>');
-  if (!row.open) chips.push(`<span class="customer-card-chip is-calm">${complete ? "미종료 없음" : "미종료 미확인"}</span>`);
-  return chips.join("");
-}
-
-function customerCard(row, weeks, complete) {
+function customerAnalysis(rows, weeks, complete) {
   const suffix = complete ? "" : "+";
-  const points = weeks.map((week, index) => ({ date: week.start, count: Number(row.weekly?.[index] || 0) }));
-  const head = `
-    <span class="customer-card-head">
-      ${customerMark(row.name, "md")}
-      <span class="customer-card-name"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(lastCreatedLabel(row.lastCreatedAt))}</small></span>
-      ${row.project ? `<span class="customer-card-arrow" aria-hidden="true">${icon("chevron-right", 16)}</span>` : ""}
-    </span>
-    <span class="customer-card-tags">${statusChips(row, complete)}</span>
-    <span class="customer-card-stats">
-      <span class="customer-card-stats-primary"><small>미종료</small><strong>${row.open}${suffix}<em>건</em></strong></span>
-      <span><small>장기 미종료</small><strong class="${row.aging ? "is-aging" : ""}">${row.aging}${suffix}<em>건</em></strong></span>
-      <span><small>8주 신규</small><strong>${row.recent}${suffix}<em>건</em></strong></span>
-    </span>`;
-  // 고객사 상세는 Mantis 프로젝트 하나 단위라 이슈가 가장 많은 프로젝트로 연다. 이슈가 없으면 열 상세가 없다.
-  const main = row.project
-    ? `<button type="button" class="customer-card-main" data-customer-open="${escapeHtml(row.project)}" aria-label="${escapeHtml(row.name)} 고객사 상세 보기">${head}</button>`
-    : `<div class="customer-card-main is-static">${head}</div>`;
-  const noTrend = Number(row.recent) > 0
-    ? `최근 8주 신규 ${Number(row.recent)}${suffix}건 · 주별 추이 미확인`
-    : complete ? "최근 8주 신규 이슈가 없어요." : "확인한 범위에는 최근 8주 신규 이슈가 없어요.";
-  const chart = points.some((point) => point.count > 0) ? chartHost({
-    kind: "sparkline", title: `${row.name} 최근 8주 주별 신규`, complete, compact: true, sparklineVariant: "bar",
-    dateBasis: "등록 주", periodLabel: "주별 신규", points,
-  }, `<p class="customer-card-fallback">최근 8주 신규 ${row.recent}${suffix}건</p>`)
-    : `<p class="customer-card-no-trend">${noTrend}</p>`;
-  return `<article class="customer-card">${main}<div class="customer-card-chart">${chart}</div></article>`;
+  const maxOpen = Math.max(1, ...rows.map(row => row.open));
+  const maxWeekly = Math.max(1, ...rows.flatMap(row => row.weekly || []));
+  const name = row => row.project
+    ? `<button type="button" class="customer-table-name" data-customer-open="${escapeHtml(row.project)}" aria-label="${escapeHtml(row.name)} 고객사 상세 보기">${customerMark(row.name, "sm")}<strong>${escapeHtml(row.name)}</strong>${icon("chevron-right", 14)}</button>`
+    : `<span class="customer-table-name">${customerMark(row.name, "sm")}<strong>${escapeHtml(row.name)}</strong></span>`;
+  const table = `<section class="analytics-card"><header><div><h3>고객사 현황 비교</h3><p>현재 미종료와 최근 등록을 함께 확인하세요.</p></div></header><div class="analytics-table-scroll"><table class="analytics-table customer-comparison-table"><thead><tr><th>고객사</th><th>미종료 규모</th><th>미종료</th><th>기한 지남</th><th>30일 이상</th><th>8주 신규</th><th>최근 등록</th></tr></thead><tbody>${rows.map(row => `<tr><th scope="row">${name(row)}</th><td><span class="analytics-bar-track"><i style="width:${row.open/maxOpen*100}%"></i></span></td><td><strong>${row.open}${suffix}</strong></td><td class="${row.overdue ? "is-overdue" : ""}">${row.overdue}${suffix}</td><td>${row.aging}${suffix}</td><td>${row.recent}${suffix}</td><td>${escapeHtml(lastCreatedLabel(row.lastCreatedAt))}${complete && row.spike ? '<span class="customer-card-chip is-spike">지난주 급증</span>' : ''}</td></tr>`).join('')}</tbody></table></div></section>`;
+  const heatmap = `<section class="analytics-card"><header><div><h3>고객사별 주간 등록</h3><p>최근 8주 · 진한 칸일수록 신규 등록이 많아요. 마지막 주는 오늘까지예요.</p></div></header><div class="analytics-table-scroll"><table class="analytics-table analytics-heatmap"><thead><tr><th>고객사</th>${weeks.map(week => `<th>${escapeHtml(week.start.slice(5))}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr><th scope="row">${name(row)}</th>${weeks.map((week,i) => { const value=Number(row.weekly?.[i] || 0);return `<td><span class="analytics-heat-cell" data-intensity="${value?Math.min(4,Math.ceil(value/maxWeekly*4)):0}" title="${escapeHtml(week.start)} 주 · 신규 ${value}${suffix}건">${value}${suffix}</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div><p class="analytics-footnote">${complete?'0건':'확인한 범위'}<span class="analytics-heat-scale"><i data-intensity="0"></i><i data-intensity="1"></i><i data-intensity="2"></i><i data-intensity="3"></i><i data-intensity="4"></i></span>${maxWeekly}${suffix}건</p></section>`;
+  return `<div class="customer-analytics">${table}${heatmap}</div>`;
 }
 
 function toolbarSubtitle() {
@@ -149,10 +123,10 @@ function renderBody() {
   const result = `<div class="customer-overview-result"><p role="status" aria-live="polite"><strong>${rows.length}곳 표시</strong><span>목록 ${data.customers?.length || 0}곳</span></p>${filtered && rows.length ? reset : ""}</div>`;
   const note = complete ? "" : '<p class="customer-detail-note">일부 데이터만 확인했어요. 건수 뒤 +는 확인한 범위 기준의 최소값이고, 급증 여부는 판단하지 않았어요.</p>';
   const cards = rows.length
-    ? `<div class="customer-card-grid">${rows.map((row) => customerCard(row, data.weeks || [], complete)).join("")}</div>`
+    ? customerAnalysis(rows, data.weeks || [], complete)
     : `<section class="customer-overview-empty">${icon("search", 24)}<h3>${filtered ? "조건에 맞는 고객사가 없어요." : "표시할 고객사가 없어요."}</h3><p>${filtered ? "검색어를 바꾸거나 필터를 해제해 보세요." : "고객사 목록을 다시 불러와 주세요."}</p>${filtered ? reset : '<button type="button" class="customer-reset" data-customer-refresh>다시 조회</button>'}</section>`;
   return `${overviewState.error ? `<p class="customer-detail-error" role="alert">${escapeHtml(overviewState.error)}</p>` : ""}${note}${result}${cards}
-    ${rows.length ? '<p class="customer-detail-note">고객사 이름을 누르면 이슈가 가장 많은 프로젝트의 상세가 열려요. 마지막 막대는 이번 주(오늘까지)예요.</p>' : ""}`;
+    ${rows.length ? '<p class="customer-detail-note">고객사 이름을 누르면 이슈가 가장 많은 프로젝트의 상세가 열려요. 주간 등록 표의 날짜는 각 주의 시작일이에요.</p>' : ""}`;
 }
 
 function updateBadge(container) {
@@ -190,7 +164,7 @@ function render() {
   void mountCharts(view);
 }
 
-// 검색어 입력 중에는 입력칸을 다시 만들지 않고 카드 영역만 바꾼다.
+// 검색어 입력 중에는 입력칸을 다시 만들지 않고 분석 영역만 바꾼다.
 function renderCards() {
   const body = viewElement()?.querySelector(".customer-overview-body");
   if (!body) return render();

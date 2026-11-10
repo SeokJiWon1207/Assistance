@@ -1,5 +1,5 @@
 import { MetricPie, MonthlyTrend } from './report-charts';
-import { AreaTrend, CompareArea } from './area-chart';
+import { AreaTrend, CompareArea, ActivityTrend } from './area-chart';
 import { CustomerRanking, AgeDonut, MemberHeatmap } from './distribution-charts';
 import { formatChartValue } from '../../backend/static/modules/chart_models.js';
 import { curveLinear } from 'd3-shape';
@@ -32,11 +32,12 @@ type Row = Record<string, unknown>;
 type Point = { date: string; count: number };
 type Series = { key: string; label: string; color: string };
 export type Spec = {
-  kind: 'bar' | 'sparkline' | 'trend' | 'area' | 'compare-area' | 'cohort' | 'calendar' | 'pie' | 'monthly' | 'customer-ranking' | 'age-donut' | 'member-heatmap'; title: string; complete: boolean;
+  kind: 'activity' | 'bar' | 'sparkline' | 'trend' | 'area' | 'compare-area' | 'cohort' | 'calendar' | 'pie' | 'monthly' | 'customer-ranking' | 'age-donut' | 'member-heatmap'; title: string; complete: boolean;
   unknown?: number; otherCount?: number; otherCustomers?: number;
   rows?: Row[]; series?: Series[]; orientation?: 'horizontal' | 'vertical';
   grouped?: boolean; showValues?: boolean; centerLabel?: string; emptyMessage?: string;
   action?: string; selected?: string; points?: Point[]; summary?: Record<string, number>;
+  height?: number; secondaryPoints?: Point[];
   decimals?: number; unit?: string; animated?: boolean;
   sparklineVariant?: 'line' | 'bar'; compact?: boolean; periodLabel?: string; lineStyle?: 'snow'; dateBasis?: string; showTotal?: boolean; cumulative?: boolean; previousPoints?: Point[];
   trend?: {periods: string[]; series: Array<{label:string; counts: Array<number|null>; efforts: Array<number|null>}>; effortDateBasis?: string; untypedCount?: number};
@@ -211,7 +212,7 @@ class Boundary extends Component<{host: HTMLElement; children: ReactNode},{faile
 }
 function Chart({spec,host}:{spec:Spec;host:HTMLElement}) {
   useEffect(()=>{delete host.dataset.chartError;host.dataset.ready='true';host.querySelector('[data-bklit-values]')?.removeAttribute('open');return ()=>{delete host.dataset.ready;};},[host]);
-  return <MotionConfig reducedMotion="user">{spec.kind==='customer-ranking'?<CustomerRanking spec={spec}/>:spec.kind==='age-donut'?<AgeDonut spec={spec}/>:spec.kind==='member-heatmap'?<MemberHeatmap spec={spec}/>:spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='area'?<AreaTrend spec={spec}/>:spec.kind==='compare-area'?<CompareArea spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
+  return <MotionConfig reducedMotion="user">{spec.kind==='activity'?<ActivityTrend spec={spec}/>:spec.kind==='customer-ranking'?<CustomerRanking spec={spec}/>:spec.kind==='age-donut'?<AgeDonut spec={spec}/>:spec.kind==='member-heatmap'?<MemberHeatmap spec={spec}/>:spec.kind==='monthly'?<MonthlyTrend spec={spec}/>:spec.kind==='pie'?<MetricPie spec={spec}/>:spec.kind==='bar'?<Bars spec={spec}/>:spec.kind==='sparkline'?<Sparkline spec={spec}/>:spec.kind==='trend'?<Trend spec={spec}/>:spec.kind==='area'?<AreaTrend spec={spec}/>:spec.kind==='compare-area'?<CompareArea spec={spec}/>:spec.kind==='cohort'?<Cohort spec={spec}/>:<Calendar spec={spec}/>}</MotionConfig>;
 }
 export function mountChart(host: HTMLElement, spec: Spec) {
   const root=createRoot(host.querySelector('[data-bklit-mount]')!);

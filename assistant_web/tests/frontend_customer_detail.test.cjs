@@ -163,5 +163,5 @@ test('customer monthly history stays visible after open issues reach zero but em
   }) }));
   await empty.api.openCustomerDetail('SK증권');
   assert.doesNotMatch(empty.view.innerHTML, /customer-monthly-chart/);
-  assert.match(empty.view.innerHTML, /최근 6개월에 신규·완료 이슈가 없어요/);
+  assert.match(empty.view.innerHTML, /최근 6개월에 신규 등록·종료 항목 변경이 없어요/);
 });

@@ -107,11 +107,11 @@ function sectionHeader(title, meta = "") {
 
 function renderMonthly(monthly) {
   if (!monthly.some((row) => row.newCount > 0 || row.closedCount > 0)) {
-    return `<section class="workspace-section customer-detail-monthly" aria-label="월별 신규·완료">${sectionHeader("월별 신규 · 완료", "최근 6개월")}
-      <div class="customer-detail-section-body"><p class="customer-detail-empty">${isComplete() ? "최근 6개월에 신규·완료 이슈가 없어요." : "확인한 범위에는 월별 신규·완료 이슈가 없어요. 전체 결과는 미확정이에요."}</p></div></section>`;
+    return `<section class="workspace-section customer-detail-monthly" aria-label="월별 신규·종료 항목 변경">${sectionHeader("월별 신규 · 종료 항목 변경", "최근 6개월")}
+      <div class="customer-detail-section-body"><p class="customer-detail-empty">${isComplete() ? "최근 6개월에 신규 등록·종료 항목 변경이 없어요." : "확인한 범위에는 월별 신규·종료 항목 변경 이슈가 없어요. 전체 결과는 미확정이에요."}</p></div></section>`;
   }
   const max = Math.max(1, ...monthly.flatMap((row) => [row.newCount, row.closedCount]));
-  const label = monthly.map((row) => `${row.label} 신규 ${row.newCount}건 완료 ${row.closedCount}건`).join(", ");
+  const label = monthly.map((row) => `${row.label} 신규 ${row.newCount}건 종료 항목 변경 ${row.closedCount}건`).join(", ");
   const columns = monthly.map((row) => `
     <div class="customer-monthly-column">
       <div class="customer-monthly-bars" aria-hidden="true">
@@ -122,12 +122,12 @@ function renderMonthly(monthly) {
       <small><b>${formatNumber(row.newCount)}</b> / ${formatNumber(row.closedCount)}</small>
     </div>`).join("");
   return `
-    <section class="workspace-section customer-detail-monthly" aria-label="월별 신규·완료">
-      ${sectionHeader("월별 신규 · 완료", "최근 6개월")}
+    <section class="workspace-section customer-detail-monthly" aria-label="월별 신규·종료 항목 변경">
+      ${sectionHeader("월별 신규 · 종료 항목 변경", "최근 6개월")}
       <div class="customer-detail-section-body">
-        <div class="customer-monthly-legend" aria-hidden="true"><span><i class="is-new"></i>신규</span><span><i class="is-closed"></i>완료</span></div>
+        <div class="customer-monthly-legend" aria-hidden="true"><span><i class="is-new"></i>신규</span><span><i class="is-closed"></i>종료 항목 변경</span></div>
         <div class="customer-monthly-chart" role="img" aria-label="${escapeHtml(label)}">${columns}</div>
-        <p class="customer-detail-note">완료는 해결·종료된 이슈의 마지막 수정 월 기준이에요.</p>
+        <p class="customer-detail-note">종료 항목 변경은 현재 해결·종료 상태인 이슈의 최종수정월 기준이며 실제 완료 건수와 달라요.</p>
       </div>
     </section>`;
 }
@@ -209,7 +209,7 @@ function renderOpenIssues(data) {
       <div class="customer-detail-section-body">
         ${issues.length ? `<div class="customer-issue-table-wrap" id="customerOpenIssues"><table class="customer-issue-table customer-open-table">
           <thead><tr><th scope="col">이슈</th><th scope="col">담당자</th><th scope="col" class="is-number">경과</th><th scope="col">완료예정</th></tr></thead>
-          <tbody>${rows}</tbody></table></div>${more}${capped}` : `<div class="customer-open-empty"><strong>${isComplete() ? "미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요."}</strong><p>${isComplete() ? "월별 신규·완료 추이와 관련 플레이북을 확인해 보세요." : "일부 데이터만 확인해 전체 결과는 미확정이에요."}</p></div>`}
+          <tbody>${rows}</tbody></table></div>${more}${capped}` : `<div class="customer-open-empty"><strong>${isComplete() ? "미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요."}</strong><p>${isComplete() ? "월별 신규·종료 항목 변경 추이와 관련 플레이북을 확인해 보세요." : "일부 데이터만 확인해 전체 결과는 미확정이에요."}</p></div>`}
       </div>
     </section>`;
 }
@@ -280,8 +280,8 @@ function renderBody() {
     ${isComplete() ? "" : '<p class="customer-detail-note">일부 데이터만 확인했어요. 건수는 확인한 범위의 최소값이며, 전체 결과는 미확정이에요.</p>'}
     ${renderMetrics(data.summary || {}, period)}
     ${renderHealth(data.health || {})}
-    ${renderOpenIssues(data)}
     <div class="customer-detail-grid">${renderMonthly(data.monthly || [])}${renderBreakdowns(data, period)}</div>
+    ${renderOpenIssues(data)}
     ${renderPlaybooks(data.playbooks || [])}`;
 }
 

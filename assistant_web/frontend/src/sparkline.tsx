@@ -11,7 +11,7 @@ export function Sparkline({ spec }: { spec: Spec }) {
   const points = spec.points || [];
   const hover = useSparklineHover<Point>();
   const reduced = useReducedMotion();
-  const isEffort = spec.dateBasis === '고객사전달일';
+  const isEffort = spec.unit === 'M/D';
   const basis = spec.dateBasis || '등록일';
   // 주별처럼 하루 단위가 아닌 점이면 호출한 쪽이 이름을 준다(예: '주별 신규').
   const period = spec.periodLabel || (isEffort ? '일별 공수' : '일별 등록 추이');
@@ -40,6 +40,6 @@ export function Sparkline({ spec }: { spec: Spec }) {
     {spec.compact && label}
     {!showSummary && <div className="bklit-sparkline-dates"><span>{axisDate(points[0].date)}</span><span>{axisDate(points.at(-1)!.date)}</span></div>}
     {!spec.complete && <p className="bklit-note">확인한 범위 기준 · 실제 값은 더 클 수 있어요.</p>}
-    <details className="bklit-data"><summary>{spec.periodLabel ? `${spec.periodLabel} 수치 보기` : '일별 수치 보기'}</summary><div className="bklit-sparkline-table"><table><thead><tr><th>{basis}</th><th>{isEffort ? '공수' : '신규 이슈'}</th></tr></thead><tbody>{points.map(point => <tr key={point.date}><td>{axisDate(point.date)}</td><td>{formatChartValue(point.count, spec)}</td></tr>)}</tbody></table></div></details>
+    <details className="bklit-data"><summary>{spec.periodLabel ? `${spec.periodLabel} 수치 보기` : '일별 수치 보기'}</summary><div className="bklit-sparkline-table"><table><thead><tr><th>{basis}</th><th>{isEffort ? '공수' : basis === '고객사전달일' ? '전달 이슈' : '신규 이슈'}</th></tr></thead><tbody>{points.map(point => <tr key={point.date}><td>{axisDate(point.date)}</td><td>{formatChartValue(point.count, spec)}</td></tr>)}</tbody></table></div></details>
   </div>;
 }

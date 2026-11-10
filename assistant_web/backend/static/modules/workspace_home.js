@@ -119,3 +119,34 @@ export function activityFeedHtml(notifications = [], { scopeMessage = "", emptyT
       ${scopeMessage ? `<p class="workspace-side-empty">${escapeHtml(scopeMessage)}</p>` : ""}
     </section>`;
 }
+
+
+export function kanbanGroups(issues, statusLabel = value => value) {
+  const lanes = [
+    { key: 'review', title: '접수·검토', statuses: ['new','feedback','acknowledged','confirmed','신규 이슈','정보 부족','이슈 검토','확인된 이슈'] },
+    { key: 'progress', title: '진행', statuses: ['assigned','할당된 이슈'] },
+    { key: 'validation', title: '검증 대기', statuses: ['developed','개발완료'] },
+    { key: 'done', title: '해결·종료', statuses: ['resolved','closed','해결된 이슈','종료된 이슈'] },
+    { key: 'unknown', title: '상태 미상', statuses: [] },
+  ].map(lane => ({...lane, items:[]}));
+  const seen = new Set();
+  for (const issue of issues) {
+    if (seen.has(String(issue.id))) continue;
+    seen.add(String(issue.id));
+    const label = statusLabel(issue.status);
+    const lane = lanes.find(lane => lane.statuses.includes(label)) || lanes[4];
+    lane.items.push(issue);
+  }
+  return lanes.filter(lane => lane.key !== 'unknown' || lane.items.length);
+}
+
+export function kanbanBoard(issues, {renderIssue, statusLabel, complete, closedTotal = 0, showClosed = true}) {
+  const lanes = kanbanGroups(issues, statusLabel);
+  return `<div class="workspace-kanban" aria-label="상태별 내 업무 보드">${lanes.map(lane => `
+    <section class="workspace-kanban-lane" data-kanban-lane="${lane.key}" aria-label="${lane.title}">
+      <header><h4><i class="analytics-stage-dot stage-${lane.key}"></i>${lane.title}</h4><span>${lane.items.length}${complete?'':'+'}</span></header>
+      ${lane.key==='done'?`<p class="kanban-lane-note">${showClosed ? '최근 30일 수정 · 최대 30건' : '목표일 필터에서는 제외'}</p>`:lane.key==='validation'?'<p class="kanban-lane-note">개발완료 · 현재 미종료</p>':'<p class="kanban-lane-note">현재 담당 이슈</p>'}
+      <div class="kanban-lane-items">${lane.items.length?lane.items.map(renderIssue).join(''):`<div class="kanban-empty">${complete?'해당 업무가 없어요.':'확인된 항목이 없어요.'}</div>`}</div>
+      ${lane.key==='done'&&showClosed&&closedTotal>lane.items.length?`<p class="kanban-lane-note">${closedTotal}건 중 최근 ${lane.items.length}건 표시</p>`:''}
+    </section>`).join('')}</div>`;
+}

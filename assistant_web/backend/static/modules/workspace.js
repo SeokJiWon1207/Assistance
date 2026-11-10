@@ -7,7 +7,7 @@ import { formatUiDateTime, formatAxisDate, formatPeriodText, customerName, custo
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 import { workspaceKpis, workspaceCharts, weeklyKpis, weeklyTrendCard, teamBriefKpis } from "./workspace_insights.js?v=20261105-1";
-import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml } from "./workspace_home.js?v=20261106-1";
+import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml, kanbanBoard, kanbanGroups } from "./workspace_home.js?v=20261106-1";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -728,7 +728,8 @@ function workspaceIssueContext() {
     const group = (item) => item.overdue ? 0 : Number(item.ageDays || 0) >= 30 ? 1 : 2;
     items.sort((a, b) => group(a) - group(b));
   }
-  return { items, label: "내 담당 미종료 이슈" };
+  if (!state.workspaceDueFilter || state.workspaceDueFilter === "all") items.push(...(state.myWorkspace?.mantis?.recentClosed || []));
+  return { items: kanbanGroups(items, workspaceStatusLabel).flatMap(lane => lane.items), label: "내 업무 보드" };
 }
 
 // 내 담당 목록은 기한 지남 → 장기 미종료(30일 이상) → 그 외로 묶어 보여 준다. 묶음 안의 순서는 서버 정렬을 그대로 따른다.
@@ -757,35 +758,33 @@ function renderPersonalOverview(data) {
   if (state.workspaceSort === "newest") allIssues.sort((a, b) => Number(a.ageDays || 0) - Number(b.ageDays || 0));
   if (state.workspaceSort === "due") allIssues = sortByDue(allIssues);
   const filtered = Boolean(state.workspaceDueFilter && state.workspaceDueFilter !== "all");
-  const issues = state.workspaceIssuesExpanded ? allIssues : allIssues.slice(0, 8);
+  const recentClosed = filtered ? [] : data.mantis?.recentClosed || [];
+  const issues = allIssues;
   const totalOpen = Number(summary.open || 0);
   const isConnected = Boolean(data.user?.mantisUsername);
   const complete = data.mantis?.search_complete === true;
-  if (!everyIssue.length && totalOpen === 0) return renderEmptyPersonalOverview(data, { complete, isConnected });
+  if (!everyIssue.length && !recentClosed.length && totalOpen === 0) return renderEmptyPersonalOverview(data, { complete, isConnected });
   // 출처·범위·조회 시각은 머리의 '데이터 기준' 배지가 보여 준다. 본문에는 확인이 필요할 때만 한 줄을 둔다.
   const notice = !isConnected
     ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>Mantis 담당자명이 연결되지 않았어요.</strong><span>관리자에게 담당자명 등록을 요청해 주세요.</span></div>`
     : !complete
       ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>`
       : "";
-  // 지표 → 안내 → 신규 등록 추이 → 경과·상태 도넛 → 담당 이슈 목록. 오른쪽 열은 이번 주 요약을 유지한다.
-  return `<div class="workspace-overview is-insights"><div class="workspace-main">
-    ${workspaceKpis(data, complete)}
-    ${notice}
-    ${workspaceCharts(data, complete, { statusLabel: workspaceStatusLabel, customerLabel: (issue) => customerName(issue), customerMark })}
-    <section class="workspace-section workspace-section-single">
+  return `<div class="workspace-overview is-insights is-kanban"><div class="workspace-main">
+    ${workspaceKpis(data, complete)}${notice}
+    <section class="workspace-board-section">
       <header class="workspace-issue-header">
-        <div><h3>내 담당 미종료 이슈</h3><p>완료 예정일과 등록 경과일을 확인하고 다음 조치를 준비하세요.</p></div>
-        <div class="workspace-list-controls"><em class="workspace-visible-count"><strong>${issues.length}</strong>${filtered ? `건 표시 · 전체 ${everyIssue.length}건 중` : !complete ? `건 표시 · ${allIssues.length}건 이상 확인` : issues.length === totalOpen ? "건 모두 표시" : ` / ${totalOpen}건 표시`}</em>
+        <div><h3>내 업무 보드</h3><p>상태별로 다음 할 일을 확인하세요. 카드를 누르면 상세가 열려요.</p></div>
+        <div class="workspace-list-controls"><em class="workspace-visible-count">미종료 <strong>${issues.length}${complete ? "" : "+"}</strong>건${filtered ? ` · 전체 ${everyIssue.length}건 중` : ""}</em>
         <select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="due" ${state.workspaceSort === "due" ? "selected" : ""}>목표일 임박순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select></div>
       </header>
       ${everyIssue.length ? dueFilterChips(everyIssue, state.workspaceDueFilter) : ""}
-      <div class="workspace-list workspace-issue-list" role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0">${issues.length ? state.workspaceSort && state.workspaceSort !== "urgent" ? issues.map(issueWorkspaceRow).join("") : groupedIssueRows(issues) : filtered ? workspaceEmpty("이 조건에 맞는 미종료 이슈가 없어요.", complete) : workspaceEmpty(complete ? "담당한 미종료 이슈가 없어요." : "확인한 범위에는 미종료 이슈가 없어요. 일부만 확인한 결과예요.", complete)}</div>
+      ${filtered && !issues.length ? `<p class="analytics-empty" role="status">이 조건에 맞는 미종료 이슈가 없어요.</p>` : ""}
+      ${kanbanBoard([...issues, ...recentClosed], { renderIssue:issueWorkspaceRow, statusLabel:workspaceStatusLabel, complete, closedTotal:data.mantis?.recentClosedTotal || 0, showClosed:!filtered })}
+      <p class="analytics-footnote">해결·종료 열은 최근 30일에 수정된 종료 항목이에요. 실제 완료일 기준의 실적은 아니에요.</p>
     </section>
-    ${allIssues.length > 8 ? `<button type="button" class="workspace-show-more" data-workspace-more aria-expanded="${Boolean(state.workspaceIssuesExpanded)}">${state.workspaceIssuesExpanded ? "간략히 보기" : `확인한 업무 ${allIssues.length}건 모두 보기`}</button>` : ""}
-    </div>
-    ${renderOverviewSide(data)}
-  </div>`;
+    <details class="workspace-board-activity"><summary>최근 활동과 업무 분포</summary>${overviewActivityCard(data)}${workspaceCharts(data, complete, {statusLabel:workspaceStatusLabel, customerLabel:issue=>customerName(issue), customerMark})}</details>
+    </div></div>`;
 }
 
 function renderEmptyPersonalOverview(data, { complete, isConnected }) {

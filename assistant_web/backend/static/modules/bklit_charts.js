@@ -2,7 +2,7 @@
 const mounted = new Map();
 const generations = new WeakMap();
 let bundlePromise;
-const loadBundle = () => import('../vendor/bklit/charts.js?v=20261110-2');
+const loadBundle = () => import('../vendor/bklit/charts.js?v=20261110-3');
 const escapeAttribute = value => String(value).replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 function showChartFallback(host) {

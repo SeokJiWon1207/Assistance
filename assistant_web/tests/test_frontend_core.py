@@ -167,6 +167,7 @@ class FrontendCoreTests(unittest.TestCase):
         type_weights = {300, 400, 500, 600, 700}
         extended_sizes = {
             "design_system.css": {18, 24, 30},  # PDF 개선안의 제목·지표
+            "analytics.css": {28, 32},  # 승인된 분석 화면 핵심 지표
             "snow_theme.css": {28},  # 팀·내 업무의 핵심 지표
             "workspace_insights.css": {18},  # 빈 업무 안내 제목
             "customer_overview.css": {28},  # 고객사별 미종료 핵심 지표
@@ -566,18 +567,17 @@ class FrontendCoreTests(unittest.TestCase):
         insights_css = (STATIC_DIR / "workspace_insights.css").read_text(encoding="utf-8")
         dashboard_css = (STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
 
-        self.assertIn('class="workspace-list workspace-issue-list"', workspace_js)
-        # 지표·추이·도넛 카드가 목록 위에 붙어 업무 탭 본문 전체가 한 페이지로 스크롤된다.
-        self.assertIn('class="workspace-overview is-insights"><div class="workspace-main">', workspace_js)
+        self.assertIn("kanbanBoard([...issues, ...recentClosed]", workspace_js)
+        # 지표·상태별 보드·접힌 분석이 본문 전체에서 한 페이지로 스크롤된다.
+        self.assertIn('class="workspace-overview is-insights is-kanban"><div class="workspace-main">', workspace_js)
         self.assertIn("workspaceKpis(data, complete)", workspace_js)
         self.assertIn("workspaceCharts(data, complete,", workspace_js)
         self.assertIn(".workspace-overview.is-insights {", insights_css)
         self.assertIn(".workspace-main > .workspace-section .workspace-issue-list", insights_css)
-        self.assertIn('role="region" aria-label="내 담당 미종료 이슈 목록" tabindex="0"', workspace_js)
+        self.assertIn('aria-label="상태별 내 업무 보드"', (STATIC_DIR / "modules" / "workspace_home.js").read_text(encoding="utf-8"))
         self.assertIn('classList.toggle("is-overview", isPersonalOverview)', workspace_js)
         # 표시 건수는 목록 머리 한 곳에서만 보여 준다.
-        self.assertIn("` / ${totalOpen}건 표시`", workspace_js)
-        self.assertEqual(workspace_js.count("totalOpen}건 표시"), 1)
+        self.assertIn('class="workspace-visible-count"', workspace_js)
         self.assertIn(".personal-panel {", dashboard_css)
         self.assertIn("grid-template-rows: auto auto minmax(0, 1fr)", dashboard_css)
         self.assertIn(".workspace-content.is-overview", workspace_css)

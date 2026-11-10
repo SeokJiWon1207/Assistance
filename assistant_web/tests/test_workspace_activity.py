@@ -46,3 +46,14 @@ class WorkspaceActivityTests(TestCase):
         activity = self.build([broken])["activity"]
         self.assertEqual(sum(point["count"] for point in activity["points"]), 0)
         self.assertEqual((activity["recentNew"], activity["previousNew"]), (0, 0))
+
+    def test_recent_closed_is_separate_from_open_and_uses_last_updated_date(self):
+        old = self.issue(3, 31, status="closed")
+        missing = self.issue(4, 1, status="closed")
+        missing["updated_at"] = "미상"
+        result = self.build([self.issue(1, 1), self.issue(2, 29, status="resolved"), old, missing,
+                             self.issue(5, -1, status="closed"), self.issue(6, 0, status="developed")])
+        self.assertEqual({row["id"] for row in result["mantis"]["issues"]}, {1, 6})
+        self.assertEqual([row["id"] for row in result["mantis"]["recentClosed"]], [2])
+        self.assertEqual(result["mantis"]["recentClosedDateBasis"], "최종수정일")
+        self.assertEqual(result["summary"]["open"], 2)

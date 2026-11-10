@@ -85,9 +85,9 @@ async function harness(fetcher) {
   return { api: module.namespace, tabsApi: tabsModule.namespace, view, subtitle, tools, panel, calls, target, charts };
 }
 
-const cardOrder = (html) => [...html.matchAll(/<strong>([^<]+)<\/strong><small>/g)].map((match) => match[1]);
+const cardOrder = (html) => [...new Set([...html.matchAll(/class="customer-table-name"[^>]*>[\s\S]*?<strong>([^<]+)<\/strong>/g)].map(match=>match[1]))];
 
-test('customers tab loads once on show and renders logo cards with weekly bar sparklines', async () => {
+test('customers tab loads once and renders a comparison table and weekly heatmap', async () => {
   const h = await harness(() => ({ ok: true, payload: payload() }));
   h.tabsApi.selectDashboardTab('customers');
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -103,12 +103,11 @@ test('customers tab loads once on show and renders logo cards with weekly bar sp
   assert.match(html, /data-customer-sort/);
   assert.doesNotMatch(html, /data-customer-badge/);
   assert.match(html, /customer-card-chip is-spike">지난주 급증/);
-  assert.match(html, /customer-card-chip is-overdue">기한 지남 2/);
-  assert.match(html, /customer-card-chip is-calm">미종료 없음/);
-  assert.match(html, /"kind":"sparkline"/);
-  assert.match(html, /"sparklineVariant":"bar"/);
-  assert.match(html, /"periodLabel":"주별 신규"/);
-  assert.match(html, /\{"date":"2026-09-13","count":4\}/);
+  assert.match(html, /<td class="is-overdue">2<\/td>/);
+  assert.match(html, /customer-comparison-table/);
+  assert.match(html, /analytics-heatmap/);
+  assert.match(html, /2026-09-13 주 · 신규 4건/);
+  assert.match(html, /고객사별 주간 등록/);
   // 이슈가 없는 고객사는 열 상세가 없어 버튼이 아니다.
   assert.match(html, /data-customer-open="미래에셋증권_project"/);
   assert.doesNotMatch(html, /data-customer-open="삼성증권_project"/);
@@ -133,7 +132,7 @@ test('filter chips, search and sort only re-render locally', async () => {
 test('partial data marks counts as lower bounds and errors keep a retry button', async () => {
   const partial = await harness(() => ({ ok: true, payload: payload({ meta: { source: 'live', search_complete: false } }) }));
   await partial.api.loadCustomerOverview();
-  assert.match(partial.view.innerHTML, /7\+<em>건/);
+  assert.match(partial.view.innerHTML, /7\+<\/strong>/);
   assert.match(partial.view.innerHTML, /급증 여부는 판단하지 않았어요/);
   const failing = await harness(() => ({ ok: false, payload: { detail: '조회 실패' } }));
   await failing.api.loadCustomerOverview();
@@ -152,28 +151,26 @@ test('last registration labels shorten recent dates', async () => {
   assert.equal(h.api.lastCreatedLabel('', today), '등록 기록 없음');
 });
 
-test('customer cards show overdue work alongside a spike and keep partial states uncertain', async () => {
-  const h = await harness(() => ({ ok: true, payload: payload() }));
+test('comparison rows show overdue work alongside a spike and keep partial counts uncertain', async () => {
+  const h = await harness(() => ({ok:true,payload:payload()}));
   await h.api.loadCustomerOverview();
-  const firstCard = h.view.innerHTML.match(/<article\b[\s\S]*?<\/article>/)[0];
-  assert.match(firstCard, /기한 지남 1/);
-  assert.match(firstCard, /지난주 급증/);
-
-  const partial = await harness(() => ({ ok: true, payload: payload({ meta: { search_complete: false } }) }));
+  assert.match(h.view.innerHTML, /<td class="is-overdue">1<\/td>/);
+  assert.match(h.view.innerHTML, /지난주 급증/);
+  const partial = await harness(() => ({ok:true,payload:payload({meta:{search_complete:false}})}));
   await partial.api.loadCustomerOverview();
-  const cards = partial.view.innerHTML.match(/<article\b[\s\S]*?<\/article>/g).join('');
-  assert.match(cards, /기한 지남 1\+/);
-  assert.match(cards, /미종료 미확인/);
-  assert.doesNotMatch(cards, /지난주 급증|미종료 없음/);
+  assert.match(partial.view.innerHTML, /<td class="is-overdue">1\+<\/td>/);
+  assert.match(partial.view.innerHTML, /0\+<\/strong>/);
+  assert.doesNotMatch(partial.view.innerHTML, /customer-card-chip is-spike/);
 });
 
-test('customers without new issues use one empty message while past activity retains its chart', async () => {
-  const customers = [row('신규 없는 고객사', { project: '' }), row('처리 이력 고객사', { recent: 3, weekly: [0, 0, 0, 0, 0, 1, 2, 0] })];
-  const h = await harness(() => ({ ok: true, payload: payload({ customers, summary: { customers: 2 } }) }));
+test('weekly heatmap preserves zero weeks and past registrations for customers without open work', async () => {
+  const customers = [row('신규 없는 고객사',{project:''}), row('처리 이력 고객사',{recent:3,weekly:[0,0,0,0,0,1,2,0]})];
+  const h = await harness(() => ({ok:true,payload:payload({customers,summary:{customers:2}})}));
   await h.api.loadCustomerOverview();
-  assert.match(h.view.innerHTML, /최근 8주 신규 이슈가 없어요/);
-  assert.equal((h.view.innerHTML.match(/"kind":"sparkline"/g) || []).length, 1);
-  assert.match(h.view.innerHTML, /처리 이력 고객사 최근 8주 주별 신규/);
+  assert.match(h.view.innerHTML,/신규 2건/);
+  assert.match(h.view.innerHTML,/신규 0건/);
+  assert.match(h.view.innerHTML,/data-intensity="0"/);
+  assert.match(h.view.innerHTML,/처리 이력 고객사/);
 });
 
 test('empty customer search can reset query and filters without fetching or changing sort', async () => {

@@ -34,6 +34,7 @@
     <link rel="stylesheet" href="/static/snow_theme.css?v=20261109-layout-4" />
     <link rel="stylesheet" href="/static/issue_detail.css?v=20261109-layout-4" />
     <link rel="stylesheet" href="/static/answer_summary.css?v=20261109-1" />
+    <link rel="stylesheet" href="/static/analytics.css?v=20261110-3" />
   </head>
   <body class="auth-pending">
     <!-- 앱 공통 아이콘: 24 격자 · 선 1.8. HTML은 <use href="#i-이름">, JS는 modules/icons.js 의 icon() 으로 쓴다. -->
@@ -155,7 +156,9 @@
             <span>대시보드</span>
           </button>
           <div class="rail-subnav" data-rail-subnav="dashboard" aria-label="팀 대시보드 보기">
-            <button type="button" class="rail-subitem" data-rail-tab="dashboard:overview">팀 현황</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:overview">전체 현황</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:comparison">비교 분석</button>
+            <button type="button" class="rail-subitem" data-rail-tab="dashboard:flow">처리 흐름</button>
             <button type="button" class="rail-subitem" data-rail-tab="dashboard:issues">이슈 · 분포</button>
             <button type="button" class="rail-subitem" data-rail-tab="dashboard:customers">고객사</button>
             <button type="button" class="rail-subitem" data-rail-tab="dashboard:effort">공수 · 처리시간</button>
@@ -381,7 +384,9 @@
             </div>
           </header>
           <div id="dashboardTabs" class="dashboard-tabs" role="tablist" aria-label="팀 대시보드 보기">
-            <button type="button" id="dashboardTab-overview" role="tab" aria-selected="true" aria-controls="dashboardBody" data-dashboard-tab="overview">팀 현황</button>
+            <button type="button" id="dashboardTab-overview" role="tab" aria-selected="true" aria-controls="dashboardBody" data-dashboard-tab="overview">전체 현황</button>
+            <button type="button" id="dashboardTab-comparison" role="tab" aria-selected="false" aria-controls="dashboardBody" tabindex="-1" data-dashboard-tab="comparison">비교 분석</button>
+            <button type="button" id="dashboardTab-flow" role="tab" aria-selected="false" aria-controls="dashboardBody" tabindex="-1" data-dashboard-tab="flow">처리 흐름</button>
             <button type="button" id="dashboardTab-issues" role="tab" aria-selected="false" aria-controls="dashboardBody" tabindex="-1" data-dashboard-tab="issues">이슈 · 분포</button>
             <button type="button" id="dashboardTab-customers" role="tab" aria-selected="false" aria-controls="customerOverviewView" tabindex="-1" data-dashboard-tab="customers">고객사</button>
             <button type="button" id="dashboardTab-effort" role="tab" aria-selected="false" aria-controls="effortBoardView" tabindex="-1" data-dashboard-tab="effort">공수 · 처리시간</button>
