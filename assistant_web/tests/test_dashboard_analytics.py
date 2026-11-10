@@ -1,8 +1,11 @@
 """차트의 날짜 기준과 동일 고객사 범위를 검증한다."""
+import json
 import unittest
 from datetime import date
+from pathlib import Path
+from unittest.mock import patch
 
-from backend.reports import dashboard
+from backend.reports import customer_overview, dashboard, screen_hotspot
 
 
 class DashboardAnalyticsTests(unittest.TestCase):
@@ -51,6 +54,39 @@ class DashboardAnalyticsTests(unittest.TestCase):
         self.assertEqual(ls["effort"]["total"], 1.5)
         self.assertEqual(sum(p["count"] for p in ls["intake"]), 1)
         self.assertEqual([r["name"] for r in ls["comparisons"]["customer"]], ["LS"])
+
+    def test_customer_picker_matches_customer_overview_and_scopes_all_matching_projects(self):
+        fixture = Path(__file__).parent / "fixtures" / "routing_cases.jsonl"
+        cases = (case["dashboard_customer_picker"] for case in map(json.loads, fixture.read_text().splitlines())
+                 if "dashboard_customer_picker" in case)
+        for case in cases:
+            self.issues = [
+                {"id": index, "project": project, "status": "assigned", "handler": "cs이슈",
+                 "created_at": "2026-11-10"}
+                for index, project in enumerate(case["projects"], start=1)
+            ]
+            data = self.build()
+            options = {option["name"]: option for option in data["customerOptions"]}
+            source = self.issues, {"status": "snapshot", "search_complete": True}
+            today = date(2026, 11, 10)
+            with patch.object(customer_overview, "_load_issues", return_value=source):
+                customers = customer_overview.build_customer_overview(today=today)["customers"]
+            with patch.object(screen_hotspot, "_load_issues", return_value=source):
+                screen_options = screen_hotspot.build_screen_hotspot(
+                    today=today, playbook_loader=lambda *_args, **_kwargs: []
+                )["options"]["customers"]
+            self.assertEqual(list(options), [row["name"] for row in customers])
+            self.assertEqual(list(options), [option["name"] for option in screen_options])
+            self.assertEqual(data["summary"]["open"], len(self.issues))
+            self.assertEqual(data["scopes"]["125Daewoo"]["summary"]["open"], 1)
+            for name, projects in case["customer_projects"].items():
+                with self.subTest(customer=name):
+                    option = options[name]
+                    self.assertEqual(option["projects"], projects)
+                    scope = data["scopes"][option["scope"]]
+                    self.assertEqual(scope["summary"]["open"], len(projects))
+                    self.assertEqual(sum(point["count"] for point in scope["intake"]), len(projects))
+                    self.assertEqual(len(scope["intake"]), 30)
 
     def test_current_state_matrix_preserves_unknown_without_inventing_history(self):
         data = self.build()

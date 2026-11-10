@@ -1,6 +1,6 @@
 // 분석 화면은 동일한 고객사 범위의 집계와 현재 이슈를 사용한다.
 import { chartHost } from './bklit_charts.js?v=20261110-3';
-import { customerLabelText } from './ui_format.js?v=20260911-6';
+import { customerName, customerLabelText } from './ui_format.js?v=20260911-6';
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const num = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const stages = [['review','접수·검토'],['progress','진행'],['validation','검증 대기'],['done','해결·종료'],['unknown','상태 미상']];
@@ -9,21 +9,35 @@ const section = (title, note, body, extra = '') => `<section class="analytics-ca
 const legend = (labels) => `<div class="analytics-legend">${labels.map(([label,color]) => `<span><i style="background:${color}"></i>${label}</span>`).join('')}</div>`;
 const series = [{key:'current',label:'이번 기간',color:'var(--chart-1)'},{key:'previous',label:'직전 기간',color:'var(--analytics-secondary)'}];
 
+export function analyticsCustomerOption(data, customer) {
+  return data?.analytics?.customerOptions?.find(option => option.id === customer);
+}
+
+export function analyticsCustomerLabel(customer) {
+  const prefix = 'customer:';
+  return customer.startsWith(prefix) ? customer.slice(prefix.length) : customerName(customer, customer);
+}
+
 export function analyticsScope(data, customer) {
   if (!customer) return data;
-  const analytics = data.analytics?.scopes?.[customer];
-  const filter = rows => (rows || []).filter(row => String(row.project || '고객사 미상') === customer);
+  const option = analyticsCustomerOption(data, customer);
+  const analytics = data.analytics?.scopes?.[option?.scope ?? customer];
+  const projects = new Set(option?.projects ?? [customer]);
+  const filter = rows => (rows || []).filter(row => projects.has(String(row.project || '고객사 미상')));
   const openIssues = filter(data.openIssues || data.priorities);
   // 오래된 API 응답도 선택하지 않은 고객사 값을 보여 주지 않는다.
   const summary = analytics?.summary || {open:openIssues.length, overdue:openIssues.filter(i=>i.overdue).length, aging:openIssues.filter(i=>i.ageDays>=30).length};
   return {...data, summary: {...summary, highRisk:openIssues.filter(i=>i.riskLevel==='high').length}, analytics: analytics || {}, openIssues, priorities:filter(data.priorities),
     intakeTrend:analytics?.intake || [],previousIntakeTrend:analytics?.previousIntake || [],
-    members:[], customerHealth:(data.customerHealth || []).filter(row=>String(row.project || row.customer || "")===customer),
+    members:[], customerHealth:(data.customerHealth || []).filter(row=>projects.has(String(row.project || row.customer || ""))),
     customerSpikes:[],screenSpikes:[],weeklyIssues:null};
 }
 
 export function renderAnalyticsControls(data, customer) {
-  const options = Object.keys(data.analytics?.scopes || {}).map(name => `<option value="${esc(name)}"${customer===name?' selected':''}>${esc(customerLabelText(name))}</option>`).join('');
+  const options = (data.analytics?.customerOptions || []).map(({id, name, projects}) => {
+    const selected = customer === id || (projects.length === 1 && customer === projects[0]);
+    return `<option value="${esc(id)}"${selected ? ' selected' : ''}>${esc(name)}</option>`;
+  }).join('');
   return `<div class="analytics-controls"><label>고객사 <select data-analytics-customer aria-label="분석 고객사"><option value="">모든 고객사</option>${options}</select></label><span>기간 내 신규·전달 이력 · 미종료는 현재 기준</span></div>`;
 }
 

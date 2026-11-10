@@ -7,7 +7,9 @@ from typing import Any
 from backend.chart_data import daily_registrations
 from backend.effort_fields import issue_delivery_date, issue_effort_fields, parse_effort_field_value
 from backend.mantis_status import canonical_mantis_status, mantis_status_bucket
+from backend.settings.catalogs import get_customer_picker
 from backend.storage.workspace_rows import _due_date
+from backend.team_templates import customer_option_for_project
 
 
 STAGES = ("review", "progress", "validation", "done", "unknown")
@@ -119,8 +121,28 @@ def _aggregate(issues, today, days, complete):
 
 def build_dashboard_analytics(issues, *, today: date, days: int, complete: bool):
     """고객사 선택을 네트워크 재조회 없이 모든 차트에 일관되게 적용할 집계."""
-    groups = defaultdict(list)
+    groups: defaultdict[str, list] = defaultdict(list)
     for issue in issues:
         groups[str(issue.get("project") or "고객사 미상")].append(issue)
+    scopes = {project: _aggregate(rows, today, days, complete) for project, rows in sorted(groups.items())}
+    customer_projects: dict[str, list[str]] = {name: [] for name in get_customer_picker()}
+    for project in groups:
+        name = customer_option_for_project(project.strip())
+        if name is not None and name in customer_projects:
+            customer_projects[name].append(project)
+
+    options = []
+    for name, projects in customer_projects.items():
+        # 고객사 상세는 원본 프로젝트 단위이므로 고객사 탭처럼 이슈가 가장 많은 프로젝트를 먼저 둔다.
+        projects.sort(key=lambda project: -len(groups[project]))
+        option_id = f"customer:{name}"
+        if len(projects) == 1:
+            scope = projects[0]
+        else:
+            scope = option_id if projects else "customer:"
+            if scope not in scopes:
+                rows = [issue for project in projects for issue in groups[project]]
+                scopes[scope] = _aggregate(rows, today, days, complete)
+        options.append({"id": option_id, "name": name, "projects": projects, "scope": scope})
     return {**_aggregate(issues, today, days, complete),
-            "scopes": {name: _aggregate(rows, today, days, complete) for name, rows in sorted(groups.items())}}
+            "scopes": scopes, "customerOptions": options}

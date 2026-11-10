@@ -614,6 +614,33 @@ test('customer rows toggle their filter and preserve controls while reloading', 
   assert.equal(h.els.dashboardFilterbar.hidden, false);
 });
 
+test('catalog customer selection also scopes priority export and links to the project detail', async () => {
+  const payload = dashboard('live', 3);
+  const projects = ['147MiraeAsset', '147MiraeAsset(미래에셋증권)'];
+  payload.openIssues = [
+    {id: 1, project: projects[0], status: 'confirmed'},
+    {id: 2, project: projects[1], status: 'confirmed'},
+    {id: 3, project: '125Daewoo', status: 'confirmed'},
+  ];
+  const id = 'customer:미래에셋증권';
+  payload.analytics = {
+    customerOptions: [{id, name: '미래에셋증권', projects, scope: id}],
+    scopes: {[id]: {summary: {open: 2}}},
+  };
+  const h = await harness('member', undefined, async () => ({ok: true, payload}));
+  await h.api.loadDashboard();
+  h.els.dashboardBody.handlers.change({target: {
+    matches: (selector) => selector === '[data-analytics-customer]',
+    value: id,
+  }});
+  assert.match(h.els.dashboardBody.innerHTML, /2 \/ 2건/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /고객사: 미래에셋증권/);
+  assert.match(h.els.dashboardFilterbar.innerHTML, /data-customer-detail="147MiraeAsset"/);
+  assert.deepEqual(Array.from(h.api.dashboardPriorityRows(), issue => issue.id), [1, 2]);
+  await h.api.applyDashboardFilters(h.api.dashboardFilterSnapshot());
+  assert.deepEqual(Array.from(h.api.dashboardPriorityRows(), issue => issue.id), [1, 2]);
+});
+
 test('age columns filter the queue and the age chip clears only that filter', async () => {
   const h = await harness('member', undefined, async () => ({ ok: true, payload: filterableDashboard() }));
   await h.api.loadDashboard();

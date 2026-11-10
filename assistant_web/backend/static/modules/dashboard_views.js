@@ -4,6 +4,7 @@ import { state, scopedStorageKey } from "./runtime.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { escapeHtml } from "./chat_rendering.js?v=20260911-6";
 import { customerName } from "./ui_format.js?v=20260911-6";
+import { analyticsCustomerLabel } from "./dashboard_analytics.js?v=20261111-1";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { dashboardFilterSnapshot, applyDashboardFilters, dashboardPriorityRows, showPersonalView } from "./dashboard.js?v=20260911-6";
 import {
@@ -57,16 +58,12 @@ function setActiveView(id) {
   writeJson(ACTIVE_VIEW_KEY, id || "");
 }
 
-function displayCustomer(value) {
-  return customerName({ project: value }, value);
-}
-
 function viewRowsHtml(views, active) {
   if (!views.length) return '<p class="dashboard-views-empty">저장한 보기가 없어요. 아래에서 지금 조건을 저장해 보세요.</p>';
   return `<ul class="dashboard-views-list">${views.map((view) => `
     <li>
       <button type="button" class="dashboard-views-item${view.id === active?.id ? " is-active" : ""}" data-apply-view="${escapeHtml(view.id)}"${view.id === active?.id ? ' aria-current="true"' : ""}>
-        ${icon("star", 14)}<span><strong>${escapeHtml(view.name)}</strong><small>${escapeHtml(describeFilters(view.filters, { customerName: displayCustomer }))}</small></span>
+        ${icon("star", 14)}<span><strong>${escapeHtml(view.name)}</strong><small>${escapeHtml(describeFilters(view.filters, { customerName: analyticsCustomerLabel }))}</small></span>
       </button>
       <button type="button" class="dashboard-views-delete" data-delete-view="${escapeHtml(view.id)}" aria-label="${escapeHtml(view.name)} 보기 삭제">${icon("trash", 16)}</button>
     </li>`).join("")}</ul>`;
@@ -116,7 +113,7 @@ function renderDashboardViews() {
               <input id="dashboardViewName" name="viewName" type="text" maxlength="40" autocomplete="off" placeholder="예: 내 고객사 30일" />
               <button type="submit" class="secondary-button">저장</button>
             </span>
-            <small>${escapeHtml(describeFilters(filters, { customerName: displayCustomer }))}</small>
+            <small>${escapeHtml(describeFilters(filters, { customerName: analyticsCustomerLabel }))}</small>
           </form>
           <p class="dashboard-views-error" role="alert"${ui.error ? "" : " hidden"}>${escapeHtml(ui.error)}</p>
         </div>

@@ -13,7 +13,7 @@ import { recordIssueView } from "./recent_items.js?v=20261105-1";
 import { recentOpenCard, opsKpiTiles, priorityTable } from "./dashboard_overview.js?v=20261105-1";
 import { registerDashboardTab, selectDashboardTab, currentDashboardTab } from "./dashboard_tabs.js?v=20261110-1";
 
-import { analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261110-3";
+import { analyticsCustomerLabel, analyticsCustomerOption, analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261111-1";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 let issueDetailContext = null;
@@ -233,7 +233,6 @@ function renderMemberChart(members, sharedAccounts) {
 
 function filteredPriorities(priorities) {
   return priorities.filter((item) => {
-    if (dashboardState.customer && item.project !== dashboardState.customer) return false;
     if (dashboardState.age && ageBucket(item) !== dashboardState.age) return false;
     if (dashboardState.metric === "overdue" && !item.overdue) return false;
     if (dashboardState.metric === "aging" && Number(item.ageDays || 0) < 30) return false;
@@ -251,8 +250,11 @@ function renderFilterbar(filteredCount = 0) {
     chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="metric" aria-label="${escapeHtml(label)} 필터 해제">${escapeHtml(label)}${icon("close", 14)}</button>`);
   }
   if (dashboardState.customer) {
-    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${escapeHtml(customerName(dashboardState.customer))} 필터 해제">고객사: ${escapeHtml(customerName(dashboardState.customer))}${icon("close", 14)}</button>`);
-    chips.push(`<button class="dashboard-filter-jump dashboard-customer-detail-link" type="button" data-customer-detail="${escapeHtml(dashboardState.customer)}">${escapeHtml(customerName(dashboardState.customer))} 상세 보기${icon("chevron-right", 14)}</button>`);
+    const option = analyticsCustomerOption(dashboardState.data, dashboardState.customer);
+    const label = escapeHtml(analyticsCustomerLabel(dashboardState.customer));
+    const project = option ? option.projects[0] : dashboardState.customer;
+    chips.push(`<button class="dashboard-chip" type="button" data-dashboard-clear="customer" aria-label="고객사 ${label} 필터 해제">고객사: ${label}${icon("close", 14)}</button>`);
+    if (project) chips.push(`<button class="dashboard-filter-jump dashboard-customer-detail-link" type="button" data-customer-detail="${escapeHtml(project)}">${label} 상세 보기${icon("chevron-right", 14)}</button>`);
   }
   const age = AGE_BUCKETS.find((bucket) => bucket.key === dashboardState.age);
   if (age) {
@@ -288,8 +290,9 @@ function applyDashboardFilters({ period = dashboardState.period, metric = "", cu
 }
 
 function dashboardPriorityRows() {
-  const data = dashboardState.data;
-  return data ? filteredPriorities(data.openIssues || data.priorities || []) : [];
+  if (!dashboardState.data) return [];
+  const data = analyticsScope(dashboardState.data, dashboardState.customer);
+  return filteredPriorities(data.openIssues || data.priorities || []);
 }
 
 function hideFilterbar() {
@@ -452,6 +455,8 @@ function renderDashboard() {
     </div>
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>
     </div>`;
+  const customerSelect = els.dashboardBody.querySelector("[data-analytics-customer]");
+  if (dashboardState.customer && customerSelect?.value === "") customerSelect.selectedIndex = -1;
   if (!dashboardContentShown) stopDashboardReveal = revealOnScroll(els.dashboardBody, DASHBOARD_REVEAL_SELECTOR);
   mountCharts(els.dashboardBody);
   dashboardContentShown = true;
