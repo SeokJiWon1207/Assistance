@@ -493,7 +493,7 @@ class AgentDocumentTests(unittest.TestCase):
         sources = FakeSources(lookups={r['id']: r for r in RAW})
         with (agent_environment(model=fake, sources=sources), request_transfer_scope('company-test'),
               patch('backend.tools.mantis_queries.execute_mantis_snapshot_search', return_value=snapshot()),
-              patch('backend.services.agent.orchestrator._generate_document', side_effect=lambda r, s, d: generate_supported(s, d)),
+              patch('backend.services.agent.document_flow.generate_document', side_effect=lambda r, t, s, d: generate_supported(s, d)),
               patch('backend.services.chat_service.plan_chat_query', side_effect=AssertionError('legacy intercepted'))):
             result = ChatService()._complete_response(chat_request(QUESTION), context(), None, lambda r: r)
         self.assertEqual(result['raw']['mode'], 'agent_issue_document')

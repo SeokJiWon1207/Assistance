@@ -163,6 +163,8 @@ POST /api/chat
 | `backend/services/agent/planning.py` | 에이전트 조건 준비 도구, 초안·부분 변경, 기존 검증 계약 |
 | `backend/services/agent/protocol.py` | tool_calls 응답 해석(빈 응답·잘린 인자·텍스트형 호출 구분) |
 | `backend/services/agent/orchestrator.py` | 판단 루프, 요청 공통 예산, 컨텍스트 축소, 종료 사유, 마감 방식 |
+| `backend/services/agent/document_flow.py` | 이슈 문서의 작성·검토 호출 예약, 본문 확보 후 조사 종료, 초안·검토 모델 호출과 재작성 |
+| `backend/services/agent/documents.py` | 이슈 문서 구성, 원문 문단 대조, 묶음별 작성·검토·보정 |
 | `backend/services/agent/response_parts.py`, `backend/evaluation/agent_response.py` | 응답 부분 조합, 후속 순번 보존, 부분별 기존 검증과 최종 내용 대조 |
 | `backend/services/agent/citations.py` | 원장·수치 대조, 문장 단위 주장 제외, 인용 표기 |
 | `backend/tools/registry.py` | 도구 등록, pydantic 인자 검증, 중복 판정, 결과 크기 제한, 구조화 오류 |

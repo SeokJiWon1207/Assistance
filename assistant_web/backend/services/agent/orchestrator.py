@@ -25,7 +25,7 @@ from backend.audit import emit_chat_status
 from backend.execution import CURRENT_BUDGET, StepTimeout, run_with_deadline
 from backend.notion.formatting import build_sources_from_notion_pages
 from backend.schemas import ChatRequest
-from backend.services.agent import citations
+from backend.services.agent import citations, document_flow
 from backend.services.agent.errors import AgentStop
 from backend.services.agent.policy import AgentPolicy, load_verification, mark_reverification_required, tool_support
 from backend.services.agent.protocol import AssistantTurn, parse_arguments, parse_assistant_turn
@@ -558,23 +558,19 @@ def _compact(run: AgentRun) -> bool:
 
 
 def _investigate(run: AgentRun) -> Optional[str]:
-    from backend.services.agent.documents import document_kind, document_reserve_calls, read_progress, ready_for_document
     emit_chat_status("필요한 자료와 조회 순서를 판단하고 있습니다", "routing")
     run.messages = [{"role": "system", "content": _system_prompt(run)}, {"role": "user", "content": _user_prompt(run)}]
     while True:
-        if document_kind(getattr(run, 'plan', {})) and run.ledger.query_results():
-            # 전체 호출 상한은 그대로 두고 목록 크기에 맞는 작성·검토 호출을 남긴다.
-            reserve = document_reserve_calls(run.ledger, run.budget.max_model_requests - run.budget.model_requests)
-            run.budget.set_reserve(calls=max(run.settings.final_reserve_calls, reserve))
+        is_document = document_flow.reserve_document_calls(run)
         if ((run.ledger.query_results() or run.ledger.aggregation_results() or run.ledger.notion_query_results() or run.ledger.reports
              or getattr(run, 'plan', {}).get('query_scopes') and run.ledger.stages)
-                and not document_kind(getattr(run, 'plan', {}))
+                and not is_document
                 and not (getattr(run, 'plan', {}).get('aggregation') or {}).get('explain')
                 and not _requires_explanation(run)):
             # _finish가 검증된 조회 원장으로 답하므로 모델 합성·검토 호출을 예약할 필요가 없다.
             # 전체 모델/도구 한도와 최종 처리 시간은 유지한다. 일반 설명의 예약분은 풀지 않는다.
             run.budget.set_reserve(calls=0, seconds=5.0)
-        elif not document_kind(getattr(run, 'plan', {})) and any(
+        elif not is_document and any(
                 p.get('_verified_body') and p.get('content') and not p.get('content_incomplete')
                 for p in run.ledger.notion_evidence_pages(('scoped',))):
             # 현재 본문이 있어 검증된 발췌로 마무리할 수 있다. 연결 본문 읽기에 시간을 돌려준다.
@@ -605,12 +601,9 @@ def _investigate(run: AgentRun) -> Optional[str]:
                 if run.invalid_turns > run.settings.max_invalid_turns:
                     run.stop_reason = "model_error"
                     return None
-            if document_kind(run.plan) and run.plan.get('source') == 'mantis' and ready_for_document(run.ledger):
-                # 필요한 본문이 원장에 모두 있다. 조사 모델이 같은 이슈를 다시 읽거나
-                # 사용하지 않을 초안을 쓰게 하지 않고, 예약된 작성·독립 검토로 전환한다.
+            if document_flow.document_bodies_ready(run):
+                # 조사 모델이 같은 이슈를 다시 읽거나 사용하지 않을 초안을 쓰게 하지 않는다.
                 run.stop_reason = _query_outcome(run)
-                run.trace.append({'step': 'collection_complete', 'reason': 'document_bodies_ready',
-                                  'listedCount': read_progress(run.ledger)['listed_count']})
                 return None
             if not _compact(run):
                 run.stop_reason = "context_limit"
@@ -1084,71 +1077,9 @@ def _free_form(run: AgentRun, draft: Optional[str], families: tuple[str, ...] = 
                      answer_model_id=answer_model_id)
 
 
-def _generate_document(run: AgentRun, system: str, data: dict) -> Any:
-    """문서 생성·독립 검토에도 공통 호출 예산과 전송 정책을 적용한다."""
-    from backend.services.agent.document_format import draft_format
-    if run.stop_reason == 'policy_blocked' or not run.budget.can_finalize_call():
-        raise ValueError('document budget exhausted')
-    outgoing = json.dumps(redact(data), ensure_ascii=False)
-    if len(outgoing) + len(system) > run.settings.max_context_chars:
-        raise ValueError('document context limit')
-    correction = data.get('correction') or {}
-    repair_slots = ({slot for row in correction.get('required_slots', []) for slot in row['slots']}
-                    if correction and not correction.get('missing_issue_ids') else None)
-    payload = {'model': run.model.get('model', run.model['id']), 'temperature': 0, 'stream': False,
-               'max_tokens': min(4096, max(run.settings.max_output_tokens, 600 * len(data.get('issues', [])),
-                                          180 * len(data.get('claims', [])))),
-               'response_format': {'type': 'json_object'} if 'claims' in data else draft_format(data['kind'], slots=repair_slots),
-               'messages': [{'role': 'system', 'content': system},
-                            {'role': 'user', 'content': outgoing}]}
-    step = 'document_review' if 'claims' in data else 'document_draft'
-    for attempt in range(2):
-        try:
-            turn = _request_turn(run, payload, run.budget.final_seconds, step if attempt == 0 else 'document_draft_retry', retries=0)
-        except AgentStop as exc:
-            run.stop_reason = exc.reason
-            raise ValueError('document model unavailable') from exc
-        error: ValueError
-        if turn.kind == 'final':
-            try:
-                return json.loads((turn.content or '').strip().removeprefix('```json').removeprefix('```')
-                                  .removesuffix('```').strip())
-            except json.JSONDecodeError as exc:
-                error = exc
-                reason = '직전 초안의 JSON 형식이 잘못되어 해석하지 못했다. 올바르게 닫힌 하나의 JSON 객체로 다시 작성한다.'
-        else:
-            error = ValueError(f'incomplete document response: {turn.kind}')
-            reason = '직전 초안이 출력 한도에서 잘렸다. 부분 초안은 채택하지 않는다.'
-        if (turn.kind not in {'final', 'truncated_final'} or step != 'document_draft' or attempt
-                or run.budget.model_requests + 2 > run.budget.max_model_requests or run.budget.remaining() <= 30):
-            raise error
-        shorter = (system + '\n' + reason + ' '
-                   '제공된 모든 이슈를 유지하고 질문에서 명시한 핵심 항목만 항목당 한 문장으로 짧게 다시 작성한다. '
-                   '요청하지 않은 원인·조치·후속 작업은 추가하지 않는다. 원문 근거·불확실성·문단 ID와 JSON 형식은 유지한다.')
-        if len(outgoing) + len(shorter) > run.settings.max_context_chars:
-            raise error
-        payload['messages'][0]['content'] = shorter
-    raise ValueError('document response unavailable')
-
-
 def _finish_document(run: AgentRun) -> dict:
     from html import escape
-    from backend.services.agent.documents import build_document, document_kind
-    emit_chat_status('이슈별 원문과 문서 문장을 대조하고 있습니다', 'generation')
-    kind = document_kind(run.plan)
-    content, review, refs = build_document(run.ledger, kind, run.context.latest_user_text,
-                                          partial(_generate_document, run),
-                                          confirmed_ids=tuple(run.constraints.get('issue_ids') or []),
-                                          max_context_chars=run.settings.max_context_chars,
-                                          can_generate=lambda: run.budget.model_requests + 2 <= run.budget.max_model_requests
-                                          and run.budget.remaining() > 5,
-                                          can_repair=lambda: run.stop_reason != 'policy_blocked'
-                                          and run.budget.model_requests + 2 <= run.budget.max_model_requests
-                                          and run.budget.remaining() > 30)
-    run.finalization = 'issue_document'
-    run.document_review = review
-    if review.get('repair'):
-        run.repair_review.extend({'path': 'document', **audit} for audit in review['repair']['batches'])
+    kind, content, review, refs = document_flow.write_document(run, _request_turn)
     if kind != 'notice':
         content = '적용 조건: ' + escape(_condition_text(run.constraints), quote=False) + '\n\n' + content
     result = _response(run, content, 'agent_issue_document', cited=refs, reference_text=kind != 'notice')
