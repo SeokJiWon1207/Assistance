@@ -9,6 +9,7 @@ backend.config 외의 backend 모듈은 참조하지 않는다(순환 방지).
 """
 
 import json
+import logging
 import os
 import re
 import sqlite3 as sqlite3
@@ -180,6 +181,21 @@ def prune_audit_logs(retention_days: int | None = None) -> Dict[str, int]:
         "evaluationRuns": max(0, evaluations),
         "feedback": max(0, feedback),
     }
+
+
+def start_audit_pruner(interval_seconds: float = 24 * 60 * 60) -> threading.Event:
+    """서버가 오래 떠 있어도 보관 기간을 지키도록 하루마다 감사 기록을 정리한다."""
+    stop = threading.Event()
+
+    def run() -> None:
+        while not stop.wait(interval_seconds):
+            try:
+                prune_audit_logs()
+            except Exception as exc:
+                logging.getLogger(__name__).warning("감사 기록 정리 실패: %s", type(exc).__name__)
+
+    threading.Thread(target=run, name="audit-pruner", daemon=True).start()
+    return stop
 
 
 def _select_audit_variant(payload: Dict[str, Any], variant: str) -> Dict[str, Any]:

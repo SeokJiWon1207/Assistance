@@ -15,7 +15,7 @@ APP_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(APP_DIR / ".env")
 
 from backend.auth import authentication_middleware, init_users_db  # noqa: E402
-from backend.audit import init_audit_db, prune_audit_logs  # noqa: E402
+from backend.audit import init_audit_db, prune_audit_logs, start_audit_pruner  # noqa: E402
 from backend.api.chat import router as chat_router  # noqa: E402
 from backend.api.auth import router as auth_router  # noqa: E402
 from backend.api.notion import router as notion_router  # noqa: E402
@@ -46,7 +46,7 @@ async def lifespan(_application: FastAPI):
     # 연결이 설정된 환경에서는 사용자 요청과 분리해 원본을 주기적으로 갱신한다.
     configured = bool(os.getenv("MANTIS_API_URL", "").strip() and os.getenv("MANTIS_API_TOKEN", "").strip())
     enabled = os.getenv("MANTIS_COMPLETE_SYNC_ENABLED", "true" if configured else "false")
-    stops = []
+    stops = [start_audit_pruner()]
     if enabled.lower() == "true":
         from backend.sources.mantis_store import start_store_scheduler
         stops.append(start_store_scheduler())

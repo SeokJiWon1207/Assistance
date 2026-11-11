@@ -439,5 +439,17 @@ class SessionVerificationCacheTests(unittest.TestCase):
         self.assertEqual(self.firebase.verify_session_cookie.call_count, 4)
 
 
+class AuditPrunerTests(unittest.TestCase):
+    def test_pruner_runs_on_interval_and_stops(self):
+        from backend import audit
+        with patch.object(audit, "prune_audit_logs") as prune:
+            stop = audit.start_audit_pruner(interval_seconds=0.01)
+            deadline = time.time() + 2
+            while prune.call_count < 2 and time.time() < deadline:
+                time.sleep(0.01)
+            stop.set()
+        self.assertGreaterEqual(prune.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
