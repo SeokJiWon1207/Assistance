@@ -2,7 +2,7 @@
 import { els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { formatPeriodRange, customerMark } from "./ui_format.js?v=20260911-6";
+import { formatPeriodRange, customerMark, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { focusKey, restoreFocus } from "./view_focus.js?v=20261103-1";
@@ -20,15 +20,6 @@ const boardState = {
   requestId: 0,
   agingExpanded: false,
 };
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 function formatNumber(value, digits = 0) {
   return Number(value || 0).toLocaleString("ko-KR", { maximumFractionDigits: digits });

@@ -2,7 +2,7 @@
 import { apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
-import { formatPeriodRange, customerLabelText, customerMark } from "./ui_format.js?v=20260911-6";
+import { formatPeriodRange, customerLabelText, customerMark, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { focusKey, restoreFocus } from "./view_focus.js?v=20261103-1";
@@ -24,15 +24,6 @@ const detailState = {
   onAsk: null,
   onClose: null,
 };
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ko-KR");

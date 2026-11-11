@@ -1,14 +1,6 @@
 // 내 업무 › 업무 탭의 목표일 기준 정렬·거르기, 최근 활동 피드.
 import { icon } from "./icons.js?v=20260911-6";
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
+import { escapeHtml } from "./ui_format.js?v=20260911-6";
 
 function localDay(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);

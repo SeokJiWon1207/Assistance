@@ -1,6 +1,6 @@
 import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { renderWeeklyIssues } from "./dashboard_weekly.js?v=20261029-1";
-import { formatUiDateTime, formatPeriodRange, customerName, customerLabelText } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, formatPeriodRange, customerName, customerLabelText, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
@@ -51,15 +51,6 @@ let dashboardFreshPromise = null;
 let dashboardLoadIsRefresh = false;
 let dashboardSyncTimer = null;
 let dashboardRefreshAfter = null;
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ko-KR");

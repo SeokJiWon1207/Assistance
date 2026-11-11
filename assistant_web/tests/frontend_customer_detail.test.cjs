@@ -43,7 +43,7 @@ async function harness(fetcher) {
       apiFetch: async (url) => { calls.push(url); return fetcher(url, calls.length); } },
     './api.js': { responseJson: async (response) => response.payload },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
-    './ui_format.js': { formatPeriodRange: (from, to) => `${from}–${to}`, customerLabelText: (value) => value, customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
+    './ui_format.js': { escapeHtml: (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), formatPeriodRange: (from, to) => `${from}–${to}`, customerLabelText: (value) => value, customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
     './data_badge.js': { dataBadgeState: () => 'fresh', formatBadgeTime: () => '', mantisBadgeDetails: () => ({ source: {}, note: '' }),
       renderDataBadge() {} },
     './workspace.js': { workspaceStatusLabel: (value) => ({ confirmed: '확인된 이슈', assigned: '할당된 이슈' }[value] || value) },

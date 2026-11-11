@@ -69,7 +69,7 @@ async function harness(apiFetch, cache = core.conversationCache) {
   await insights.link(synthetic);
   // 목표일 칩·최근 활동도 실제 모듈로 그린다.
   const home = new vm.SourceTextModule(fs.readFileSync(path.join(__dirname, '../backend/static/modules/workspace_home.js'), 'utf8'), { context });
-  await home.link(synthetic);
+  await home.link((specifier) => (specifier.startsWith('./ui_format.js') ? naming : synthetic(specifier)));
   await module.link((specifier) => {
     if (specifier.startsWith('./ui_format.js')) return naming;
     if (specifier.startsWith('./workspace_insights.js')) return insights;

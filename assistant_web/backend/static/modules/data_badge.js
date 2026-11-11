@@ -1,6 +1,6 @@
 // 화면 머리의 '데이터 기준' 배지. 대화·내 업무·대시보드·관리자 센터가 같은 상태 이름과
 // 같은 모양을 쓰도록 배지와 펼침 창을 여기서만 그린다.
-import { formatUiDateTime } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 
 const STATE_META = {
@@ -18,15 +18,6 @@ const TONE_ICONS = { ok: "check", warn: "warning", error: "close" };
 const retryHandlers = new WeakMap();
 let badgeSequence = 0;
 let listenersInstalled = false;
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 // 오늘이면 "오후 2:02", 아니면 "9/29 오후 2:02"
 function formatBadgeTime(value) {

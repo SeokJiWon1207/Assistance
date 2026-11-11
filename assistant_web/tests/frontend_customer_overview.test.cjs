@@ -54,7 +54,7 @@ async function harness(fetcher) {
       apiFetch: async (url) => { calls.push(url); return fetcher(url, calls.length); } },
     './api.js': { responseJson: async (response) => response.payload },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
-    './ui_format.js': { customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
+    './ui_format.js': { escapeHtml: (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]), customerMark: (name) => `<span class="customer-mark" data-mark="${name}"></span>` },
     './bklit_charts.js': {
       chartHost: (spec, fallback) => `<div data-chart='${JSON.stringify(spec)}'>${fallback}</div>`,
       mountCharts: async () => { charts.mounted += 1; },
