@@ -467,6 +467,18 @@ def revoke_firebase_sessions(uid: str) -> None:
     _firebase_auth_module().revoke_refresh_tokens(uid)
 
 
+def _invalid_session_error(exc: Exception) -> bool:
+    try:
+        from firebase_admin import auth as firebase_auth
+    except ImportError:
+        return False
+    return isinstance(exc, (
+        firebase_auth.InvalidSessionCookieError,
+        firebase_auth.UserDisabledError,
+        firebase_auth.UserNotFoundError,
+    ))
+
+
 def _requires_admin(path: str) -> bool:
     return path in ADMIN_API_EXACT_PATHS or any(path.startswith(prefix) for prefix in ADMIN_API_PREFIXES)
 
@@ -491,7 +503,11 @@ async def authentication_middleware(request: Request, call_next):
         return JSONResponse({"detail": "로그인이 필요합니다."}, status_code=401)
     try:
         claims = await run_in_threadpool(verify_firebase_session, session_cookie)
-    except Exception:
+    except Exception as exc:
+        if not _invalid_session_error(exc):
+            # 세션의 유효성을 판정할 수 없으면 쿠키를 유지한다.
+            return JSONResponse({"detail": "로그인 확인 서비스에 잠시 연결하지 못했습니다. 잠시 후 다시 시도해 주세요."},
+                                status_code=503)
         response = JSONResponse({"detail": "로그인 세션이 만료되었습니다."}, status_code=401)
         response.delete_cookie(session_cookie_name(), path="/", secure=auth_cookie_secure())
         return response

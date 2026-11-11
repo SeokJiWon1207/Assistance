@@ -272,20 +272,32 @@
     });
   }
 
+  async function fetchInitialAuthStatus(path) {
+    let retryDelay = 1000;
+    while (true) {
+      const response = await rawFetch(path, { credentials: "same-origin" });
+      if (response.status < 500) return response;
+      document.querySelector("#authChecking p").textContent =
+        "로그인 확인 서비스가 잠시 응답하지 않습니다. 기존 세션을 다시 확인하고 있습니다.";
+      await new Promise((resolve) => globalScope.setTimeout(resolve, retryDelay));
+      retryDelay = Math.min(retryDelay * 2, 30_000);
+    }
+  }
+
   async function bootstrapAuthentication() {
     setupSessionActions();
     try {
-      const configResponse = await rawFetch("/api/auth/config", { credentials: "same-origin" });
+      const configResponse = await fetchInitialAuthStatus("/api/auth/config");
       authConfig = await configResponse.json();
       if (!authConfig.enabled) return finishAuthentication(null);
-      if (!authConfig.firebaseApiKey) throw new Error("FIREBASE_WEB_API_KEY가 설정되지 않았습니다.");
 
-      const meResponse = await rawFetch("/api/auth/me", { credentials: "same-origin" });
+      const meResponse = await fetchInitialAuthStatus("/api/auth/me");
       if (meResponse.ok) {
         const data = await meResponse.json();
         if (data.user?.passwordChangeRequired) return waitForLogin(data.user);
         return finishAuthentication(data.user);
       }
+      if (!authConfig.firebaseApiKey) throw new Error("FIREBASE_WEB_API_KEY가 설정되지 않았습니다.");
       return waitForLogin();
     } catch (error) {
       document.querySelector("#authChecking").hidden = true;

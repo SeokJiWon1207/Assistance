@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -200,19 +201,65 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "로그인이 필요합니다.")
 
     def test_protected_api_rejects_expired_or_forged_session(self):
+        from firebase_admin import auth as firebase_auth
+
+        for error in (
+            firebase_auth.InvalidSessionCookieError("invalid"),
+            firebase_auth.ExpiredSessionCookieError("expired", cause=None),
+            firebase_auth.RevokedSessionCookieError("revoked"),
+            firebase_auth.UserDisabledError("disabled"),
+            firebase_auth.UserNotFoundError("deleted"),
+        ):
+            with self.subTest(error=type(error).__name__), patch.dict(
+                os.environ,
+                {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+            ), patch.object(auth_module, "verify_firebase_session", side_effect=error):
+                response = self.client.get("/api/auth/me", cookies={"ai_session": "stale"})
+                self.assertEqual(response.status_code, 401)
+                self.assertIn("Max-Age=0", response.headers["set-cookie"])
+
+    def test_auth_service_outage_keeps_session_cookie(self):
+        from firebase_admin import auth as firebase_auth
+        from firebase_admin import exceptions as firebase_errors
+
+        for error in (
+            firebase_errors.UnavailableError("down", cause=None),
+            firebase_auth.CertificateFetchError("certificates unavailable", cause=None),
+            firebase_errors.PermissionDeniedError("service account lacks permission", cause=None),
+        ):
+            with self.subTest(error=type(error).__name__), patch.dict(
+                os.environ,
+                {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
+            ), patch.object(auth_module, "verify_firebase_session", side_effect=error):
+                response = self.client.get("/api/auth/me", cookies={"ai_session": "valid"})
+                self.assertEqual(response.status_code, 503)
+                self.assertNotIn("set-cookie", response.headers)
+
+    def test_missing_service_account_file_keeps_session_cookie(self):
+        import firebase_admin
+
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "FIREBASE_AUTH_ENABLED": "true",
+                "AUTH_COOKIE_SECURE": "false",
+                "FIREBASE_SERVICE_ACCOUNT_JSON": "",
+                "FIREBASE_SERVICE_ACCOUNT_PATH": str(Path(directory) / "missing.json"),
+            },
+        ), patch.object(firebase_admin, "get_app", side_effect=ValueError("not initialized")):
+            response = self.client.get("/api/auth/me", cookies={"ai_session": "valid"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("set-cookie", response.headers)
+
+    def test_missing_firebase_sdk_keeps_session_cookie(self):
         with patch.dict(
             os.environ,
             {"FIREBASE_AUTH_ENABLED": "true", "AUTH_COOKIE_SECURE": "false"},
-        ), patch.object(
-            auth_module,
-            "verify_firebase_session",
-            side_effect=ValueError("invalid session"),
-        ):
-            response = self.client.get(
-                "/api/auth/me", cookies={"ai_session": "forged"}
-            )
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["detail"], "로그인 세션이 만료되었습니다.")
+        ), patch.dict(sys.modules, {"firebase_admin": None}):
+            response = TestClient(app, raise_server_exceptions=False).get(
+                "/api/auth/me", cookies={"ai_session": "valid"})
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("set-cookie", response.headers)
 
     def test_protected_api_rejects_unapproved_user(self):
         with patch.dict(

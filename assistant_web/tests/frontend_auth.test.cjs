@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const user = { uid: 'fixture', email: 'member@example.test', role: 'member', passwordChangeRequired: true };
 const tick = () => new Promise(resolve => setImmediate(resolve));
-async function harness(existing = null) {
+async function harness(existing = null, { initialAuthStatuses = {}, firebaseApiKey = 'fixture' } = {}) {
   const nodes = new Map();
   function element(id) {
     if (!nodes.has(id)) {
@@ -22,20 +22,22 @@ async function harness(existing = null) {
   }
   element('#authGate').hidden = false;
   const calls = [];
+  const timers = [];
   let sessionUser = user;
   let changeOk = true;
-  const context = vm.createContext({ Headers, setTimeout,
+  const context = vm.createContext({ Headers, setTimeout: callback => timers.push(callback),
     document: { cookie: 'ai_csrf=fixture', body: element('body'), querySelector: element, addEventListener() {} },
     location: { reload() {} },
     fetch: async (url, options = {}) => {
       calls.push({ url, options });
       let data, status = 200;
-      if (url === '/api/auth/config') data = { enabled: true, firebaseApiKey: 'fixture' };
+      if (url === '/api/auth/config') data = { enabled: true, firebaseApiKey };
       else if (url === '/api/auth/me') { data = { user: existing }; status = existing ? 200 : 401; }
       else if (url.includes('signInWithPassword')) data = { idToken: 'fixture-token' };
       else if (url === '/api/auth/session') data = { user: sessionUser };
       else if (url === '/api/auth/change-password') { data = changeOk ? { changed: true } : { detail: '현재 비밀번호 오류' }; status = changeOk ? 200 : 400; }
       else data = {};
+      status = initialAuthStatuses[url]?.shift() ?? status;
       return { ok: status === 200, status, json: async () => data };
     },
   });
@@ -51,6 +53,7 @@ async function harness(existing = null) {
   context.AssistantAuthReady.then(() => { ready = true; });
   return { element, calls, context, get ready() { return ready; },
     setSession(value) { sessionUser = value; }, failChange() { changeOk = false; },
+    async retry() { const next = timers.shift(); assert.ok(next); next(); await tick(); },
     async login() { element('#loginEmail').value = user.email; element('#loginPassword').value = 'Temporary-123!'; await element('#loginForm').fire('submit'); await tick(); },
     async change(confirm = 'Changed-123!') { element('#currentPassword').value = 'Temporary-123!'; element('#newPassword').value = 'Changed-123!'; element('#confirmPassword').value = confirm; await element('#passwordChangeForm').fire('submit'); await tick(); },
   };
@@ -97,6 +100,36 @@ test('확인 불일치나 서버 변경 실패로는 앱이 열리지 않는다'
 
 test('기존 일반 계정은 기존 로그인 동작을 유지한다', async () => {
   const h = await harness({ ...user, passwordChangeRequired: false });
+  await tick();
+  assert.equal(h.ready, true);
+  assert.equal(h.element('#authGate').hidden, true);
+});
+
+for (const endpoint of ['/api/auth/config', '/api/auth/me']) {
+  test(`초기 인증 ${endpoint} 장애가 복구되면 기존 세션으로 앱을 연다`, async () => {
+    const h = await harness({ ...user, passwordChangeRequired: false }, { initialAuthStatuses: { [endpoint]: [503, 503] } });
+    assert.equal(h.element('#loginForm').hidden, true);
+    assert.equal(h.ready, false);
+    await h.retry();
+    assert.equal(h.element('#loginForm').hidden, true);
+    await h.retry();
+    assert.equal(h.ready, true);
+    assert.equal(h.element('#authGate').hidden, true);
+    assert.equal(h.calls.filter(call => call.url === endpoint && call.options.credentials === 'same-origin').length, 3);
+    assert.equal(h.calls.some(call => call.url === '/api/auth/session'), false);
+  });
+}
+
+test('초기 인증 장애가 복구된 뒤 세션이 무효라면 로그인 화면을 연다', async () => {
+  const h = await harness(null, { initialAuthStatuses: { '/api/auth/me': [503] } });
+  assert.equal(h.element('#loginForm').hidden, true);
+  await h.retry();
+  assert.equal(h.element('#loginForm').hidden, false);
+  assert.equal(h.ready, false);
+});
+
+test('신규 로그인용 API 키가 없어도 유효한 기존 세션으로 앱을 연다', async () => {
+  const h = await harness({ ...user, passwordChangeRequired: false }, { firebaseApiKey: '' });
   await tick();
   assert.equal(h.ready, true);
   assert.equal(h.element('#authGate').hidden, true);
