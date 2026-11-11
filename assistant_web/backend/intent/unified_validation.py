@@ -7,6 +7,7 @@ import re
 from backend.settings.catalogs import get_customer_aliases
 from backend.settings.values import PLATFORM_ALIASES as PLATFORM_ALIASES, STATUS_ALIASES as STATUS_ALIASES, MANTIS_STATUS_NAMES as MANTIS_STATUS_NAMES, MANTIS_OPEN_STATUSES as MANTIS_OPEN_STATUSES
 from backend.intent.entities import short_handler_lookup
+from backend.intent.person_roles import check_person_roles
 from backend.intent.scope_extraction import empty_query_constraints
 from backend.query_filters import normalize_filter_clause as normalize_filter_clause, clause_supported as clause_supported, SUPPORTED_FIELDS as SUPPORTED_FIELDS, values_for_clause as values_for_clause
 from backend.query.dates import extract_relative_created_at_range as extract_relative_created_at_range
@@ -346,7 +347,6 @@ def validate_plan(question, parsed, user, previous):
     # 계획에 없는 조건을 추측해 추가하지는 않되, 원문이 명시한 대상을 조용히
     # 버린 계획은 거부한다. 모델이 수정해도 끝내 확정하지 못하면 조회하지 않는다.
     if source in {'mantis', 'both'}:
-        from backend.intent.entities import extract_issue_ids, extract_people_constraints
         text = unquoted(question)
         issue_ids = extract_issue_ids(text)
         # 특수 보고서는 검증된 전용 빌더가 기준 ID를 원문에서 복원한다.
@@ -355,13 +355,8 @@ def validate_plan(question, parsed, user, previous):
                            if clause['field'] == 'issue_id'
                            for value in values_for_clause(clause.get('value'))}
             require(set(issue_ids) <= applied_ids, '명시된 이슈 번호가 필터에서 누락됐습니다')
-        people = (extract_people_constraints(text) if operation in {'search', 'count', 'aggregate'}
-                  and re.search(r'담당자|담당\s*[:=]', text) else {})
-        if people.get('role') == 'handler' and people.get('names'):
-            applied_names = {value for clause in c['filter_clauses'] if clause['field'] == 'owner'
-                             for value in values_for_clause(clause.get('value'))}
-            require(set(people['names']) <= applied_names,
-                    '명시된 담당자 이름이 필터에서 누락됐습니다: ' + ', '.join(people['names']))
+        if operation in {'search', 'count', 'aggregate'}:
+            check_person_roles(text, incoming, c['filter_clauses'])
     if source == 'notion':
         from backend.intent.customer_constraints import check_customer_scope
         check_customer_scope(question, c['filter_clauses'], incoming)

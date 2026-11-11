@@ -72,8 +72,7 @@ class AggregationSpecTests(unittest.TestCase):
             return copy.deepcopy(count if len(calls) == 1 else valid_proposal)
         with patch.object(unified, '_propose', side_effect=propose), patch.object(
                 unified.llm, 'get_model_registry', return_value=[]), patch.object(
-                unified, 'get_customer_aliases', return_value={}), patch.object(
-                unified, 'extract_people_constraints', return_value={'names': []}):
+                unified, 'get_customer_aliases', return_value={}):
             repaired = unified.plan_question(question, {'id': 'fixture'}, 'test', {}, {})
         self.assertEqual(len(calls), 2)
         self.assertTrue(repaired['aggregation']['explain'])

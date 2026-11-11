@@ -153,6 +153,111 @@ class UnifiedPlannerTests(unittest.TestCase):
                'description': 'From. 석지원', 'custom_fields': []}
         self.assertTrue(issue_matches_constraints(row, {'people': {'role': 'reporter', 'names': ['석지원']}}))
 
+    def test_vwap_requester_plan_matches_customer_email_in_both_issues(self):
+        question = '이윤동 과장이 VWAP 지표 추가 요청한 이슈 찾아줘'
+        request = {'field': 'reporter', 'operator': 'equals', 'value': '이윤동',
+                   'evidence': '이윤동 과장이 VWAP 지표 추가 요청한'}
+        plan = proposal(operation='search', scope='target', terms=['VWAP'], filters=[request],
+                        status={'mode': 'unspecified', 'values': [], 'evidence': ''})
+        constraints = self.validate(question, plan)['resolved_constraints']
+        self.assertEqual(constraints['people']['role'], 'reporter')
+        issues = [
+            {'id': issue_id, 'summary': 'VWAP 지표 추가 문의', 'description': description,
+             'reporter': {'real_name': '김진성'}, 'handler': {'real_name': handler}, 'custom_fields': []}
+            for issue_id, handler, description in (
+                (30878, '우동헌', '메일 수신 From. 이윤동\nVWAP 추가 문의'),
+                (30879, '이영희', 'From. 이윤동\nVWAP 추가 문의'),
+                (30880, '이윤동', 'From. 다른사람\nVWAP 추가 문의'),
+            )
+        ]
+        self.assertEqual([row['id'] for row in issues if issue_matches_constraints(row, constraints)],
+                         [30878, 30879])
+        request['field'] = 'registered_reporter'
+        with self.assertRaisesRegex(ValueError, '인물 역할 불일치.*reporter'):
+            self.validate(question, plan)
+
+    def test_registration_and_assignment_ground_the_role_of_the_named_person(self):
+        for question, name, correct, wrong in (
+            ('김진성이 Mantis에 등록한 이슈 찾아줘', '김진성', 'registered_reporter', 'reporter'),
+            ('이윤동이 담당하는 VWAP 지표 추가 요청 이슈 찾아줘', '이윤동', 'owner', 'reporter'),
+            ('요청자 이윤동의 VWAP 이슈 찾아줘', '이윤동', 'reporter', 'owner'),
+        ):
+            with self.subTest(question=question):
+                planned = {'field': correct, 'operator': 'equals', 'value': name, 'evidence': question}
+                plan = proposal(operation='search', scope='target', filters=[planned],
+                                status={'mode': 'unspecified', 'values': [], 'evidence': ''})
+                self.assertIn(correct, [clause['field'] for clause in self.validate(question, plan)['filter_clauses']])
+                planned['field'] = wrong
+                with self.assertRaisesRegex(ValueError, f'인물 역할 불일치.*{correct}'):
+                    self.validate(question, plan)
+
+    def test_requester_and_assignee_are_validated_against_their_own_phrases(self):
+        question = '이윤동 과장이 요청했고 담당자는 우동헌인 이슈 찾아줘'
+        requester = {'field': 'reporter', 'operator': 'equals', 'value': '이윤동', 'evidence': '이윤동 과장이 요청했고'}
+        assignee = {'field': 'owner', 'operator': 'equals', 'value': '우동헌', 'evidence': '담당자는 우동헌인'}
+        plan = proposal(operation='search', scope='target', filters=[requester, assignee],
+                        status={'mode': 'unspecified', 'values': [], 'evidence': ''})
+        with patch('backend.intent.entities.load_known_people', return_value=(('우동헌',), ('이윤동',))):
+            validated = self.validate(question, plan)
+        self.assertEqual({(clause['field'], clause['value']) for clause in validated['filter_clauses']},
+                         {('reporter', '이윤동'), ('owner', '우동헌')})
+        plan['filters'] = [{**assignee, 'value': ['이윤동', '우동헌'], 'operator': 'in',
+                            'evidence': question}]
+        with self.assertRaisesRegex(ValueError, '인물 역할 불일치.*reporter'):
+            self.validate(question, plan)
+
+    def test_recipient_wording_does_not_imply_requester(self):
+        question = '이윤동 과장한테 전달한 이슈 찾아줘'
+        plan = proposal(operation='search', scope='target',
+                        status={'mode': 'unspecified', 'values': [], 'evidence': ''},
+                        filters=[{'field': 'owner', 'operator': 'equals', 'value': '이윤동',
+                                  'evidence': '이윤동 과장한테'}])
+        self.assertEqual(self.validate(question, plan)['resolved_constraints']['people']['role'], 'handler')
+
+    def test_same_person_can_be_both_requester_and_assignee(self):
+        question = '이윤동 과장이 요청하고 직접 담당한 이슈 찾아줘'
+        plan = proposal(operation='search', scope='target',
+                        status={'mode': 'unspecified', 'values': [], 'evidence': ''},
+                        filters=[{'field': field, 'operator': 'equals', 'value': '이윤동', 'evidence': question}
+                                 for field in ('reporter', 'owner')])
+        self.assertEqual({clause['field'] for clause in self.validate(question, plan)['filter_clauses']},
+                         {'reporter', 'owner'})
+
+    def test_model_reinterprets_vwap_request_after_role_rejection(self):
+        import json
+        module = self.planner()
+        question = '이윤동 과장이 VWAP 지표 추가 요청한 이슈 찾아줘'
+        plans = [
+            proposal(operation='search', scope='target', terms=['VWAP'],
+                     status={'mode': 'unspecified', 'values': [], 'evidence': ''},
+                     filters=[{'field': field, 'operator': 'equals', 'value': '이윤동',
+                               'evidence': '이윤동 과장이'}])
+            for field in ('owner', 'reporter')
+        ]
+        with patch.object(module, '_propose', side_effect=plans) as propose:
+            result = module.plan_question(question, {'id': 'test'}, 'key', {}, {}, model_first=True)
+        self.assertEqual(result['resolved_constraints']['people']['role'], 'reporter')
+        self.assertEqual(propose.call_count, 2)
+        messages = propose.call_args.args[2]['messages']
+        payload = json.loads(messages[1]['content'])
+        self.assertIn('이윤동', payload['mentioned_people'])
+        self.assertIn({'name': '이윤동', 'field': 'reporter', 'evidence': '이윤동 과장이 VWAP 지표 추가 요청한'},
+                      payload['person_role_hints'])
+        self.assertIn('인물 역할 불일치', messages[-1]['content'])
+
+    def test_agent_role_hints_require_a_named_person(self):
+        import json
+        from backend.services.agent.planning import PlanningSession, planning_messages
+        questions = (
+            ('이윤동 과장님이 VWAP 지표 추가 요청한 이슈 찾아줘', ['reporter']),
+            ('요청자 이름에 김진성이 들어가는 이슈 찾아줘', []),
+        )
+        for question, fields in questions:
+            with self.subTest(question=question):
+                messages = planning_messages(PlanningSession(question, {}, {}))
+                payload = json.loads(messages[1]['content'])
+                self.assertEqual([hint['field'] for hint in payload['person_role_hints']], fields)
+
     def test_contradictory_filters_and_ungrounded_names_rejected(self):
         p = proposal(filters=[
             {'field': 'title', 'operator': 'contains', 'value': '점검', 'evidence': '점검'},

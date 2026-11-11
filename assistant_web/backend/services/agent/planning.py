@@ -113,7 +113,7 @@ def planning_registry(session: PlanningSession) -> ToolRegistry:
 def planning_messages(session: PlanningSession) -> list[dict]:
     from backend.intent.unified import PROMPT
     from backend.intent.conversation_contract import CONTEXT_RULES
-    from backend.intent.entities import extract_people_constraints
+    from backend.intent.person_roles import person_planning_hints
     from backend.settings.catalogs import get_customer_aliases
     prompt = (PROMPT + '\n' + CONTEXT_RULES + '\n'
         '너는 실행 에이전트다. 위 JSON은 별도 실행 경로를 고르는 결정이 아니라 조건과 출력 목적의 호환 계약이다. '
@@ -156,5 +156,5 @@ def planning_messages(session: PlanningSession) -> list[dict]:
     return [{'role': 'system', 'content': prompt}, {'role': 'user', 'content': json.dumps(redact({
         'question': session.question, 'previous_confirmed_plan': previous,
         'conversation_context': session.conversation,
-        'mentioned_people': extract_people_constraints(session.question).get('names', []),
+        **person_planning_hints(session.question),
     }), ensure_ascii=False)}]

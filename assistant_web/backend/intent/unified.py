@@ -10,7 +10,7 @@ from backend.settings.catalogs import get_customer_aliases
 from backend import llm
 from backend.llm import post_model_chat, extract_model_content
 from backend.intent.json_payload import extract_json_object
-from backend.intent.entities import extract_people_constraints
+from backend.intent.person_roles import person_planning_hints
 from backend.intent.unified_validation import validate_plan
 from backend.intent.document_continuation import eligible, expand
 from backend.query_filters import SUPPORTED_FIELDS
@@ -37,6 +37,7 @@ followup: true/false. 이전 확정 계획을 좁히거나 변경/상태 선택/
 filters: [{"field":"필드","operator":"연산자","value":값,"evidence":"현재 질문에서 그대로 발췌한 조건 근거"}].
 field: customer,platform,owner,reporter,registered_reporter,effort_person,issue_id,screen_number,created_at,delivered_at,title,keyword,database; notion은 status,due_at,deployed_at도 가능.
 owner는 담당자. registered_reporter는 Mantis 등록자/등록 계정/요청자로 등록된 사람. reporter는 고객 메일 요청자/발신자까지 포함하는 요청자. 이 둘을 혼동하지 않는다. '석지원이 요청자로 등록'은 registered_reporter만 지정하고 owner를 추가하지 않는다.
+'고객사 과장이 지표 추가를 요청한'처럼 고객이 요청한 이슈는 reporter로 지정한다. person_role_hints의 이름과 역할 근거를 질문과 대조해 적용한다.
 operator: equals,not_equals,in,not_in,contains,not_contains,exists,not_exists,gte,lte,between. 빼고/제외/없는은 부정 연산자. 제목에 들어간 것을 빼면 title not_contains만 지정한다. 인물 '또는'은 하나의 in 배열, 서로 다른 필드는 AND.
 customer는 사전 키 또는 질문의 정확한 프로젝트명, platform은 hts/mts. Mantis 매체는 제목 추측이 아니라 매체구분 필드 기준. created_at은 등록일 {operator:between,value:[YYYY-MM-DD,YYYY-MM-DD]}. 상대 날짜는 오늘 기준 계산. 지난달/전월은 지난 달력월 1일~말일이다(오늘 2026-10-20이면 2026-09-01~2026-09-30). 최근 3개월은 이번 달 포함 3개 달력월 첫날~오늘이다. 지난주/이번주는 월요일~일요일이다. 후속 연도 변경은 이전 기간의 월/일을 유지하되 이전이 연간이면 새 연간 범위. 등록일과 개발/QC 완료일은 구분하며 지원하지 않는 조건은 clarify.
 기간 없는 '최근/최신 N건'은 정렬과 limit만 지정한다. 최근이라는 말만으로 최근 7일·이번 달·최근 3개월 등의 created_at 필터를 만들지 않는다. 고객사·상태·화면번호 조건만 있는 Mantis 목록은 scope=team이며, target은 명시한 인물·이슈 번호 조회에만 쓴다.
@@ -162,7 +163,7 @@ def plan_question(question, model, api_key, user, previous, *, ordinal_guide_too
                         'followup': '이전 번호·조건을 유지하면 filters에 재출력하지 않는다. '
                                     '현재 질문에 번호 없이 같은 기준이라고만 하면 기존 issue_id를 서버가 상속한다.',
                     },
-                    'mentioned_people': extract_people_constraints(question).get('names', [])}, ensure_ascii=False)}]}
+                    **person_planning_hints(question)}, ensure_ascii=False)}]}
     customer_reinterpretation = None
     for index, (candidate, key) in enumerate(candidates):
         candidate_payload = {**deepcopy(payload), 'model': candidate.get('model', candidate['id'])}
