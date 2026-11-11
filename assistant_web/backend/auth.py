@@ -7,11 +7,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
 import sqlite3 as sqlite3
+import threading
 import time
+from collections import OrderedDict
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -435,12 +438,39 @@ def create_firebase_session(id_token: str) -> Tuple[str, Dict[str, Any]]:
     return cookie, claims
 
 
+# 요청마다 Firebase 사용자 조회를 하지 않도록 성공한 검증만 잠시 재사용한다.
+# 승인·역할·비밀번호 상태는 매 요청 로컬 DB로 확인하므로, 늦어지는 것은 Firebase에서
+# 직접 한 세션 폐기·계정 비활성화·삭제의 반영뿐이며 최대 SESSION_CACHE_SECONDS다.
+# shortcut: 프로세스별 캐시라 워커가 여러 개면 워커마다 따로 조회한다.
+SESSION_CACHE_SECONDS = 60
+SESSION_CACHE_MAX_ENTRIES = 1024
+_session_cache: OrderedDict[str, Tuple[float, Dict[str, Any]]] = OrderedDict()
+_session_cache_lock = threading.Lock()
+
+
 def verify_firebase_session(session_cookie: str) -> Dict[str, Any]:
-    return _firebase_auth_module().verify_session_cookie(
+    key = hashlib.sha256(session_cookie.encode("utf-8")).hexdigest()
+    now = time.time()
+    with _session_cache_lock:
+        cached = _session_cache.get(key)
+        if cached and cached[0] > now:
+            _session_cache.move_to_end(key)
+            return dict(cached[1])
+        _session_cache.pop(key, None)
+    claims = _firebase_auth_module().verify_session_cookie(
         session_cookie,
         check_revoked=True,
         clock_skew_seconds=firebase_clock_skew_seconds(),
     )
+    # 쿠키 자체 만료 시각을 넘겨 재사용하지 않는다. exp가 없으면 캐시하지 않는다.
+    expires_at = min(now + SESSION_CACHE_SECONDS, float(claims.get("exp") or 0))
+    if expires_at > now:
+        with _session_cache_lock:
+            _session_cache[key] = (expires_at, dict(claims))
+            _session_cache.move_to_end(key)
+            while len(_session_cache) > SESSION_CACHE_MAX_ENTRIES:
+                _session_cache.popitem(last=False)
+    return claims
 
 
 def firebase_invite_user(email: str, display_name: str) -> Tuple[str, str, bool]:

@@ -397,5 +397,47 @@ class AuthApiTests(unittest.TestCase):
         self.assertIn("권한이나 승인을 변경할 수 없습니다", raised.exception.detail)
 
 
+class SessionVerificationCacheTests(unittest.TestCase):
+    def setUp(self):
+        auth_module._session_cache.clear()
+        self.addCleanup(auth_module._session_cache.clear)
+        self.firebase = Mock()
+        patcher = patch.object(auth_module, "_firebase_auth_module", return_value=self.firebase)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_successful_verification_is_reused_until_cache_window_ends(self):
+        self.firebase.verify_session_cookie.return_value = {"uid": "u1", "exp": time.time() + 3600}
+        auth_module.verify_firebase_session("cookie-a")
+        self.assertEqual(auth_module.verify_firebase_session("cookie-a")["uid"], "u1")
+        self.assertEqual(self.firebase.verify_session_cookie.call_count, 1)
+        with patch.object(auth_module.time, "time", return_value=time.time() + auth_module.SESSION_CACHE_SECONDS + 1):
+            auth_module.verify_firebase_session("cookie-a")
+        self.assertEqual(self.firebase.verify_session_cookie.call_count, 2)
+
+    def test_cache_never_outlives_the_cookie_expiry(self):
+        expires = time.time() + 5
+        self.firebase.verify_session_cookie.return_value = {"uid": "u1", "exp": expires}
+        auth_module.verify_firebase_session("cookie-a")
+        with patch.object(auth_module.time, "time", return_value=expires + 1):
+            auth_module.verify_firebase_session("cookie-a")
+        self.assertEqual(self.firebase.verify_session_cookie.call_count, 2)
+
+    def test_failures_are_not_cached(self):
+        self.firebase.verify_session_cookie.side_effect = [RuntimeError("down"), {"uid": "u1", "exp": time.time() + 3600}]
+        with self.assertRaises(RuntimeError):
+            auth_module.verify_firebase_session("cookie-a")
+        self.assertEqual(auth_module.verify_firebase_session("cookie-a")["uid"], "u1")
+
+    def test_cache_size_is_bounded(self):
+        self.firebase.verify_session_cookie.return_value = {"uid": "u1", "exp": time.time() + 3600}
+        with patch.object(auth_module, "SESSION_CACHE_MAX_ENTRIES", 2):
+            for cookie in ("a", "b", "c"):
+                auth_module.verify_firebase_session(cookie)
+        self.assertEqual(len(auth_module._session_cache), 2)
+        auth_module.verify_firebase_session("a")
+        self.assertEqual(self.firebase.verify_session_cookie.call_count, 4)
+
+
 if __name__ == "__main__":
     unittest.main()
