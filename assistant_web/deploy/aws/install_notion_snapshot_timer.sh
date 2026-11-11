@@ -14,6 +14,7 @@ Wants=network-online.target
 Type=oneshot
 User=$APP_USER
 WorkingDirectory=$APP_ROOT/current/assistant_web
+Environment=TZ=Asia/Seoul
 Environment=ASSISTANT_RUNTIME_DIR=$STATE_DIR
 ExecStart=$APP_ROOT/current/assistant_web/.venv/bin/python scripts/refresh_notion_snapshot.py --max-seconds 3600 --max-pages 1000
 TimeoutStartSec=4300

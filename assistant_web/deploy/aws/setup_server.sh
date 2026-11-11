@@ -305,6 +305,7 @@ Type=simple
 User=$APP_USER
 WorkingDirectory=$CURRENT_LINK/assistant_web
 Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Seoul
 Environment=APP_ENV=production
 Environment=APP_RELEASE_ID=$RELEASE_ID
 Environment=PUBLIC_BASE_URL=https://$SERVER_NAME
