@@ -541,7 +541,8 @@ async def authentication_middleware(request: Request, call_next):
 
 async def _authenticated_response(request: Request, call_next, claims: Dict[str, Any]):
     path = request.url.path
-    user = get_user_by_uid(str(claims.get("uid") or claims.get("sub") or ""))
+    # 쓰기 잠금 대기(최대 5초)가 이벤트 루프와 다른 사용자의 스트리밍을 멈추지 않게 한다.
+    user = await run_in_threadpool(get_user_by_uid, str(claims.get("uid") or claims.get("sub") or ""))
     claims_email = _normalize_email(claims.get("email", ""))
     if not user or not user["approved"] or (claims_email and claims_email != user["email"]):
         return JSONResponse({"detail": "승인되지 않은 사용자입니다."}, status_code=403)
