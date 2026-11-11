@@ -352,7 +352,8 @@ def approve_login_claims(claims: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
     user = get_user_by_uid(uid)
-    if not user and email in bootstrap_admin_emails():
+    # 공개 가입으로 같은 이메일 계정을 새로 만든 경우를 막기 위해 소유 확인된 이메일만 허용한다.
+    if not user and email in bootstrap_admin_emails() and claims.get("email_verified") is True:
         user = upsert_invited_user(
             uid,
             email,

@@ -72,6 +72,9 @@ FastAPI가 발급한 HttpOnly 세션 쿠키로 앱 API를 보호합니다. 공�
 2. Project settings에서 Web API Key와 Project ID를 확인합니다.
 3. Project settings → Service accounts에서 서버용 서비스 계정 JSON을 발급합니다.
 4. Authentication → Users에서 최초 관리자 계정을 하나 생성합니다.
+5. 해당 프로젝트의 서비스 계정으로 Firebase Admin SDK를 초기화한 뒤
+   `generate_email_verification_link(email)`로 확인 링크를 만듭니다.
+   관리자 이메일 주소로 링크를 보내고, 수신자가 링크를 열어 이메일 인증을 완료합니다.
 
 서비스 계정 JSON은 Git에 추가하지 않습니다. 로컬에서는 프로젝트 밖의 안전한 경로에
 저장하고 `FIREBASE_SERVICE_ACCOUNT_PATH`로 지정합니다. 배포 환경에서는 비밀 저장소에서
@@ -91,8 +94,11 @@ AUTH_SESSION_HOURS=8
 AUTH_COOKIE_SECURE=false
 ```
 
-서버를 재시작한 뒤 최초 관리자 계정으로 로그인합니다. 사이드바 사용자 영역의 `＋` 버튼에서
-팀원을 초대하면 Firebase 계정 생성·앱 승인과 함께 비밀번호 설정 링크가 발급됩니다.
+서버를 재시작한 뒤 이메일 인증을 마친 최초 관리자 계정으로 로그인합니다.
+앱에 아직 등록되지 않은 최초 관리자는 로그인 토큰의 `email_verified`가
+`true`일 때 관리자 권한을 받습니다.
+사이드바 사용자 영역의 `＋` 버튼에서 팀원을 초대하면 Firebase 계정 생성·앱 승인과
+함께 비밀번호 설정 링크가 발급됩니다.
 링크는 메신저 등 안전한 채널로 사용자에게 전달합니다. 이미 Firebase에 있는 이메일이면
 새 계정을 중복 생성하지 않고 앱 사용 승인과 비밀번호 재설정 링크만 발급합니다.
 

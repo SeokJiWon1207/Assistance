@@ -48,11 +48,24 @@ class AuthUserStoreTests(unittest.TestCase):
             },
         ):
             user = auth_module.approve_login_claims(
-                {"uid": "admin-uid", "email": "ADMIN@example.com", "name": "관리자"}
+                {"uid": "admin-uid", "email": "ADMIN@example.com", "name": "관리자", "email_verified": True}
             )
             self.assertIsNotNone(user)
             self.assertEqual(user["role"], "admin")
             self.assertEqual(user["invitedBy"], "bootstrap")
+
+    def test_bootstrap_admin_requires_verified_email(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            os.environ,
+            {
+                "AUTH_USERS_DB_PATH": str(Path(directory) / "users.sqlite3"),
+                "FIREBASE_BOOTSTRAP_ADMIN_EMAILS": "admin@example.com",
+            },
+        ):
+            for verified in (False, None):
+                claims = {"uid": "signup-uid", "email": "admin@example.com", "email_verified": verified}
+                self.assertIsNone(auth_module.approve_login_claims(claims))
+            self.assertEqual(auth_module.list_users(), [])
 
     def test_token_verification_allows_small_clock_skew(self):
         firebase_auth = Mock()
@@ -111,7 +124,7 @@ class AuthApiTests(unittest.TestCase):
         ), patch.object(
             auth_api,
             "create_firebase_session",
-            return_value=("signed-session-cookie", {"uid": "admin-uid", "email": "admin@example.com"}),
+            return_value=("signed-session-cookie", {"uid": "admin-uid", "email": "admin@example.com", "email_verified": True}),
         ), patch.object(
             auth_module,
             "verify_firebase_session",
