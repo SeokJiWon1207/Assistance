@@ -1,3 +1,13 @@
+// innerHTML 텍스트와 속성값 양쪽에 쓰도록 따옴표까지 이스케이프한다.
+export function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 // 사용자 화면의 시각은 로컬 시간대, 한국어, 분 단위로 표시한다.
 export function formatUiDateTime(value, { compact = false, now = new Date() } = {}) {
   if (!value) return "";

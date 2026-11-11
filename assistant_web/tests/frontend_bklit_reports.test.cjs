@@ -37,3 +37,19 @@ test('admin distribution retains zero counts, duplicates and complete labels wit
   const spec=JSON.parse(html.match(/data-bklit-spec="([^"]+)"/)[1].replaceAll('&quot;','"').replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&'));
   assert.equal(new Set(spec.rows.map(r=>r.name)).size,3);assert.equal(spec.rows[0].fullLabel,'긴 모델명 <img>');
 });
+test('bar chart fallback keeps quoted labels inside their data attributes',async()=>{
+  // 기존 SVG는 data-row-label 속성에 원문 라벨을 담으므로 따옴표가 속성을 끊으면 안 된다.
+  const element=()=>({className:'',innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[],get outerHTML(){return `<div>${this.innerHTML}</div>`}});
+  const context=vm.createContext({document:{createElement:element}});
+  const real=file=>new vm.SourceTextModule(fs.readFileSync(path.join(moduleDir,file),'utf8'),{context});
+  const fake=values=>new vm.SyntheticModule(Object.keys(values),function(){for(const [k,v] of Object.entries(values))this.setExport(k,v);},{context});
+  const deps={'ui_format.js':real('ui_format.js'),'chart_models.js':real('chart_models.js'),
+    'bklit_charts.js':fake({chartHost:(spec,fallback)=>fallback}),
+    'motion.js':fake({animate(){},stagger(){},prefersReducedMotion:()=>true,onFirstVisible(){},countUp(){}})};
+  for(const mod of [deps['ui_format.js'],deps['chart_models.js']]){await mod.link(()=>{});}
+  const charts=real('charts.js');await charts.link(spec=>deps[spec.replace('./','').split('?')[0]]);await charts.evaluate();
+  const label='a" onmouseover="alert(1)';
+  const html=charts.namespace.renderBarChartSVG([{label,amount:1}]).innerHTML;
+  assert.ok(html.includes('data-row-label="a&quot; onmouseover=&quot;alert(1)"'));
+  assert.ok(!html.includes('" onmouseover="'));
+});

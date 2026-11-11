@@ -1,4 +1,4 @@
-import { customerName, customerLabelText, customerAnswerText } from "./ui_format.js?v=20260911-6";
+import { customerName, customerLabelText, customerAnswerText, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { renderQueryBasis } from "./query_basis.js?v=20261007-1";
 import { state } from "./runtime.js?v=20260911-6";
@@ -802,15 +802,6 @@ function renderVerificationPanel(report, auditId = "") {
   body.appendChild(footer);
   details.appendChild(body);
   return details;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 export {

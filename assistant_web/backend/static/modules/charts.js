@@ -1,12 +1,7 @@
 import { chartHost } from "./bklit_charts.js?v=20261026-1";
 import { metricChartSpec, formatChartValue } from "./chart_models.js?v=20261026-1";
 import { animate, stagger, prefersReducedMotion, onFirstVisible, countUp } from "./motion.js?v=20260911-6";
-
-function escapeHtml(value) {
-  const span = document.createElement("span");
-  span.textContent = String(value ?? "");
-  return span.innerHTML;
-}
+import { escapeHtml } from "./ui_format.js?v=20260911-6";
 
 export const CHART_COLORS = [
   "var(--chart-1)",
