@@ -94,8 +94,6 @@ def validate_model_endpoint_security() -> None:
             expires_at = date.fromisoformat(expires_raw)
         except ValueError as exc:
             raise RuntimeError("HTTP 모델 allowlist 만료일은 YYYY-MM-DD 형식이어야 합니다.") from exc
-        if expires_at < date.today():
-            raise RuntimeError("HTTP 모델 allowlist가 만료되었습니다.")
         days_remaining = (expires_at - date.today()).days
         try:
             warning_days = max(
@@ -126,6 +124,9 @@ def validate_model_endpoint_security() -> None:
             raise RuntimeError(
                 f"원격 HTTP 모델 endpoint는 허용되지 않습니다: {model.get('id')} ({origin})"
             )
+        # 만료는 예외가 실제로 필요한 모델이 있을 때만 막는다. 남은 설정만으로 서버를 세우지 않는다.
+        if expires_at is not None and expires_at < date.today():
+            raise RuntimeError("HTTP 모델 allowlist가 만료되었습니다.")
         LOGGER.warning(
             "임시 HTTP 모델 예외 사용: model=%s origin=%s expires_at=%s",
             model.get("id"),

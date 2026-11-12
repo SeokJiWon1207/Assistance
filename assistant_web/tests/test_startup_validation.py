@@ -97,6 +97,18 @@ class StartupValidationTests(unittest.TestCase):
                 startup_validation.validate_model_endpoint_security()
 
     @patch.object(startup_validation, "get_model_registry")
+    def test_expired_allowlist_does_not_block_when_no_http_model_needs_it(self, registry):
+        registry.return_value = [
+            {"id": "company", "endpoint": "http://model.example.com:13025/v1/chat", "enabled": False},
+            {"id": "openai", "endpoint": "https://api.openai.com/v1/chat/completions", "enabled": True},
+        ]
+        with self.production_env(
+            MODEL_ENDPOINT_INSECURE_ALLOWLIST="http://model.example.com:13025",
+            MODEL_ENDPOINT_INSECURE_ALLOWLIST_EXPIRES_AT=(date.today() - timedelta(days=1)).isoformat(),
+        ):
+            startup_validation.validate_model_endpoint_security()
+
+    @patch.object(startup_validation, "get_model_registry")
     def test_transport_status_exposes_d30_warning_without_endpoint(self, registry):
         registry.return_value = [
             {"id": "company", "endpoint": "http://model.example.com:13025/v1/chat", "enabled": True}

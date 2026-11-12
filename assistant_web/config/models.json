@@ -41,7 +41,7 @@
     "supportsTools": true,
     "supportsParallelToolCalls": true,
     "expiresAt": "2026-12-31",
-    "enabled": true
+    "enabled": false
   },
   {
     "id": "qwen3.5-9b-local",
