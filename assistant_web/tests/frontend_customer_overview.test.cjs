@@ -189,3 +189,20 @@ test('empty customer search can reset query and filters without fetching or chan
   assert.equal(cardOrder(h.view.innerHTML).length, 4);
   assert.equal(h.calls.length, 1);
 });
+
+test('고객사 지도는 선택한 기준으로 진하기를 정하고 기준 전환은 다시 조회하지 않는다', async () => {
+  const h = await harness(() => ({ ok: true, payload: payload() }));
+  await h.api.loadCustomerOverview();
+  let html = h.view.innerHTML;
+  assert.match(html, /class="customer-overview-headline">4곳 중 3곳에 미종료가 있어요\. 가장 많은 곳은 미래에셋증권\(7건\)이에요\. 지난주 신규가 급증한 곳은 1곳이에요\./);
+  assert.match(html, /--tile-strength:70%" data-customer-open="미래에셋증권_project"/);
+  assert.match(html, /<div class="customer-tile" style="--tile-strength:0%"/);
+  assert.match(html, /KB&lt;증권&gt;/);
+  h.view.handlers.click({ target: h.target('[data-customer-metric]', { customerMetric: 'overdue' }) });
+  html = h.view.innerHTML;
+  assert.match(html, /data-customer-metric="overdue" aria-pressed="true"/);
+  assert.match(html, /--tile-strength:70%" data-customer-open="KB&lt;증권&gt;_project"/);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.api.customerHeadline([row('A')], true), '1곳 모두 미종료 이슈가 없어요.');
+  assert.equal(h.api.customerHeadline([row('A', { open: 1 })], false), '');
+});

@@ -16,17 +16,19 @@
 .screen-filter .custom-select { width: auto; }
 .screen-filter .custom-select-trigger { min-height: 36px; height: 36px; min-width: 100px; padding: 0 12px; font-size: 13px; }
 
-.screen-spike {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 12px 20px;
-}
-.screen-spike p { flex: 1 1 320px; margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; }
-.screen-spike + .screen-spike { border-top: 1px solid var(--line); }
-/* 글자만 누르는 링크는 파란 13px(카드의 '모두 보기 ›'와 같은 크기), 행 전체가 눌리는 목록은 검은 글자 + 마우스 올림 바탕을 쓴다. */
-.screen-spike .customer-issue-link { font-size: 13px; white-space: nowrap; }
+/* 지난주 급증 화면은 누르면 그 화면 상세로 가는 카드다. */
+.screen-spike { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.screen-spike:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+.screen-spike:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.screen-spike-icon { display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: var(--radius-button); background: color-mix(in srgb, var(--warning) 14%, var(--surface)); color: var(--warning-strong); }
+.screen-spike-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.screen-spike-text b { font-size: 14px; }
+.screen-spike-text small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.screen-spikes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.screen-headline { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.6; }
+.screen-sparkline { display: block; width: 100%; height: auto; margin: 4px 0 12px; }
+.screen-sparkline polygon { fill: color-mix(in srgb, var(--blue) 12%, transparent); }
+.screen-sparkline polyline { fill: none; stroke: var(--blue); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .screen-spike-badge {
   padding: 2px 8px;
   border-radius: var(--radius-badge);
@@ -142,8 +144,6 @@
   .screen-controls .custom-select { flex: 1 1 0; min-width: 0; }
   .screen-controls .custom-select-trigger { width: 100%; min-width: 0; padding: 0 8px; }
   .screen-controls-scope { width: 100%; justify-content: space-between; }
-  .screen-spike { padding: 12px 16px; gap: 6px 8px; }
-  .screen-spike p { flex-basis: 100%; }
   .screen-heatmap > header { padding: 16px 16px 12px; }
   .screen-heatmap > .customer-detail-section-body { padding: 0 16px 16px; }
   .screen-detail > .customer-detail-section-body { padding: 16px; }

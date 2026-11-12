@@ -797,3 +797,33 @@ test('kanban keeps developed work open, separates recent closed work and preserv
   const filtered=h.api.renderPersonalOverview(data);
   assert.doesNotMatch(filtered,/data-workspace-row-issue="4"/);
 });
+
+test('날짜별 보드는 목표일 칩과 같은 기준으로 칸을 나누고 종료 항목을 넣지 않는다', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const today = new Date(2026, 10, 12);
+  const issues = [
+    { id: 1, dueDate: '2026-11-10' }, { id: 2, dueDate: '2026-11-12' }, { id: 3, dueDate: '2026-11-14' },
+    { id: 4, dueDate: '2026-11-17' }, { id: 5 }, { id: 6, dueDate: '2026-11-20', overdue: true }, { id: 2, dueDate: '2026-11-12' },
+  ];
+  const lanes = h.home.weekGroups(issues, today);
+  const ids = (key) => Array.from(lanes.find((lane) => lane.key === key).items, (issue) => issue.id);
+  assert.equal(lanes.length, 8);
+  assert.deepEqual(ids('overdue'), [1, 6]);
+  assert.deepEqual(ids('day-0'), [2]);
+  assert.deepEqual(ids('day-2'), [3]);
+  assert.deepEqual(ids('later'), [4]);
+  assert.deepEqual(ids('none'), [5]);
+  assert.equal(lanes[1].title, '오늘');
+  assert.equal(lanes[2].title, '금 11/13');
+  assert.equal(h.home.dueHeadline(issues, true, today), '기한 지난 일 2건, 7일 안에 마감할 일 4건이 있어요.');
+  assert.equal(h.home.dueHeadline(issues, false, today), '');
+  assert.equal(h.home.dueHeadline([{ id: 1, dueDate: '2026-11-13' }], true, today), '7일 안에 마감할 일 1건이 있어요. 기한 지난 일은 없어요.');
+  assert.equal(Array.from(lanes.filter((lane) => lane.weekend), (lane) => lane.title).join(), '토 11/14,일 11/15');
+  h.state.workspaceBoardView = 'week';
+  const html = h.api.renderPersonalOverview({ user: { mantisUsername: 'user-a' }, summary: {open: 1}, mantis: {search_complete: true, issues: [{id: 1, title: '날짜 업무'}], recentClosed: [{id: 9, title: '종료 업무', status: 'closed'}]} });
+  assert.match(html, /data-week-lane="none"[^]*날짜 업무/);
+  const board = html.slice(html.indexOf('workspace-kanban is-week'), html.indexOf('날짜별 보기는 미종료 업무만'));
+  assert.match(board, /날짜 업무/);
+  assert.doesNotMatch(board, /종료 업무/);
+  assert.match(html, /data-workspace-board-view="week" aria-pressed="true"/);
+});

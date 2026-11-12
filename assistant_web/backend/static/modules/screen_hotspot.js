@@ -104,6 +104,28 @@ function renderMetrics(data) {
     <article class="workspace-kpi"><span class="workspace-kpi-label">${label}</span><div class="workspace-kpi-value"><strong>${value}</strong></div><small>${helper}</small></article>`).join("")}</section>`;
 }
 
+// 화면번호 위 한 줄 요약. 일부 조회에서는 순위·급증을 판단하지 않아 만들지 않는다.
+// 0000처럼 화면을 특정하지 않는 번호는 "가장 많은 화면"으로 고르지 않는다.
+function screenHeadline(data, complete) {
+  if (!complete) return "";
+  const summary = data.summary || {};
+  const known = Math.max(0, Number(summary.issueCount || 0) - Number(summary.unknownScreenCount || 0));
+  if (!known) return "";
+  const top = (data.rows || []).filter((row) => !/^0+$/.test(String(row.screen).trim())).sort((a, b) => b.total - a.total)[0];
+  const spikes = (data.spikes || []).length;
+  return `최근 8주 화면번호가 기록된 이슈는 ${formatNumber(known)}건이에요.${top ? ` 가장 많은 화면은 ${top.screen}(${formatNumber(top.total)}건)이에요.` : ""}${spikes ? ` 지난주 신규가 급증한 화면은 ${formatNumber(spikes)}개예요.` : ""}`;
+}
+
+// 선택한 화면의 8주 추이. 값은 히트맵 행과 같고, 수치는 히트맵에서 읽는다.
+function weeklySparkline(row, weeks) {
+  const values = row.weeks || [];
+  if (values.length < 2) return "";
+  const max = Math.max(1, ...values);
+  const points = values.map((value, index) => `${(index / (values.length - 1) * 296 + 2).toFixed(1)},${(62 - value / max * 54).toFixed(1)}`);
+  const label = values.map((value, index) => `${weeks[index]?.label || index + 1} ${formatNumber(value)}건`).join(", ");
+  return `<svg class="screen-sparkline" viewBox="0 0 300 66" role="img" aria-label="${escapeHtml(`최근 8주 주별 신규: ${label}`)}"><polygon points="${points.join(" ")} 298,64 2,64"></polygon><polyline points="${points.join(" ")}"></polyline></svg>`;
+}
+
 function renderSpikes(data) {
   if (!isComplete()) {
     return '<p class="customer-detail-note">일부 데이터만 확인해 화면번호 급증 여부는 판단하지 않았어요. 건수는 확인한 범위의 최소값이에요.</p>';
@@ -115,13 +137,13 @@ function renderSpikes(data) {
       ? `앞선 4주에는 없다가 지난주 ${formatNumber(spike.count)}건이 등록됐어요.`
       : `앞선 4주 평균 ${formatNumber(spike.baselineAverage, 1)}건에서 지난주 ${formatNumber(spike.count)}건으로 늘었어요.`;
     return `
-      <div class="screen-spike">
-        <span class="screen-spike-badge">지난주 급증</span>
-        <p><b>화면 ${escapeHtml(spike.screen)}</b> · ${escapeHtml(change)}</p>
-        <button type="button" class="customer-issue-link" data-screen-select="${escapeHtml(spike.screen)}">${escapeHtml(spike.screen)} 자세히 보기 ›</button>
-      </div>`;
+      <button type="button" class="screen-spike" data-screen-select="${escapeHtml(spike.screen)}" aria-label="화면 ${escapeHtml(spike.screen)} 지난주 급증, ${escapeHtml(change)} 자세히 보기">
+        <span class="screen-spike-icon" aria-hidden="true">${icon("arrow-up", 18)}</span>
+        <span class="screen-spike-text"><b>화면 ${escapeHtml(spike.screen)}</b><small>${escapeHtml(change)}</small></span>
+        <span class="screen-spike-badge">지난주 ${formatNumber(spike.count)}건</span>
+      </button>`;
   }).join("");
-  return `<section class="workspace-section screen-spikes" aria-label="지난주 급증 화면">${rows}</section>`;
+  return `<section class="screen-spikes" aria-label="지난주 급증 화면">${rows}</section>`;
 }
 
 function renderHeatmap(data) {
@@ -187,7 +209,9 @@ function renderDetail() {
         <div class="screen-detail-heading">
           <span>선택한 화면</span>
           <h3 id="screenDetailTitle" tabindex="-1">${escapeHtml(row.screen)}</h3>
+          ${isComplete() && (hotspotState.data?.spikes || []).some((spike) => spike.screen === row.screen) ? '<p><span class="screen-spike-badge">지난주 급증</span></p>' : ""}
         </div>
+        ${weeklySparkline(row, hotspotState.data?.weeks || [])}
         <dl class="screen-detail-metrics"><div><dt>8주 신규</dt><dd>${countLabel(row.total)}</dd></div><div><dt>미종료</dt><dd>${countLabel(row.openCount)}</dd></div><div><dt>고객사</dt><dd>${countLabel(row.customers.length, "곳")}</dd></div></dl>
         <section class="screen-detail-section"><h4>최근 등록 이슈</h4>
           ${issues ? `<ol class="screen-issue-list">${issues}</ol>` : '<p class="customer-detail-empty">확인한 최근 등록 이슈가 없어요.</p>'}</section>
@@ -211,8 +235,10 @@ function renderBody() {
     }
     return '<div class="workspace-loading">화면번호별 이슈를 불러오는 중이에요.</div>';
   }
+  const headline = screenHeadline(data, isComplete());
   return `
     ${hotspotState.error ? `<p class="customer-detail-error" role="alert">${escapeHtml(hotspotState.error)}</p>` : ""}
+    ${headline ? `<p class="screen-headline">${escapeHtml(headline)}</p>` : ""}
     ${renderMetrics(data)}
     ${renderSpikes(data)}
     <div class="screen-hotspot-layout">${renderHeatmap(data)}${renderDetail()}</div>`;
@@ -359,4 +385,4 @@ function initScreenHotspot() {
   });
 }
 
-export { initScreenHotspot, loadScreenHotspot };
+export { initScreenHotspot, loadScreenHotspot, screenHeadline };

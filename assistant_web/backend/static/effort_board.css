@@ -77,3 +77,11 @@
   .effort-column small { white-space: normal; text-align: center; line-height: 1.4; }
   .effort-column-track { height: 108px; }
 }
+
+/* 공수·처리시간 위 한 줄 요약 */
+.effort-headline { margin: 0; color: var(--text); font-size: 15px; font-weight: 600; line-height: 1.6; }
+/* 고객사별 처리일: 팀 중앙값 세로선. 선보다 긴 막대는 주의 색으로 칠한다. */
+.customer-ranked-track.has-reference { position: relative; overflow: visible; }
+.customer-ranked-track.has-reference i.is-over { background: var(--warning); }
+.effort-reference { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); }
+.customer-ranked-track.has-reference i.is-clipped { border-radius: 4px 0 0 4px; background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgb(255 255 255 / 45%) 5px 8px); background-size: 24px 100%; background-position: right; background-repeat: no-repeat; }

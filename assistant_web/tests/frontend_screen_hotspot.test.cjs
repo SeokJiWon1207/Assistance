@@ -213,3 +213,14 @@ test('partial empty screen data is not presented as confirmed absence', async ()
   assert.match(h.subtitle.textContent, /화면번호 없음 3건 이상 제외/);
   assert.doesNotMatch(h.view.innerHTML, /screen-detail-heading/);
 });
+
+test('화면번호 요약은 확정 데이터에서만 만들고 0000은 가장 많은 화면으로 고르지 않는다', async () => {
+  const h = await harness(() => ({ ok: true, payload: hotspotPayload({ rows: [row('0000', [5, 5, 5, 5, 5, 5, 5, 5]), row('7012', [1, 1, 2, 1, 1, 1, 7, 0])] }) }));
+  await h.api.loadScreenHotspot();
+  const html = h.view.innerHTML;
+  assert.match(html, /class="screen-headline">최근 8주 화면번호가 기록된 이슈는 17건이에요\. 가장 많은 화면은 7012\(14건\)이에요\. 지난주 신규가 급증한 화면은 2개예요\./);
+  assert.match(html, /<button type="button" class="screen-spike" data-screen-select="7012"/);
+  assert.match(html, /지난주 7건/);
+  assert.match(html, /class="screen-sparkline"[^>]*aria-label="최근 8주 주별 신규: w0 5건/);
+  assert.equal(h.api.screenHeadline({ summary: { issueCount: 3, unknownScreenCount: 0 }, rows: [] }, false), '');
+});

@@ -7,7 +7,7 @@ import { formatUiDateTime, formatAxisDate, formatPeriodText, customerName, custo
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 import { workspaceKpis, workspaceCharts, weeklyKpis, weeklyTrendCard, teamBriefKpis } from "./workspace_insights.js?v=20261105-1";
-import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml, kanbanBoard, kanbanGroups } from "./workspace_home.js?v=20261106-1";
+import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml, kanbanBoard, kanbanGroups, weekBoard, weekGroups, dueHeadline } from "./workspace_home.js?v=20261112-2";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -721,6 +721,7 @@ function workspaceIssueContext() {
       : { items: state.myWorkspace?.weeklyBrief?.highlights || [], label: "이번 주 확인할 항목" };
   }
   let items = filterByDue([...(state.myWorkspace?.mantis?.issues || [])], state.workspaceDueFilter);
+  if (state.workspaceBoardView === "week") return { items: weekGroups(items).flatMap(lane => lane.items), label: "내 업무 보드" };
   if (state.workspaceSort === "oldest") items.sort((a, b) => Number(b.ageDays || 0) - Number(a.ageDays || 0));
   else if (state.workspaceSort === "newest") items.sort((a, b) => Number(a.ageDays || 0) - Number(b.ageDays || 0));
   else if (state.workspaceSort === "due") items = sortByDue(items);
@@ -770,18 +771,24 @@ function renderPersonalOverview(data) {
     : !complete
       ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>`
       : "";
+  const weekView = state.workspaceBoardView === "week";
+  const headline = dueHeadline(everyIssue, complete);
   return `<div class="workspace-overview is-insights is-kanban"><div class="workspace-main">
     ${workspaceKpis(data, complete)}${notice}
     <section class="workspace-board-section">
       <header class="workspace-issue-header">
-        <div><h3>내 업무 보드</h3><p>상태별로 다음 할 일을 확인하세요. 카드를 누르면 상세가 열려요.</p></div>
+        <div><h3>내 업무 보드</h3><p>${weekView ? "목표일 기준으로 날짜별로 놓았어요." : "상태별로 다음 할 일을 확인하세요."} 카드를 누르면 상세가 열려요.</p></div>
         <div class="workspace-list-controls"><em class="workspace-visible-count">미종료 <strong>${issues.length}${complete ? "" : "+"}</strong>건${filtered ? ` · 전체 ${everyIssue.length}건 중` : ""}</em>
-        <select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="due" ${state.workspaceSort === "due" ? "selected" : ""}>목표일 임박순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select></div>
+        <div class="analytics-segments workspace-board-views" role="group" aria-label="보드 보기"><button type="button" data-workspace-board-view="status" aria-pressed="${!weekView}">상태별</button><button type="button" data-workspace-board-view="week" aria-pressed="${weekView}">날짜별</button></div>
+        ${weekView ? "" : `<select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="due" ${state.workspaceSort === "due" ? "selected" : ""}>목표일 임박순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select>`}</div>
       </header>
+      ${headline ? `<p class="workspace-board-headline">${headline}</p>` : ""}
       ${everyIssue.length ? dueFilterChips(everyIssue, state.workspaceDueFilter) : ""}
       ${filtered && !issues.length ? `<p class="analytics-empty" role="status">이 조건에 맞는 미종료 이슈가 없어요.</p>` : ""}
-      ${kanbanBoard([...issues, ...recentClosed], { renderIssue:issueWorkspaceRow, statusLabel:workspaceStatusLabel, complete, closedTotal:data.mantis?.recentClosedTotal || 0, showClosed:!filtered })}
-      <p class="analytics-footnote">해결·종료 열은 최근 30일에 수정된 종료 항목이에요. 실제 완료일 기준의 실적은 아니에요.</p>
+      ${weekView
+        ? `${weekBoard(issues, { renderIssue:issueWorkspaceRow, complete })}<p class="analytics-footnote">날짜별 보기는 미종료 업무만 보여 줘요. 목표일은 Mantis에서 바꿀 수 있어요.</p>`
+        : `${kanbanBoard([...issues, ...recentClosed], { renderIssue:issueWorkspaceRow, statusLabel:workspaceStatusLabel, complete, closedTotal:data.mantis?.recentClosedTotal || 0, showClosed:!filtered })}
+      <p class="analytics-footnote">해결·종료 열은 최근 30일에 수정된 종료 항목이에요. 실제 완료일 기준의 실적은 아니에요.</p>`}
     </section>
     <details class="workspace-board-activity"><summary>최근 활동과 업무 분포</summary>${overviewActivityCard(data)}${workspaceCharts(data, complete, {statusLabel:workspaceStatusLabel, customerLabel:issue=>customerName(issue), customerMark})}</details>
     </div></div>`;

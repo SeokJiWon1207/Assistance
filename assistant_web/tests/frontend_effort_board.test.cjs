@@ -199,3 +199,17 @@ test('partial empty aging and effort results retain uncertainty', async () => {
   assert.match(h.view.innerHTML, /확인한 범위에는 공수 기록이 없어요/);
   assert.match(h.view.innerHTML, /전체 결과는 미확정/);
 });
+
+test('공수 요약은 확정 데이터에서만 만들고 고객사 처리일에 팀 중앙값 기준선을 긋는다', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload() }));
+  await h.api.loadEffortBoard();
+  const html = h.view.innerHTML;
+  assert.match(html, /class="effort-headline">처리일 중앙값은 3\.5일이에요\. 직전 기간보다 0\.9일 늘었어요\. 30일 넘게 걸린 이슈는 4건이에요\./);
+  assert.match(html, /세로선은 팀 중앙값 3\.5일/);
+  assert.match(html, /<i class="is-over" style="width:100%"><\/i><b class="effort-reference" style="left:56%"><\/b>/);
+  assert.equal(h.api.effortHeadline(boardPayload(), false), '');
+  const long = await harness(() => ({ ok: true, payload: boardPayload({ customers: [{ customer: 'a', name: 'A', closedCount: 4, medianDays: 202 }, { customer: 'b', name: 'B', closedCount: 4, medianDays: 7 }] }) }));
+  await long.api.loadEffortBoard();
+  assert.match(long.view.innerHTML, /<i class="is-over is-clipped" style="width:100%"><\/i><b class="effort-reference" style="left:33%"><\/b>/);
+  assert.match(long.view.innerHTML, /<i class="is-over" style="width:67%"><\/i>/);
+});

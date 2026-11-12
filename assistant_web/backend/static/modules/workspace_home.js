@@ -142,3 +142,54 @@ export function kanbanBoard(issues, {renderIssue, statusLabel, complete, closedT
       ${lane.key==='done'&&showClosed&&closedTotal>lane.items.length?`<p class="kanban-lane-note">${closedTotal}건 중 최근 ${lane.items.length}건 표시</p>`:''}
     </section>`).join('')}</div>`;
 }
+
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const WEEK_DAY_COUNT = 5;
+
+// 날짜별 보드의 칸: 기한 지남 · 오늘부터 5일 · 그 뒤 · 목표일 없음. 종료 항목은 넣지 않는다.
+// 업무가 없는 주말 칸은 보드에서 그리지 않는다(weekend).
+// 지난 판단은 목표일 칩(dueBucket)과 같은 기준을 쓴다.
+export function weekGroups(issues, today = new Date()) {
+  const start = startOfDay(today);
+  const days = Array.from({ length: WEEK_DAY_COUNT }, (_, index) => {
+    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index);
+    const label = `${WEEKDAYS[date.getDay()]} ${date.getMonth() + 1}/${date.getDate()}`;
+    return { key: `day-${index}`, kind: index ? "day" : "today", title: index ? label : "오늘", note: index ? "" : label, weekend: Boolean(index) && [0, 6].includes(date.getDay()), items: [] };
+  });
+  const lanes = [
+    { key: "overdue", kind: "overdue", title: "기한 지남", note: "목표일이 지났어요", items: [] },
+    ...days,
+    { key: "later", kind: "later", title: "그 뒤", note: `${WEEK_DAY_COUNT}일 뒤부터`, items: [] },
+    { key: "none", kind: "none", title: "목표일 없음", note: "날짜를 정해 주세요", items: [] },
+  ];
+  const lane = (key) => lanes.find((item) => item.key === key);
+  const seen = new Set();
+  for (const issue of sortByDue(issues)) {
+    if (seen.has(String(issue.id))) continue;
+    seen.add(String(issue.id));
+    const bucket = dueBucket(issue, today);
+    if (bucket === "overdue" || bucket === "none") { lane(bucket).items.push(issue); continue; }
+    const offset = Math.round((localDay(issue.dueDate) - start) / 86400000);
+    (offset < WEEK_DAY_COUNT ? days[offset] : lane("later")).items.push(issue);
+  }
+  return lanes;
+}
+
+export function weekBoard(issues, { renderIssue, complete, today = new Date() }) {
+  return `<div class="workspace-kanban is-week" aria-label="날짜별 내 업무 보드">${weekGroups(issues, today).filter((lane) => !lane.weekend || lane.items.length).map((lane) => `
+    <section class="workspace-kanban-lane" data-week-lane="${lane.kind}" aria-label="${lane.title}">
+      <header><h4>${lane.title}</h4><span>${lane.items.length}${complete ? "" : "+"}</span></header>
+      <p class="kanban-lane-note">${lane.note || "&nbsp;"}</p>
+      <div class="kanban-lane-items">${lane.items.length ? lane.items.map(renderIssue).join("") : `<div class="kanban-empty">${complete ? "마감할 업무가 없어요." : "확인된 항목이 없어요."}</div>`}</div>
+    </section>`).join("")}</div>`;
+}
+
+// 보드 위 한 줄 요약. 일부만 조회했을 때는 건수가 실제보다 적을 수 있어 만들지 않는다.
+export function dueHeadline(issues, complete, today = new Date()) {
+  if (!complete || !issues.length) return "";
+  const counts = dueFilterCounts(issues, today);
+  if (!counts.overdue && !counts.week) return "기한이 지났거나 7일 안에 마감할 일이 없어요.";
+  if (!counts.overdue) return `7일 안에 마감할 일 ${counts.week}건이 있어요. 기한 지난 일은 없어요.`;
+  if (!counts.week) return `기한 지난 일 ${counts.overdue}건이 있어요. 7일 안에 마감할 일은 없어요.`;
+  return `기한 지난 일 ${counts.overdue}건, 7일 안에 마감할 일 ${counts.week}건이 있어요.`;
+}

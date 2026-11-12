@@ -57,7 +57,7 @@ async function harness(role, stored, fetcher, { adminCenter = false } = {}) {
       apiFetch: async (url) => { calls.push(url); return fetcher ? fetcher(url) : { ok: false }; } },
     './api.js': { responseJson: async (response) => response.payload || ({ detail: '연결 오류' }) },
     './icons.js': { icon: (name) => `<svg data-icon="${name}"></svg>` },
-    './motion.js': { revealOnScroll: (container, selector) => { reveals.push({ container, selector }); return () => {}; } },
+    './motion.js': { revealOnScroll: (container, selector) => { reveals.push({ container, selector }); return () => {}; }, captureLayout: () => new Map(), animateLayoutChange: () => {} },
     './sidebar.js': {
       closeMobileSidebar: () => { context.document.body.sidebarOpen = false; },
       closeAccountMenu: () => { accountMenuCloses.push(true); },
@@ -575,9 +575,9 @@ test('operations overview omits the decision briefing and keeps its cards throug
   // 30일 운영 판단(브리핑)은 그리지 않는다. 서버의 decisionSummary는 다른 화면을 위해 그대로 둔다.
   assert.doesNotMatch(html, /dashboard-decision|live 업무 요약|확인할 근거/);
   const specs = distributionSpecs(html);
-  const compare = specs.find(spec => spec.kind === 'compare-area');
-  assert.deepEqual(compare.points, payload.intakeTrend);
-  assert.deepEqual(compare.previousPoints, payload.previousIntakeTrend);
+  // 비교 분석의 누적 추이 그래프는 뺐다. 일별 신규는 전체 현황의 업무 흐름 그래프가 그린다.
+  assert.equal(specs.find(spec => spec.kind === 'compare-area'), undefined);
+  assert.deepEqual(specs.find(spec => spec.kind === 'activity').points, payload.intakeTrend);
   assert.match(html, /현재 상태 분포/);
   assert.match(html, /data-dashboard-metric="overdue" aria-pressed="false"/);
   assert.match(html, /최근 등록 미종료/);
@@ -710,7 +710,7 @@ test('charts count an overdue aging issue once and intake shows the new issue sp
   await h.api.loadDashboard();
   const html = h.els.dashboardBody.innerHTML;
   assert.match(html, /현재 종료 19건 · 현재 미종료 9건/);
-  assert.match(html, /25<small>직전 기간 신규/);
+  assert.match(html, /↑ 12% · 직전 기간 대비/);
   assert.match(html, /workspace-kpi-delta is-up" title="직전 기간보다 12% 많음"/);
   // 고객사 A의 #1은 지연이면서 40일이 지났지만 지연 구간에만 한 번 들어간다.
   assert.match(html, /aria-label="고객사 A 미종료 2건, 지연 1건, 장기 0건, 그 외 1건/);
@@ -825,7 +825,7 @@ test('customer labels never change dashboard filter identities or merge equal di
   assert.match(html, /data-dashboard-customer="143WooriFuture\(우리선물\)"/);
   assert.match(html, /data-dashboard-customer="164NHFuture"/);
   assert.equal((html.match(/aria-label="NH선물 미종료 1건/g) || []).length, 2);
-  assert.match(html, /data-label="고객사"><span>LS증권<\/span><\/td>/);
+  assert.match(html, /data-label="고객사"><span>(<span class="customer-mark[^"]*"[^>]*>[^<]*(<img[^>]*>)?<\/span>)?LS증권<\/span><\/td>/);
   h.els.dashboardBody.handlers.click({target:clickTarget('[data-dashboard-customer]', {dashboardCustomer:'164NHFuture'})});
   assert.match(h.els.dashboardBody.innerHTML, /1 \/ 1건/);
   assert.match(h.els.dashboardBody.innerHTML, /현재 프로젝트/);
@@ -904,11 +904,22 @@ test('comparison dimension controls retain actual current and previous values', 
       screen:[{name:'1001',current:3,previous:0,delta:3,changeRate:null}],member:[] } };
   const h = await harness('member', undefined, async () => ({ok:true,payload}));
   await h.api.loadDashboard();
-  let compare = distributionSpecs(h.els.dashboardBody.innerHTML).find(s=>s.title==='항목별 이번·직전 기간 신규 비교');
-  assert.equal(compare.rows[0].name,'고객사 A'); assert.equal(compare.rows[0].current,3);
+  const pane = () => h.els.dashboardBody.innerHTML.split('data-ops-pane="comparison"')[1].split('data-ops-pane="flow"')[0];
+  assert.match(pane(), /고객사 A<\/button><\/span><\/th><td>3<\/td><td>1<\/td>/);
+  assert.doesNotMatch(pane(), /등록 추이 비교/);
   h.els.dashboardBody.handlers.click({target:clickTarget('[data-analytics-dimension]',{analyticsDimension:'screen'})});
-  compare = distributionSpecs(h.els.dashboardBody.innerHTML).find(s=>s.title==='항목별 이번·직전 기간 신규 비교');
-  assert.equal(compare.rows[0].name,'1001'); assert.equal(compare.rows[0].previous,0);
+  assert.match(pane(), /<th scope="row">1001<\/th><td>3<\/td><td>0<\/td>/);
   assert.match(h.els.dashboardBody.innerHTML,/data-analytics-dimension="screen" aria-pressed="true"/);
   assert.equal(h.calls.length,1);
+});
+
+test('이슈·분포 요약은 필터가 없을 때만 보이고 우선 확인 이슈에 고객사 표시를 붙인다', async () => {
+  const payload = filterableDashboard();
+  const h = await harness('member', undefined, async () => ({ok:true,payload}));
+  await h.api.loadDashboard();
+  const pane = () => h.els.dashboardBody.innerHTML.split('data-ops-pane="issues"')[1] || '';
+  assert.match(pane(), /미종료 3건 중 위험 1건, 일정 지연 1건이에요\. 가장 오래된 이슈는 45일째 열려 있어요\./);
+  assert.match(pane(), /dashboard-priority-customer[^>]*><span><span class="customer-mark/);
+  h.els.dashboardBody.handlers.click({target:clickTarget('[data-dashboard-metric]',{dashboardMetric:'overdue'})});
+  assert.doesNotMatch(pane(), /가장 오래된 이슈는/);
 });

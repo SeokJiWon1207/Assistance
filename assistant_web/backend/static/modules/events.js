@@ -448,6 +448,13 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
     return;
   }
+  const boardView = event.target.closest("[data-workspace-board-view]");
+  if (boardView) {
+    state.workspaceBoardView = boardView.dataset.workspaceBoardView;
+    renderWorkspace();
+    els.workspaceContent.querySelector(`[data-workspace-board-view="${state.workspaceBoardView}"]`)?.focus();
+    return;
+  }
   const dueFilter = event.target.closest("[data-workspace-due-filter]");
   if (dueFilter) {
     state.workspaceDueFilter = dueFilter.dataset.workspaceDueFilter;

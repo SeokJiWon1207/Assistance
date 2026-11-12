@@ -4,7 +4,7 @@ import { state, scopedStorageKey } from "./runtime.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
 import { escapeHtml } from "./chat_rendering.js?v=20260911-6";
 import { customerName } from "./ui_format.js?v=20260911-6";
-import { analyticsCustomerLabel } from "./dashboard_analytics.js?v=20261111-1";
+import { analyticsCustomerLabel } from "./dashboard_analytics.js?v=20261112-4";
 import { workspaceStatusLabel } from "./workspace.js?v=20260911-6";
 import { dashboardFilterSnapshot, applyDashboardFilters, dashboardPriorityRows, showPersonalView } from "./dashboard.js?v=20260911-6";
 import {

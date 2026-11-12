@@ -1,13 +1,12 @@
 // 분석 화면은 동일한 고객사 범위의 집계와 현재 이슈를 사용한다.
 import { chartHost } from './bklit_charts.js?v=20261110-3';
-import { customerName, customerLabelText } from './ui_format.js?v=20260911-6';
+import { customerName, customerLabelText, customerMark } from './ui_format.js?v=20260911-6';
 const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 const num = value => Number(value || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 const stages = [['review','접수·검토'],['progress','진행'],['validation','검증 대기'],['done','해결·종료'],['unknown','상태 미상']];
 const count = (n, complete) => `${num(n)}${complete ? '' : '+'}`;
 const section = (title, note, body, extra = '') => `<section class="analytics-card ${extra}"><header><div><h3>${title}</h3>${note ? `<p>${note}</p>` : ''}</div></header>${body}</section>`;
 const legend = (labels) => `<div class="analytics-legend">${labels.map(([label,color]) => `<span><i style="background:${color}"></i>${label}</span>`).join('')}</div>`;
-const series = [{key:'current',label:'이번 기간',color:'var(--chart-1)'},{key:'previous',label:'직전 기간',color:'var(--analytics-secondary)'}];
 
 export function analyticsCustomerOption(data, customer) {
   return data?.analytics?.customerOptions?.find(option => option.id === customer);
@@ -60,7 +59,26 @@ function dailyTable(a, complete) {
 
 function ranking(rows, complete, label = '미종료') {
   const max = Math.max(1,...rows.map(r=>r.count));
-  return rows.length ? `<table class="analytics-table analytics-ranking"><thead><tr><th>고객사</th><th>${label}</th><th>건수</th></tr></thead><tbody>${rows.map(row=>`<tr><th scope="row"><button type="button" data-dashboard-customer="${esc(row.name)}">${esc(customerLabelText(row.name))}</button></th><td><span class="analytics-bar-track"><i style="width:${row.count/max*100}%"></i></span></td><td>${count(row.count,complete)}</td></tr>`).join('')}</tbody></table>` : `<p class="analytics-empty">${complete?'표시할 고객사 이슈가 없어요.':'확인한 범위에는 고객사 이슈가 없어요.'}</p>`;
+  return rows.length ? `<table class="analytics-table analytics-ranking"><thead><tr><th>고객사</th><th>${label}</th><th>건수</th></tr></thead><tbody>${rows.map((row,index)=>`<tr data-layout-key="${esc(row.name)}"><th scope="row"><span class="analytics-rank-cell"><span class="analytics-rank" aria-label="${index+1}위">${index+1}</span>${customerMark(customerName(row.name,row.name))}<button type="button" data-dashboard-customer="${esc(row.name)}">${esc(customerLabelText(row.name))}</button></span></th><td><span class="analytics-bar-track"><i style="width:${row.count/max*100}%"></i></span></td><td>${count(row.count,complete)}</td></tr>`).join('')}</tbody></table>` : `<p class="analytics-empty">${complete?'표시할 고객사 이슈가 없어요.':'확인한 범위에는 고객사 이슈가 없어요.'}</p>`;
+}
+
+// 전체 현황 맨 위의 한눈에 보기 문장. 화면에 이미 있는 확정 수치로만 만든다.
+// 일부만 조회했을 때는 수치가 실제보다 적을 수 있어 문장을 만들지 않는다.
+export function overviewSummary({ summary = {}, delivery = {}, ranked = [], complete = false } = {}) {
+  if (!complete) return [];
+  const lines = [], created = Number(summary.newIssues || 0), delivered = Number(delivery.count || 0), open = Number(summary.open || 0);
+  const gap = delivered - created;
+  lines.push(`신규 등록 ${num(created)}건, 고객사 전달 ${num(delivered)}건이에요.${gap > 0 ? ` 전달이 등록보다 ${num(gap)}건 많았어요.` : gap < 0 ? ` 등록이 전달보다 ${num(-gap)}건 많았어요.` : ''}`);
+  const previous = Number(summary.previousNewIssues || 0);
+  if (previous) {
+    const rate = Math.round((created - previous) / previous * 1000) / 10;
+    lines.push(rate ? `신규 등록은 직전 기간보다 ${Math.abs(rate)}% ${rate > 0 ? '늘었어요' : '줄었어요'}.` : '신규 등록은 직전 기간과 같아요.');
+  }
+  const top = ranked[0];
+  if (top && open) lines.push(`미종료 ${num(open)}건 중 ${num(top.count)}건(${Math.round(top.count / open * 100)}%)이 ${customerLabelText(top.name)}에 있어요.`);
+  const overdue = Number(summary.overdue || 0), aging = Number(summary.aging || 0);
+  if (overdue || aging) lines.push(`일정 지연 ${num(overdue)}건, 30일 이상 미종료 ${num(aging)}건이에요.`);
+  return lines;
 }
 
 export function renderOverview(data, priorities = '') {
@@ -78,7 +96,9 @@ export function renderOverview(data, priorities = '') {
     + metric('신규 등록',s.newIssues,'건',delta(s.newIssues,s.previousNewIssues,complete),a.intake,complete)
     + metric('고객사 전달',a.delivery?.count,'건',delta(a.delivery?.count,a.delivery?.previousCount,complete),a.delivery?.points,complete)
     + metric('전달 건 공수',a.effort?.total,'M/D','고객사전달일 기준 · 입력된 공수 합계',a.effort?.points,complete);
-  return `<div class="analytics-kpis">${kpis}</div>
+  const read = overviewSummary({summary:s, delivery:a.delivery, ranked, complete});
+  return `${read.length ? `<section class="analytics-card analytics-read" aria-label="한눈에 보기"><header><div><h3>한눈에 보기</h3><p>아래 수치로 만든 요약이에요.</p></div></header><ul>${read.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>` : ''}
+    <div class="analytics-kpis">${kpis}</div>
     ${section('업무 흐름','신규 등록과 고객사 전달을 일별로 비교해요. 두 선은 같은 이슈 집합을 뜻하지 않아요.',
       `<div class="analytics-chart-heading"><strong>${count(s.newIssues,complete)}<small>신규 등록</small></strong><strong>${count(a.delivery?.count,complete)}<small>고객사 전달</small></strong>${legend([['신규 등록','var(--chart-1)'],['고객사 전달','var(--analytics-secondary)']])}</div>`+
       chartHost({kind:'activity',title:'일별 신규 등록·고객사 전달',complete,height:320,points:a.intake || data.intakeTrend || [],secondaryPoints:a.delivery?.points || [],showValues:true},dailyTable(a,complete)),'analytics-hero')}
@@ -87,30 +107,73 @@ export function renderOverview(data, priorities = '') {
     ${priorities}`;
 }
 
-export function renderComparison(data, dimension = 'customer') {
-  const complete = data.meta?.search_complete === true, a = data.analytics || {intake:data.intakeTrend,previousIntake:data.previousIntakeTrend}, s = a.summary || data.summary || {};
-  const rows = a.comparisons?.[dimension] || [];
-  const label = name => dimension==='customer' ? customerLabelText(name) : name;
-  const table = `<div class="analytics-table-scroll"><table class="analytics-table"><thead><tr><th>${{customer:'고객사',screen:'화면번호',member:'담당자'}[dimension]}</th><th>이번 기간</th><th>직전 기간</th><th>증감</th><th>증감률</th></tr></thead><tbody>${rows.map(row=>`<tr><th scope="row">${dimension==='customer'?`<button type="button" data-dashboard-customer="${esc(row.name)}">${esc(label(row.name))}</button>`:esc(label(row.name))}</th><td>${count(row.current,complete)}</td><td>${count(row.previous,complete)}</td><td>${complete?`${row.delta>0?'+':''}${num(row.delta)}`:'—'}</td><td>${row.changeRate==null?'—':`${row.changeRate>0?'+':''}${num(row.changeRate)}%`}</td></tr>`).join('')}</tbody></table></div>`;
-  const buttons = `<div class="analytics-segments" role="group" aria-label="비교 기준">${[['customer','고객사'],['screen','화면번호'],['member','담당자']].map(([key,label])=>`<button type="button" data-analytics-dimension="${key}" aria-pressed="${key===dimension}">${label}</button>`).join('')}</div>`;
-  return `${section('등록 추이 비교','동일한 길이의 이번 기간·직전 기간을 시작일부터 누적으로 비교해요.',
-    `<div class="analytics-chart-heading"><strong>${count(s.newIssues,complete)}<small>이번 기간 신규</small></strong><strong>${count(s.previousNewIssues,complete)}<small>직전 기간 신규</small></strong>${legend([['이번 기간','var(--chart-1)'],['직전 기간','var(--muted)']])}</div>` +
-    chartHost({kind:'compare-area',title:'기간별 누적 신규 등록',complete,height:320,lineStyle:'snow',points:a.intake || [],previousPoints:a.previousIntake || [],showValues:true},`<p>이번 ${count(s.newIssues,complete)}건 · 직전 ${count(s.previousNewIssues,complete)}건</p>`),'analytics-hero')}
-    ${section('어디에서 달라졌나요?','신규 등록 기준 · 막대는 상위 8개, 표는 전체 항목',buttons + `<div class="analytics-related"><button type="button" data-dashboard-goto="effort">공수·처리시간 보기 ↗</button><button type="button" data-dashboard-goto="screens">화면번호 상세 보기 ↗</button></div>` +
-      chartHost({kind:'bar',title:'항목별 이번·직전 기간 신규 비교',complete,rows:rows.slice(0,8).map(row=>({...row,name:label(row.name)})),series,grouped:true},table))}`;
+// 비교 분석 위 한 줄 요약. 일부 조회에서는 증감을 판단하지 않는다.
+export function comparisonHeadline(rows, complete, label = name => name) {
+  if (!complete || !rows.length) return '';
+  // 미상·미배정·0000처럼 값이 기록되지 않은 묶음은 요약 대상에서 뺀다. 표에는 그대로 둔다.
+  rows = rows.filter(row => !/미상|미배정|^0+$/.test(String(row.name || '').trim()) && String(row.name || '').trim());
+  const up = rows.filter(row => row.delta > 0).sort((a,b) => b.delta-a.delta)[0];
+  const down = rows.filter(row => row.delta < 0).sort((a,b) => a.delta-b.delta)[0];
+  if (!up && !down) return '직전 기간과 달라진 항목이 없어요.';
+  const part = (row, sign) => `${label(row.name)}(${sign}${num(Math.abs(row.delta))}건)`;
+  if (up && down) return `가장 많이 늘어난 곳은 ${part(up,'+')}, 가장 많이 줄어든 곳은 ${part(down,'−')}이에요.`;
+  return up ? `가장 많이 늘어난 곳은 ${part(up,'+')}이에요. 줄어든 곳은 없어요.` : `가장 많이 줄어든 곳은 ${part(down,'−')}이에요. 늘어난 곳은 없어요.`;
 }
 
-export function renderFlow(data) {
+// 비교 분석: 기준(고객사·화면번호·담당자)별로 이번·직전 기간 신규를 비교한다.
+// 확정 데이터는 차이가 큰 순으로 놓고, 가운데 기준선에서 오른쪽(늘어남)·왼쪽(줄어듦)으로 막대를 그린다.
+export function renderComparison(data, dimension = 'customer') {
+  const complete = data.meta?.search_complete === true, a = data.analytics || {};
+  const label = name => dimension==='customer' ? customerLabelText(name) : name;
+  const rows = [...(a.comparisons?.[dimension] || [])];
+  if (complete) rows.sort((x,y) => Math.abs(y.delta||0)-Math.abs(x.delta||0) || (y.current||0)-(x.current||0));
+  const maxDelta = Math.max(1, ...rows.map(row => Math.abs(row.delta || 0)));
+  const name = row => dimension==='customer'
+    ? `<span class="analytics-rank-cell">${customerMark(customerName(row.name,row.name))}<button type="button" data-dashboard-customer="${esc(row.name)}">${esc(label(row.name))}</button></span>`
+    : esc(label(row.name));
+  const bar = row => {
+    if (!complete || !row.delta) return '<span class="analytics-diff-track"></span>';
+    const width = Math.abs(row.delta)/maxDelta*50;
+    return `<span class="analytics-diff-track"><i class="${row.delta>0?'is-up':'is-down'}" style="width:${width}%"></i></span>`;
+  };
+  const diff = row => complete ? `<strong class="analytics-diff ${row.delta>0?'is-up':row.delta<0?'is-down':''}">${row.delta>0?'+':row.delta<0?'−':''}${num(Math.abs(row.delta||0))}건</strong>${row.changeRate==null?'':`<small>${row.changeRate>0?'+':row.changeRate<0?'−':''}${num(Math.abs(row.changeRate))}%</small>`}` : '—';
+  const header = {customer:'고객사',screen:'화면번호',member:'담당자'}[dimension];
+  const table = rows.length
+    ? `<div class="analytics-table-scroll"><table class="analytics-table analytics-diff-table"><thead><tr><th>${header}</th><th>이번 기간</th><th>직전 기간</th><th><span class="sr-only">차이 막대</span></th><th>증감</th></tr></thead><tbody>${rows.map(row=>`<tr><th scope="row">${name(row)}</th><td>${count(row.current,complete)}</td><td>${count(row.previous,complete)}</td><td aria-hidden="true">${bar(row)}</td><td>${diff(row)}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="analytics-empty">${complete?'비교할 항목이 없어요.':'확인한 범위에는 비교할 항목이 없어요.'}</p>`;
+  const buttons = `<div class="analytics-segments" role="group" aria-label="비교 기준">${[['customer','고객사'],['screen','화면번호'],['member','담당자']].map(([key,text])=>`<button type="button" data-analytics-dimension="${key}" aria-pressed="${key===dimension}">${text}</button>`).join('')}</div>`;
+  const headline = comparisonHeadline(rows, complete, label);
+  const note = complete ? '신규 등록 기준 · 이번 기간과 같은 길이의 직전 기간 비교 · 차이가 큰 순서' : '일부만 확인해 증감은 판단하지 않았어요. 건수 뒤 +는 최소값이에요.';
+  return section('어디에서 달라졌나요?', note,
+    buttons + `<div class="analytics-related"><button type="button" data-dashboard-goto="effort">공수·처리시간 보기 ↗</button><button type="button" data-dashboard-goto="screens">화면번호 상세 보기 ↗</button></div>` +
+    (headline ? `<p class="analytics-headline">${esc(headline)}</p>` : '') + table);
+}
+
+// 처리 흐름 위 한 줄 요약. 일부 조회에서는 비율이 틀릴 수 있어 만들지 않는다.
+export function flowHeadline(counts, total, complete) {
+  if (!complete || !total) return '';
+  const done = counts.done || 0;
+  const waiting = stages.filter(([key]) => key !== 'done' && key !== 'unknown' && counts[key]).sort((a,b) => counts[b[0]]-counts[a[0]])[0];
+  const head = `이번 기간 신규 ${num(total)}건 중 ${Math.round(done/total*100)}%가 해결·종료됐어요.`;
+  return waiting ? `${head} 가장 많이 남아 있는 단계는 ${waiting[1]}(${num(counts[waiting[0]])}건)이에요.` : `${head} 남아 있는 단계는 없어요.`;
+}
+
+// 단계를 누르면 아래 등록 주차별 표에서 그 단계 열이 강조된다.
+export function renderFlow(data, selectedStage = '') {
   const complete = data.meta?.search_complete === true, a = data.analytics || {};
   const cohorts = a.cohorts || [];
   const counts = Object.fromEntries(stages.map(([key])=>[key,cohorts.reduce((sum,row)=>sum+(row.states?.[key]||0),0)]));
   const total = cohorts.reduce((sum,row)=>sum+row.total,0);
   const shown = stages.filter(([key])=>key!=='unknown'||counts.unknown);
-  const phase = `<div class="analytics-stages">${shown.map(([key,label],i)=>`<article><span><i class="analytics-stage-dot stage-${key}"></i>${label}</span><strong>${count(counts[key],complete)}<small>건</small></strong><div class="analytics-bar-track"><i class="stage-${key}" style="width:${total?counts[key]/total*100:0}%"></i></div><small>${complete&&total?`${Math.round(counts[key]/total*100)}% · 기간 내 신규 중`:'확인한 건수 기준'}</small></article>`).join('')}</div>`;
-  const heatmap = `<div class="analytics-table-scroll"><table class="analytics-table analytics-heatmap"><thead><tr><th>등록 주차</th><th>신규</th>${shown.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${cohorts.map(row=>`<tr><th scope="row">${esc(row.from?.slice(5)||row.weekStart.slice(5))} – ${esc(row.to?.slice(5)||'')}</th><td>${count(row.total,complete)}</td>${shown.map(([key,label])=>{ const value=row.states?.[key]||0; return `<td><span class="analytics-heat-cell" data-intensity="${value?Math.min(4,Math.ceil(value/Math.max(1,row.total)*4)):0}" title="${esc(label)} ${count(value,complete)}건">${count(value,complete)}</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const stage = shown.some(([key]) => key === selectedStage) ? selectedStage : '';
+  const split = total ? `<div class="analytics-stage-split" aria-hidden="true">${shown.filter(([key])=>counts[key]).map(([key])=>`<i class="stage-${key}${stage && stage!==key?' is-dim':''}" style="flex:${counts[key]} 1 0"></i>`).join('')}</div>` : '';
+  const phase = `${split}<div class="analytics-stages" role="group" aria-label="처리 단계 · 누르면 아래 표에서 강조">${shown.map(([key,label])=>`<button type="button" class="analytics-stage" data-flow-stage="${key}" aria-pressed="${stage===key}"><span><i class="analytics-stage-dot stage-${key}"></i>${label}</span><strong>${count(counts[key],complete)}<small>건</small></strong><span class="analytics-bar-track"><i class="stage-${key}" style="width:${total?counts[key]/total*100:0}%"></i></span><small>${complete&&total?`${Math.round(counts[key]/total*100)}% · 기간 내 신규 중`:'확인한 건수 기준'}</small></button>`).join('')}</div>`;
+  const headline = flowHeadline(counts, total, complete);
+  const heatmap = `<div class="analytics-table-scroll"><table class="analytics-table analytics-heatmap"><thead><tr><th>등록 주차</th><th>신규</th>${shown.map(([key,label])=>`<th${stage===key?' class="is-selected"':''}>${label}</th>`).join('')}</tr></thead><tbody>${cohorts.map(row=>`<tr><th scope="row">${esc(row.from?.slice(5)||row.weekStart.slice(5))} – ${esc(row.to?.slice(5)||'')}</th><td>${count(row.total,complete)}</td>${shown.map(([key,label])=>{ const value=row.states?.[key]||0; return `<td${stage===key?' class="is-selected"':''}><span class="analytics-heat-cell" data-intensity="${value?Math.min(4,Math.ceil(value/Math.max(1,row.total)*4)):0}" title="${esc(label)} ${count(value,complete)}건">${count(value,complete)}</span></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
   const buckets = [{name:'7일 이하',amount:0},{name:'8–29일',amount:0},{name:'30–59일',amount:0},{name:'60일 이상',amount:0},{name:'등록일 미상',amount:0}];
   for(const row of data.openIssues || []) { const d=row.ageDays; buckets[d==null?4:d<=7?0:d<30?1:d<60?2:3].amount++; }
-  return `${section('처리 단계 현황','선택 기간에 등록된 이슈의 현재 상태예요. 단계를 이동한 이력은 포함하지 않아요.',phase)}
+  return `${headline ? `<p class="analytics-headline analytics-pane-headline">${esc(headline)}</p>` : ''}
+    ${section('처리 단계 현황','선택 기간에 등록된 이슈의 현재 상태예요. 단계를 누르면 아래 표에서 그 단계가 강조돼요.',phase)}
     ${section('등록 주차별 현재 상태',`신규 ${count(total,complete)}건 · 같은 주에 등록된 이슈가 지금 어느 상태인지 확인해요.`,heatmap)}
     ${section('남아 있는 업무의 경과일','등록일부터 현재까지 · 선택 기간 이전의 미종료도 포함',chartHost({kind:'bar',title:'미종료 경과일 분포',complete,rows:buckets,series:[{key:'amount',label:'미종료',color:'var(--chart-1)'}]},`<ul>${buckets.map(r=>`<li>${r.name} ${count(r.amount,complete)}건</li>`).join('')}</ul>`))}
     <p class="analytics-footnote">상태 변경 이력이 없어 과거 시점의 잔존율은 표시하지 않아요.${a.missingCreated?` 등록일 미상 ${count(a.missingCreated,complete)}건은 주차별 집계에서 제외했어요.`:''}</p>`;

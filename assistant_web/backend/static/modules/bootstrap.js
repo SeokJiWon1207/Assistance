@@ -7,9 +7,9 @@ import { loadTheme, setShowSources, setAbComparison, autoResizeInput, renderMess
 import { loadTeamTemplates } from "./template_picker.js?v=20260911-6";
 import { initDashboard, loadDashboard, showChatView, showPersonalView, showDashboardView } from "./dashboard.js?v=20260911-6";
 import { initAppSidebar } from "./app_sidebar.js?v=20261109-1";
-import { initEffortBoard } from "./effort_board.js?v=20261103-1";
-import { initScreenHotspot } from "./screen_hotspot.js?v=20261103-1";
-import { initCustomerOverview } from "./customer_overview.js?v=20261106-1";
+import { initEffortBoard } from "./effort_board.js?v=20261112-3";
+import { initScreenHotspot } from "./screen_hotspot.js?v=20261112-3";
+import { initCustomerOverview } from "./customer_overview.js?v=20261112-2";
 import { initDashboardTabs } from "./dashboard_tabs.js?v=20261110-1";
 import { initAdminCenter, preloadAdminBadges } from "./admin.js?v=20260911-6";
 import { initCommandPalette } from "./command_palette.js?v=20261105-1";

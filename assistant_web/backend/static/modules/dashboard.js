@@ -1,6 +1,6 @@
 import { chartHost, mountCharts, releaseCharts } from "./bklit_charts.js?v=20261026-1";
 import { renderWeeklyIssues } from "./dashboard_weekly.js?v=20261029-1";
-import { formatUiDateTime, formatPeriodRange, customerName, customerLabelText, escapeHtml } from "./ui_format.js?v=20260911-6";
+import { formatUiDateTime, formatPeriodRange, customerName, customerLabelText, customerMark, escapeHtml } from "./ui_format.js?v=20260911-6";
 import { state, els, apiFetch, WORKSPACE_ENDPOINTS } from "./runtime.js?v=20260911-6";
 import { responseJson } from "./api.js?v=20260911-6";
 import { icon } from "./icons.js?v=20260911-6";
@@ -8,12 +8,12 @@ import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } 
 import { closeAccountMenu, closeMobileSidebar } from "./sidebar.js?v=20260911-6";
 import { ensureMyWorkspaceFresh, showTeamBrief, workspaceStatusLabel, workspaceIssueContext } from "./workspace.js?v=20260911-6";
 import { openDialogFocus, closeDialogFocus } from "./dialog_focus.js?v=20260911-6";
-import { revealOnScroll } from "./motion.js?v=20260911-6";
+import { revealOnScroll, captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 import { recordIssueView } from "./recent_items.js?v=20261105-1";
 import { recentOpenCard, opsKpiTiles, priorityTable } from "./dashboard_overview.js?v=20261105-1";
 import { registerDashboardTab, selectDashboardTab, currentDashboardTab } from "./dashboard_tabs.js?v=20261110-1";
 
-import { analyticsCustomerLabel, analyticsCustomerOption, analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261111-1";
+import { analyticsCustomerLabel, analyticsCustomerOption, analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261112-4";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 let issueDetailContext = null;
@@ -44,6 +44,7 @@ const dashboardState = {
   selectedIssueId: "",
   intakeMedia: "",
   comparisonDimension: "customer",
+  flowStage: "",
   initialized: false,
 };
 let dashboardLoadPromise = null;
@@ -290,6 +291,15 @@ function hideFilterbar() {
   if (els.dashboardFilterbar) els.dashboardFilterbar.hidden = true;
 }
 
+// 이슈·분포 위 한 줄 요약. 필터를 걸었거나 일부만 확인했을 때는 전체를 말할 수 없어 만들지 않는다.
+function issuesHeadline(priorities, complete, filtering) {
+  if (!complete || filtering || !priorities.length) return "";
+  const high = priorities.filter((issue) => issue.riskLevel === "high").length;
+  const overdue = priorities.filter((issue) => issue.overdue).length;
+  const oldest = priorities.reduce((max, issue) => Math.max(max, Number(issue.ageDays) || 0), 0);
+  return `미종료 ${formatNumber(priorities.length)}건 중 위험 ${formatNumber(high)}건, 일정 지연 ${formatNumber(overdue)}건이에요.${oldest ? ` 가장 오래된 이슈는 ${formatNumber(oldest)}일째 열려 있어요.` : ""}`;
+}
+
 function renderPriorities(priorities, filtered) {
   const filtering = Boolean(dashboardState.metric || dashboardState.customer || dashboardState.age);
   const shown = dashboardState.prioritiesExpanded ? filtered : filtered.slice(0, PRIORITY_PREVIEW_LIMIT);
@@ -316,7 +326,7 @@ function renderPriorities(priorities, filtered) {
         </button>
         ${reasons ? `<small class="dashboard-issue-reason" title="${escapeHtml(reasons)}">${escapeHtml(reasons)}</small>` : ""}
       </td>
-      <td class="dashboard-priority-customer" data-label="고객사"><span>${escapeHtml(customerName(issue, "-"))}</span></td>
+      <td class="dashboard-priority-customer" data-label="고객사"><span>${issue.project ? customerMark(customerName(issue, "-")) : ""}${escapeHtml(customerName(issue, "-"))}</span></td>
       <td class="dashboard-priority-handler" data-label="담당자"><span class="dashboard-handler">${escapeHtml(handler)}</span></td>
       <td class="dashboard-priority-age" data-label="경과"><span>${issue.ageDays == null ? "–" : `<b>${formatNumber(issue.ageDays)}</b>일`}</span></td>
       <td class="dashboard-priority-risk" data-label="위험"><span class="dashboard-risk-badge is-${level}">${riskLabel(level)}</span><span class="dashboard-priority-arrow" aria-hidden="true">${icon("chevron-right", 16)}</span></td>
@@ -367,6 +377,8 @@ function setRefreshLabel(label) {
 const DASHBOARD_REVEAL_SELECTOR = ":scope > :not(.dashboard-grid), :scope > .dashboard-grid > *";
 let dashboardContentShown = false;
 let stopDashboardReveal = () => {};
+
+const RANKING_ROW_SELECTOR = ".analytics-ranking tr[data-layout-key]";
 
 function renderDashboard() {
   if (!els.dashboardBody) return;
@@ -421,6 +433,9 @@ function renderDashboard() {
   // 전체 현황은 지표 → 큰 추이 → 분포 → 관련 이슈. 고객사 범위는 모든 분석에 적용한다.
   // 지연·장기·그 외 범례는 차트마다 반복하지 않고 분포 제목 옆에 한 번만 둔다.
   const memberChart = dashboardState.customer ? "" : renderMemberChart(data.members || [], data.sharedAccounts || []);
+  // 고객사 순위는 다시 그려도 같은 고객사가 이전 자리에서 새 자리로 움직이게 한다.
+  const rankingLayout = captureLayout(els.dashboardBody, RANKING_ROW_SELECTOR);
+  const issuesLine = issuesHeadline(priorities, complete, Boolean(dashboardState.metric || dashboardState.customer || dashboardState.age));
   els.dashboardBody.innerHTML = `
     ${dashboardState.error
         ? `<div class="dashboard-refresh-status is-error" role="status"><strong>${escapeHtml(dashboardState.error)} 저장된 데이터를 계속 표시해요.</strong><span>${escapeHtml(formatDateTime(data.meta.fetchedAt))} 기준</span><button type="button" class="secondary-button" data-dashboard-retry>다시 시도</button></div>`
@@ -429,8 +444,9 @@ function renderDashboard() {
     ${renderAnalyticsControls(rootData, dashboardState.customer)}
     <div class="ops-pane analytics-pane" data-ops-pane="summary">${renderOverview(data, priorityTable({ rows: filtered.slice(0, 8), complete }))}</div>
     <div class="ops-pane analytics-pane" data-ops-pane="comparison">${renderComparison(data, dashboardState.comparisonDimension)}</div>
-    <div class="ops-pane analytics-pane" data-ops-pane="flow">${renderFlow(data)}</div>
+    <div class="ops-pane analytics-pane" data-ops-pane="flow">${renderFlow(data, dashboardState.flowStage)}</div>
     <div class="ops-pane" data-ops-pane="issues">
+    ${issuesLine ? `<p class="analytics-headline analytics-pane-headline">${escapeHtml(issuesLine)}</p>` : ""}
     ${opsKpiTiles({ summary: data.summary, complete, metric: dashboardState.metric })}
     ${renderPriorities(priorities, filtered)}
     <div class="dashboard-dist-head"><h3>미종료 분포</h3>${chartLegend()}</div>
@@ -446,6 +462,7 @@ function renderDashboard() {
     </div>
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>
     </div>`;
+  animateLayoutChange(els.dashboardBody, RANKING_ROW_SELECTOR, rankingLayout, { duration: 600 });
   const customerSelect = els.dashboardBody.querySelector("[data-analytics-customer]");
   if (dashboardState.customer && customerSelect?.value === "") customerSelect.selectedIndex = -1;
   if (!dashboardContentShown) stopDashboardReveal = revealOnScroll(els.dashboardBody, DASHBOARD_REVEAL_SELECTOR);
@@ -715,6 +732,14 @@ function handleDashboardAction(target) {
     dashboardState.comparisonDimension = dimension.dataset.analyticsDimension;
     renderDashboard();
     els.dashboardBody.querySelector(`[data-analytics-dimension="${dashboardState.comparisonDimension}"]`)?.focus();
+    return;
+  }
+  const flowStage = target.closest("[data-flow-stage]");
+  if (flowStage) {
+    // 같은 단계를 다시 누르면 강조를 끈다.
+    dashboardState.flowStage = dashboardState.flowStage === flowStage.dataset.flowStage ? "" : flowStage.dataset.flowStage;
+    renderDashboard();
+    els.dashboardBody.querySelector(`[data-flow-stage="${flowStage.dataset.flowStage}"]`)?.focus();
     return;
   }
   const source = target.closest("[data-dashboard-source]");

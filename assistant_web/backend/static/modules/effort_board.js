@@ -110,6 +110,17 @@ function columnChart(rows, { label, valueText, tone }) {
     </div>`;
 }
 
+// 공수·처리시간 위 한 줄 요약. 일부 조회에서는 중앙값·건수가 달라질 수 있어 만들지 않는다.
+function effortHeadline(data, complete) {
+  if (!complete) return "";
+  const summary = data.summary || {};
+  if (summary.medianHandlingDays == null) return "";
+  const diff = summary.previousMedianHandlingDays == null ? null : Math.round((summary.medianHandlingDays - summary.previousMedianHandlingDays) * 10) / 10;
+  const change = diff == null ? "" : diff ? ` 직전 기간보다 ${formatDays(Math.abs(diff))}일 ${diff > 0 ? "늘었어요" : "줄었어요"}.` : " 직전 기간과 같아요.";
+  const late = (data.distribution || []).find((row) => row.key === "31+")?.count || 0;
+  return `처리일 중앙값은 ${formatDays(summary.medianHandlingDays)}일이에요.${change}${late ? ` 30일 넘게 걸린 이슈는 ${formatNumber(late)}건이에요.` : ""}`;
+}
+
 function renderDistribution(data) {
   const rows = (data.distribution || []).map((row) => ({ ...row, value: row.count }));
   const total = rows.reduce((sum, row) => sum + row.count, 0);
@@ -141,13 +152,16 @@ function renderWeekly(data) {
 }
 
 // marks: 고객사 목록이면 이름 앞에 로고를 둔다.
-function rankedList(rows, { name, value, width, action = "", marks = false }) {
-  const max = Math.max(1, ...rows.map(width));
+// reference: 막대 위에 세로 기준선을 그을 값(예: 팀 처리일 중앙값). 막대와 같은 축을 쓴다.
+function rankedList(rows, { name, value, width, action = "", marks = false, reference = null }) {
+  // 기준선이 있으면 축을 기준값의 3배까지로 잡는다. 한 곳만 아주 길어도 나머지와 기준선을 비교할 수 있다.
+  const max = reference ? Math.max(1, Math.min(Math.max(...rows.map(width), reference), reference * 3)) : Math.max(1, ...rows.map(width));
+  const line = reference == null ? "" : `<b class="effort-reference" style="left:${Math.round((reference / max) * 100)}%"></b>`;
   const label = (row) => marks ? `${customerMark(name(row))}<span>${escapeHtml(name(row))}</span>` : escapeHtml(name(row));
   return `<ol class="customer-ranked-list effort-ranked-list${marks ? " has-marks" : ""}">${rows.map((row) => `
     <li>
       ${action ? `<button type="button" class="customer-issue-link effort-ranked-name" ${action(row)}>${label(row)}</button>` : `<span class="customer-ranked-name">${label(row)}</span>`}
-      <span class="customer-ranked-track" aria-hidden="true"><i style="width:${Math.round((width(row) / max) * 100)}%"></i></span>
+      <span class="customer-ranked-track${line ? " has-reference" : ""}" aria-hidden="true"><i class="${reference != null && width(row) > reference ? "is-over" : ""}${width(row) > max ? " is-clipped" : ""}" style="width:${Math.min(100, Math.round((width(row) / max) * 100))}%"></i>${line}</span>
       <span class="customer-ranked-value">${value(row)}</span>
     </li>`).join("")}</ol>`;
 }
@@ -156,7 +170,7 @@ function renderCustomers(data) {
   const rows = data.customers || [];
   return `
     <section class="workspace-section ops-card" aria-label="고객사별 처리일 중앙값">
-      ${sectionHeader("고객사별 처리일 중앙값", "긴 순", "종료 3건 이상 고객사 · 이름을 누르면 고객사 상세")}
+      ${sectionHeader("고객사별 처리일 중앙값", "긴 순", `종료 3건 이상 고객사 · 세로선은 팀 중앙값${data.summary?.medianHandlingDays == null ? "" : ` ${formatDays(data.summary.medianHandlingDays)}일`} · 이름을 누르면 고객사 상세`)}
       <div class="customer-detail-section-body">
         ${rows.length ? rankedList(rows, {
           name: (row) => row.name,
@@ -164,6 +178,7 @@ function renderCustomers(data) {
           width: (row) => Number(row.medianDays) || 0,
           action: (row) => `data-effort-customer="${escapeHtml(row.customer)}" aria-label="${escapeHtml(row.name)} 고객사 상세 보기"`,
           marks: true,
+          reference: isComplete() ? data.summary?.medianHandlingDays ?? null : null,
         }) : `<p class="customer-detail-empty">${isComplete() ? "비교할 만큼 종료된 고객사가 없어요." : "확인한 범위에는 비교할 만큼 종료된 고객사가 없어요."}</p>`}
       </div>
     </section>`;
@@ -234,9 +249,11 @@ function renderBody() {
     }
     return '<div class="workspace-loading">공수·처리시간을 불러오는 중이에요.</div>';
   }
+  const headline = effortHeadline(data, isComplete());
   return `
     ${boardState.error ? `<p class="customer-detail-error" role="alert">${escapeHtml(boardState.error)}</p>` : ""}
     ${isComplete() ? "" : '<p class="customer-detail-note">일부 데이터만 확인했어요. 건수·공수는 확인한 범위의 최소값이며, 처리일은 확인한 해결·종료 이슈 기준이에요.</p>'}
+    ${headline ? `<p class="effort-headline">${escapeHtml(headline)}</p>` : ""}
     ${renderMetrics(data)}
     ${renderAging(data)}
     <div class="effort-board-grid">${renderDistribution(data)}${renderWeekly(data)}${renderCustomers(data)}${renderEffort(data)}</div>
@@ -352,4 +369,4 @@ function initEffortBoard() {
   });
 }
 
-export { initEffortBoard, loadEffortBoard };
+export { initEffortBoard, loadEffortBoard, effortHeadline };
