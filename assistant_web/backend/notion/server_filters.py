@@ -340,9 +340,14 @@ def notion_database_created_filter(
     else:
         raise ValueError("unsupported created_at filter")
 
+    def date_filter(target: Dict[str, str], value_key: str, bounds: Dict[str, str]) -> Dict[str, Any]:
+        # Notion 날짜 조건 하나에는 비교 연산자를 하나만 넣을 수 있다.
+        parts = [{**target, value_key: {operator: value}} for operator, value in bounds.items()]
+        return parts[0] if len(parts) == 1 else {"and": parts}
+
     if fields:
         filters = [
-            {"property": name, "date": dict(condition)}
+            date_filter({"property": name}, "date", condition)
             for name in fields
         ]
         api_filter = filters[0] if len(filters) == 1 else {"or": filters}
@@ -352,7 +357,7 @@ def notion_database_created_filter(
         for key, value in condition.items()
     }
     return (
-        {"timestamp": "created_time", "created_time": timestamp_condition},
+        date_filter({"timestamp": "created_time"}, "created_time", timestamp_condition),
         {"timestamp": "created_time", "direction": "descending"},
         True,
     )

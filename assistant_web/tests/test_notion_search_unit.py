@@ -351,18 +351,19 @@ class NotionSearchExecutionTests(unittest.TestCase):
         }
         with patch.object(notion_schema, 'notion_property_schema', return_value={"등록일": {"type": "date"}}):
             api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
-        self.assertEqual(api_filter, {"property": "등록일", "date": {
-            "on_or_after": "2026-09-14", "before": "2026-09-21",
-        }})
+        self.assertEqual(api_filter, {"and": [
+            {"property": "등록일", "date": {"on_or_after": "2026-09-14"}},
+            {"property": "등록일", "date": {"before": "2026-09-21"}},
+        ]})
         self.assertEqual(sort, {"property": "등록일", "direction": "descending"})
         self.assertTrue(window_safe)
 
         with patch.object(notion_schema, 'notion_property_schema', return_value={"제목": {"type": "title"}}):
             api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
-        self.assertEqual(api_filter, {"timestamp": "created_time", "created_time": {
-            "on_or_after": "2026-09-14T00:00:00+09:00",
-            "before": "2026-09-21T00:00:00+09:00",
-        }})
+        self.assertEqual(api_filter, {"and": [
+            {"timestamp": "created_time", "created_time": {"on_or_after": "2026-09-14T00:00:00+09:00"}},
+            {"timestamp": "created_time", "created_time": {"before": "2026-09-21T00:00:00+09:00"}},
+        ]})
         self.assertEqual(sort, {"timestamp": "created_time", "direction": "descending"})
         self.assertTrue(window_safe)
 
@@ -371,8 +372,11 @@ class NotionSearchExecutionTests(unittest.TestCase):
         }):
             api_filter, sort, window_safe = search.notion_database_created_filter("db", clause)
         self.assertEqual(api_filter, {"or": [
-            {"property": "등록일", "date": {"on_or_after": "2026-09-14", "before": "2026-09-21"}},
-            {"property": "접수일", "date": {"on_or_after": "2026-09-14", "before": "2026-09-21"}},
+            {"and": [
+                {"property": name, "date": {"on_or_after": "2026-09-14"}},
+                {"property": name, "date": {"before": "2026-09-21"}},
+            ]}
+            for name in ("등록일", "접수일")
         ]})
         self.assertEqual(sort, {"property": "등록일", "direction": "descending"})
         self.assertFalse(window_safe)
@@ -454,9 +458,10 @@ class NotionSearchExecutionTests(unittest.TestCase):
                 include_blocks=False,
             )
         payload = post.call_args.args[1]
-        self.assertEqual(payload["filter"], {"property": "등록일", "date": {
-            "on_or_after": "2026-09-14", "before": "2026-09-21",
-        }})
+        self.assertEqual(payload["filter"], {"and": [
+            {"property": "등록일", "date": {"on_or_after": "2026-09-14"}},
+            {"property": "등록일", "date": {"before": "2026-09-21"}},
+        ]})
         self.assertEqual(payload["sorts"], [{"property": "등록일", "direction": "descending"}])
         self.assertEqual(result["meta"]["terms"], [])
         self.assertFalse(result["meta"]["candidate_count_complete"])
