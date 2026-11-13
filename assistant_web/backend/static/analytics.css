@@ -243,7 +243,10 @@ body.theme-dark { --analytics-secondary:#f0a45b; }
 .workspace-kanban .workspace-item-meta .customer-mark { vertical-align:middle; margin-right:6px; }
 
 /* 전체 현황: 한눈에 보기와 지표를 한 줄에, 지표는 2×2 */
-.analytics-top { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:16px; align-items:start; }
+.analytics-top { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:16px; align-items:stretch; }
+.analytics-top-main { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.analytics-top-main > .analytics-status-card { flex:1 1 auto; }
+.analytics-top-main .analytics-status-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .analytics-top.is-single { grid-template-columns:minmax(0,1fr); }
 .analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .analytics-rank-move { flex:none; font-size:12px; font-weight:700; }

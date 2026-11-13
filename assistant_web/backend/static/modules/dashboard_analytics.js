@@ -129,14 +129,16 @@ export function renderOverview(data, priorities = '', previousOrder = []) {
     + metric('고객사 전달',a.delivery?.count,'건',delta(a.delivery?.count,a.delivery?.previousCount,complete),a.delivery?.points,complete)
     + metric('전달 건 공수',a.effort?.total,'M/D','고객사전달일 기준 · 입력된 공수 합계',a.effort?.points,complete);
   const read = overviewSummary({summary:s, delivery:a.delivery, ranked, complete});
-  return `<div class="analytics-top${read.length ? '' : ' is-single'}">${read.length ? `<section class="analytics-card analytics-read" aria-label="한눈에 보기"><header><div><h3>한눈에 보기</h3><p>아래 수치로 만든 요약이에요.</p></div></header><ul>${read.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>` : ''}
+  // 요약이 있으면 상태 분포를 요약 카드 아래(지표 2×2 옆)에 두어 빈 칸을 채운다. 요약이 없으면 예전처럼 아래 줄에 둔다.
+  const statusCard = section('현재 상태 분포','현재 미종료 이슈 · 개발완료는 검증 대기로 포함',statusSplit(statusRows,complete),'analytics-status-card');
+  return `<div class="analytics-top${read.length ? '' : ' is-single'}">${read.length ? `<div class="analytics-top-main"><section class="analytics-card analytics-read" aria-label="한눈에 보기"><header><div><h3>한눈에 보기</h3><p>아래 수치로 만든 요약이에요.</p></div></header><ul>${read.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>${statusCard}</div>` : ''}
     <div class="analytics-kpis">${kpis}</div></div>
     ${section('업무 흐름','신규 등록과 고객사 전달을 일별로 비교해요. 두 선은 같은 이슈 집합을 뜻하지 않아요.',
       `<div class="analytics-chart-heading"><strong>${count(s.newIssues,complete)}<small>신규 등록</small></strong><strong>${count(a.delivery?.count,complete)}<small>고객사 전달</small></strong>${legend([['신규 등록','var(--chart-1)'],['고객사 전달','var(--analytics-secondary)']])}</div>`+
       chartHost({kind:'activity',title:'일별 신규 등록·고객사 전달',complete,height:320,points:a.intake || data.intakeTrend || [],secondaryPoints:a.delivery?.points || [],showValues:true},dailyTable(a,complete)),'analytics-hero')}
     <div class="analytics-two">${section('고객사별 미종료','현재 업무가 집중된 고객사 · 상위 8곳 · ▲▼는 직전에 본 순위와 비교',ranking(ranked,complete,'미종료',previousOrder))}
     ${section('이번 주 눈여겨볼 변화','지난주 신규가 앞선 주 평균보다 크게 늘어난 고객사·화면',signalList(data.customerSpikes || [], data.screenSpikes || [], complete))}</div>
-    ${section('현재 상태 분포','현재 미종료 이슈 · 개발완료는 검증 대기로 포함',statusSplit(statusRows,complete))}
+    ${read.length ? '' : statusCard}
     ${priorities}`;
 }
 

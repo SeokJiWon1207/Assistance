@@ -121,3 +121,14 @@ test('전체 현황은 순위 변화·급증 신호·상태 비율을 보여 주
   assert.doesNotMatch(renderOverview(data, ''), /analytics-rank-move/);
   assert.match(renderOverview({...data, meta:{search_complete:false}}, ''), /급증 여부는 판단하지 않았어요/);
 });
+
+test('전체 현황의 상태 분포는 요약이 있으면 한눈에 보기 아래에, 없으면 아래 줄에 둔다', async () => {
+  const { renderOverview } = await load();
+  const base = {summary:{open:2},openIssues:[issue(1,'A'),issue(2,'B')],analytics:{delivery:{count:0},effort:{total:0}}};
+  const full = renderOverview({...base, meta:{search_complete:true}}, '');
+  assert.match(full, /analytics-top-main"><section class="analytics-card analytics-read"[^]*analytics-status-card[^]*<\/div>\s*<div class="analytics-kpis">/);
+  assert.equal((full.match(/현재 상태 분포/g) || []).length, 1);
+  const partial = renderOverview({...base, meta:{search_complete:false}}, '');
+  assert.doesNotMatch(partial, /analytics-top-main/);
+  assert.equal((partial.match(/현재 상태 분포/g) || []).length, 1);
+});
