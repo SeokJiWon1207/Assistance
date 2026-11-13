@@ -292,7 +292,7 @@
   }
 }
 
-/* 월별 이슈 유형 추이 차트 (ECharts) */
+/* 월별 이슈 유형 추이 차트 */
 .effort-trend {
   display: grid;
   gap: 12px;
