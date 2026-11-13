@@ -208,3 +208,29 @@ body.theme-dark { --analytics-secondary:#f0a45b; }
  .workspace-kanban-lane:has(.kanban-empty) .kanban-lane-note { display:none; }
  .workspace-kanban-lane:has(.kanban-empty) .kanban-empty { min-height:0; padding:10px 0 2px; border:0; }
 }
+
+/* 전체 현황: 한눈에 보기와 지표를 한 줄에, 지표는 2×2 */
+.analytics-top { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:16px; align-items:start; }
+.analytics-top.is-single { grid-template-columns:minmax(0,1fr); }
+.analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.analytics-rank-move { flex:none; font-size:12px; font-weight:700; }
+.analytics-rank-move.is-up { color:var(--success); }
+.analytics-rank-move.is-down { color:var(--danger); }
+.analytics-status-split { display:flex; gap:2px; height:14px; overflow:hidden; border-radius:var(--radius-sm); margin-bottom:16px; }
+.analytics-status-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px 24px; margin:0; padding:0; list-style:none; }
+.analytics-status-list li { display:flex; align-items:center; gap:8px; min-height:32px; }
+.analytics-status-list li > i { flex:none; width:10px; height:10px; border-radius:3px; }
+.analytics-status-list li > span { flex:1; color:var(--text-soft); }
+.analytics-status-list small { color:var(--muted); font-size:12px; min-width:32px; text-align:right; }
+.analytics-signals { display:grid; margin:0; padding:0; list-style:none; }
+.analytics-signals li { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+.analytics-signals li:first-child { border-top:0; }
+.analytics-signals li > span:not(.customer-mark):not(.analytics-signal-screen) { display:grid; gap:2px; flex:1; min-width:0; }
+.analytics-signals button { border:0; background:none; padding:0; font:inherit; color:var(--text); font-weight:700; cursor:pointer; text-align:left; }
+.analytics-signals button:hover { color:var(--blue); }
+.analytics-signals small { color:var(--muted); font-size:12px; }
+.analytics-signals em { flex:none; font-style:normal; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; background:color-mix(in srgb,var(--warning) 18%,var(--surface)); color:var(--warning-strong); }
+.analytics-signal-screen { display:inline-flex; align-items:center; justify-content:center; flex:none; width:56px; height:24px; border-radius:var(--radius-sm); background:var(--blue-soft); color:var(--blue); font-size:12px; font-weight:700; }
+@media (max-width:1100px) { .analytics-top { grid-template-columns:minmax(0,1fr); } .analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:680px) { .analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } .analytics-status-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+

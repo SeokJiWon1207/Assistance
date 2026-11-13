@@ -57,9 +57,10 @@ function dailyTable(a, complete) {
   return `<div class="analytics-table-scroll"><table class="analytics-table"><thead><tr><th>일자</th><th>신규 등록</th><th>고객사 전달</th></tr></thead><tbody>${(a.intake || []).map(p=>`<tr><th scope="row">${esc(p.date)}</th><td>${count(p.count,complete)}</td><td>${count(delivered.get(p.date),complete)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
-function ranking(rows, complete, label = '미종료') {
+// previousOrder: 직전에 그린 순위의 고객사 이름 순서. 바뀐 행에만 ▲·▼를 붙인다.
+function ranking(rows, complete, label = '미종료', previousOrder = []) {
   const max = Math.max(1,...rows.map(r=>r.count));
-  return rows.length ? `<table class="analytics-table analytics-ranking"><thead><tr><th>고객사</th><th>${label}</th><th>건수</th></tr></thead><tbody>${rows.map((row,index)=>`<tr data-layout-key="${esc(row.name)}"><th scope="row"><span class="analytics-rank-cell"><span class="analytics-rank" aria-label="${index+1}위">${index+1}</span>${customerMark(customerName(row.name,row.name))}<button type="button" data-dashboard-customer="${esc(row.name)}">${esc(customerLabelText(row.name))}</button></span></th><td><span class="analytics-bar-track"><i style="width:${row.count/max*100}%"></i></span></td><td>${count(row.count,complete)}</td></tr>`).join('')}</tbody></table>` : `<p class="analytics-empty">${complete?'표시할 고객사 이슈가 없어요.':'확인한 범위에는 고객사 이슈가 없어요.'}</p>`;
+  return rows.length ? `<table class="analytics-table analytics-ranking"><thead><tr><th>고객사</th><th>${label}</th><th>건수</th></tr></thead><tbody>${rows.map((row,index)=>`<tr data-layout-key="${esc(row.name)}"><th scope="row"><span class="analytics-rank-cell"><span class="analytics-rank" aria-label="${index+1}위">${index+1}</span>${customerMark(customerName(row.name,row.name))}<button type="button" data-dashboard-customer="${esc(row.name)}">${esc(customerLabelText(row.name))}</button>${rankMove(previousOrder.indexOf(row.name), index)}</span></th><td><span class="analytics-bar-track"><i style="width:${row.count/max*100}%"></i></span></td><td>${count(row.count,complete)}</td></tr>`).join('')}</tbody></table>` : `<p class="analytics-empty">${complete?'표시할 고객사 이슈가 없어요.':'확인한 범위에는 고객사 이슈가 없어요.'}</p>`;
 }
 
 // 전체 현황 맨 위의 한눈에 보기 문장. 화면에 이미 있는 확정 수치로만 만든다.
@@ -81,7 +82,38 @@ export function overviewSummary({ summary = {}, delivery = {}, ranked = [], comp
   return lines;
 }
 
-export function renderOverview(data, priorities = '') {
+function rankMove(before, now) {
+  if (before < 0 || before === now) return '';
+  const up = before > now, steps = Math.abs(before - now);
+  return `<span class="analytics-rank-move ${up ? 'is-up' : 'is-down'}">${up ? '▲' : '▼'} ${steps}<span class="sr-only">계단 ${up ? '올라감' : '내려감'}</span></span>`;
+}
+
+const STATUS_COLORS = {'접수':'var(--muted)','인지':'var(--text-soft)','피드백':'var(--warning)','확인':'var(--blue)','진행':'var(--purple)','개발완료':'var(--success)'};
+
+// 현재 상태 분포: 한 줄 비율 막대와 상태별 건수 목록.
+function statusSplit(rows, complete) {
+  const total = rows.reduce((sum,row)=>sum+row.amount,0);
+  if (!total) return `<p class="analytics-empty">${complete?'미종료 이슈가 없어요.':'확인한 범위에는 미종료 이슈가 없어요.'}</p>`;
+  const color = name => STATUS_COLORS[name] || 'var(--line-strong)';
+  return `<div class="analytics-status-split" aria-hidden="true">${rows.map(row=>`<i style="flex:${row.amount} 1 0;background:${color(row.name)}"></i>`).join('')}</div>
+    <ul class="analytics-status-list">${rows.map(row=>`<li><i style="background:${color(row.name)}" aria-hidden="true"></i><span>${esc(row.name)}</span><strong>${count(row.amount,complete)}건</strong>${complete?`<small>${Math.round(row.amount/total*100)}%</small>`:''}</li>`).join('')}</ul>`;
+}
+
+// 이번 주 눈여겨볼 변화: 지난주 신규가 평소보다 많았던 고객사·화면.
+function signalList(customerSpikes, screenSpikes, complete) {
+  if (!complete) return '<p class="analytics-empty">일부만 확인해 급증 여부는 판단하지 않았어요.</p>';
+  const items = [
+    ...customerSpikes.map(item=>({kind:'customer', item})),
+    ...screenSpikes.map(item=>({kind:'screen', item})),
+  ].slice(0,6);
+  if (!items.length) return '<p class="analytics-empty">지난주에 평소보다 크게 늘어난 곳이 없어요.</p>';
+  return `<ul class="analytics-signals">${items.map(({kind,item})=>`<li>
+    ${kind==='customer' ? customerMark(customerName(item.name,item.name)) : '<span class="analytics-signal-screen" aria-hidden="true">화면</span>'}
+    <span><strong>${kind==='customer' ? `<button type="button" data-dashboard-customer="${esc(item.name)}">${esc(customerLabelText(item.name))}</button>` : `<button type="button" data-dashboard-goto="screens">${esc(item.name)}</button>`}</strong><small>직전 ${num(item.previousCount)}건 → 지난주 ${num(item.count)}건</small></span>
+    <em>+${num(item.count - item.previousCount)}건</em></li>`).join('')}</ul>`;
+}
+
+export function renderOverview(data, priorities = '', previousOrder = []) {
   const complete = data.meta?.search_complete === true;
   const a = data.analytics || {intake:data.intakeTrend,previousIntake:data.previousIntakeTrend}, s = a.summary || data.summary || {}, issues = data.openIssues || data.priorities || [];
   const grouped = new Map(), status = new Map();
@@ -97,13 +129,14 @@ export function renderOverview(data, priorities = '') {
     + metric('고객사 전달',a.delivery?.count,'건',delta(a.delivery?.count,a.delivery?.previousCount,complete),a.delivery?.points,complete)
     + metric('전달 건 공수',a.effort?.total,'M/D','고객사전달일 기준 · 입력된 공수 합계',a.effort?.points,complete);
   const read = overviewSummary({summary:s, delivery:a.delivery, ranked, complete});
-  return `${read.length ? `<section class="analytics-card analytics-read" aria-label="한눈에 보기"><header><div><h3>한눈에 보기</h3><p>아래 수치로 만든 요약이에요.</p></div></header><ul>${read.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>` : ''}
-    <div class="analytics-kpis">${kpis}</div>
+  return `<div class="analytics-top${read.length ? '' : ' is-single'}">${read.length ? `<section class="analytics-card analytics-read" aria-label="한눈에 보기"><header><div><h3>한눈에 보기</h3><p>아래 수치로 만든 요약이에요.</p></div></header><ul>${read.map(line=>`<li>${esc(line)}</li>`).join('')}</ul></section>` : ''}
+    <div class="analytics-kpis">${kpis}</div></div>
     ${section('업무 흐름','신규 등록과 고객사 전달을 일별로 비교해요. 두 선은 같은 이슈 집합을 뜻하지 않아요.',
       `<div class="analytics-chart-heading"><strong>${count(s.newIssues,complete)}<small>신규 등록</small></strong><strong>${count(a.delivery?.count,complete)}<small>고객사 전달</small></strong>${legend([['신규 등록','var(--chart-1)'],['고객사 전달','var(--analytics-secondary)']])}</div>`+
       chartHost({kind:'activity',title:'일별 신규 등록·고객사 전달',complete,height:320,points:a.intake || data.intakeTrend || [],secondaryPoints:a.delivery?.points || [],showValues:true},dailyTable(a,complete)),'analytics-hero')}
-    <div class="analytics-two">${section('고객사별 미종료','현재 업무가 집중된 고객사 · 상위 8곳',ranking(ranked,complete))}
-    ${section('현재 상태 분포','현재 미종료 이슈 · 개발완료는 검증 대기로 포함',chartHost({kind:'bar',title:'미종료 상태 분포',complete,rows:statusRows,series:[{key:'amount',label:'이슈',color:'var(--chart-1)'}]},`<ul>${statusRows.map(r=>`<li>${esc(r.name)} ${count(r.amount,complete)}건</li>`).join('')}</ul>`))}</div>
+    <div class="analytics-two">${section('고객사별 미종료','현재 업무가 집중된 고객사 · 상위 8곳 · ▲▼는 직전에 본 순위와 비교',ranking(ranked,complete,'미종료',previousOrder))}
+    ${section('이번 주 눈여겨볼 변화','지난주 신규가 앞선 주 평균보다 크게 늘어난 고객사·화면',signalList(data.customerSpikes || [], data.screenSpikes || [], complete))}</div>
+    ${section('현재 상태 분포','현재 미종료 이슈 · 개발완료는 검증 대기로 포함',statusSplit(statusRows,complete))}
     ${priorities}`;
 }
 

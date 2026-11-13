@@ -13,7 +13,7 @@ import { recordIssueView } from "./recent_items.js?v=20261105-1";
 import { recentOpenCard, opsKpiTiles, priorityTable } from "./dashboard_overview.js?v=20261105-1";
 import { registerDashboardTab, selectDashboardTab, currentDashboardTab } from "./dashboard_tabs.js?v=20261110-1";
 
-import { analyticsCustomerLabel, analyticsCustomerOption, analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261112-4";
+import { analyticsCustomerLabel, analyticsCustomerOption, analyticsScope, renderAnalyticsControls, renderOverview, renderComparison, renderFlow } from "./dashboard_analytics.js?v=20261113-1";
 
 const dashboardViewStorageKey = "team-ai-assistant-main-view-v1";
 let issueDetailContext = null;
@@ -45,6 +45,7 @@ const dashboardState = {
   intakeMedia: "",
   comparisonDimension: "customer",
   flowStage: "",
+  rankingOrder: [],
   initialized: false,
 };
 let dashboardLoadPromise = null;
@@ -442,7 +443,7 @@ function renderDashboard() {
         : ""}
     ${!complete ? '<div class="dashboard-refresh-status is-warning" role="status"><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>' : ""}
     ${renderAnalyticsControls(rootData, dashboardState.customer)}
-    <div class="ops-pane analytics-pane" data-ops-pane="summary">${renderOverview(data, priorityTable({ rows: filtered.slice(0, 8), complete }))}</div>
+    <div class="ops-pane analytics-pane" data-ops-pane="summary">${renderOverview(data, priorityTable({ rows: filtered.slice(0, 8), complete }), dashboardState.rankingOrder)}</div>
     <div class="ops-pane analytics-pane" data-ops-pane="comparison">${renderComparison(data, dashboardState.comparisonDimension)}</div>
     <div class="ops-pane analytics-pane" data-ops-pane="flow">${renderFlow(data, dashboardState.flowStage)}</div>
     <div class="ops-pane" data-ops-pane="issues">
@@ -463,6 +464,8 @@ function renderDashboard() {
     <div class="dashboard-brief-link"><span>지난주 팀 브리핑은 <b>내 업무 › 주간 보고</b>에서 볼 수 있어요.</span><button type="button" class="secondary-button" data-open-team-brief>팀 브리핑 열기 ›</button></div>
     </div>`;
   animateLayoutChange(els.dashboardBody, RANKING_ROW_SELECTOR, rankingLayout, { duration: 600 });
+  // captureLayout이 돌려주는 Map은 화면 순서대로 채워진다. 다음 그리기에서 ▲▼ 비교에 쓴다.
+  dashboardState.rankingOrder = [...captureLayout(els.dashboardBody, RANKING_ROW_SELECTOR).keys()];
   const customerSelect = els.dashboardBody.querySelector("[data-analytics-customer]");
   if (dashboardState.customer && customerSelect?.value === "") customerSelect.selectedIndex = -1;
   if (!dashboardContentShown) stopDashboardReveal = revealOnScroll(els.dashboardBody, DASHBOARD_REVEAL_SELECTOR);

@@ -108,3 +108,16 @@ test('처리 흐름은 단계 선택을 표의 같은 열에 표시하고 확정
   assert.doesNotMatch(renderFlow(data, 'nope'), /is-selected|aria-pressed="true"/);
   assert.equal(flowHeadline({review:1}, 1, false), '');
 });
+
+test('전체 현황은 순위 변화·급증 신호·상태 비율을 보여 주고 일부 조회에서는 급증을 판단하지 않는다', async () => {
+  const { renderOverview } = await load();
+  const data = {meta:{search_complete:true},summary:{open:3},openIssues:[issue(1,'A'),issue(2,'B'),issue(3,'B')],
+    customerSpikes:[{name:'B',count:5,previousCount:1}],screenSpikes:[{name:'0350',count:3,previousCount:1}],analytics:{delivery:{count:0},effort:{total:0}}};
+  const html = renderOverview(data, '', ['A','B']);
+  assert.match(html, /data-layout-key="B"[^]*▲ 1[^]*data-layout-key="A"[^]*▼ 1/);
+  assert.match(html, /직전 1건 → 지난주 5건[^]*\+4건/);
+  assert.match(html, /data-dashboard-goto="screens">0350</);
+  assert.match(html, /analytics-status-split[^]*진행[^]*3건[^]*100%/);
+  assert.doesNotMatch(renderOverview(data, ''), /analytics-rank-move/);
+  assert.match(renderOverview({...data, meta:{search_complete:false}}, ''), /급증 여부는 판단하지 않았어요/);
+});
