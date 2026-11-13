@@ -97,14 +97,15 @@ function sectionHeader(title, meta = "", subtitle = "") {
   return `<header class="ops-card-head"><div><h3>${escapeHtml(title)}</h3>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}</div>${meta ? `<em class="ops-card-meta">${escapeHtml(meta)}</em>` : ""}</header>`;
 }
 
-function columnChart(rows, { label, valueText, tone }) {
-  const max = Math.max(1, ...rows.map((row) => Number(row.value) || 0));
+function columnChart(rows, { label, valueText, tone, reference = null }) {
+  const max = Math.max(1, ...rows.map((row) => Number(row.value) || 0), reference || 0);
+  const line = reference == null ? "" : `<span class="effort-column-ref" style="bottom:${Math.round((reference / max) * 100)}%"></span>`;
   return `
     <div class="effort-columns" role="img" aria-label="${escapeHtml(label)}">
       ${rows.map((row) => `
         <div class="effort-column">
           <b>${escapeHtml(valueText(row))}</b>
-          <span class="effort-column-track" aria-hidden="true">${Number(row.value) > 0 ? `<i class="${tone(row)}" style="height:${Math.round((Number(row.value) / max) * 100)}%"></i>` : ""}</span>
+          <span class="effort-column-track" aria-hidden="true">${Number(row.value) > 0 ? `<i class="${tone(row)}" style="height:${Math.round((Number(row.value) / max) * 100)}%"></i>` : ""}${line}</span>
           <small>${escapeHtml(row.label)}</small>
         </div>`).join("")}
     </div>`;
@@ -129,7 +130,7 @@ function renderDistribution(data) {
     <section class="workspace-section ops-card" aria-label="처리일 분포">
       ${sectionHeader("처리일 분포", `해결·종료 ${formatNumber(total)}건`, "등록일부터 마지막 수정일까지를 처리일로 세요.")}
       <div class="customer-detail-section-body">
-        ${total ? columnChart(rows, { label: `처리일 분포: ${label}`, valueText: (row) => formatNumber(row.count), tone: (row) => (row.key === "31+" ? "is-late" : "") })
+        ${total ? columnChart(rows, { label: `처리일 분포: ${label}`, valueText: (row) => formatNumber(row.count), tone: (row) => (row.key === "31+" ? "is-late" : ["same-day", "1-2", "3-7"].includes(row.key) ? "is-fast" : "is-mid") })
           : `<p class="customer-detail-empty">${isComplete()
             ? "이 기간에 해결·종료된 이슈가 없어요."
             : "일부 데이터만 확인해 처리일을 계산할 종료 이슈를 찾지 못했어요. 전체 결과는 미확정이에요."}</p>`}
@@ -142,10 +143,10 @@ function renderWeekly(data) {
   const label = rows.map((row) => `${row.label} 주 ${row.medianDays == null ? "종료 없음" : `${row.medianDays}일`}`).join(", ");
   return `
     <section class="workspace-section ops-card" aria-label="주별 처리일 중앙값">
-      ${sectionHeader("주별 처리일 중앙값", "최근 8주", "주는 월요일부터 세요. 이번 주는 오늘까지만 반영해요.")}
+      ${sectionHeader("주별 처리일 중앙값", "최근 8주", `주는 월요일부터 세요. 이번 주는 오늘까지만 반영해요.${isComplete() && data.summary?.medianHandlingDays != null ? ` 점선은 기간 중앙값 ${formatDays(data.summary.medianHandlingDays)}일이에요.` : ""}`)}
       <div class="customer-detail-section-body">
         ${rows.some((row) => row.medianDays != null)
-          ? columnChart(rows, { label: `주별 처리일 중앙값: ${label}`, valueText: (row) => (row.medianDays == null ? "—" : `${formatDays(row.medianDays)}일`), tone: (row) => (row.partialWeek ? "is-partial" : "") })
+          ? columnChart(rows, { label: `주별 처리일 중앙값: ${label}`, valueText: (row) => (row.medianDays == null ? "—" : `${formatDays(row.medianDays)}일`), tone: (row) => (row.partialWeek ? "is-partial" : ""), reference: isComplete() ? data.summary?.medianHandlingDays ?? null : null })
           : `<p class="customer-detail-empty">${isComplete() ? "최근 8주에 처리일을 계산할 해결·종료 이슈가 없어요." : "확인한 범위에는 주별 처리일을 계산할 해결·종료 이슈가 없어요. 전체 결과는 미확정이에요."}</p>`}
       </div>
     </section>`;
@@ -188,9 +189,10 @@ function renderEffort(data) {
   const effort = data.effort || { types: [] };
   const rows = effort.types || [];
   return `
-    <section class="workspace-section ops-card" aria-label="유형별 공수">
+    <section class="workspace-section ops-card effort-types" aria-label="유형별 공수">
       ${sectionHeader("유형별 공수", "고객사전달일 기준", "Mantis 공수 필드(문의·서버·PC·QC) 합계와 건당 평균")}
       <div class="customer-detail-section-body">
+        ${effort.total ? `<div class="effort-type-split" aria-hidden="true">${rows.filter((row) => Number(row.total) > 0).map((row) => `<i style="flex:${Number(row.total)} 1 0"></i>`).join("")}</div>` : ""}
         ${effort.total ? rankedList(rows, {
           name: (row) => row.label,
           value: (row) => `${formatNumber(row.total, 2)} <small>· 건당 ${row.averagePerIssue == null ? "—" : formatNumber(row.averagePerIssue, 2)}</small>`,
@@ -255,8 +257,8 @@ function renderBody() {
     ${isComplete() ? "" : '<p class="customer-detail-note">일부 데이터만 확인했어요. 건수·공수는 확인한 범위의 최소값이며, 처리일은 확인한 해결·종료 이슈 기준이에요.</p>'}
     ${headline ? `<p class="effort-headline">${escapeHtml(headline)}</p>` : ""}
     ${renderMetrics(data)}
-    ${renderAging(data)}
     <div class="effort-board-grid">${renderDistribution(data)}${renderWeekly(data)}${renderCustomers(data)}${renderEffort(data)}</div>
+    ${renderAging(data)}
     <p class="effort-board-disclaimer">${icon("info", 16)}<span>공수는 Mantis 공수 필드(문의·서버·PC·QC)에 기록된 값만 합산해요. 난이도·휴가를 반영한 실제 업무량이나 개인 성과 평가가 아니므로 담당자별 순위는 보여 주지 않아요.</span></p>`;
 }
 

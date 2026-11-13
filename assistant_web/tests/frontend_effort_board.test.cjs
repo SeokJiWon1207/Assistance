@@ -213,3 +213,14 @@ test('공수 요약은 확정 데이터에서만 만들고 고객사 처리일�
   assert.match(long.view.innerHTML, /<i class="is-over is-clipped" style="width:100%"><\/i><b class="effort-reference" style="left:33%"><\/b>/);
   assert.match(long.view.innerHTML, /<i class="is-over" style="width:67%"><\/i>/);
 });
+
+test('처리일 분포는 빠름·30일 초과를 색으로 나누고 주별 중앙값에 기간 중앙값 점선을 긋는다', async () => {
+  const h = await harness(() => ({ ok: true, payload: boardPayload() }));
+  await h.api.loadEffortBoard();
+  const html = h.view.innerHTML;
+  assert.match(html, /<i class="is-fast" style="height:100%"><\/i>/);
+  assert.match(html, /<i class="is-late" style="height:22%"><\/i>/);
+  assert.match(html, /class="effort-column-ref" style="bottom:76%"/);
+  assert.match(html, /점선은 기간 중앙값 3\.5일이에요/);
+  assert.ok(html.indexOf('effort-board-grid') < html.indexOf('effort-aging'));
+});

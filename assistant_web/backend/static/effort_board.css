@@ -7,9 +7,13 @@
 .effort-column { display: grid; justify-items: center; gap: 4px; min-width: 0; }
 .effort-column b { color: var(--text); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .effort-column small { color: var(--muted); font-size: 12px; white-space: nowrap; }
-.effort-column-track { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; border-bottom: 1px solid var(--line); }
+.effort-column-track { position: relative; display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 140px; border-bottom: 1px solid var(--line); }
 .effort-column-track i { width: min(40px, 70%); min-height: 2px; border-radius: 4px 4px 0 0; background: var(--blue); }
-.effort-column-track i.is-late { background: var(--warning); }
+.effort-column-track i.is-late { background: var(--danger); }
+.effort-column-track i.is-fast { background: var(--success); }
+.effort-column-track i.is-mid { background: color-mix(in srgb, var(--success) 40%, var(--surface)); }
+/* 기간 중앙값 점선. 칸 사이 간격이 끊긴 점선처럼 보인다. */
+.effort-column-ref { position: absolute; left: -4px; right: -4px; border-top: 2px dashed var(--muted); pointer-events: none; }
 .effort-column-track i.is-partial { background: color-mix(in srgb, var(--blue) 40%, var(--surface)); }
 
 .effort-ranked-list li { grid-template-columns: 112px minmax(0, 1fr) auto; }
@@ -45,8 +49,9 @@
 .effort-issue-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
 .effort-issue-title { color: var(--text); text-align: left; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
 .effort-issue-title:hover { color: var(--blue); }
-.effort-aging-table .is-aging { color: var(--warning-strong); }
-.effort-aging-table .is-soon { color: var(--text-soft); }
+.effort-aging-table td.is-aging strong, .effort-aging-table td.is-soon strong { display: inline-block; padding: 2px 8px; border-radius: 999px; }
+.effort-aging-table td.is-aging strong { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
+.effort-aging-table td.is-soon strong { background: color-mix(in srgb, var(--warning) 18%, var(--surface)); color: var(--warning-strong); }
 .effort-age-label { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; font-weight: 400; }
 .effort-aging .customer-more-button { justify-self: center; }
 #effortBoardView .customer-detail-empty { padding: 24px 0; line-height: 1.6; }
@@ -85,3 +90,11 @@
 .customer-ranked-track.has-reference i.is-over { background: var(--warning); }
 .effort-reference { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); }
 .customer-ranked-track.has-reference i.is-clipped { border-radius: 4px 0 0 4px; background-image: repeating-linear-gradient(135deg, transparent 0 5px, rgb(255 255 255 / 45%) 5px 8px); background-size: 24px 100%; background-position: right; background-repeat: no-repeat; }
+
+/* 유형별 공수: 위 색 띠와 아래 목록 막대가 같은 순서의 색을 쓴다. */
+.effort-types { --type-1: var(--blue); --type-2: var(--success); --type-3: var(--purple); --type-4: var(--warning); }
+.effort-type-split { display: flex; gap: 2px; height: 14px; overflow: hidden; border-radius: var(--radius-sm); }
+.effort-type-split i:nth-child(1), .effort-types .effort-ranked-list li:nth-child(1) .customer-ranked-track i { background: var(--type-1); }
+.effort-type-split i:nth-child(2), .effort-types .effort-ranked-list li:nth-child(2) .customer-ranked-track i { background: var(--type-2); }
+.effort-type-split i:nth-child(3), .effort-types .effort-ranked-list li:nth-child(3) .customer-ranked-track i { background: var(--type-3); }
+.effort-type-split i:nth-child(4), .effort-types .effort-ranked-list li:nth-child(4) .customer-ranked-track i { background: var(--type-4); }
