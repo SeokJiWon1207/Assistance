@@ -289,6 +289,72 @@ class UnifiedPlannerTests(unittest.TestCase):
 
 
 class UnifiedIntegrationTests(unittest.TestCase):
+    def test_customer_spike_question_returns_baseline_comparison(self):
+        import json
+        from pathlib import Path
+
+        from backend.schemas import ChatRequest
+        from backend.services import chat_service as service
+
+        fixture = Path(__file__).parent / 'fixtures' / 'routing_cases.jsonl'
+        cases = [case for case in map(json.loads, fixture.read_text().splitlines())
+                 if case.get('spike_planner') == 'report']
+        self.assertTrue(cases)
+        spike_plan = proposal(operation='report', report_kind='spike', scope='default', group_by='customer',
+                              status={'mode': 'unspecified', 'values': [], 'evidence': ''})
+        snapshot = {
+            'available': True, 'scanned_count': 37, 'search_complete': True,
+            'group_counts': {'유진증권\x1f2026-10': 3, '유진증권\x1f2026-11': 12,
+                             'KB증권\x1f2026-10': 11, 'KB증권\x1f2026-11': 11},
+        }
+        for case in cases:
+            question = case['q']
+            request = ChatRequest(modelId='test', messages=[{'role': 'user', 'content': question}])
+            with (self.subTest(question=question),
+                  patch.dict('os.environ', {'UNIFIED_QUERY_PLANNER_ENABLED': 'true'}),
+                  patch.object(chat_prepare, 'get_private_model', return_value={'id': 'test', 'status': 'active'}),
+                  patch.object(chat_llm, 'get_model_api_key', return_value='key'),
+                  patch('backend.intent.unified._propose', return_value=spike_plan) as model,
+                  patch('backend.reports.aggregate.scan_mantis_documents', return_value=snapshot),
+                  patch.object(chat_unified, 'build_mantis_count_report', return_value={
+                      'content': '총 11,885건입니다.', 'sources': [], 'raw': {'mode': 'deterministic_mantis_count'},
+                  }),
+                  patch.object(service, 'persist_chat_response', side_effect=lambda request, text, result, **kw: result)):
+                result = service.chat_service.build_response(request, user={'uid': 'u'})
+                self.assertEqual(result['raw']['mode'], 'deterministic_mantis_spike')
+                plan = result['retrieval']['query_plan']
+                self.assertEqual((plan['operation'], plan['report_kind'], plan['group_by']), ('report', 'spike', 'customer'))
+                self.assertEqual(plan['resolved_constraints']['mantis_team_scope'], 'team')
+                self.assertIn('유진투자증권', result['content'])
+                self.assertIn('직전 평균 3.0건, 4.0배', result['content'])
+                self.assertNotIn('KB증권', result['content'])
+                self.assertEqual(result['sources'], [])
+                model.assert_called_once()
+                self.assertEqual(plan['planner_model_id'], 'test')
+
+    def test_spike_text_in_issue_title_uses_search_filter(self):
+        import json
+        from pathlib import Path
+
+        from backend.domain.team import TEAM_MEMBERS
+        from backend.intent.unified import plan_question
+
+        fixture = Path(__file__).parent / 'fixtures' / 'routing_cases.jsonl'
+        case = next(case for case in map(json.loads, fixture.read_text().splitlines())
+                    if case.get('spike_planner') == 'title_search')
+        search_plan = proposal(operation='search', scope='default',
+                               status={'mode': 'unspecified', 'values': [], 'evidence': ''},
+                               filters=[{'field': 'title', 'operator': 'contains', 'value': '급증', 'evidence': '급증'}])
+        with patch('backend.intent.unified._propose', return_value=search_plan) as model:
+            plan = plan_question(case['q'], {'id': 'test'}, 'key', {}, {})
+        model.assert_called_once()
+        self.assertEqual(plan['operation'], 'search')
+        self.assertIsNone(plan['report_kind'])
+        self.assertEqual(plan['filter_clauses'], [{'field': 'title', 'operator': 'contains', 'value': '급증'}])
+        issue = {'id': 12345, 'handler': {'real_name': TEAM_MEMBERS[0]}, 'description': '요청이 급증함'}
+        self.assertTrue(issue_matches_constraints({**issue, 'summary': '접속 오류 급증'}, plan['resolved_constraints']))
+        self.assertFalse(issue_matches_constraints({**issue, 'summary': '접속 오류'}, plan['resolved_constraints']))
+
     def test_short_handler_lookup_builds_exact_filter_without_planner_model(self):
         from backend.schemas import ChatRequest
 

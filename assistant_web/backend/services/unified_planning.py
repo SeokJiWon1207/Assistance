@@ -11,7 +11,7 @@ from backend.intent.scope_extraction import empty_query_constraints
 from backend.intent.conversation_scope import list_context, preserve_list_context
 from backend.intent.unified import plan_question
 from backend.notion.write import run_notion_write_command
-from backend.reports.aggregate import build_mantis_count_report
+from backend.reports.aggregate import build_mantis_count_report, build_mantis_spike_report
 from backend.reports.customer import build_customer_profile_report
 from backend.reports.incident_triage import build_incident_triage_report
 from backend.reports.monthly_customer import build_monthly_customer_report
@@ -171,6 +171,17 @@ def execute_plan(request, context, user):
         return {'modelId': request.modelId, **result} if result else clarification(request, 'Notion 작업 대상을 확인해 주세요.')
     if operation == 'report':
         kind = plan.get('report_kind')
+        if kind == 'spike' and source == 'mantis':
+            from backend.tools.report_contracts import report_contract
+            try:
+                contract = report_contract(context.latest_user_text, plan)
+            except ValueError as exc:
+                return clarification(request, str(exc))
+            result = build_mantis_spike_report(context.retrieval_text, constraints=context.query_constraints,
+                                               axis=(contract or {}).get('options', {}).get('group_by'))
+            if result:
+                return {'modelId': request.modelId, **result}
+            return clarification(request, '급증 분석의 기간·대상 조건을 확인해 주세요.')
         if kind == 'effort':
             from backend.reports.effort import build_effort_report_from_unified_plan
             result = build_effort_report_from_unified_plan(context.retrieval_text, plan)
