@@ -595,13 +595,6 @@ body.theme-dark .app-shell {
   overflow: hidden;
 }
 
-.rail-brand img {
-  display: block;
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-}
-
 .rail-brand:hover {
   border-color: var(--line-strong);
 }
@@ -780,9 +773,10 @@ body.theme-dark .sidebar {
   overflow: hidden;
 }
 
+.rail-brand img,
 .brand-mark img {
-  width: 34px;
-  height: 34px;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
 }

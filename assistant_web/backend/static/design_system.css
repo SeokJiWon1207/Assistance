@@ -30,10 +30,9 @@ body.theme-dark { --shadow-sm: 0 1px 3px rgb(0 0 0 / 25%); --shadow-md: 0 8px 30
 body.theme-dark .app-shell { background: var(--bg); }
 .sidebar { padding: 18px 14px; background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
 .sidebar-head { padding: 0 6px; margin-bottom: 6px; }
-.rail-brand, .brand-mark, .assistant-avatar { background: var(--text); color: var(--surface); border: 0; font-weight: 700; }
-.rail-brand { width: 40px; height: 40px; border-radius: var(--radius-card); font-size: 14px; }
+.rail-brand { width: 40px; height: 40px; border-radius: var(--radius-card); }
 .brand-mark { flex-shrink: 0; border-radius: var(--radius-button); }
-.assistant-avatar { border-radius: var(--radius-button); }
+.assistant-avatar { background: var(--text); color: var(--surface); border: 0; font-weight: 700; border-radius: var(--radius-button); }
 .app-rail { gap: 18px; }
 .rail-items { gap: var(--space-2); }
 .conversation-section { border: 0; padding-top: 0; gap: 14px; }
@@ -279,7 +278,7 @@ button:disabled { cursor: not-allowed; }
 .auth-gate { background: var(--bg); overflow-y: auto; }
 .auth-card { border-radius: var(--radius-card); background: var(--surface); box-shadow: var(--shadow-md); backdrop-filter: none; padding: var(--space-6); }
 .auth-brand { flex-direction: column; text-align: center; margin-bottom: var(--space-5); gap: var(--space-4); }
-.auth-brand .brand-mark { width: 48px; height: 48px; font-size: 18px; border-radius: var(--radius-card); }
+.auth-brand .brand-mark { width: 48px; height: 48px; border-radius: var(--radius-card); }
 .auth-brand strong { font-size: 20px; }
 .auth-card input:not([type="checkbox"]) { border-radius: var(--radius-input); }
 .auth-primary-button { border-radius: var(--radius-button); }
