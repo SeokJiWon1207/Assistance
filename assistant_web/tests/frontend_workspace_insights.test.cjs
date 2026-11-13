@@ -52,14 +52,16 @@ test('open issues are bucketed by age with unknown dates kept apart, and statuse
 test('KPI strip shows the 7-day comparison only for complete data and keeps lower bounds for partial data', async () => {
   const { workspaceKpis } = await load();
   const data = { summary: { open: 4, overdue: 1, aging: 0 }, activity: { recentNew: 3, previousNew: 1 } };
-  const html = workspaceKpis(data, true);
+  const html = workspaceKpis(data, true, { overdue: 1, week: 2, none: 0, today: 1 });
   assert.match(html, /최근 7일 신규/);
+  assert.match(html, /1건 지연/);
+  assert.match(html, /이번 주 마감[^]*2건[^]*오늘 1/);
+  assert.match(html, /목표일 없음[^]*0건[^]*모두 목표일이 있어요/);
   assert.match(html, /workspace-kpi-delta is-up/);
   assert.match(html, /직전 7일보다 2건 많음/);
   assert.match(html, /직전 7일 1건 · 등록일 기준/);
-  assert.match(html, /workspace-kpi is-danger/);
 
-  const partial = workspaceKpis(data, false);
+  const partial = workspaceKpis(data, false, { overdue: 1, week: 2, none: 1, today: 1 });
   assert.doesNotMatch(partial, /workspace-kpi-delta/);
   assert.match(partial, /4건 이상/);
   assert.match(partial, /확인한 범위 기준/);

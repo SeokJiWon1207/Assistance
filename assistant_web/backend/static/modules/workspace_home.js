@@ -176,7 +176,7 @@ export function weekGroups(issues, today = new Date()) {
 }
 
 export function weekBoard(issues, { renderIssue, complete, today = new Date() }) {
-  return `<div class="workspace-kanban is-week" aria-label="날짜별 내 업무 보드">${weekGroups(issues, today).filter((lane) => !lane.weekend || lane.items.length).map((lane) => `
+  return `<div class="workspace-kanban is-week" aria-label="요일별 내 업무 보드">${weekGroups(issues, today).filter((lane) => !lane.weekend || lane.items.length).map((lane) => `
     <section class="workspace-kanban-lane" data-week-lane="${lane.kind}" aria-label="${lane.title}">
       <header><h4>${lane.title}</h4><span>${lane.items.length}${complete ? "" : "+"}</span></header>
       <p class="kanban-lane-note">${lane.note || "&nbsp;"}</p>
@@ -184,12 +184,43 @@ export function weekBoard(issues, { renderIssue, complete, today = new Date() })
     </section>`).join("")}</div>`;
 }
 
-// 보드 위 한 줄 요약. 일부만 조회했을 때는 건수가 실제보다 적을 수 있어 만들지 않는다.
-export function dueHeadline(issues, complete, today = new Date()) {
-  if (!complete || !issues.length) return "";
+// 오늘 기준으로 목표일까지 남은 일수(지났으면 음수). 목표일이 없으면 null.
+export function dueDays(issue, today = new Date()) {
+  const due = localDay(issue.dueDate);
+  return due ? Math.round((due - startOfDay(today)) / 86400000) : null;
+}
+
+// 지표 카드와 인사가 목표일 칩과 같은 묶음(dueBucket)으로 센다.
+export function workDueCounts(issues, today = new Date()) {
   const counts = dueFilterCounts(issues, today);
-  if (!counts.overdue && !counts.week) return "기한이 지났거나 7일 안에 마감할 일이 없어요.";
-  if (!counts.overdue) return `7일 안에 마감할 일 ${counts.week}건이 있어요. 기한 지난 일은 없어요.`;
-  if (!counts.week) return `기한 지난 일 ${counts.overdue}건이 있어요. 7일 안에 마감할 일은 없어요.`;
-  return `기한 지난 일 ${counts.overdue}건, 7일 안에 마감할 일 ${counts.week}건이 있어요.`;
+  return {
+    overdue: counts.overdue, week: counts.week, none: counts.none,
+    today: issues.filter((issue) => dueBucket(issue, today) === "week" && dueDays(issue, today) === 0).length,
+  };
+}
+
+// 내 업무 맨 위 인사. 일부만 조회했을 때는 가장 급한 이슈를 고르지 않는다(실제와 다를 수 있다).
+export function workGreeting(issues, complete, today = new Date()) {
+  const { overdue, week } = dueFilterCounts(issues, today);
+  const date = startOfDay(today).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "long" });
+  const urgent = complete ? sortByDue(issues).find((issue) => ["overdue", "week"].includes(dueBucket(issue, today))) || null : null;
+  const days = urgent ? dueDays(urgent, today) : null;
+  const note = days == null ? "기한이 지난 업무로 표시돼 있어요."
+    : days < 0 ? `목표일이 ${-days}일 지났어요.` : days === 0 ? "오늘이 목표일이에요." : `${days}일 뒤가 목표일이에요.`;
+  return { date, week, overdue, urgent, note };
+}
+
+// 다음에 할 일: 목표일이 있는 미종료 업무를 마감 가까운 순으로.
+export function nextUp(issues, limit = 5) {
+  return sortByDue(issues).filter((issue) => issue.dueDate).slice(0, limit);
+}
+
+// 등록 추이를 7일 단위로 묶는다. 마지막 묶음이 오늘까지이고, 7일이 안 되는 앞쪽 남은 날은 버린다.
+export function weeklyBlocks(points = [], maxBlocks = 4) {
+  const blocks = [];
+  for (let end = points.length; end >= 7 && blocks.length < maxBlocks; end -= 7) {
+    const part = points.slice(end - 7, end);
+    blocks.unshift({ from: String(part[0].date || "").slice(5).replace("-", "/"), total: part.reduce((sum, point) => sum + Number(point.count || 0), 0) });
+  }
+  return blocks;
 }

@@ -7,7 +7,7 @@ import { formatUiDateTime, formatAxisDate, formatPeriodText, customerName, custo
 import { dataBadgeState, formatBadgeTime, mantisBadgeDetails, renderDataBadge } from "./data_badge.js?v=20260911-6";
 import { captureLayout, animateLayoutChange } from "./motion.js?v=20260911-6";
 import { workspaceKpis, workspaceCharts, weeklyKpis, weeklyTrendCard, teamBriefKpis } from "./workspace_insights.js?v=20261105-1";
-import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml, kanbanBoard, kanbanGroups, weekBoard, weekGroups, dueHeadline } from "./workspace_home.js?v=20261112-2";
+import { dueFilterChips, filterByDue, sortByDue, activityFeedHtml, kanbanBoard, kanbanGroups, weekBoard, weekGroups, workGreeting, workDueCounts, nextUp, dueDays, weeklyBlocks } from "./workspace_home.js?v=20261112-2";
 
 function userScopedStorageKey(base) {
   return scopedStorageKey(base, state.currentUser?.uid);
@@ -705,7 +705,7 @@ function issueWorkspaceRow(issue) {
       <span class="workspace-item-id">#${escapeHtml(String(issue.id || ""))}</span>
       <div class="workspace-item-main">
         <button type="button" class="workspace-item-name workspace-issue-title" data-workspace-issue="${escapeHtml(String(issue.id || ""))}" aria-label="#${escapeHtml(String(issue.id || ""))} ${escapeHtml(issue.title || "제목 없음")} 상세 보기">${escapeHtml(issue.title || "제목 없음")}</button>
-        <span class="workspace-item-meta">${meta}${riskLabel ? ` · <b class="workspace-meta-risk is-${escapeHtml(issue.riskLevel)}">${escapeHtml(riskLabel)}</b>` : ""}</span>
+        <span class="workspace-item-meta">${issue.project ? customerMark(customerName(issue)) : ""}${meta}${riskLabel ? ` · <b class="workspace-meta-risk is-${escapeHtml(issue.riskLevel)}">${escapeHtml(riskLabel)}</b>` : ""}</span>
         ${issue.recommendedAction ? `<p class="workspace-item-recommendation"><span class="sr-only">권장 조치</span>→ ${escapeHtml(issue.recommendedAction)}</p>` : ""}
       </div>
       <span class="workspace-item-due ${due?.tone || ""}">${due ? `<b>${escapeHtml(due.main)}</b><small>${escapeHtml(due.sub)}</small>` : ""}</span>
@@ -747,6 +747,69 @@ function groupedIssueRows(issues) {
     ${items.map(issueWorkspaceRow).join("")}`).join("");
 }
 
+// 내 업무 맨 위: 날짜, 7일 안 마감·기한 지난 건수, 가장 급한 이슈, 주간 보고·도움말 이동.
+function greetingBlock(issues, complete) {
+  const { date, week, overdue, urgent, note } = workGreeting(issues, complete);
+  const title = !complete ? "오늘 확인할 내 업무"
+    : !week && !overdue ? "급하게 챙길 일이 없어요"
+      : `7일 안에 마감할 일 <b class="is-blue">${week}건</b>, 기한 지난 일 <b${overdue ? ' class="is-danger"' : ""}>${overdue}건</b>`;
+  const id = escapeHtml(String(urgent?.id ?? ""));
+  const label = escapeHtml(urgent?.title || "제목 없음");
+  const sub = urgent ? `<p class="workspace-greeting-sub">가장 급한 건 <button type="button" data-workspace-issue="${id}" aria-label="#${id} ${label} 상세 보기">#${id} ${label}</button>이에요. ${note}</p>` : "";
+  return `<section class="workspace-greeting" aria-labelledby="workspaceGreetingTitle">
+    <div><p class="workspace-greeting-date">${escapeHtml(date)}</p><h2 id="workspaceGreetingTitle" class="workspace-greeting-title">${title}</h2>${sub}</div>
+    <div class="workspace-greeting-actions">
+      <button type="button" class="workspace-greeting-primary" data-workspace-go="brief">${icon("sparkle", 16)}이번 주 AI 브리핑</button>
+      <button type="button" class="secondary-button" data-workspace-help>${icon("help", 16)}도움말</button>
+    </div>
+  </section>`;
+}
+
+// 다음에 할 일: 목표일이 있는 미종료 업무 5건. 카드를 누르면 상세가 열린다.
+function nextUpBlock(issues) {
+  const rows = nextUp(issues).map((issue, index) => {
+    const id = escapeHtml(String(issue.id || ""));
+    const days = dueDays(issue);
+    const tone = days < 0 ? "is-late" : days <= 1 ? "is-soon" : "";
+    const due = issueDueLabel(issue, Number(issue.ageDays || 0));
+    const meta = [customerName(issue), workspaceStatusLabel(issue.status)].filter(Boolean).join(" · ");
+    return `<li><span class="workspace-next-rank">${index + 1}</span>
+      <div class="workspace-next-main"><button type="button" class="workspace-next-title" data-workspace-issue="${id}">#${id} ${escapeHtml(issue.title || "제목 없음")}</button>
+      <span class="workspace-next-meta">${issue.project ? customerMark(customerName(issue)) : ""}${escapeHtml(meta)}</span></div>
+      <span class="workspace-next-due ${tone}">${escapeHtml(due?.main || "")}</span></li>`;
+  }).join("");
+  return `<section class="workspace-next" aria-labelledby="workspaceNextTitle">
+    <header><h3 id="workspaceNextTitle">다음에 할 일</h3><span>마감 가까운 순</span></header>
+    ${rows ? `<ol>${rows}</ol>` : '<p class="analytics-empty">마감일이 있는 미종료 업무가 없어요.</p>'}
+  </section>`;
+}
+
+// 주간 신규 등록: 종료일 기록이 없어 처리량 대신 등록일 기준 7일 단위 막대를 보여 준다.
+function weeklyBlock(data, complete) {
+  const blocks = weeklyBlocks(data.activity?.points);
+  if (blocks.length < 2) return "";
+  const max = Math.max(1, ...blocks.map((block) => block.total));
+  const label = blocks.map((block) => `${block.from}부터 ${block.total}건`).join(", ");
+  const bars = blocks.map((block, index) => `<div class="workspace-weekly-col"><b>${block.total}${complete ? "" : "+"}</b>
+    <i class="${index === blocks.length - 1 ? "is-current" : ""}" style="height:${Math.max(2, Math.round((block.total / max) * 120))}px"></i>
+    <small>${index === blocks.length - 1 ? "최근 7일" : `${escapeHtml(block.from)}~`}</small></div>`).join("");
+  return `<section class="workspace-weekly" aria-labelledby="workspaceWeeklyTitle">
+    <h3 id="workspaceWeeklyTitle">주간 신규 등록</h3><p>최근 ${blocks.length}주 · 7일 단위 · 등록일 기준 · 종료된 이슈 포함</p>
+    <div class="workspace-weekly-bars" role="img" aria-label="주간 신규 등록: ${escapeHtml(label)}">${bars}</div>
+  </section>`;
+}
+
+const HELP_BLOCK = `<details class="workspace-help" id="workspaceHelp">
+    <summary>이 화면 보는 법과 단축키</summary>
+    <div><ul>
+      <li>상태별 보기는 접수·검토, 진행, 검증 대기, 해결·종료 순으로 놓고, 요일별 보기는 Mantis 목표일 기준으로 놓아요.</li>
+      <li>기한 지남 칸은 오늘 기준이에요. 목표일 없음 칸의 이슈는 날짜를 정하기 전까지 마감 건수에 들어가지 않아요.</li>
+      <li>해결·종료 열은 최근 30일에 수정된 종료 항목이에요. 실제 완료일 기준이 아니에요.</li>
+      <li>목표일과 상태는 Mantis에서 바꿔요. 이 화면은 보기 전용이라 카드를 끌어 옮길 수 없어요.</li>
+    </ul>
+    <dl><dt><kbd>⌘K</kbd></dt><dd>검색 (Windows는 Ctrl+K)</dd></dl></div>
+  </details>`;
+
 function renderPersonalOverview(data) {
   if (data.mantis?.status === "error") {
     return workspaceFailure(data.mantis.reason || "잠시 후 다시 조회해 주세요.");
@@ -772,25 +835,26 @@ function renderPersonalOverview(data) {
       ? `<div class="workspace-connection is-warning"><span class="workspace-connection-dot" aria-hidden="true"></span><strong>일부 이슈만 확인했어요.</strong><span>건수는 확인한 범위 기준이라 실제보다 적을 수 있어요.</span></div>`
       : "";
   const weekView = state.workspaceBoardView === "week";
-  const headline = dueHeadline(everyIssue, complete);
+  const dueCounts = workDueCounts(everyIssue);
   return `<div class="workspace-overview is-insights is-kanban"><div class="workspace-main">
-    ${workspaceKpis(data, complete)}${notice}
+    ${greetingBlock(everyIssue, complete)}${workspaceKpis(data, complete, dueCounts)}${notice}
     <section class="workspace-board-section">
       <header class="workspace-issue-header">
-        <div><h3>내 업무 보드</h3><p>${weekView ? "목표일 기준으로 날짜별로 놓았어요." : "상태별로 다음 할 일을 확인하세요."} 카드를 누르면 상세가 열려요.</p></div>
+        <div><h3>내 업무 보드</h3><p>${weekView ? "목표일 기준으로 요일별로 놓았어요." : "상태별로 다음 할 일을 확인하세요."} 카드를 누르면 상세가 열려요.</p></div>
         <div class="workspace-list-controls"><em class="workspace-visible-count">미종료 <strong>${issues.length}${complete ? "" : "+"}</strong>건${filtered ? ` · 전체 ${everyIssue.length}건 중` : ""}</em>
-        <div class="analytics-segments workspace-board-views" role="group" aria-label="보드 보기"><button type="button" data-workspace-board-view="status" aria-pressed="${!weekView}">상태별</button><button type="button" data-workspace-board-view="week" aria-pressed="${weekView}">날짜별</button></div>
+        <div class="analytics-segments workspace-board-views" role="group" aria-label="보드 보기"><button type="button" data-workspace-board-view="status" aria-pressed="${!weekView}">상태별</button><button type="button" data-workspace-board-view="week" aria-pressed="${weekView}">요일별</button></div>
         ${weekView ? "" : `<select aria-label="업무 정렬" data-workspace-sort><option value="urgent">긴급도순</option><option value="due" ${state.workspaceSort === "due" ? "selected" : ""}>목표일 임박순</option><option value="oldest" ${state.workspaceSort === "oldest" ? "selected" : ""}>오래된순</option><option value="newest" ${state.workspaceSort === "newest" ? "selected" : ""}>최근순</option></select>`}</div>
       </header>
-      ${headline ? `<p class="workspace-board-headline">${headline}</p>` : ""}
       ${everyIssue.length ? dueFilterChips(everyIssue, state.workspaceDueFilter) : ""}
       ${filtered && !issues.length ? `<p class="analytics-empty" role="status">이 조건에 맞는 미종료 이슈가 없어요.</p>` : ""}
       ${weekView
-        ? `${weekBoard(issues, { renderIssue:issueWorkspaceRow, complete })}<p class="analytics-footnote">날짜별 보기는 미종료 업무만 보여 줘요. 목표일은 Mantis에서 바꿀 수 있어요.</p>`
+        ? `${weekBoard(issues, { renderIssue:issueWorkspaceRow, complete })}<p class="analytics-footnote">요일별 보기는 미종료 업무만 보여 줘요. 목표일은 Mantis에서 바꿀 수 있어요.</p>`
         : `${kanbanBoard([...issues, ...recentClosed], { renderIssue:issueWorkspaceRow, statusLabel:workspaceStatusLabel, complete, closedTotal:data.mantis?.recentClosedTotal || 0, showClosed:!filtered })}
       <p class="analytics-footnote">해결·종료 열은 최근 30일에 수정된 종료 항목이에요. 실제 완료일 기준의 실적은 아니에요.</p>`}
     </section>
+    <div class="workspace-bottom">${nextUpBlock(everyIssue)}${weeklyBlock(data, complete)}</div>
     <details class="workspace-board-activity"><summary>최근 활동과 업무 분포</summary>${overviewActivityCard(data)}${workspaceCharts(data, complete, {statusLabel:workspaceStatusLabel, customerLabel:issue=>customerName(issue), customerMark})}</details>
+    ${HELP_BLOCK}
     </div></div>`;
 }
 

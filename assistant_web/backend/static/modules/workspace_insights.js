@@ -69,15 +69,22 @@ function kpi({ label, value, tone = "", detail = "", delta = null }) {
   </article>`;
 }
 
-function workspaceKpis(data, complete) {
+// due: 목표일 칩과 같은 묶음으로 센 건수(workDueCounts). 일부만 조회했으면 건수 뒤에 '이상'이 붙는다.
+function workspaceKpis(data, complete, due = {}) {
   const summary = data.summary || {};
   const activity = data.activity || {};
   const recent = activity.recentNew ?? data.weeklyBrief?.newIssues ?? 0;
   const hasPrevious = Number.isFinite(Number(activity.previousNew)) && activity.previousNew !== undefined;
+  const pill = (tone, label, text) => ({ tone, icon: "", label, text });
   return `<section class="workspace-kpis" aria-label="내 업무 지표">
-    ${kpi({ label: "미종료", value: countText(summary.open, complete), tone: summary.open ? "is-blue" : "", detail: complete ? "내 담당 업무" : "확인한 범위 기준" })}
-    ${kpi({ label: "일정 지연", value: countText(summary.overdue, complete), tone: summary.overdue ? "is-danger" : "", detail: !complete ? "확인한 범위 기준" : summary.overdue ? "기한이 지난 업무" : "모두 기한 내 진행 중" })}
-    ${kpi({ label: "장기 미종료", value: countText(summary.aging, complete), tone: summary.aging ? "is-warning" : "", detail: !complete ? "확인한 범위 기준" : summary.aging ? "30일 이상 · 우선 확인 필요" : "30일 이상 업무 없음" })}
+    ${kpi({ label: "미종료", value: countText(summary.open, complete), tone: summary.open ? "is-blue" : "",
+      delta: complete && due.overdue ? pill("is-bad", `${due.overdue}건 지연`, `기한이 지난 업무 ${due.overdue}건`) : null,
+      detail: complete ? "내 담당 업무" : "확인한 범위 기준" })}
+    ${kpi({ label: "이번 주 마감", value: countText(due.week, complete),
+      delta: complete && due.today ? pill("is-flat", `오늘 ${due.today}`, `오늘이 목표일인 업무 ${due.today}건`) : null,
+      detail: complete ? "오늘부터 7일 안" : "확인한 범위 기준" })}
+    ${kpi({ label: "목표일 없음", value: countText(due.none, complete), tone: due.none ? "is-warning" : "",
+      detail: !complete ? "확인한 범위 기준" : due.none ? "날짜 지정 필요" : "모두 목표일이 있어요" })}
     ${kpi({ label: "최근 7일 신규", value: countText(recent, complete), delta: hasPrevious && complete ? newIssueDelta(recent, activity.previousNew) : null,
       detail: hasPrevious ? `직전 7일 ${countText(activity.previousNew, complete)} · 등록일 기준` : "등록일 기준" })}
   </section>`;

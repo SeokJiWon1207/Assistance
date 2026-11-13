@@ -127,20 +127,16 @@ body:not(.rail-collapsed) .app-shell[data-view="dashboard"] .dashboard-tabs { di
 .customer-monthly-chart { min-height:240px; }
 /* 보드는 본문 너비를 모두 사용한다. 각 열은 정상 문서 흐름으로 읽힌다. */
 .app-shell[data-view="personal"] .workspace-overview.is-insights.is-kanban { display:block; grid-template-columns:minmax(0,1fr); }
-.workspace-board-section { min-width:0; }
-.workspace-board-section > .workspace-issue-header { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; align-items:center; padding:8px 0 16px; }
+.workspace-board-section { min-width:0; padding:20px 24px 24px; border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--surface); }
+.workspace-board-section > .workspace-issue-header { display:flex; flex-wrap:wrap; justify-content:space-between; gap:16px; align-items:flex-start; padding:0 0 16px; }
 .workspace-board-section h3 { font-size:17px; margin:0; }
 .workspace-board-section header p { margin:6px 0 0; font-size:12px; color:var(--muted); }
 .workspace-board-section .workspace-due-filters { margin:0 0 20px; padding:0; border:0; }
 .workspace-kanban { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); align-items:start; gap:16px; }
 .workspace-kanban:has([data-kanban-lane="unknown"]) { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .workspace-kanban.is-week { grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(168px,1fr); gap:12px; overflow-x:auto; padding-bottom:4px; }
-.workspace-kanban.is-week .workspace-kanban-lane[data-week-lane="overdue"] { background:color-mix(in srgb,var(--danger) 6%,transparent); border-color:color-mix(in srgb,var(--danger) 30%,var(--line)); }
-.workspace-kanban.is-week .workspace-kanban-lane[data-week-lane="overdue"] h4 { color:var(--danger); }
-.workspace-kanban.is-week .workspace-kanban-lane[data-week-lane="today"] { background:var(--blue-soft); border-color:var(--blue); }
 .workspace-board-views { margin-bottom:0; }
 .workspace-board-views button { min-height:32px; }
-.workspace-board-headline { margin:0 0 16px; color:var(--text); font-size:15px; font-weight:600; line-height:1.6; }
 .workspace-kanban-lane { min-width:0; padding:14px 10px 10px; background:color-mix(in srgb,var(--muted) 5%,transparent); border:1px solid var(--line); border-radius:12px; }
 .workspace-kanban-lane > header { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 3px; }
 .workspace-kanban-lane h4 { display:flex; align-items:center; gap:8px; font-size:13px; margin:0; }
@@ -209,6 +205,43 @@ body.theme-dark { --analytics-secondary:#f0a45b; }
  .workspace-kanban-lane:has(.kanban-empty) .kanban-empty { min-height:0; padding:10px 0 2px; border:0; }
 }
 
+/* 내 업무 색: 보드 열·카드·목표일 칩·지표가 상태별 색(--lane, --due, --chip, --kpi)을 쓴다.
+   바탕은 var(--surface)와 섞어 밝은·어두운 테마 모두에서 같은 비율로 물든다. 테마 파일보다 앞서도록 .app-shell을 붙인다. */
+.workspace-kanban-lane { --lane:var(--muted); background:color-mix(in srgb,var(--lane) 6%,var(--surface)); border-color:color-mix(in srgb,var(--lane) 22%,var(--line)); box-shadow:inset 0 3px 0 var(--lane); }
+[data-kanban-lane="review"],[data-week-lane="day"],[data-week-lane="later"] { --lane:var(--text-soft); }
+[data-kanban-lane="progress"],[data-week-lane="today"] { --lane:var(--blue); }
+[data-kanban-lane="validation"] { --lane:var(--purple); }
+[data-kanban-lane="done"] { --lane:var(--success); }
+[data-week-lane="overdue"] { --lane:var(--danger); }
+[data-week-lane="none"] { --lane:var(--warning-strong); }
+.workspace-kanban-lane:is([data-week-lane="overdue"],[data-week-lane="today"],[data-week-lane="none"]) { background:color-mix(in srgb,var(--lane) 11%,var(--surface)); }
+.workspace-kanban-lane[data-week-lane="today"] { border-color:var(--lane); }
+.workspace-kanban-lane:is([data-week-lane="overdue"],[data-week-lane="today"],[data-week-lane="none"]) h4 { color:var(--lane); }
+.workspace-kanban-lane h4 .analytics-stage-dot { background:var(--lane); }
+.app-shell .workspace-kanban-lane > header > span { background:var(--surface); color:var(--lane); font-weight:700; }
+.workspace-kanban-lane .kanban-empty { border-color:color-mix(in srgb,var(--lane) 35%,var(--line)); }
+.workspace-kanban .workspace-item-due { --due:var(--blue); }
+.workspace-kanban [data-kanban-lane="done"] .workspace-item-due { --due:var(--success); }
+.workspace-kanban .workspace-item-due.is-overdue { --due:var(--danger); }
+.workspace-kanban .workspace-item-due.is-aging { --due:var(--warning-strong); }
+.app-shell .workspace-kanban .workspace-item-due b { align-self:flex-start; white-space:nowrap; padding:2px 8px; border-radius:999px; background:color-mix(in srgb,var(--due) 12%,var(--surface)); color:var(--due); }
+.app-shell .workspace-kanban .workspace-item-action { border-color:transparent; background:var(--blue-soft); color:var(--blue); font-weight:700; }
+.workspace-board-views button[aria-pressed="true"] { background:var(--blue); color:var(--on-accent); box-shadow:none; }
+.workspace-due-chip { --chip:var(--text); }
+.workspace-due-chip[data-workspace-due-filter="overdue"] { --chip:var(--danger); }
+.workspace-due-chip[data-workspace-due-filter="week"] { --chip:var(--blue); }
+.workspace-due-chip[data-workspace-due-filter="none"] { --chip:var(--warning-strong); }
+.workspace-due-chip::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--chip); }
+.app-shell .workspace-due-chip[aria-pressed="true"] { border-color:var(--chip); background:color-mix(in srgb,var(--chip) 10%,var(--surface)); color:var(--chip); }
+.app-shell .workspace-due-chip[aria-pressed="true"] b { color:inherit; opacity:1; }
+.workspace-kpis[aria-label="내 업무 지표"] > .workspace-kpi:nth-child(1) { --kpi:var(--blue); }
+.workspace-kpis[aria-label="내 업무 지표"] > .workspace-kpi:nth-child(2) { --kpi:var(--purple); }
+.workspace-kpis[aria-label="내 업무 지표"] > .workspace-kpi:nth-child(3) { --kpi:var(--warning-strong); }
+.workspace-kpis[aria-label="내 업무 지표"] > .workspace-kpi:nth-child(4) { --kpi:var(--success); }
+.app-shell .workspace-kpis[aria-label="내 업무 지표"] .workspace-kpi-label { display:flex; align-items:center; gap:8px; }
+.workspace-kpis[aria-label="내 업무 지표"] .workspace-kpi-label::before { content:""; flex:none; width:22px; height:22px; border-radius:var(--radius-sm); background:color-mix(in srgb,var(--kpi) 14%,var(--surface)); box-shadow:inset 0 0 0 5px color-mix(in srgb,var(--kpi) 14%,var(--surface)), inset 0 0 0 12px var(--kpi); }
+.workspace-kanban .workspace-item-meta .customer-mark { vertical-align:middle; margin-right:6px; }
+
 /* 전체 현황: 한눈에 보기와 지표를 한 줄에, 지표는 2×2 */
 .analytics-top { display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); gap:16px; align-items:start; }
 .analytics-top.is-single { grid-template-columns:minmax(0,1fr); }
@@ -234,3 +267,51 @@ body.theme-dark { --analytics-secondary:#f0a45b; }
 @media (max-width:1100px) { .analytics-top { grid-template-columns:minmax(0,1fr); } .analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media (max-width:680px) { .analytics-top:not(.is-single) .analytics-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } .analytics-status-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
+/* 내 업무 맨 위 인사 */
+.workspace-greeting { display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px 24px; }
+.workspace-greeting-date { margin:0 0 4px; color:var(--muted); font-weight:500; }
+.workspace-greeting-title { margin:0; font-size:26px; line-height:1.3; font-weight:700; letter-spacing:-.02em; }
+.workspace-greeting-title b { font-weight:700; }
+.workspace-greeting-title b.is-blue { color:var(--blue); }
+.workspace-greeting-title b.is-danger { color:var(--danger); }
+.workspace-greeting-sub { margin:8px 0 0; color:var(--text-soft); font-size:16px; line-height:1.6; }
+.workspace-greeting-sub button { border:0; background:none; padding:0; color:var(--blue); font:inherit; font-weight:600; text-align:left; cursor:pointer; }
+.workspace-greeting-sub button:hover { text-decoration:underline; }
+.workspace-greeting-actions { display:flex; flex:none; gap:8px; }
+.workspace-greeting > div:first-child { flex:1 1 360px; min-width:0; }
+.workspace-greeting-actions > button { display:inline-flex; align-items:center; gap:8px; min-height:44px; white-space:nowrap; }
+.workspace-greeting-primary { padding:0 16px; border:0; border-radius:var(--radius-button, 10px); background:var(--text); color:var(--surface); font:inherit; font-weight:600; cursor:pointer; }
+.workspace-greeting-primary:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+/* 다음에 할 일 · 주간 신규 등록 */
+.workspace-bottom { display:flex; flex-wrap:wrap; gap:16px; }
+.workspace-next, .workspace-weekly { min-width:0; padding:20px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface); }
+.workspace-next { flex:2 1 420px; display:flex; flex-direction:column; gap:12px; }
+.workspace-weekly { flex:1 1 300px; display:flex; flex-direction:column; gap:12px; }
+.workspace-next > header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.workspace-next h3, .workspace-weekly h3 { margin:0; font-size:17px; font-weight:700; }
+.workspace-next > header span, .workspace-weekly > p { margin:0; color:var(--muted); font-size:13px; }
+.workspace-next ol { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; }
+.workspace-next li { display:flex; align-items:center; gap:14px; min-height:56px; border-top:1px solid var(--line); }
+.workspace-next li:first-child { border-top:0; }
+.workspace-next-rank { width:20px; color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums; }
+.workspace-next-main { display:flex; flex:1; flex-direction:column; min-width:0; }
+.workspace-next-title { border:0; background:none; padding:0; min-height:28px; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-next-title:hover { color:var(--blue); }
+.workspace-next-meta { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+.workspace-next-due { flex:none; padding:2px 8px; border-radius:999px; background:color-mix(in srgb,var(--muted) 12%,var(--surface)); color:var(--text-soft); font-size:12px; font-weight:700; white-space:nowrap; }
+.workspace-next-due.is-late { background:color-mix(in srgb,var(--danger) 12%,var(--surface)); color:var(--danger); }
+.workspace-next-due.is-soon { background:color-mix(in srgb,var(--warning) 18%,var(--surface)); color:var(--warning-strong); }
+.workspace-weekly-bars { display:flex; align-items:flex-end; gap:12px; height:168px; padding-top:8px; }
+.workspace-weekly-col { display:flex; flex:1; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:100%; min-width:0; }
+.workspace-weekly-col b { font-size:12px; color:var(--text-soft); font-variant-numeric:tabular-nums; }
+.workspace-weekly-col i { display:block; width:100%; max-width:40px; border-radius:6px 6px 2px 2px; background:color-mix(in srgb,var(--blue) 30%,var(--surface)); }
+.workspace-weekly-col i.is-current { background:var(--blue); }
+.workspace-weekly-col small { color:var(--muted); font-size:12px; white-space:nowrap; }
+/* 도움말 */
+.workspace-help { padding:4px 20px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface); }
+.workspace-help > summary { display:flex; align-items:center; min-height:44px; font-weight:600; cursor:pointer; }
+.workspace-help > div { display:flex; flex-wrap:wrap; gap:24px; padding:4px 0 16px; color:var(--text-soft); }
+.workspace-help ul { display:flex; flex:2 1 420px; flex-direction:column; gap:4px; margin:0; padding-left:18px; }
+.workspace-help dl { display:grid; flex:1 1 220px; grid-template-columns:auto 1fr; gap:4px 12px; align-content:start; margin:0; }
+.workspace-help dd { margin:0; }
+.workspace-help kbd { padding:1px 6px; border:1px solid var(--line-strong); border-radius:var(--radius-sm); font:inherit; font-weight:600; }

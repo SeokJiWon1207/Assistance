@@ -570,7 +570,7 @@ class FrontendCoreTests(unittest.TestCase):
         self.assertIn("kanbanBoard([...issues, ...recentClosed]", workspace_js)
         # 지표·상태별 보드·접힌 분석이 본문 전체에서 한 페이지로 스크롤된다.
         self.assertIn('class="workspace-overview is-insights is-kanban"><div class="workspace-main">', workspace_js)
-        self.assertIn("workspaceKpis(data, complete)", workspace_js)
+        self.assertIn("workspaceKpis(data, complete, dueCounts)", workspace_js)
         self.assertIn("workspaceCharts(data, complete,", workspace_js)
         self.assertIn(".workspace-overview.is-insights {", insights_css)
         self.assertIn(".workspace-main > .workspace-section .workspace-issue-list", insights_css)

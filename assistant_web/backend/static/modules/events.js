@@ -448,6 +448,15 @@ els.workspaceContent?.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (event.target.closest("[data-workspace-help]")) {
+    const help = els.workspaceContent.querySelector("#workspaceHelp");
+    if (help) {
+      help.open = true;
+      help.scrollIntoView({ block: "center" });
+      help.querySelector("summary")?.focus();
+    }
+    return;
+  }
   const boardView = event.target.closest("[data-workspace-board-view]");
   if (boardView) {
     state.workspaceBoardView = boardView.dataset.workspaceBoardView;

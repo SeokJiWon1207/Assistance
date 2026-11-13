@@ -708,7 +708,7 @@ test('work tab shows due chips that filter and sort by due date, and a recent ac
   assert.match(feed, /새 활동/);
   h.state.workspaceDueFilter = 'week';
   html = h.api.renderPersonalOverview(data);
-  const list = html.slice(html.indexOf('class="workspace-kanban"'), html.indexOf('workspace-board-activity'));
+  const list = html.slice(html.indexOf('class="workspace-kanban"'), html.indexOf('workspace-bottom'));
 
   assert.match(list, /이번 주 업무/);
   assert.doesNotMatch(list, /지난 업무|목표일 없음|다음 달 업무/);
@@ -815,15 +815,53 @@ test('날짜별 보드는 목표일 칩과 같은 기준으로 칸을 나누고 
   assert.deepEqual(ids('none'), [5]);
   assert.equal(lanes[1].title, '오늘');
   assert.equal(lanes[2].title, '금 11/13');
-  assert.equal(h.home.dueHeadline(issues, true, today), '기한 지난 일 2건, 7일 안에 마감할 일 4건이 있어요.');
-  assert.equal(h.home.dueHeadline(issues, false, today), '');
-  assert.equal(h.home.dueHeadline([{ id: 1, dueDate: '2026-11-13' }], true, today), '7일 안에 마감할 일 1건이 있어요. 기한 지난 일은 없어요.');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.home.workDueCounts(issues, today))), { overdue: 2, week: 4, none: 1, today: 2 });
+  const greeting = h.home.workGreeting(issues, true, today);
+  assert.equal(greeting.date, '11월 12일 목요일');
+  assert.equal(greeting.urgent.id, 1);
+  assert.equal(greeting.note, '목표일이 2일 지났어요.');
+  assert.equal(h.home.workGreeting(issues, false, today).urgent, null);
+  assert.equal(h.home.workGreeting([{ id: 7, dueDate: '2026-11-12' }], true, today).note, '오늘이 목표일이에요.');
+  assert.deepEqual(Array.from(h.home.nextUp(issues.slice(0, 6), 3), (issue) => issue.id), [1, 2, 3]);
+  const points = Array.from({ length: 16 }, (_, index) => ({ date: new Date(2026, 9, 28 + index).toISOString().slice(0, 10), count: 1 }));
+  assert.equal(h.home.weeklyBlocks(points).length, 2);
+  assert.equal(h.home.weeklyBlocks(points.slice(0, 6)).length, 0);
   assert.equal(Array.from(lanes.filter((lane) => lane.weekend), (lane) => lane.title).join(), '토 11/14,일 11/15');
   h.state.workspaceBoardView = 'week';
   const html = h.api.renderPersonalOverview({ user: { mantisUsername: 'user-a' }, summary: {open: 1}, mantis: {search_complete: true, issues: [{id: 1, title: '날짜 업무'}], recentClosed: [{id: 9, title: '종료 업무', status: 'closed'}]} });
   assert.match(html, /data-week-lane="none"[^]*날짜 업무/);
-  const board = html.slice(html.indexOf('workspace-kanban is-week'), html.indexOf('날짜별 보기는 미종료 업무만'));
+  const board = html.slice(html.indexOf('workspace-kanban is-week'), html.indexOf('요일별 보기는 미종료 업무만'));
   assert.match(board, /날짜 업무/);
   assert.doesNotMatch(board, /종료 업무/);
   assert.match(html, /data-workspace-board-view="week" aria-pressed="true"/);
+});
+
+test('내 업무는 인사·다음에 할 일·주간 신규 등록·도움말을 보여 주고 상태별 네 열을 유지한다', async () => {
+  const h = await harness(async () => ({ ok: true }));
+  const pad = (n) => String(n).padStart(2, '0');
+  const day = (offset) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+  const points = Array.from({ length: 30 }, (_, index) => ({ date: day(index - 29), count: index % 3 }));
+  const data = { user: { mantisUsername: 'user-a' }, summary: { open: 3 }, activity: { points },
+    mantis: { search_complete: true, issues: [
+      { id: 1, title: '지난 일', dueDate: day(-2), overdue: true, status: 'confirmed', isOpen: true },
+      { id: 2, title: '곧 할 일', dueDate: day(0), status: 'assigned', isOpen: true },
+      { id: 3, title: '날짜 없음', status: 'new', isOpen: true },
+    ] } };
+  let html = h.api.renderPersonalOverview(data);
+  assert.match(html, /7일 안에 마감할 일 <b class="is-blue">1건<\/b>, 기한 지난 일 <b class="is-danger">1건<\/b>/);
+  assert.match(html, /가장 급한 건 <button[^>]*data-workspace-issue="1"[^>]*>#1 지난 일<\/button>이에요\. 목표일이 2일 지났어요\./);
+  assert.match(html, /data-workspace-go="brief">[^]*이번 주 AI 브리핑/);
+  assert.match(html, /data-workspace-help/);
+  assert.match(html, /<details class="workspace-help" id="workspaceHelp">/);
+  assert.match(html, /1건 지연/);
+  assert.match(html, /이번 주 마감/);
+  const next = html.slice(html.indexOf('class="workspace-next"'), html.indexOf('workspace-weekly') > 0 ? html.indexOf('workspace-weekly') : undefined);
+  assert.ok(next.indexOf('#1 지난 일') < next.indexOf('#2 곧 할 일'));
+  assert.doesNotMatch(next, /날짜 없음/);
+  assert.match(next, /workspace-next-due is-late">[^<]*일 지남/);
+  assert.match(html, /class="workspace-weekly"[^]*최근 4주/);
+  for (const lane of ['review', 'progress', 'validation', 'done']) assert.match(html, new RegExp(`data-kanban-lane="${lane}"`));
+  const partial = h.api.renderPersonalOverview({ ...data, mantis: { ...data.mantis, search_complete: false } });
+  assert.match(partial, /오늘 확인할 내 업무/);
+  assert.doesNotMatch(partial, /가장 급한 건/);
 });
